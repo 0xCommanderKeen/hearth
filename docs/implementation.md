@@ -14,19 +14,28 @@ resident (Miha's selection, 2026-09-05).
 | 5: Canary | Pending | Safe activation; seven days and ten representative tasks |
 | 6: Expansion/retirement | Pending | Transfer remaining workflows, retention period, archive and revoke obsolete access |
 
-## Current slice
+## Implemented slices
 
-Issue #1 establishes the transactional foundation: revisioned declarations, durable
-command identity, task admission, budget reservation, and audit records. It does
-not launch runtimes or claim successful execution. Initial validation: 25 tests,
-Ruff, ty, and wheel/source build passed on 2026-09-05; CI verification pending.
+- Issue #1 / PR #2: revisioned declarations, durable command identity, task admission,
+  allowance reservation, and atomic audit records. Foundation validation: 26 tests,
+  Ruff, ty, and wheel/source build passed on 2026-09-05.
+- Issue #3: persistent mock runtime, start/inspect/stop lifecycle, durable launch
+  intent, cancellation, terminal evidence, artifact publication, synthetic usage
+  settlement, unknown-usage pause, and schema upgrade. Combined validation: 47
+  tests, Ruff and ty pass; local CLI demo produces a simulated summary artifact.
+
+GitHub CI is blocked at job creation: the account's recent payments failed or its
+spending limit prevents Actions execution (run 33993194801, job 101378980825).
+There were no runner steps or logs. PR #2 remains open; local checks are not claimed
+as GitHub CI. Keep implementation moving on stacked branches while this external
+account condition is unresolved.
 
 ## Next
 
 Miha directed mock-only development on 2026-09-05: synthetic notes and deterministic
-mock runtimes now; real tests later, after behavior is proven. Connect a mock
-runtime through start/inspect/stop with explicit run identity, then add result
-capture and recovery tests. Keep live execution, source grants, provider/model
+mock runtimes now; real tests later, after behavior is proven. Add the operator
+workflow, brokered mock approvals, notifications, scheduling, and restore/import
+rehearsals on the verified lifecycle. Keep live execution, source grants, provider/model
 choices, paid calls, and migration deferred. Mock evidence must be visibly labeled
 and cannot complete the real-host, live canary, or retirement gates.
 
