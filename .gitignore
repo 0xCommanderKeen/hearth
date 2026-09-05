@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+.coverage*
+htmlcov/
+.hearth/
+.env*
+node_modules/
+web/dist/
+
