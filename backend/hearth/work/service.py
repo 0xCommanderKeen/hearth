@@ -212,6 +212,24 @@ class Hearth:
         concurrency_limit: int | None = None,
         pricing_mode: str | None = None,
     ) -> Run:
+        with self.database.transaction(write=True) as db:
+            return self.admit_in_transaction(
+                db,
+                task_id,
+                reserve=reserve,
+                concurrency_limit=concurrency_limit,
+                pricing_mode=pricing_mode,
+            )
+
+    def admit_in_transaction(
+        self,
+        db,
+        task_id: str,
+        *,
+        reserve: int,
+        concurrency_limit: int | None = None,
+        pricing_mode: str | None = None,
+    ) -> Run:
         """Reserve exposure and resident ownership before any runtime can launch.
 
         Terminal transitions belong to Execution, which requires runtime evidence.
@@ -228,128 +246,130 @@ class Hearth:
             type(concurrency_limit) is not int or not 1 <= concurrency_limit <= 100
         ):
             raise Refused("invalid_concurrency_limit")
-        with self.database.transaction(write=True) as db:
-            now = int(self.clock())
-            task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            if task is None:
-                raise Refused("task_not_found")
-            if task["status"] != "queued":
-                raise Refused("task_already_admitted")
-            resident_id = task["resident_id"]
-            if db.execute(
-                "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",
-                (resident_id,),
-            ).fetchone():
-                raise Refused("resident_setup_incomplete")
-            if (
-                db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone()
-                or db.execute(
-                    "SELECT 1 FROM operator_controls WHERE resident_id=? AND paused=1",
-                    (resident_id,),
-                ).fetchone()
-            ):
-                raise Refused("resident_paused")
-            if db.execute(
-                f"SELECT 1 FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
-                (resident_id,),
-            ).fetchone():
-                raise Refused("resident_busy")
-            if concurrency_limit is not None and (
-                db.execute(f"SELECT COUNT(*) FROM runs WHERE status IN {ACTIVE_RUNS}").fetchone()[0]
-                >= concurrency_limit
-            ):
-                raise Refused("capacity_exhausted")
-            declaration = db.execute(
-                """SELECT d.* FROM declarations d JOIN residents r
-                   ON r.id = d.resident_id AND r.revision = d.revision WHERE r.id = ?""",
+        now = int(self.clock())
+        task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if task is None:
+            raise Refused("task_not_found")
+        if task["status"] != "queued":
+            raise Refused("task_already_admitted")
+        resident_id = task["resident_id"]
+        if db.execute(
+            "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",
+            (resident_id,),
+        ).fetchone():
+            raise Refused("resident_setup_incomplete")
+        if (
+            db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone()
+            or db.execute(
+                "SELECT 1 FROM operator_controls WHERE resident_id=? AND paused=1",
                 (resident_id,),
             ).fetchone()
-            local = datetime.fromtimestamp(now, ZoneInfo(declaration["budget_timezone"]))
-            start = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
-            end = (start + timedelta(days=1)).replace(fold=0)
-            day = local.date().isoformat()
-            # Outstanding exposure carries across midnight; settlement must explicitly release it.
-            outstanding = db.execute(
-                "SELECT COALESCE(SUM(reserved), 0) FROM runs "
-                f"WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
-                (resident_id,),
-            ).fetchone()[0]
-            spent = db.execute(
-                "SELECT COALESCE(SUM(actual_cost), 0) FROM runs "
-                "WHERE resident_id = ? AND created_at >= ? AND created_at < ? AND usage_known = 1",
-                (resident_id, int(start.timestamp()), int(end.timestamp())),
-            ).fetchone()[0]
-            if outstanding + spent + reserve > declaration["daily_limit"]:
-                raise Refused("budget_exhausted")
-            check_admission(db, now, reserve)
-            run = Run(
-                str(uuid.uuid4()),
-                task_id,
-                resident_id,
-                declaration["revision"],
-                secrets.token_urlsafe(32),
-                "starting",
-                reserve,
-                day,
-                now,
-                budget_timezone=declaration["budget_timezone"],
-                runtime_kind=db.execute(
-                    "SELECT value FROM system_meta WHERE key='runtime_kind'"
-                ).fetchone()[0],
-            )
+        ):
+            raise Refused("resident_paused")
+        if db.execute(
+            f"SELECT 1 FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
+            (resident_id,),
+        ).fetchone():
+            raise Refused("resident_busy")
+        if concurrency_limit is not None and (
+            db.execute(f"SELECT COUNT(*) FROM runs WHERE status IN {ACTIVE_RUNS}").fetchone()[0]
+            >= concurrency_limit
+        ):
+            raise Refused("capacity_exhausted")
+        declaration = db.execute(
+            """SELECT d.* FROM declarations d JOIN residents r
+               ON r.id = d.resident_id AND r.revision = d.revision WHERE r.id = ?""",
+            (resident_id,),
+        ).fetchone()
+        local = datetime.fromtimestamp(now, ZoneInfo(declaration["budget_timezone"]))
+        start = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
+        end = (start + timedelta(days=1)).replace(fold=0)
+        day = local.date().isoformat()
+        # Outstanding exposure carries across midnight; settlement must explicitly release it.
+        outstanding = db.execute(
+            "SELECT COALESCE(SUM(reserved), 0) FROM runs "
+            f"WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
+            (resident_id,),
+        ).fetchone()[0]
+        spent = db.execute(
+            "SELECT COALESCE(SUM(actual_cost), 0) FROM runs "
+            "WHERE resident_id = ? AND created_at >= ? AND created_at < ? AND usage_known = 1",
+            (resident_id, int(start.timestamp()), int(end.timestamp())),
+        ).fetchone()[0]
+        if outstanding + spent + reserve > declaration["daily_limit"]:
+            raise Refused("budget_exhausted")
+        check_admission(db, now, reserve)
+        run = Run(
+            str(uuid.uuid4()),
+            task_id,
+            resident_id,
+            declaration["revision"],
+            secrets.token_urlsafe(32),
+            "starting",
+            reserve,
+            day,
+            now,
+            budget_timezone=declaration["budget_timezone"],
+            runtime_kind=db.execute(
+                "SELECT value FROM system_meta WHERE key='runtime_kind'"
+            ).fetchone()[0],
+        )
+        db.execute(
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            tuple(asdict(run).values()),
+        )
+        pin_admission(db, now, run.id)
+        from hearth.management.authority import pin_management
+
+        pin_management(db, run.id, resident_id, now)
+        db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
+        memory = db.execute(
+            "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
+        ).fetchone()[0]
+        if memory is not None:
+            db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
+        from hearth.skills.assignments import pin_skills
+
+        pin_skills(db, run.id, resident_id)
+        from hearth.inputs.selection import pin_inputs
+
+        pin_inputs(db, run.id, resident_id)
+        context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
+        encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+        from hearth.execution.staging import MAX_INPUT
+
+        if len(encoded_context) > MAX_INPUT:
+            raise Refused("input_context_too_large")
+        digest = hashlib.sha256(encoded_context).hexdigest()
+        run = replace(run, input_digest=digest)
+        db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
+        from hearth.integrations.interface import pricing_pin
+
+        pricing = pricing_pin(run.runtime_kind, pricing_mode)
+        if pricing is not None:
             db.execute(
-                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                tuple(asdict(run).values()),
+                "INSERT INTO run_pricing VALUES (?,?,?,?)",
+                (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
             )
-            pin_admission(db, now, run.id)
-            db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
-            memory = db.execute(
-                "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
-            ).fetchone()[0]
-            if memory is not None:
-                db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
-            from hearth.skills.assignments import pin_skills
-
-            pin_skills(db, run.id, resident_id)
-            from hearth.inputs.selection import pin_inputs
-
-            pin_inputs(db, run.id, resident_id)
-            context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
-            encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
-            from hearth.execution.staging import MAX_INPUT
-
-            if len(encoded_context) > MAX_INPUT:
-                raise Refused("input_context_too_large")
-            digest = hashlib.sha256(encoded_context).hexdigest()
-            run = replace(run, input_digest=digest)
-            db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
-            from hearth.integrations.interface import pricing_pin
-
-            pricing = pricing_pin(run.runtime_kind, pricing_mode)
-            if pricing is not None:
-                db.execute(
-                    "INSERT INTO run_pricing VALUES (?,?,?,?)",
-                    (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
-                )
-            _audit(
-                db,
-                "run.admitted",
-                run.id,
-                now,
-                {
-                    "task_id": task_id,
-                    "resident_id": resident_id,
-                    "resident_revision": run.resident_revision,
-                    "reserved": reserve,
-                    "budget_day": day,
-                    "budget_timezone": run.budget_timezone,
-                    "runtime_kind": run.runtime_kind,
-                    "runtime_version": run.runtime_version,
-                    "input_digest": run.input_digest,
-                }
-                | ({"accounting": pricing} if pricing else {}),
-            )
-            return run
+        _audit(
+            db,
+            "run.admitted",
+            run.id,
+            now,
+            {
+                "task_id": task_id,
+                "resident_id": resident_id,
+                "resident_revision": run.resident_revision,
+                "reserved": reserve,
+                "budget_day": day,
+                "budget_timezone": run.budget_timezone,
+                "runtime_kind": run.runtime_kind,
+                "runtime_version": run.runtime_version,
+                "input_digest": run.input_digest,
+            }
+            | ({"accounting": pricing} if pricing else {}),
+        )
+        return run
 
     def run(self, run_id: str) -> Run:
         with self.database.transaction() as db:

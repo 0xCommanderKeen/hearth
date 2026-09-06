@@ -61,7 +61,7 @@ def verify_stored(db, run) -> None:
         before_launch = validate_receipt_pins(
             run["runtime_kind"],
             json.loads(raw),
-            runtime_pins(db),
+            runtime_pins(db, run["id"]),
             cancelled=bool(run["cancellation_requested"]),
         )
     except Refused:
@@ -92,5 +92,9 @@ def verify_stored(db, run) -> None:
         raise Refused("backup_runtime_invalid")
 
 
-def runtime_pins(db) -> dict:
-    return dict(db.execute("SELECT key,value FROM system_meta"))
+def runtime_pins(db, run_id: str | None = None) -> dict:
+    result = dict(db.execute("SELECT key,value FROM system_meta"))
+    if run_id is not None:
+        row = db.execute("SELECT * FROM run_management WHERE run_id=?", (run_id,)).fetchone()
+        result["management"] = dict(row) if row is not None else None
+    return result

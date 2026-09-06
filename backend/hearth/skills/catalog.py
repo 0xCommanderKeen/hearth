@@ -111,6 +111,36 @@ class Skills:
         actor: str,
         content: dict | None,
     ) -> dict:
+        with self.hearth.database.transaction(write=True) as db:
+            return self.change_in_transaction(
+                db, command_id, skill_id, expected_revision, actor, content
+            )
+
+    def save_in_transaction(
+        self,
+        db,
+        command_id: str,
+        *,
+        name: str,
+        description: str,
+        instructions: str,
+        actor: str,
+        skill_id: str | None = None,
+        expected_revision: int = 0,
+    ) -> dict:
+        bounded_text(name, 120, "invalid_skill_name")
+        bounded_text(description, 2000, "invalid_skill_description")
+        bounded_text(instructions, 32000, "invalid_skill_instructions")
+        return self.change_in_transaction(
+            db,
+            command_id,
+            skill_id,
+            expected_revision,
+            actor,
+            {"name": name, "description": description, "instructions": instructions},
+        )
+
+    def change_in_transaction(self, db, command_id, skill_id, expected_revision, actor, content):
         identifier(command_id)
         identifier(actor)
         if skill_id is not None:
@@ -126,64 +156,63 @@ class Skills:
             "content": content,
         }
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-        with self.hearth.database.transaction(write=True) as db:
-            previous = db.execute(
-                "SELECT * FROM skill_operations WHERE command_id=?", (command_id,)
+        previous = db.execute(
+            "SELECT * FROM skill_operations WHERE command_id=?", (command_id,)
+        ).fetchone()
+        if previous:
+            if previous["payload_digest"] != digest:
+                raise Refused("idempotency_key_conflict")
+            return json.loads(previous["receipt"])
+        now = int(self.hearth.clock())
+        if skill_id is None:
+            if expected_revision != 0 or content is None:
+                raise Refused("invalid_revision")
+            skill_id = str(uuid.uuid4())
+            current = 0
+            db.execute("INSERT INTO skills VALUES (?, 1, ?, ?)", (skill_id, actor, now))
+        else:
+            row = db.execute(
+                "SELECT r.* FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision WHERE s.id=?",
+                (skill_id,),
             ).fetchone()
-            if previous:
-                if previous["payload_digest"] != digest:
-                    raise Refused("idempotency_key_conflict")
-                return json.loads(previous["receipt"])
-            now = int(self.hearth.clock())
-            if skill_id is None:
-                if expected_revision != 0 or content is None:
-                    raise Refused("invalid_revision")
-                skill_id = str(uuid.uuid4())
-                current = 0
-                db.execute("INSERT INTO skills VALUES (?, 1, ?, ?)", (skill_id, actor, now))
-            else:
-                row = db.execute(
-                    "SELECT r.* FROM skills s JOIN skill_revisions r "
-                    "ON r.skill_id=s.id AND r.revision=s.revision WHERE s.id=?",
-                    (skill_id,),
-                ).fetchone()
-                if row is None:
-                    raise Refused("skill_not_found")
-                checked_revision(row)
-                current = row["revision"]
-                if current != expected_revision:
-                    raise Refused("revision_conflict")
-                if row["status"] == "archived":
-                    raise Refused("skill_archived")
-                if content is None:
-                    content = {key: row[key] for key in ("name", "description", "instructions")}
-                db.execute("UPDATE skills SET revision=? WHERE id=?", (current + 1, skill_id))
-            revision = current + 1
-            db.execute(
-                "INSERT INTO skill_revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    skill_id,
-                    revision,
-                    content["name"],
-                    content["description"],
-                    content["instructions"],
-                    "archived" if operation == "archive" else "active",
-                    actor,
-                    now,
-                    content_digest(content),
-                ),
-            )
-            receipt = {
-                "command_id": command_id,
-                "skill_id": skill_id,
-                "revision": revision,
-                "operation": operation,
-                "recorded_at": now,
-                "actor": actor,
-            }
-            db.execute(
-                "INSERT INTO skill_operations VALUES (?, ?, ?, ?, ?)",
-                (command_id, digest, skill_id, revision, json.dumps(receipt, sort_keys=True)),
-            )
-            _audit(db, "skill." + operation, skill_id, now, receipt)
-            return receipt
+            if row is None:
+                raise Refused("skill_not_found")
+            checked_revision(row)
+            current = row["revision"]
+            if current != expected_revision:
+                raise Refused("revision_conflict")
+            if row["status"] == "archived":
+                raise Refused("skill_archived")
+            if content is None:
+                content = {key: row[key] for key in ("name", "description", "instructions")}
+            db.execute("UPDATE skills SET revision=? WHERE id=?", (current + 1, skill_id))
+        revision = current + 1
+        db.execute(
+            "INSERT INTO skill_revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                skill_id,
+                revision,
+                content["name"],
+                content["description"],
+                content["instructions"],
+                "archived" if operation == "archive" else "active",
+                actor,
+                now,
+                content_digest(content),
+            ),
+        )
+        receipt = {
+            "command_id": command_id,
+            "skill_id": skill_id,
+            "revision": revision,
+            "operation": operation,
+            "recorded_at": now,
+            "actor": actor,
+        }
+        db.execute(
+            "INSERT INTO skill_operations VALUES (?, ?, ?, ?, ?)",
+            (command_id, digest, skill_id, revision, json.dumps(receipt, sort_keys=True)),
+        )
+        _audit(db, "skill." + operation, skill_id, now, receipt)
+        return receipt

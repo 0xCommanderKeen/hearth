@@ -29,7 +29,10 @@ def validate_pricing(value: dict) -> None:
 def encode_receipt(receipt: dict, expected: UsageBinding) -> tuple[str, str, Evidence]:
     """Validate the exact serialized copy that will commit with accounting/audit."""
     if receipt.get("kind") == "codex_subscription":
-        from hearth.integrations.codex.subscription import encode
+        if receipt.get("protocol") == "management":
+            from hearth.integrations.codex.management_runtime import encode
+        else:
+            from hearth.integrations.codex.subscription import encode
 
         return encode(receipt, expected)
     try:
@@ -117,6 +120,13 @@ def validate_receipt_pins(kind: str, receipt, pins: dict, *, cancelled: bool) ->
     if receipt is None:
         raise Refused("run_usage_required")
     if kind == "codex_subscription":
+        if receipt.get("protocol") == "management":
+            from hearth.integrations.codex.management_runtime import validate_pins
+
+            validate_pins(receipt, pins)
+            return cancelled and receipt["terminal"]["launched"] is False
+        if pins.get("management") is not None and receipt.get("launched") is not False:
+            raise Refused("management_native_receipt_required")
         if (
             pins.get("codex_live_binary") is None
             or receipt.get("binary") != pins["codex_live_binary"]
@@ -163,4 +173,6 @@ def cancellation_receipt(kind: str, binding, pins: dict) -> dict:
 
 
 def receipt_requests(raw: str) -> list:
-    return json.loads(raw)["requests"]
+    value = json.loads(raw)
+    # Native subscription evidence is a cumulative turn total, not per-request receipts.
+    return [] if value.get("kind") == "codex_subscription" else value["requests"]

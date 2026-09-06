@@ -12,6 +12,11 @@
 - `inputs/` owns bounded synthetic note revisions, resident selections, explicit
   Reader seeding and ordered run input manifests; all mutations use the caller's
   SQLite writer. `skills/` owns the reusable skill library and exact assignments.
+- `management/` owns operator grants, explicit Karen setup, admission authority and
+  scoped tool dispatch. Its bridge calls provisioning/work writers in the same
+  transaction as durable call/operation receipts and audit. The native transport
+  remains in `integrations/codex/`; configuration and receipt parsers do not own
+  management policy. See [the permission contract](management.md).
 - `execution/` owns run transitions, supervision, pinned context/staging, budget
   reconciliation and immutable usage persistence. Its usage module reads pins and
   validates provider evidence through `integrations/interface.py`; it does not

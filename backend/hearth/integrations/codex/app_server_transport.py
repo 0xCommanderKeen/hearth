@@ -1,0 +1,396 @@
+"""Bounded private stdio process: native RPC is the only management call channel."""
+
+import hashlib
+import json
+import os
+import selectors
+import signal
+import subprocess
+import tempfile
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+from hearth.integrations.codex import app_server_config as config
+from hearth.integrations.codex.events import (
+    MAX_EVENTS,
+    MAX_RECORD,
+    MAX_STREAM,
+    finite_float,
+    reject_constant,
+    short_string,
+    unique_object,
+)
+from hearth.integrations.codex.pricing import MODEL
+from hearth.residents.models import Refused
+
+PROTOCOL = "codex-app-server-0.153.4"
+_NO_INPUT = (
+    "Interactive input is disabled. Continue within the supplied "
+    "Hearth policy or report its refusal."
+)
+_RECORDED = {
+    "thread/started",
+    "turn/started",
+    "thread/tokenUsage/updated",
+    "item/tool/call",
+    "item/completed",
+    "turn/completed",
+    "error",
+}
+
+
+def configuration_pins(binary: Path, tools: list[dict]) -> dict:
+    config.tool_names(tools)
+    return {
+        "catalog_sha256": hashlib.sha256(config.model_catalog(binary.resolve())).hexdigest(),
+        "tools_sha256": config.digest(tools),
+    }
+
+
+class _Pipe:
+    def __init__(self, child, deadline, cancelled):
+        self.child = child
+        assert child.stdin is not None and child.stdout is not None
+        self.stdin = child.stdin.fileno()
+        self.stdout = child.stdout.fileno()
+        os.set_blocking(self.stdin, False)
+        os.set_blocking(self.stdout, False)
+        self.deadline = deadline
+        self.cancelled = cancelled
+        self.buffer = bytearray()
+        self.total = self.records = self.sequence = 0
+
+    def check(self):
+        if self.cancelled():
+            raise Refused("app_server_cancelled")
+        if time.monotonic() >= self.deadline:
+            raise Refused("app_server_timeout")
+
+    def send(self, message):
+        data = config.canonical(message) + b"\n"
+        if len(data) > MAX_RECORD:
+            raise Refused("app_server_message_too_large")
+        offset = 0
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.stdin, selectors.EVENT_WRITE)
+            while offset < len(data):
+                self.check()
+                if not selector.select(0.05):
+                    continue
+                try:
+                    offset += os.write(self.stdin, data[offset:])
+                except BlockingIOError:
+                    continue
+
+    def receive(self):
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.stdout, selectors.EVENT_READ)
+            while True:
+                self.check()
+                end = self.buffer.find(b"\n")
+                if end >= 0:
+                    if end > MAX_RECORD:
+                        raise Refused("app_server_message_too_large")
+                    line = bytes(self.buffer[:end])
+                    del self.buffer[: end + 1]
+                    self.records += 1
+                    if self.records > MAX_EVENTS:
+                        raise Refused("app_server_transcript_too_large")
+                    if not line.strip():
+                        continue
+                    try:
+                        message = json.loads(
+                            line,
+                            object_pairs_hook=unique_object,
+                            parse_constant=reject_constant,
+                            parse_float=finite_float,
+                        )
+                    except ValueError, RecursionError:
+                        raise Refused("app_server_protocol_invalid") from None
+                    if not isinstance(message, dict):
+                        raise Refused("app_server_protocol_invalid")
+                    return message
+                if len(self.buffer) > MAX_RECORD:
+                    raise Refused("app_server_message_too_large")
+                if not selector.select(0.05):
+                    continue
+                try:
+                    chunk = os.read(self.stdout, 8192)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    raise Refused("app_server_disconnected")
+                self.total += len(chunk)
+                if self.total > MAX_STREAM:
+                    raise Refused("app_server_transcript_too_large")
+                self.buffer.extend(chunk)
+
+    def start_request(self, method, params):
+        self.sequence += 1
+        request_id = self.sequence
+        self.send({"id": request_id, "method": method, "params": params})
+        return request_id
+
+    def response(self, request_id, observe):
+        while True:
+            message = self.receive()
+            if "method" not in message:
+                if message.get("id") != request_id or "result" not in message:
+                    raise Refused("app_server_request_failed")
+                return message["result"]
+            if "id" in message:
+                raise Refused("app_server_unexpected_request")
+            observe(message)
+
+    def request(self, method, params, *, observe=lambda message: None):
+        return self.response(self.start_request(method, params), observe)
+
+
+@contextmanager
+def _process(binary, auth_home, workspace, settings, deadline, cancelled):
+    child = subprocess.Popen(
+        [str(binary), "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
+        cwd=workspace,
+        env={"PATH": os.defpath, "CODEX_HOME": str(auth_home)},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=0,
+        start_new_session=True,
+    )
+    try:
+        yield _Pipe(child, deadline, cancelled)
+    finally:
+        if child.poll() is None:
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                child.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=2)
+        if child.stdin is not None:
+            child.stdin.close()
+        if child.stdout is not None:
+            child.stdout.close()
+
+
+def _initialize(pipe, workspace, settings):
+    pipe.request(
+        "initialize",
+        {
+            "clientInfo": {"name": "hearth", "version": "1"},
+            "capabilities": {"experimentalApi": True},
+        },
+    )
+    pipe.send({"method": "initialized", "params": {}})
+    config.check_config(
+        pipe.request("config/read", {"cwd": str(workspace), "includeLayers": True}),
+        settings,
+    )
+    return pipe.request("skills/list", {"cwds": [str(workspace)], "forceReload": True})
+
+
+def _tool_response(value):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"contentItems", "success"}
+        or type(value["success"]) is not bool
+        or not isinstance(value["contentItems"], list)
+        or not 1 <= len(value["contentItems"]) <= 16
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"type", "text"}
+            or item["type"] != "inputText"
+            or not isinstance(item["text"], str)
+            for item in value["contentItems"]
+        )
+        or len(config.canonical(value)) > 256 * 1024
+    ):
+        raise Refused("app_server_tool_response_invalid")
+    return value
+
+
+def _tool_call(message, thread_id, turn_id, names, on_tool, seen, max_calls):
+    params = message["params"]
+    if (
+        not isinstance(params, dict)
+        or params.get("threadId") != thread_id
+        or params.get("turnId") != turn_id
+        or params.get("namespace") not in {None, "functions"}
+        or params.get("tool") not in names
+        or not short_string(params.get("callId"))
+        or not isinstance(params.get("arguments"), dict)
+        or type(message.get("id")) not in {int, str}
+    ):
+        raise Refused("app_server_tool_request_invalid")
+    call_id = params["callId"]
+    fingerprint = config.digest(params)
+    if call_id in seen:
+        previous, response = seen[call_id]
+        if previous != fingerprint:
+            raise Refused("app_server_tool_request_conflict")
+        return response
+    if len(seen) >= max_calls:
+        raise Refused("app_server_tool_limit")
+    try:
+        response = on_tool(params)
+    except Refused as refusal:
+        response = {
+            "contentItems": [{"type": "inputText", "text": json.dumps({"error": refusal.code})}],
+            "success": False,
+        }
+    response = _tool_response(response)
+    seen[call_id] = (fingerprint, response)
+    return response
+
+
+def run(
+    *,
+    binary: Path,
+    auth_home: Path,
+    workspace: Path,
+    prompt: str,
+    tools: list[dict],
+    on_thread,
+    on_turn,
+    on_tool,
+    cancelled,
+    dispatch_guard,
+    timeout: float = 600,
+    max_calls: int = 64,
+    expected_pins: dict | None = None,
+) -> dict:
+    """One private native process/turn; callbacks retain Hearth's transactional authority.
+
+    No credential, application database or owner token is passed through this interface
+    to Codex. The tool callback receives only the actual structured native request.
+    """
+    result: dict = {
+        "protocol": PROTOCOL,
+        "launched": False,
+        "cancelled": False,
+        "error": None,
+        "exit_code": None,
+        "events": [],
+    }
+    process = None
+    try:
+        if not 0 < timeout <= 600 or type(max_calls) is not int or not 1 <= max_calls <= 64:
+            raise Refused("app_server_limits_invalid")
+        if not isinstance(prompt, str) or len(prompt.encode()) > 512 * 1024:
+            raise Refused("app_server_prompt_invalid")
+        binary, auth_home, workspace = binary.resolve(), auth_home.resolve(), workspace.resolve()
+        if not workspace.is_dir() or any(workspace.iterdir()):
+            raise Refused("app_server_workspace_unsafe")
+        names = config.tool_names(tools)
+        config.check_auth_home(auth_home)
+        deadline = time.monotonic() + timeout
+        with tempfile.TemporaryDirectory(prefix="hearth-codex-management-") as temporary:
+            catalog = config.model_catalog(binary)
+            pins = {
+                "catalog_sha256": hashlib.sha256(catalog).hexdigest(),
+                "tools_sha256": config.digest(tools),
+            }
+            if expected_pins is not None and pins != expected_pins:
+                raise Refused("app_server_configuration_changed")
+            result.update(pins)
+            catalog_path = Path(temporary) / "models.json"
+            catalog_path.write_bytes(catalog)
+            catalog_path.chmod(0o600)
+            settings = config.settings() | {"model_catalog_json": str(catalog_path)}
+            # Discovery never starts a thread/turn; a second isolated process starts
+            # with every discovered skill disabled, then verifies the effective set.
+            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as discovery:
+                paths = config.skill_paths(_initialize(discovery, workspace, settings))
+            settings["skills.config"] = [{"path": path, "enabled": False} for path in paths]
+            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as process:
+                actual_paths = config.skill_paths(
+                    _initialize(process, workspace, settings), disabled=True
+                )
+                if actual_paths != paths:
+                    raise Refused("app_server_skills_changed")
+
+                def observe(message):
+                    # A reroute violates the pinned model; compaction may hide
+                    # provider work from the bounded turn's accounting evidence.
+                    if message.get("method") in {"model/rerouted", "thread/compacted"}:
+                        raise Refused("app_server_execution_changed")
+                    if message.get("method") in _RECORDED:
+                        result["events"].append(message)
+
+                thread = process.request(
+                    "thread/start",
+                    {
+                        "model": MODEL,
+                        "modelProvider": "openai",
+                        "cwd": str(workspace),
+                        "ephemeral": True,
+                        "approvalPolicy": "never",
+                        "permissions": "reader",
+                        "developerInstructions": config.INSTRUCTIONS,
+                        "dynamicTools": tools,
+                        "allowProviderModelFallback": False,
+                    },
+                    observe=observe,
+                )
+                thread_id = config.check_thread(thread)
+                if not short_string(thread_id):
+                    raise Refused("app_server_thread_unsafe")
+                on_thread(thread_id)
+                config.check_auth_home(auth_home)
+                if hashlib.sha256(catalog_path.read_bytes()).hexdigest() != pins["catalog_sha256"]:
+                    raise Refused("app_server_configuration_changed")
+                with dispatch_guard():
+                    process.check()
+                    result["launched"] = True
+                    request_id = process.start_request(
+                        "turn/start",
+                        {"threadId": thread_id, "input": [{"type": "text", "text": prompt}]},
+                    )
+                turn = process.response(request_id, observe)
+                turn_id = turn["turn"]["id"]
+                if not short_string(turn_id):
+                    raise Refused("app_server_turn_invalid")
+                on_turn(thread_id, turn_id)
+                seen = {}
+                while True:
+                    message = process.receive()
+                    if "method" not in message:
+                        raise Refused("app_server_protocol_invalid")
+                    observe(message)
+                    method = message["method"]
+                    if "id" in message:
+                        if method == "item/tool/call":
+                            response = _tool_call(
+                                message, thread_id, turn_id, names, on_tool, seen, max_calls
+                            )
+                            process.send({"id": message["id"], "result": response})
+                        elif method == "item/tool/requestUserInput":
+                            params = message["params"]
+                            if (
+                                params.get("threadId") != thread_id
+                                or params.get("turnId") != turn_id
+                            ):
+                                raise Refused("app_server_tool_request_invalid")
+                            answers = {
+                                question["id"]: {"answers": [_NO_INPUT]}
+                                for question in params["questions"]
+                            }
+                            process.send({"id": message["id"], "result": {"answers": answers}})
+                        else:
+                            raise Refused("app_server_unexpected_request")
+                    if method == "turn/completed":
+                        break
+    except Refused as error:
+        result["error"] = error.code
+        result["cancelled"] = error.code == "app_server_cancelled"
+    except OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, RecursionError:
+        result["error"] = "app_server_transport_failed"
+    finally:
+        if process is not None:
+            result["exit_code"] = process.child.returncode
+    return result

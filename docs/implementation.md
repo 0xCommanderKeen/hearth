@@ -572,3 +572,41 @@ overflow checks passed. Both independent review axes found no blocking issue.
 Standards recorded one optional P3 cleanup for repeated HTTP failure classification;
 the small feature-local draft recovery branches remain explicit. PR/CI/merge are
 next. No provider calls, credential changes or live-data changes were performed.
+
+## Bounded Karen management — issue #91
+
+Explicit Management setup creates Karen and her ordinary editable Create residents
+skill through existing provisioning/library operations. Operator grants bound
+creation, work, routines, profiles, synthetic inputs, counts, allowances,
+reservations and calls. Active runs pin immutable grants, expire after ten minutes
+and lose tool authority on revocation or changed declarations. Native calls and
+operation IDs replay durable receipts; authority, effects and audit share the
+application writer. Created residents inherit no management grant. Reader retains
+its read-only exec route. See [the permission contract](management.md).
+
+Validation passed 615 backend and 61 browser tests, lint/format/types and release
+builds. The installed-wheel check passed both isolated mock HTTP/restart/held-restore
+journeys using cached dependencies after the default dependency fetch encountered
+the environment's network restriction. Thirty management checks cover scoped
+creation/reuse/start, concurrency, revocation, stale ownership, changed pins,
+unknown usage holds, current-data backup and transactional failure. A fresh rendered
+desktop/mobile journey verified explicit setup, grant edits preserved across setup
+replay, normal exact skill/profile links and persistent revocation. Screenshots
+were inspected and mobile overflow checks passed.
+
+Forty-two native transport checks pass. The actual pinned 0.153.4 CLI independently
+verified effective read-only permissions and all 40 discovered skill paths disabled.
+A localhost fake provider observed two synthetic HTTP requests and the native
+RPC ID 0 tool callback/receipt roundtrip. Its effective additional tools were exactly
+`request_user_input` and `hearth_probe`; parent/workspace instruction canaries were
+absent. Model rerouting, compaction, unsupported tools, assistant JSON prose and
+interactive requests cannot dispatch management effects. This is local native
+isolation evidence, not a real provider proof.
+
+The single bounded real creation proof is prepared with fictional inputs, exact
+Astra, one child, no child execution, concurrency one, 16 calls and a $0.50 manager
+reservation within $2 resident/$10 household daily limits. Automatic approval review
+rejected live execution despite the existing epic acceptance and login authorization,
+requiring explicit approval for this particular provider run. No real call or cost
+occurred in issue #91. Real creation-tool acceptance, independent reviews and merge
+remain pending.

@@ -28,6 +28,13 @@ operations explain the applicable policy. The runtime bridge must not expose the
 operator token, database, engine socket or subscription credentials to the model.
 The concrete permission and bridge contract is delivered with issue #91.
 
+Issue #91 defines that [permission and bridge contract](../management.md) with an
+admission-pinned operator grant and private native Codex app-server dynamic tools.
+Grant edits invalidate old run authority; instructions remain ordinary library
+content. Native configuration and tool schema digests join the binary and session
+pins. The trusted worker invokes application writers directly, without exposing an
+operator HTTP token or an engine endpoint to the model.
+
 All residents, including Karen, share the selected $10/day API-equivalent allowance
 in Europe/Ljubljana, with finite resident-count and concurrent-run limits and
 optional smaller resident allocations. Admission reserves shared and resident

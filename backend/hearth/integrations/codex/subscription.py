@@ -60,6 +60,10 @@ CONFIG = {
 
 
 def encode(receipt, expected):
+    if isinstance(receipt, dict) and receipt.get("protocol") == "management":
+        from hearth.integrations.codex.management_runtime import encode as encode_management
+
+        return encode_management(receipt, expected)
     if (
         not isinstance(receipt, dict)
         or set(receipt)
@@ -209,6 +213,16 @@ class CodexLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='codex_live_binary'"
                     ).fetchone()[0],
                 }
+            from hearth.integrations.codex.management_runtime import pin_configuration
+            from hearth.management.bridge import BoundRun
+
+            management = pin_configuration(
+                Hearth(self.database),
+                BoundRun(run_id, request["owner"], request["epoch"], bound.input_digest),
+                self.binary,
+            )
+            if management is not None:
+                request["management"] = management
             folder.mkdir(mode=0o700)
             publish(folder / "request.json", request)
             subprocess.Popen(
@@ -278,6 +292,11 @@ def worker(folder):
             return
         binary = Path(request["binary"])
         if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
+            return
+        if request.get("management") is not None:
+            from hearth.integrations.codex.management_runtime import worker as management_worker
+
+            management_worker(folder, request, execution)
             return
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)

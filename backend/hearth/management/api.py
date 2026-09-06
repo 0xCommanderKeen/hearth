@@ -1,0 +1,55 @@
+"""Operator-only grant and explicit Karen setup routes."""
+
+import json
+
+from fastapi import FastAPI
+
+from hearth.inputs.catalog import list_inputs
+from hearth.management.authority import GrantPut, Management, read_grant
+from hearth.management.bootstrap import bootstrap
+from hearth.work.service import Hearth
+
+
+def mount_management(app: FastAPI, hearth: Hearth) -> None:
+    management = Management(hearth)
+
+    @app.get("/api/management")
+    def catalog():
+        with hearth.database.transaction() as db:
+            residents = [
+                {"id": row["id"], "name": row["name"], "grant": read_grant(db, row["id"])}
+                for row in db.execute(
+                    "SELECT r.id,d.name FROM residents r JOIN declarations d "
+                    "ON d.resident_id=r.id AND d.revision=r.revision ORDER BY d.name"
+                )
+            ]
+            return {
+                "residents": residents,
+                "profiles": [
+                    db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[
+                        0
+                    ]
+                ],
+                "input_sets": [
+                    {key: item[key] for key in ("input_set_id", "name", "revision", "synthetic")}
+                    for item in list_inputs(db)
+                ],
+                "operations": [
+                    json.loads(row[0])
+                    for row in db.execute(
+                        "SELECT receipt FROM management_operations ORDER BY rowid DESC LIMIT 30"
+                    )
+                ],
+            }
+
+    @app.post("/api/demo/karen")
+    def setup():
+        return bootstrap(hearth)
+
+    @app.get("/api/residents/{resident_id}/management")
+    def read(resident_id: str):
+        return management.read(resident_id)
+
+    @app.put("/api/residents/{resident_id}/management")
+    def save(resident_id: str, body: GrantPut):
+        return management.save(resident_id, body.model_dump())

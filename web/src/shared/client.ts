@@ -174,6 +174,7 @@ export type Approval = {
 };
 export type Resident = InputProvenance & {
   profile?: ResidentProfile | null;
+  management?: ManagementGrant | { enabled: false; error: string };
   id: string;
   name: string;
   purpose: string;
@@ -213,6 +214,11 @@ export type Task = {
   created_at: number;
 };
 export type Run = InputProvenance & {
+  management?: {
+    grant_revision: number;
+    expires_at: number;
+    calls: number;
+  } | null;
   id: string;
   task_id: string;
   resident_id: string;
@@ -304,6 +310,45 @@ export function decodeSnapshot(value: unknown): Snapshot {
   return s as Snapshot;
 }
 
+export type ManagementCapability =
+  "create_residents" | "assign_work" | "routines";
+export type ManagementGrant = {
+  resident_id: string;
+  revision: number;
+  enabled: boolean;
+  profiles: string[];
+  input_set_ids: string[];
+  capabilities: ManagementCapability[];
+  max_residents: number;
+  max_daily_limit: number;
+  max_reserve: number;
+  max_calls: number;
+};
+export type ManagementChange = Omit<
+  ManagementGrant,
+  "resident_id" | "revision"
+> & { expected_revision: number };
+export type ManagementCatalog = {
+  residents: { id: string; name: string; grant: ManagementGrant }[];
+  profiles: string[];
+  input_sets: {
+    input_set_id: string;
+    name: string;
+    revision: number;
+    synthetic: boolean;
+  }[];
+  operations: {
+    resident_id: string;
+    operation_id: string;
+    actor: string;
+    originating_run_id: string;
+    status: string;
+    resident_link: string;
+    task_id?: string;
+    run_id?: string;
+  }[];
+};
+
 export class Client {
   private readOnly = false;
   constructor(private token: string) {}
@@ -343,6 +388,22 @@ export class Client {
     return response.json();
   }
 
+  managementCatalog() {
+    return this.request<ManagementCatalog>("/api/management");
+  }
+  setupKaren() {
+    return this.request<{
+      resident_id: string;
+      skill_id: string;
+      status: string;
+    }>("/api/demo/karen", { method: "POST" });
+  }
+  saveManagement(id: string, change: ManagementChange) {
+    return this.request<ManagementGrant>(
+      `/api/residents/${encodeURIComponent(id)}/management`,
+      { method: "PUT", body: JSON.stringify(change) },
+    );
+  }
   async state() {
     const state = decodeSnapshot(await this.request("/api/state"));
     this.readOnly = state.restore_hold === true;
