@@ -1,3 +1,54 @@
+export type ProvisionRequest = {
+  name: string;
+  purpose: string;
+  instructions: string;
+  initial_memory: string;
+  skills: { skill_id: string; revision: number }[];
+  execution_profile: string;
+  input_sets: { input_set_id: string }[];
+  daily_limit: number;
+  budget_timezone: string;
+  creation_reason: string;
+  manager: string;
+  routine: {
+    instruction: string;
+    local_time: string;
+    timezone: string;
+    enabled: boolean;
+  } | null;
+  first_assignment: { instruction: string } | null;
+};
+export type ProvisionReceipt = {
+  command_id: string;
+  resident_id: string;
+  status: "setup" | "ready" | "failed";
+  reason: string | null;
+  creator: string;
+  manager: string;
+  originating_run_id: string | null;
+  created_at: number;
+  routine_id: string | null;
+  task_id: string | null;
+  setup: ProvisionRequest;
+};
+export type ResidentProfile = {
+  creator_name?: string;
+  manager_name?: string;
+  command_id: string;
+  creator: string;
+  manager: string;
+  created_at: number;
+  creation_reason: string;
+  originating_run_id: string | null;
+  execution_profile: string;
+  input_sets: { input_set_id: string }[];
+  setup_status: string;
+};
+export type ResidentOptions = {
+  execution_profiles: { id: string; name: string; simulated: boolean }[];
+  input_sets: { input_set_id: string; name: string; synthetic: boolean }[];
+  managers: { id: string; name: string }[];
+};
 export type AssignedSkill = Omit<
   CatalogSkill,
   "status" | "created_by" | "edited_by" | "created_at" | "edited_at"
@@ -91,6 +142,7 @@ export type Approval = {
   };
 };
 export type Resident = {
+  profile?: ResidentProfile | null;
   id: string;
   name: string;
   purpose: string;
@@ -144,6 +196,7 @@ export type Run = {
   skills_error?: string | null;
 };
 export type Snapshot = {
+  provisioning?: (Omit<ProvisionReceipt, "setup"> & { name: string })[];
   household?: HouseholdPolicy;
   restore_hold?: boolean;
   schema_version: 1;
@@ -292,6 +345,25 @@ export class Client {
     return this.request<SkillUser[]>(
       `/api/skills/${encodeURIComponent(id)}/assignments`,
     );
+  }
+  async provision(command_id: string, body: ProvisionRequest) {
+    const receipt = await this.request<ProvisionReceipt>(
+      "/api/residents/provision",
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": command_id },
+        body: JSON.stringify(body),
+      },
+    );
+    if (
+      receipt.command_id !== command_id ||
+      !["ready", "failed", "setup"].includes(receipt.status) ||
+      typeof receipt.resident_id !== "string"
+    )
+      throw new Error(
+        "Provisioning receipt is incomplete; retry the exact operation.",
+      );
+    return receipt;
   }
   skills(query = "", includeArchived = false) {
     return this.request<CatalogSkill[]>(

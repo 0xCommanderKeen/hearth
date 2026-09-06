@@ -12,6 +12,10 @@ import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { Skills } from "../features/residents/Skills";
 import { Memory } from "../features/residents/Memory";
+import {
+  NewResident,
+  ProfileProvenance,
+} from "../features/residents/NewResident";
 import { Assignments } from "../features/skills/Assignments";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
@@ -104,6 +108,7 @@ type Page =
   | "townhall"
   | "residents"
   | "resident"
+  | "new-resident"
   | "skills"
   | "tasks"
   | "routines"
@@ -117,6 +122,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState<Page>("townhall");
   const [residentId, setResidentId] = useState("reader");
+  const [provisionId, setProvisionId] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -263,7 +269,10 @@ export function App() {
         setError("Invalid notification link");
         return;
       }
-      if (hash.startsWith("#skills/")) {
+      if (hash === "#new-resident" || hash.startsWith("#new-resident/")) {
+        setProvisionId(hash === "#new-resident" ? "" : hash.slice(14));
+        setView("new-resident");
+      } else if (hash.startsWith("#skills/")) {
         setView("skills");
       } else if (hash.startsWith("#residents/")) {
         setResidentId(hash.slice(11));
@@ -384,9 +393,11 @@ export function App() {
               {view === "resident"
                 ? (residents.find((r) => r.id === residentId)?.name ??
                   "Resident not found")
-                : view === "townhall"
-                  ? "Townhall"
-                  : view[0].toUpperCase() + view.slice(1)}
+                : view === "new-resident"
+                  ? "New resident"
+                  : view === "townhall"
+                    ? "Townhall"
+                    : view[0].toUpperCase() + view.slice(1)}
             </h1>
             <p className="muted">
               {view === "townhall"
@@ -455,6 +466,39 @@ export function App() {
                 completed in recent history
               </span>
             </div>
+            {view === "new-resident" && (
+              <NewResident
+                key={`${snapshot.epoch}:${provisionId}`}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
+                commandId={provisionId}
+                onCreated={async (receipt) => {
+                  publish(await client.state());
+                  window.location.hash = `#residents/${receipt.resident_id}`;
+                }}
+              />
+            )}
+            {(view === "townhall" || view === "residents") &&
+              snapshot.provisioning
+                ?.filter((item) => item.status !== "ready")
+                .map((item) => (
+                  <section
+                    key={item.command_id}
+                    className="provision-failure"
+                    aria-label={`Setup for ${item.name}`}
+                  >
+                    <strong>
+                      {item.name} ·{" "}
+                      {item.status === "failed" ? "Setup failed" : "Setting up"}
+                    </strong>
+                    <p>{item.reason?.replaceAll("_", " ")}</p>
+                    <a
+                      href={`#new-resident/${encodeURIComponent(item.command_id)}`}
+                    >
+                      Inspect setup and retry →
+                    </a>
+                  </section>
+                ))}
             {view === "skills" && (
               <SkillCatalog
                 key={snapshot.epoch}
@@ -500,10 +544,26 @@ export function App() {
                 )}
                 <div className="section-title">
                   <h2>Residents</h2>
+                  {!snapshot.restore_hold && (
+                    <a className="profile-link" href="#new-resident">
+                      New resident ＋
+                    </a>
+                  )}
                 </div>
                 {!residents.length && (
                   <div className="empty">
-                    <p>No residents yet. Reader summarizes synthetic notes.</p>
+                    <p>
+                      No residents yet. Define a purpose and create your first
+                      resident.
+                    </p>
+                    {!snapshot.restore_hold && (
+                      <p>
+                        <a href="#new-resident">Create a new resident →</a>
+                      </p>
+                    )}
+                    <p className="muted">
+                      Or explore with the synthetic Reader example.
+                    </p>
                     <button
                       className="primary"
                       disabled={busy || snapshot.restore_hold}
@@ -718,12 +778,17 @@ export function App() {
                       {residents
                         .filter((r) => r.id === residentId)
                         .map((r) => (
-                          <Assignments
-                            key={`assigned:${snapshot.epoch}:${r.id}`}
-                            client={client}
-                            residentId={r.id}
-                            readOnly={snapshot.restore_hold === true}
-                          />
+                          <div key={`profile:${r.id}`}>
+                            {r.profile && (
+                              <ProfileProvenance profile={r.profile} />
+                            )}
+                            <Assignments
+                              key={`assigned:${snapshot.epoch}:${r.id}`}
+                              client={client}
+                              residentId={r.id}
+                              readOnly={snapshot.restore_hold === true}
+                            />
+                          </div>
                         ))}
                       {residents
                         .filter((r) => r.id === residentId)

@@ -51,6 +51,30 @@ class Routines:
         enabled: bool,
         expected_revision: int,
     ) -> dict:
+        with self.hearth.database.transaction(write=True) as db:
+            return self.save_in_transaction(
+                db,
+                routine_id,
+                resident_id,
+                instruction,
+                local_time=local_time,
+                timezone=timezone,
+                enabled=enabled,
+                expected_revision=expected_revision,
+            )
+
+    def save_in_transaction(
+        self,
+        db,
+        routine_id: str,
+        resident_id: str,
+        instruction: str,
+        *,
+        local_time: str,
+        timezone: str,
+        enabled: bool,
+        expected_revision: int,
+    ) -> dict:
         identifier(routine_id)
         identifier(resident_id)
         bounded_text(instruction, 32_000, "invalid_instruction")
@@ -66,30 +90,29 @@ class Routines:
             zone = ZoneInfo(timezone)
         except ZoneInfoNotFoundError, ValueError:
             raise Refused("invalid_timezone") from None
-        with self.hearth.database.transaction(write=True) as db:
-            now = int(self.hearth.clock())
-            row = db.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
-            revision = row["revision"] if row else 0
-            if expected_revision != revision:
-                raise Refused("revision_conflict")
-            if row and row["resident_id"] != resident_id:
-                raise Refused("routine_resident_changed")
-            if not db.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone():
-                raise Refused("resident_not_found")
-            next_at = _next(now, local_time, zone)
-            revision += 1
-            db.execute(
-                "INSERT INTO routines VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE "
-                "SET revision=excluded.revision, enabled=excluded.enabled, "
-                "next_at=excluded.next_at",
-                (routine_id, resident_id, revision, enabled, next_at),
-            )
-            db.execute(
-                "INSERT INTO routine_revisions VALUES (?, ?, ?, ?, ?, ?)",
-                (routine_id, revision, instruction, local_time, timezone, now),
-            )
-            _audit(db, "routine.saved", routine_id, now, {"revision": revision, "enabled": enabled})
-            return {"id": routine_id, "revision": revision, "enabled": enabled, "next_at": next_at}
+        now = int(self.hearth.clock())
+        row = db.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+        revision = row["revision"] if row else 0
+        if expected_revision != revision:
+            raise Refused("revision_conflict")
+        if row and row["resident_id"] != resident_id:
+            raise Refused("routine_resident_changed")
+        if not db.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone():
+            raise Refused("resident_not_found")
+        next_at = _next(now, local_time, zone)
+        revision += 1
+        db.execute(
+            "INSERT INTO routines VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE "
+            "SET revision=excluded.revision, enabled=excluded.enabled, "
+            "next_at=excluded.next_at",
+            (routine_id, resident_id, revision, enabled, next_at),
+        )
+        db.execute(
+            "INSERT INTO routine_revisions VALUES (?, ?, ?, ?, ?, ?)",
+            (routine_id, revision, instruction, local_time, timezone, now),
+        )
+        _audit(db, "routine.saved", routine_id, now, {"revision": revision, "enabled": enabled})
+        return {"id": routine_id, "revision": revision, "enabled": enabled, "next_at": next_at}
 
     def tick(self) -> list[str]:
         """Newest due occurrence only; never stack unfinished tasks for one routine."""

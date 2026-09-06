@@ -135,6 +135,14 @@ class Memory:
             return read_revision(db, self.files, resident_id, revision)
 
     def save(self, resident_id: str, text: str, *, expected_revision: int) -> dict:
+        with self.hearth.database.transaction(write=True) as db:
+            return self.save_in_transaction(
+                db, resident_id, text, expected_revision=expected_revision
+            )
+
+    def save_in_transaction(
+        self, db, resident_id: str, text: str, *, expected_revision: int
+    ) -> dict:
         identifier(resident_id)
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_memory_revision")
@@ -146,32 +154,31 @@ class Memory:
             raise Refused("invalid_memory_encoding") from None
         if len(data) > MAX_MEMORY:
             raise Refused("memory_too_large")
-        with self.hearth.database.transaction(write=True) as db:
-            if not db.execute("SELECT 1 FROM residents WHERE id=?", (resident_id,)).fetchone():
-                raise Refused("resident_not_found")
-            revision = db.execute(
-                "SELECT COALESCE(MAX(revision),0) FROM memory_revisions WHERE resident_id=?",
-                (resident_id,),
-            ).fetchone()[0]
-            if revision != expected_revision:
-                raise Refused("revision_conflict")
-            revision += 1
-            digest = self.files.publish(resident_id, data)
-            now = int(self.hearth.clock())
-            db.execute(
-                "INSERT INTO memory_revisions VALUES (?,?,?,?,?)",
-                (resident_id, revision, digest, len(data), now),
-            )
-            _audit(
-                db,
-                "memory.saved",
-                resident_id,
-                now,
-                {"revision": revision, "sha256": digest, "size": len(data)},
-            )
-            return {
-                "resident_id": resident_id,
-                "revision": revision,
-                "sha256": digest,
-                "text": text,
-            }
+        if not db.execute("SELECT 1 FROM residents WHERE id=?", (resident_id,)).fetchone():
+            raise Refused("resident_not_found")
+        revision = db.execute(
+            "SELECT COALESCE(MAX(revision),0) FROM memory_revisions WHERE resident_id=?",
+            (resident_id,),
+        ).fetchone()[0]
+        if revision != expected_revision:
+            raise Refused("revision_conflict")
+        revision += 1
+        digest = self.files.publish(resident_id, data)
+        now = int(self.hearth.clock())
+        db.execute(
+            "INSERT INTO memory_revisions VALUES (?,?,?,?,?)",
+            (resident_id, revision, digest, len(data), now),
+        )
+        _audit(
+            db,
+            "memory.saved",
+            resident_id,
+            now,
+            {"revision": revision, "sha256": digest, "size": len(data)},
+        )
+        return {
+            "resident_id": resident_id,
+            "revision": revision,
+            "sha256": digest,
+            "text": text,
+        }

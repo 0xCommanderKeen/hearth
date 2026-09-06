@@ -520,3 +520,22 @@ Standards review corrected historical skill-error wording: unavailable provenanc
 no longer claims execution is held when the run is completed or still running. A
 completed-run regression failed before the correction and passes afterward; all
 16 App tests and the browser typecheck/build pass.
+
+## Generic resident provisioning — issue #88
+
+New resident creates purpose/instructions, memory, ordered exact skills, configured
+profile, explicit built-in synthetic/empty inputs, budget and optional routine/first
+assignment through one repeatable application operation. Profiles show authenticated
+creator, named manager, creation reason/time and setup provenance; failed setups
+remain inspectable/retryable without active partial residents. Optional first tasks
+are visibly queued with the existing Start action. Generic declaration HTTP PUT is
+update-only. See [resident-provisioning.md](resident-provisioning.md) for the strict
+API, same-transaction management seam and failure/accounting semantics.
+
+Verified full `make check`: 526 backend tests, 50 frontend tests, lint/format/types,
+frontend build and installed-wheel journey. Subsequent UI retry/refresh fixes passed
+four focused browser-component tests and the nine focused provisioning API/application
+tests, with typechecks/build green. Backup tests cover immutable provenance and
+optional-work corruption, concurrent creation limits, complete configuration and
+held restore. Actual browser inspection and independent reviews are pending.
+No provider calls, credential changes or live-data changes were performed.

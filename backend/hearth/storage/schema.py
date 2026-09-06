@@ -2,6 +2,19 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE resident_provisioning (
+        command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, resident_id TEXT NOT NULL UNIQUE,
+        request TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('setup','ready','failed')),
+        reason TEXT, creator TEXT NOT NULL, manager TEXT NOT NULL, originating_run_id TEXT,
+        created_at INTEGER NOT NULL, routine_id TEXT REFERENCES routines(id), task_id TEXT REFERENCES tasks(id),
+        name TEXT NOT NULL
+    )""",
+    """CREATE TABLE resident_profiles (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id), command_id TEXT NOT NULL UNIQUE REFERENCES resident_provisioning(command_id),
+        creator TEXT NOT NULL, manager TEXT NOT NULL, originating_run_id TEXT,
+        created_at INTEGER NOT NULL, creation_reason TEXT NOT NULL,
+        execution_profile TEXT NOT NULL, input_sets TEXT NOT NULL
+    )""",
     """CREATE TABLE resident_skill_sets (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL,
         count INTEGER NOT NULL, sha256 TEXT NOT NULL
