@@ -12,7 +12,7 @@ HEARTH_DATA=/private/tmp/my-hearth-demo \
 HEARTH_OPERATOR_TOKEN=choose-a-local-demo-password \
 HEARTH_MOCK_RUNTIME=codex_mock \
 HEARTH_CODEX_ARCHIVE=/absolute/path/codex-linux-arm64.tgz \
-uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8769
+uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8769
 ```
 
 Open the local URL, enter that operator token (the local control password), and

@@ -8,7 +8,7 @@ Use a fresh data directory with:
 
 ```sh
 HEARTH_MOCK_RUNTIME=process_mock HEARTH_PROCESS_BOUNDARY=container \
-  uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8766
+  uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
 Keep the ordinary data-directory and operator-token configuration from the README.

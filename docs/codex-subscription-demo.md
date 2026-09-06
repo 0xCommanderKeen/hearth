@@ -11,7 +11,7 @@ HEARTH_OPERATOR_TOKEN=choose-a-local-control-password \
 HEARTH_RUNTIME=codex_subscription \
 HEARTH_CODEX_BINARY=/absolute/path/to/native/codex \
 HEARTH_CODEX_AUTH_HOME=/absolute/path/to/private-codex-home \
-uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8771
+uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8771
 ```
 
 Open Townhall, set up Reader, then Residents → Reader → Run summary. Reader

@@ -13,13 +13,13 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from hearth.artifacts import Artifacts
-from hearth.container_rehearsal import IMAGE, ContainerRehearsal, LocalDocker
-from hearth.core import Hearth
-from hearth.database import Database
-from hearth.execution import Execution
-from hearth.memory import Memory
-from hearth.models import Declaration
+from hearth.execution.lifecycle import Execution
+from hearth.integrations.mock.container import IMAGE, ContainerRehearsal, LocalDocker
+from hearth.residents.memory import Memory
+from hearth.residents.models import Declaration
+from hearth.storage.artifacts import Artifacts
+from hearth.storage.database import Database
+from hearth.work.service import Hearth
 
 
 def main():
@@ -43,7 +43,7 @@ def main():
         "real_host_probe": True,
         "module_sha256": hashlib.sha256(
             Path(
-                __import__("hearth.container_rehearsal", fromlist=["__file__"]).__file__
+                __import__("hearth.integrations.mock.container", fromlist=["__file__"]).__file__
             ).read_bytes()
         ).hexdigest(),
         "cases": [],
@@ -100,8 +100,8 @@ def main():
                 # A fresh trusted process observes ownership after the lost reply.
                 code = (
                     "import json,sys; from dataclasses import asdict; "
-                    "from pathlib import Path; from hearth.database import Database; "
-                    "from hearth.container_rehearsal import ContainerRehearsal; "
+                    "from pathlib import Path; from hearth.storage.database import Database; "
+                    "from hearth.integrations.mock.container import ContainerRehearsal; "
                     "w=ContainerRehearsal(Database(Path(sys.argv[1])),Path(sys.argv[2])); "
                     "print(json.dumps(asdict(w.inspect(sys.argv[3]))))"
                 )

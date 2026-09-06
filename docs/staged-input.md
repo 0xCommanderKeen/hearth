@@ -1,6 +1,6 @@
 # Pinned Reader input staging
 
-`hearth.staged_input.stage_run(database, run_id, root)` is an internal building
+`hearth.execution.staging.stage_run(database, run_id, root)` is an internal building
 block for the future trusted worker. It reads the run's declaration, task, memory
 revision and synthetic notes in one SQLite snapshot, serializes the existing
 context contract, and checks the admission-time SHA-256 before any publication.

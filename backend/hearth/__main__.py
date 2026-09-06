@@ -7,12 +7,12 @@ import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from hearth.artifacts import Artifacts
-from hearth.core import Hearth
-from hearth.database import Database
-from hearth.execution import Execution, Executor
-from hearth.models import Declaration, Refused
-from hearth.runtime import MockRuntime
+from hearth.execution.lifecycle import Execution, Executor
+from hearth.integrations.mock.inline import MockRuntime
+from hearth.residents.models import Declaration, Refused
+from hearth.storage.artifacts import Artifacts
+from hearth.storage.database import Database
+from hearth.work.service import Hearth
 
 
 def main() -> None:
@@ -38,7 +38,7 @@ def main() -> None:
     parser.add_argument("--expected-revision", type=int)
     args = parser.parse_args()
     if args.command in {"show-memory", "save-memory"}:
-        from hearth.memory import MAX_MEMORY, Memory
+        from hearth.residents.memory import MAX_MEMORY, Memory
 
         if args.resident is None:
             parser.error("memory commands require --resident")
@@ -92,7 +92,7 @@ def main() -> None:
             parser.error(str(error))
         return
     if args.command != "demo":
-        from hearth.backup import capture, restore, verify
+        from hearth.storage.backup import capture, restore, verify
 
         if args.command == "backup":
             if args.destination is None:

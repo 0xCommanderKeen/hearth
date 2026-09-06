@@ -56,7 +56,7 @@ is sticky and discards pending input. `finish` seals the parser once; a caller
 cannot later reinterpret an unknown exit as a confirmed completion on the same object.
 
 ```python
-from hearth.codex_events import CodexEvents
+from hearth.integrations.codex.events import CodexEvents
 
 parser = CodexEvents()
 # Feed bounded byte chunks from a future trusted worker's stdout reader.

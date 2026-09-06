@@ -15,11 +15,14 @@ import uuid
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-from hearth import codex_container, codex_events, codex_pricing, codex_usage
-from hearth.codex_container import CodexContainer
-from hearth.codex_events import CodexEvents, TokenUsage
-from hearth.codex_pricing import estimate_api_equivalent
-from hearth.container_rehearsal import IMAGE, LocalDocker
+from hearth.integrations.codex import container as codex_container
+from hearth.integrations.codex import events as codex_events
+from hearth.integrations.codex import pricing as codex_pricing
+from hearth.integrations.codex import usage as codex_usage
+from hearth.integrations.codex.container import CodexContainer
+from hearth.integrations.codex.events import CodexEvents, TokenUsage
+from hearth.integrations.codex.pricing import estimate_api_equivalent
+from hearth.integrations.mock.container import IMAGE, LocalDocker
 
 ARCHIVE_URL = "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz"
 ARCHIVE_SHA512 = (
@@ -265,7 +268,7 @@ def main():
         raise RuntimeError("Choose a new report path")
     archive = args.archive.read_bytes()
     assert hashlib.sha512(archive).digest() == base64.b64decode(ARCHIVE_SHA512)
-    child = Path(codex_container.__file__).with_name("codex_fixture.py").resolve()
+    child = Path(codex_container.__file__).with_name("fixture.py").resolve()
     report = {
         "synthetic": True,
         "real_host_probe": True,
@@ -289,9 +292,11 @@ def main():
     }
     temporary = Path(tempfile.mkdtemp(prefix="hearth-codex-offline-"))
     try:
-        package = temporary / "app/hearth"
+        package = temporary / "app/hearth/integrations/codex"
         package.mkdir(parents=True)
         (package / "__init__.py").write_text("")
+        (package.parent / "__init__.py").write_text("")
+        (package.parent.parent / "__init__.py").write_text("")
         for module in (codex_events, codex_pricing, codex_usage):
             source = Path(module.__file__)
             shutil.copyfile(source, package / source.name)

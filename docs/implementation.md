@@ -394,3 +394,17 @@ Lock and rejected credentials clear it. Browser refresh/Lock verification passed
 frontend regressions cover re-entry and server rejection. Review fixes cover
 stalled CLI stdin, partial JSON/UTF-8 termination receipts and modified persisted
 launch inputs, using synthetic subprocesses without provider calls.
+
+## Module organization — issue #95
+
+The backend, browser and tests now follow [module responsibilities](architecture.md).
+Provider event parsing, pricing and receipt validation sit behind the integration
+interface. Shared execution uses one receipted lifecycle while retaining distinct
+subscription lost-launch recovery behavior. Hearth retains transactional accounting
+and dispatch authority; no schema, receipt format, routes or configuration changed.
+
+Focused accounting, subscription, detached-worker and API checks pass, as do backend
+and browser type checks and the browser build. Two interface checks verify cancelled
+receipts reject changed run/input/runtime pins. Full release/browser verification
+and independent reviews are recorded below once complete. This is structural work;
+Karen/shared Skills (#85) and deployment remain outside this issue.
