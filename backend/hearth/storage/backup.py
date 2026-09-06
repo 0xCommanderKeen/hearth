@@ -20,6 +20,7 @@ from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
+from hearth.skills.catalog import checked_revision
 from hearth.storage.artifacts import Artifact, Artifacts, sync_directory
 from hearth.storage.database import SCHEMA_VERSION, Database, schema_matches
 
@@ -209,6 +210,8 @@ def _check_database(root: Path) -> dict:
             raise Refused("backup_references_invalid")
         if not schema_matches(db):
             raise Refused("backup_schema_unexpected")
+        for revision in db.execute("SELECT * FROM skill_revisions"):
+            checked_revision(revision)
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
         if selected is None or selected[0] not in {
             "inline_mock",

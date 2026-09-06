@@ -416,3 +416,25 @@ mock data. No provider call, live-data edit or credential access was needed.
 Independent Standards and Spec reviews both report zero remaining findings after
 fixing offline bundle preservation. Karen/shared Skills (#85) and deployment remain
 outside this issue.
+
+## Shared skill catalog — issue #86
+
+Townhall now has a reusable Skills library with search, create/edit, safe Markdown
+preview, exact revision history and archive controls. The authenticated API returns
+durable create/save/archive receipts and rejects changed retries or stale edits.
+Creator/editor identity and timestamps come from the authenticated route. Immutable
+content, digest, catalog pointer, receipt and audit commit in one SQLite transaction;
+current-data backup verifies content and held restore preserves history read-only.
+See [the catalog contract](shared-skills.md) and [the approved Karen scope](adr/0009-karen-and-shared-skills.md).
+
+Verified with real temporary SQLite: duplicate concurrent create/reopen, competing
+edits, immutable/archive history, request validation, forged provenance refusal,
+audit failure rollback, changed-content refusal and backup/held restore. A rendered
+browser passed create → refresh → revise → old revision → two-editor conflict with
+retained draft → archive → archived search and inspection. Desktop/mobile screenshots
+were inspected, preview contrast corrected, and 390px overflow and inert HTML
+checks passed. These checks use disposable synthetic data and make no provider calls.
+
+`make check` passed 495 backend and 44 browser tests, lint, format, typechecks,
+build and both installed-wheel journeys. Resident assignment/run pins (#87) and
+Karen management/runtime work remain separate subissues. The selected live demo and personal data were untouched.

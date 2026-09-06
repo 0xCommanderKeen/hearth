@@ -12,6 +12,7 @@ import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { Skills } from "../features/residents/Skills";
 import { Memory } from "../features/residents/Memory";
+import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
@@ -101,6 +102,7 @@ type Page =
   | "townhall"
   | "residents"
   | "resident"
+  | "skills"
   | "tasks"
   | "routines"
   | "approvals"
@@ -259,7 +261,9 @@ export function App() {
         setError("Invalid notification link");
         return;
       }
-      if (hash.startsWith("#residents/")) {
+      if (hash.startsWith("#skills/")) {
+        setView("skills");
+      } else if (hash.startsWith("#residents/")) {
         setResidentId(hash.slice(11));
         setView("resident");
       } else if (
@@ -267,6 +271,7 @@ export function App() {
           "#townhall",
           "#hamlet",
           "#residents",
+          "#skills",
           "#tasks",
           "#routines",
           "#approvals",
@@ -326,6 +331,7 @@ export function App() {
           {[
             "townhall",
             "residents",
+            "skills",
             "tasks",
             "routines",
             "approvals",
@@ -383,13 +389,15 @@ export function App() {
             <p className="muted">
               {view === "townhall"
                 ? "Residents, their work, and what needs your attention."
-                : view === "residents"
-                  ? "Everyone who lives here. Select a resident to see their purpose and work."
-                  : view === "resident"
-                    ? "Purpose, controls, memory and recent work."
-                    : view === "hamlet"
-                      ? "Your residents at home."
-                      : "Work and activity recorded by Hearth."}
+                : view === "skills"
+                  ? "Reusable instructions, revision history and shared know-how."
+                  : view === "residents"
+                    ? "Everyone who lives here. Select a resident to see their purpose and work."
+                    : view === "resident"
+                      ? "Purpose, controls, memory and recent work."
+                      : view === "hamlet"
+                        ? "Your residents at home."
+                        : "Work and activity recorded by Hearth."}
             </p>
           </div>
         </div>
@@ -445,6 +453,13 @@ export function App() {
                 completed in recent history
               </span>
             </div>
+            {view === "skills" && (
+              <SkillCatalog
+                key={snapshot.epoch}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
+              />
+            )}
             {view === "hamlet" && (
               <Hamlet snapshot={snapshot} connected={connected} />
             )}

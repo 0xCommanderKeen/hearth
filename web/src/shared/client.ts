@@ -1,3 +1,32 @@
+export type SkillDraft = {
+  name: string;
+  description: string;
+  instructions: string;
+};
+export type CatalogSkill = SkillDraft & {
+  skill_id: string;
+  revision: number;
+  status: "active" | "archived";
+  created_by: string;
+  created_at: number;
+  edited_by: string;
+  edited_at: number;
+  sha256: string;
+};
+export type SkillReceipt = {
+  command_id: string;
+  skill_id: string;
+  revision: number;
+  operation: string;
+  recorded_at: number;
+  actor: string;
+};
+export type SkillChange = {
+  command_id: string;
+  skill_id?: string;
+  content?: SkillDraft;
+  expected_revision?: number;
+};
 export type Routine = {
   id: string;
   resident_id: string;
@@ -192,6 +221,47 @@ export class Client {
     const state = decodeSnapshot(await this.request("/api/state"));
     this.readOnly = state.restore_hold === true;
     return state;
+  }
+  skills(query = "", includeArchived = false) {
+    return this.request<CatalogSkill[]>(
+      `/api/skills?query=${encodeURIComponent(query)}&include_archived=${includeArchived}`,
+    );
+  }
+  skill(id: string, revision?: number) {
+    return this.request<CatalogSkill>(
+      `/api/skills/${encodeURIComponent(id)}${revision ? `?revision=${revision}` : ""}`,
+    );
+  }
+  skillHistory(id: string) {
+    return this.request<CatalogSkill[]>(
+      `/api/skills/${encodeURIComponent(id)}/history`,
+    );
+  }
+  async changeSkill(change: SkillChange) {
+    const receipt = await this.request<SkillReceipt>(
+      change.skill_id
+        ? `/api/skills/${encodeURIComponent(change.skill_id)}${change.content ? "" : "/archive"}`
+        : "/api/skills",
+      {
+        method: change.skill_id && change.content ? "PUT" : "POST",
+        headers: { "Idempotency-Key": change.command_id },
+        body: JSON.stringify({
+          ...change.content,
+          ...(change.skill_id
+            ? { expected_revision: change.expected_revision }
+            : {}),
+        }),
+      },
+    );
+    if (
+      receipt.command_id !== change.command_id ||
+      typeof receipt.skill_id !== "string" ||
+      !Number.isSafeInteger(receipt.revision)
+    )
+      throw new Error(
+        "The skill receipt is incomplete. Retry to reconcile it.",
+      );
+    return receipt;
   }
   seed() {
     return this.request("/api/demo/reader", { method: "POST" });

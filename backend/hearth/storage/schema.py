@@ -2,6 +2,24 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE skills (
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0),
+        created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+        FOREIGN KEY(id, revision) REFERENCES skill_revisions(skill_id, revision)
+            DEFERRABLE INITIALLY DEFERRED
+    )""",
+    """CREATE TABLE skill_revisions (
+        skill_id TEXT NOT NULL REFERENCES skills(id), revision INTEGER NOT NULL CHECK(revision > 0),
+        name TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('active','archived')),
+        edited_by TEXT NOT NULL, edited_at INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(skill_id, revision)
+    )""",
+    """CREATE TABLE skill_operations (
+        command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, skill_id TEXT NOT NULL,
+        revision INTEGER NOT NULL, receipt TEXT NOT NULL,
+        FOREIGN KEY(skill_id, revision) REFERENCES skill_revisions(skill_id, revision)
+    )""",
     """CREATE TABLE approvals (
         id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
         resident_id TEXT NOT NULL REFERENCES residents(id),

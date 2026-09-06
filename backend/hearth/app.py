@@ -35,6 +35,7 @@ from hearth.observation.notifications import MockInbox, Notifications
 from hearth.observation.snapshot import snapshot
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
+from hearth.skills.api import mount_skills
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.routines import Routines
@@ -334,6 +335,8 @@ def create_app(
         return {
             key: result[key] for key in ("run_id", "command_id", "amount", "source", "recorded_at")
         }
+
+    mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"
     if web.is_dir():
