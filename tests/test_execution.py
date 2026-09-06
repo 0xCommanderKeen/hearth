@@ -290,3 +290,46 @@ def test_bad_runtime_evidence_is_unknown_and_never_restarts_work(system, raw):
     (root / "runtime" / (run.id + ".json")).write_text(raw)
     assert worker.step()[0].status == "interrupted"
     assert hearth.run(run.id).finished_at is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("cost", -1),
+        ("cost", "2000"),
+        ("cost", True),
+        ("cost", 1.5),
+        ("cost", 1_000_000_000_001),
+        ("output", []),
+        ("output", " "),
+        ("output", "x" * (512 * 1024 + 1)),
+    ],
+)
+def test_malformed_terminal_evidence_is_unknown_without_stalling_other_residents(
+    system, field, value
+):
+    import json
+
+    hearth, _, root = system
+    first = admit(hearth)
+    worker = executor(system, "hold")
+    worker.step()
+    hearth.clock = lambda: NOW + 1
+    hearth.save_resident("other", Declaration("Other", "Synthetic", 10000), expected_revision=0)
+    receipt = hearth.submit("other-task", "other", "Synthetic", expires_at=NOW + 600)
+    second = hearth.admit(receipt.task_id, reserve=5000)
+    path = root / "runtime" / (first.id + ".json")
+    record = json.loads(path.read_text())
+    record["evidence"] = {"status": "succeeded", "output": "Synthetic", "cost": 2000} | {
+        field: value
+    }
+    path.write_text(json.dumps(record))
+    worker.runtime.scenario = "success"
+    worker.step()
+    worker.step()
+    assert hearth.run(first.id).status == "interrupted"
+    assert hearth.run(first.id).finished_at is None
+    assert hearth.run(second.id).status == "succeeded"
+    next_task = hearth.submit("blocked", "reader", "Synthetic", expires_at=NOW + 600)
+    with pytest.raises(Refused):
+        hearth.admit(next_task.task_id, reserve=1)

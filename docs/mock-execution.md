@@ -24,8 +24,8 @@ synthetic usage, and audit fact in one database transaction. Publication followe
 by a failed commit leaves an orphan; replay verifies and reuses identical bytes.
 An orphan is not visible as an artifact until the database reference commits.
 
-Known usage settles the reservation and counts against the run's admission-day UTC
-allowance. Outstanding runs carry exposure across midnight and block overlapping
+Known usage settles the reservation and counts in resident-local budget windows
+by the run's admission timestamp; see `local-budget-windows.md`. Outstanding runs carry exposure across midnight and block overlapping
 admission. Unknown usage creates a persistent resident pause; it never counts as
 zero or silently resets at midnight. A reservation is a scheduling/accounting
 policy, not a guarantee that a provider would stop at that amount.
@@ -35,6 +35,10 @@ The upgrader checks foreign keys before committing; failed migration restores
 schema 1 and its records. A schema-1 binary refuses schema 2 rather than running
 with an incompatible lifecycle. No automatic downgrade is supplied.
 
-Pending: authenticated browser interfaces, pause resolution, approval broker,
-schedules, bounded observation retention, backup/restore, and import rehearsals.
-Real-host isolation and live external action semantics remain separate future gates.
+Malformed terminal cost/output is unknown evidence. It retains the run's ownership
+and does not prevent unrelated residents from making progress in the same pass.
+
+Browser interfaces, explicit usage reconciliation, operator pause, approvals,
+routines, notifications and held backup/import rehearsals are implemented in mocks.
+Bounded observation retention, actual-host isolation, compatibility conversion and
+live acceptance remain separate gates; see `implementation.md`.

@@ -37,8 +37,9 @@ Artifacts are read through their checksummed metadata, not exposed as arbitrary 
 - Actual localhost HTTP returned the built HTML and schema-1 state; authenticated
   `/api/events` returned `text/event-stream` and an explicit reset with a complete
   simulated snapshot. Wheel inspection verifies all referenced assets are included.
-- Visual browser inspection is pending: no connected browser was available, and
-  native Chrome access waited on macOS Accessibility/Screen Recording permissions.
-  Do not claim screenshot, responsive-layout, or accessibility-tree verification.
-- GitHub CI is still blocked before job execution by the account billing/spending
-  restriction. Local verification is not a substitute claim of a CI pass.
+- Rendered Chromium desktop (1440px) and mobile (390px) inspection now verifies
+  the mock login, Reader setup, task/result view and Hamlet/Townhall layouts.
+  No page errors or horizontal overflow were observed in that baseline journey.
+  This is headless browser evidence, not macOS native accessibility verification.
+- GitHub CI runs successfully after the repository became public. Current integrated
+  verification and review evidence are in `integration-review.md`.
