@@ -1,4 +1,4 @@
-"""Skill content survives revisions, execution and held portable reconstruction."""
+"""Skill content survives revisions, execution and held backup restore."""
 
 import json
 import sqlite3
@@ -14,7 +14,6 @@ from hearth.backup import capture, restore
 from hearth.core import Hearth
 from hearth.database import Database
 from hearth.models import Declaration, Refused
-from hearth.portable import compare, export, import_state, upgrade_state, validate
 from hearth.run_access import RunAccess
 
 TOKEN = "synthetic-operator-token"
@@ -141,94 +140,6 @@ def test_operator_routes_preserve_other_fields_exclude_ambient_text_and_reject_r
         )
 
 
-def exported(system):
-    _, hearth, root = system
-    original = hearth.resident("reader")
-    hearth.save_resident(
-        "reader",
-        replace(original.declaration, skill_text="Second synthetic skill"),
-        expected_revision=1,
-    )
-    capture(root / "data", root / "backup")
-    export(root / "backup", root / "export")
-    return (root / "export/state.json").read_bytes()
-
-
-def test_skill_history_round_trip_and_semantic_diff(system):
-    _, _, root = system
-    content = exported(system)
-    import_state(content, root / "imported")
-    copy = Hearth(Database(root / "imported/hearth.db"))
-    assert copy.database.restored()
-    assert copy.resident("reader", revision=1).declaration.skill_text == SKILL
-    assert copy.resident("reader").declaration.skill_text == "Second synthetic skill"
-    capture(root / "imported", root / "again-backup")
-    export(root / "again-backup", root / "again-export")
-    assert compare(content, (root / "again-export/state.json").read_bytes())["equal"]
-    changed = json.loads(content)
-    changed["tables"]["declarations"][0]["skill_text"] += " changed"
-    diff = compare(content, json.dumps(changed).encode())
-    assert diff["totals"]["modified"] == 1
-    assert "skill_text" in diff["changes"][0]["fields"]
-
-
-def test_legacy_portable_requires_explicit_lossless_upgrade(system):
-    _, _, root = system
-    current = json.loads(exported(system))
-    legacy = json.loads(json.dumps(current))
-    for row in legacy["tables"]["declarations"]:
-        del row["skill_text"]
-    legacy["version"], legacy["schema"] = 1, 10
-    del legacy["tables"]["memory_revisions"]
-    del legacy["tables"]["run_memory"]
-    content = json.dumps(legacy).encode()
-    assert validate(content)["schema"] == 10
-    with pytest.raises(Refused, match="portable_upgrade_required"):
-        import_state(content, root / "denied")
-    assert not (root / "denied").exists()
-    result = upgrade_state(content, root / "upgraded")
-    assert result["version"] == 3 and result["schema"] == 12
-    upgraded = json.loads((root / "upgraded/state.json").read_bytes())
-    for row in upgraded["tables"]["declarations"]:
-        assert row.pop("skill_text") == ""
-    upgraded["version"], upgraded["schema"] = 1, 10
-    assert upgraded["tables"].pop("memory_revisions") == []
-    assert upgraded["tables"].pop("run_memory") == []
-    assert upgraded == legacy
-    with pytest.raises(Refused, match="portable_comparison_requires_same_format"):
-        compare(content, (root / "upgraded/state.json").read_bytes())
-    import_state((root / "upgraded/state.json").read_bytes(), root / "imported")
-    assert (
-        Hearth(Database(root / "imported/hearth.db")).resident("reader").declaration.skill_text
-        == ""
-    )
-    malformed = json.loads(content)
-    malformed["tables"]["declarations"][0]["skill_text"] = "unrecognized legacy content"
-    with pytest.raises(Refused, match="portable_columns_invalid"):
-        upgrade_state(json.dumps(malformed).encode(), root / "malformed")
-
-
-def test_skill_schema_migration_failure_rolls_back(system, monkeypatch):
-    import hearth.database as module
-
-    _, hearth, _ = system
-    with hearth.database.transaction(write=True) as db:
-        db.execute("ALTER TABLE declarations DROP COLUMN skill_text")
-        db.execute("PRAGMA user_version=10")
-    original = module.skill_schema
-
-    def fail(db):
-        original(db)
-        raise RuntimeError("migration failure")
-
-    monkeypatch.setattr(module, "skill_schema", fail)
-    with pytest.raises(RuntimeError, match="migration failure"):
-        hearth.database.initialize()
-    with sqlite3.connect(hearth.database.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 10
-        assert "skill_text" not in [row[1] for row in db.execute("PRAGMA table_info(declarations)")]
-
-
 def test_cli_reads_saves_and_refuses_stale_revision(system):
     _, hearth, root = system
     source = root / "declaration.json"
@@ -268,3 +179,19 @@ def test_cli_reads_saves_and_refuses_stale_revision(system):
         text=True,
     )
     assert shown.returncode == 0 and json.loads(shown.stdout)["declaration"]["skill_text"] == SKILL
+
+
+def test_skill_history_survives_held_backup_restore(system):
+    _, hearth, root = system
+    original = hearth.resident("reader")
+    hearth.save_resident(
+        "reader",
+        replace(original.declaration, skill_text="Second synthetic skill"),
+        expected_revision=1,
+    )
+    capture(root / "data", root / "backup")
+    restore(root / "backup", root / "restored")
+    copy = Hearth(Database(root / "restored/hearth.db"))
+    assert copy.database.restored()
+    assert copy.resident("reader", revision=1).declaration.skill_text == SKILL
+    assert copy.resident("reader").declaration.skill_text == "Second synthetic skill"

@@ -3,8 +3,7 @@
 Hamlet and Townhall are views in one application, using one same-origin client and
 the same complete snapshot. A static SVG home represents Reader; it glows only when
 the connected server reports a running mock. A disconnected client explicitly
-labels its state stale. This initial view supports the selected one-reader workflow;
-rendering an imported fleet remains a later migration acceptance requirement.
+labels its state stale. This view supports the selected new Reader workflow.
 
 All `/api/` requests authenticate with an operator bearer credential before body
 parsing. Request bodies are capped at 64 KiB. The browser keeps the credential in
@@ -29,9 +28,9 @@ Artifacts are read through their checksummed metadata, not exposed as arbitrary 
 
 ## Verification, 2026-09-06
 
-- 58 Python tests cover the domain, runtime, migrations, auth, API journeys, cursor
+- Backend tests cover the domain, runtime, initialization, auth, API journeys, cursor
   behavior, and active-work retention. Ruff, ty, source/wheel build pass.
-- 14 client/component tests cover login, seeding, view switching, stable submission
+- Client/component tests cover login, seeding, view switching, stable submission
   retries, expiry reconciliation, cancellation intent, output, logout and late
   responses, credential rejection, and snapshot ordering. TypeScript/build pass.
 - Actual localhost HTTP returned the built HTML and schema-1 state; authenticated

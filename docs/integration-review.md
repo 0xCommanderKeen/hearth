@@ -2,7 +2,7 @@
 
 Scope: bootstrap `fe8bf69` through `0705c55`, fifteen implementation slices,
 plus the fixes tracked by issue #31. This review supports integrating the mock
-implementation. It does not establish real-host, migration, canary or retirement
+implementation. It does not establish real-host or sustained daily-use
 acceptance. Both reviewers inspected the same fixed diff independently.
 
 ## Standards

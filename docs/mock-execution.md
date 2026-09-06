@@ -48,15 +48,13 @@ admission. Unknown usage creates a persistent resident pause; it never counts as
 zero or silently resets at midnight. A reservation is a scheduling/accounting
 policy, not a guarantee that a provider would stop at that amount.
 
-Schema 2 rebuilds the foundation's constrained task/run tables transactionally.
-The upgrader checks foreign keys before committing; failed migration restores
-schema 1 and its records. A schema-1 binary refuses schema 2 rather than running
-with an incompatible lifecycle. No automatic downgrade is supplied.
+The current database schema is initialized atomically in a fresh data directory.
+Incompatible layouts are refused without being changed.
 
 Malformed terminal cost/output is unknown evidence. It retains the run's ownership
 and does not prevent unrelated residents from making progress in the same pass.
 
 Browser interfaces, explicit usage reconciliation, operator pause, approvals,
-routines, notifications and held backup/import rehearsals are implemented in mocks.
+routines, notifications and held backup/restore rehearsals are implemented in mocks.
 Bounded observation retention, actual-host isolation, compatibility conversion and
 live acceptance remain separate gates; see `implementation.md`.

@@ -44,7 +44,7 @@ use these interfaces; snapshots carry the same persisted decisions and outcomes.
 `tests/test_authority.py` covers simultaneous decisions and dispatchers, expired
 and changed authority, digest mismatch, corrupted artifacts, request replay,
 non-idempotent uncertainty, acknowledgement loss, receipt mismatch, destination
-revision conflicts, audit rollback, and schema-3 upgrade. API tests cover the
+revision conflicts and audit rollback. API tests cover the
 operator journey and authentication; component tests cover preview before review,
 exact digest submission, request identity retention, and unknown-state controls.
 

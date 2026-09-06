@@ -1,70 +1,24 @@
-# Mock core review before import work
+# Mock core simplicity review
 
-Date: 2026-09-06. This is a review of the implemented mock core, not completion of
-the plan's Phase 2 exit gate. The useful real workflow and actual-host authority
-checks remain unproven under the current mock-only direction.
+Updated 2026-09-06 after the fresh-start decision. Hearth keeps one operational
+SQLite authority, one browser client and one release artifact. Commands and audit
+commit together; runtime and effect receipts describe external evidence without
+becoming competing authorities over work.
 
-## What became simpler
+Migration requirements had added a second ownership registry, portable formats,
+reconstruction and historical upgrade paths. Those requirements are now cancelled,
+so their implementation is removed. A fresh database is defined directly. Runtime
+run tokens and the supervisor lock remain because they enforce safe local work.
+Current Hearth backups still matter for recovery; restore stays held until runtime
+and effect authority can be reconciled.
 
-There is one SQLite authority for declarations, commands, tasks, runs, grants,
-approvals, action intent, routine occurrences, delivery intent, and audit. Ordinary
-state changes pair their audit facts in the same transaction. The browser reads
-one snapshot/stream and receives ordinary command receipts; it does not wait for a
-second telemetry authority to acknowledge its commands.
+The remaining modules own concrete behavior: Execution handles launch/cancel/finish;
+Authority and Broker handle exact permission and uncertain effects; Routines handles
+occurrence identity; Notifications handles delivery; Backup handles consistent held
+copies; Residents handles revisioned configuration and memory. There is no reason
+for another service, generic plugin system or broad compatibility layer.
 
-Manual and routine tasks share task creation and admission. Runtime evidence,
-artifact files, and effect receipts remain separate because they describe facts
-outside the database transaction. They cannot independently approve or reassign
-owned work. Unknown evidence retains ownership rather than becoming a retry rule.
-There is one backend/browser release artifact and no separate configuration watcher,
-remote scheduler, delegation framework, plugin system or event replay database.
-
-The important module interfaces own their failure handling: Execution owns launch/
-cancel/finish evidence; Broker owns exact permission consumption and uncertain
-effects; Routines owns occurrence identity; Notifications owns delivery retries;
-Backup owns a consistent copy and held restore. These modules earn their separation
-by keeping ordering and recovery out of the browser and other callers. There is no
-reason yet to split them into separately deployed processes or generic frameworks.
-
-## What remains incomplete
-
-- A short-lived exact-run read-only context credential is now tested through mock
-  HTTP clients (issue #19; `run-context-access.md`). Actual runtime injection and
-  host isolation remain pending; current mock approval requests are operator-driven.
-  A real resident must never receive the operator token, database, engine socket
-  or effect credentials.
-- Process-lifetime supervisor ownership and drained shutdown are now implemented
-  and tested (issue #17; `supervision.md`). Standalone mock operations retain their
-  per-operation locks; this is not a v1/v2 transfer guard.
-- Unknown usage now has an explicit immutable operator-reported mock reconciliation
-  flow (issue #21; `mock-usage-reconciliation.md`). It preserves unrelated holds.
-  Real provider evidence ingestion and corrections remain pending.
-- Restore and import are deliberately read-only. Hearth mock reverse export and
-  detailed semantic comparison are implemented. Explicit cross-version backup
-  upgrade is exercised in issue #33; source-system conversion, live memory and
-  execution-ownership transfer remain incomplete. Package version alone is not a
-  sufficient production release identity; runs still need exact real runtime and
-  pricing provenance when that adapter is selected.
-- Rendered headless Chromium desktop/mobile journeys are verified. Native
-  assistive-technology auditing, actual-host isolation, real cancellation/usage/tool
-  enforcement and useful real output checks remain pending.
-- The initial stack is merged and main CI passes; see `implementation.md` for the
-  current checkpoint. Production deployment remains separate and unverified.
-
-## Decision within current authorization
-
-Continue bounded mock implementation of the missing authority/supervision contracts
-and synthetic import/transfer rehearsals. Do not expand into live residents or
-claim the Phase 2 exit gate. Reassess this decision against the actual selected
-runtime and a useful task before live expansion; if enforcement requires bringing
-back competing authorities, stop and redesign that seam.
-
-The review exposed a concrete supervision omission, now addressed: revisioned
-operator pause/resume gates new admissions. Safety holds remain independent reasons
-for refusal in the same database. Existing work retains its actual runtime state
-and explicit cancellation; pausing never claims it has stopped.
-
-Historical verification at the original pause-control checkpoint: `make check` passes with 116 backend tests and
-24 browser tests, including pause/resume, conflicting controls, unknown-usage hold
-preservation, cancellation, and audit rollback. The behavioral matrix now names
-mock evidence and remaining real gates explicitly.
+Mock lifecycle, authority and browser evidence are useful but do not prove the real
+Reader workflow. Before adding scope, select one bounded real task, verify actual
+read-only host/runtime behavior, and measure whether recovery and daily use are
+understandable. Real testing remains deferred by the current user direction.

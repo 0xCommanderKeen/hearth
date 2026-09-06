@@ -16,7 +16,6 @@ from hearth.core import Hearth
 from hearth.database import Database
 from hearth.memory import MAX_MEMORY, Memory, memory_path
 from hearth.models import Declaration, Refused
-from hearth.portable import compare, export, import_state, upgrade_state, validate
 from hearth.run_access import RunAccess
 
 TOKEN = "synthetic-memory-operator-token"
@@ -163,39 +162,30 @@ def test_directory_symlinks_are_never_followed(system, level):
         capture(root / "data", root / "invalid")
 
 
-def test_memory_history_and_pins_survive_backup_import_and_reverse_export(system):
+def test_memory_history_and_pins_survive_held_backup_restore(system):
     app, memory, root = system
     memory.save("reader", TEXT, expected_revision=0)
     run = admit(app)
     memory.save("reader", "After admission", expected_revision=1)
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
-    assert (
-        Memory(Hearth(Database(root / "restored/hearth.db"))).read("reader", revision=1)["text"]
-        == TEXT
-    )
-    export(root / "backup", root / "export")
-    content = (root / "export/state.json").read_bytes()
-    doc = json.loads(content)
-    assert doc["tables"]["run_memory"] == [
-        {"run_id": run.id, "resident_id": "reader", "revision": 1}
-    ]
-    import_state(content, root / "imported")
-    copy = Memory(Hearth(Database(root / "imported/hearth.db")))
+    copy = Memory(Hearth(Database(root / "restored/hearth.db")))
     assert copy.read("reader")["text"] == "After admission"
     assert copy.read("reader", revision=1)["text"] == TEXT
     assert copy.hearth.database.restored()
+    with copy.hearth.database.transaction() as db:
+        assert dict(db.execute("SELECT * FROM run_memory").fetchone()) == {
+            "run_id": run.id,
+            "resident_id": "reader",
+            "revision": 1,
+        }
     with pytest.raises(Refused, match="restored_copy_read_only"):
         copy.save("reader", "Not allowed", expected_revision=2)
-    capture(root / "imported", root / "again-backup")
-    export(root / "again-backup", root / "again-export")
-    assert compare(content, (root / "again-export/state.json").read_bytes())["equal"]
-    assert import_state(content, root / "imported")["read_only"]
-    missing = json.loads(content)
-    del missing["files"][next(iter(missing["files"]))]
-    with pytest.raises(Refused, match="portable_memory_invalid"):
-        import_state(json.dumps(missing).encode(), root / "invalid")
-    assert not (root / "invalid").exists()
+    capture(root / "restored", root / "again-backup")
+    restore(root / "again-backup", root / "again-restored")
+    again = Memory(Hearth(Database(root / "again-restored/hearth.db")))
+    assert again.read("reader") == copy.read("reader")
+    assert again.read("reader", revision=1) == copy.read("reader", revision=1)
 
 
 def test_consistently_rehashed_backup_cannot_hide_corrupt_memory(system):
@@ -210,42 +200,6 @@ def test_consistently_rehashed_backup_cannot_hide_corrupt_memory(system):
     with pytest.raises(Refused, match="memory_corrupt"):
         restore(root / "backup", root / "invalid")
     assert not (root / "invalid").exists()
-
-
-@pytest.mark.parametrize("version,schema", [(1, 10), (2, 11)])
-def test_legacy_upgrade_adds_no_invented_memory(system, version, schema):
-    _, _, root = system
-    capture(root / "data", root / "backup")
-    export(root / "backup", root / "export")
-    payload = json.loads((root / "export/state.json").read_bytes())
-    del payload["tables"]["run_memory"]
-    del payload["tables"]["memory_revisions"]
-    if version == 1:
-        for declaration in payload["tables"]["declarations"]:
-            del declaration["skill_text"]
-    payload["version"], payload["schema"] = version, schema
-    content = json.dumps(payload).encode()
-    assert validate(content)["schema"] == schema
-    assert compare(content, content)["equal"]
-    with pytest.raises(Refused, match="portable_upgrade_required"):
-        import_state(content, root / "denied")
-    upgrade_state(content, root / "upgraded")
-    current = json.loads((root / "upgraded/state.json").read_bytes())
-    assert current["tables"].pop("run_memory") == []
-    assert current["tables"].pop("memory_revisions") == []
-    if version == 1:
-        for declaration in current["tables"]["declarations"]:
-            assert declaration.pop("skill_text") == ""
-    current["version"], current["schema"] = version, schema
-    assert current == payload
-    unsupported = json.loads(content)
-    digest = hashlib.sha256(b"Synthetic").hexdigest()
-    unsupported["files"]["memory/" + memory_path("reader", digest)] = {
-        "sha256": digest,
-        "text": "Synthetic",
-    }
-    with pytest.raises(Refused, match="portable_path_invalid"):
-        upgrade_state(json.dumps(unsupported).encode(), root / "unsupported")
 
 
 def test_operator_memory_routes_read_only_runtime_and_large_bounded_text(system):
@@ -377,43 +331,21 @@ def test_failed_admission_rolls_back_the_memory_pin_and_reservation(system):
     assert memory.read("reader")["revision"] == 1
 
 
-def test_memory_migration_failure_preserves_previous_schema(system, monkeypatch):
-    import hearth.database as module
-
-    app, _, _ = system
-    database = app.state.hearth.database
-    with database.transaction(write=True) as db:
-        db.execute("DROP TABLE run_memory")
-        db.execute("DROP TABLE memory_revisions")
-        db.execute("PRAGMA user_version=11")
-    original = module.memory_schema
-
-    def fail(db):
-        original(db)
-        raise RuntimeError("memory migration failure")
-
-    monkeypatch.setattr(module, "memory_schema", fail)
-    with pytest.raises(RuntimeError, match="memory migration failure"):
-        database.initialize()
-    with sqlite3.connect(database.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 11
-        assert not db.execute(
-            "SELECT 1 FROM sqlite_master WHERE name IN ('run_memory','memory_revisions')"
-        ).fetchone()
-        assert db.execute("SELECT COUNT(*) FROM residents").fetchone()[0] == 2
-
-
-def test_portable_memory_pin_cannot_cross_resident_identity(system):
+def test_backup_memory_pin_cannot_cross_resident_identity(system):
     app, memory, root = system
     memory.save("reader", TEXT, expected_revision=0)
     memory.save("other", "Other synthetic memory", expected_revision=0)
     run = admit(app)
     capture(root / "data", root / "backup")
-    export(root / "backup", root / "export")
-    payload = json.loads((root / "export/state.json").read_bytes())
-    payload["tables"]["run_memory"][0]["resident_id"] = "other"
-    with pytest.raises(Refused, match="portable_references_invalid"):
-        import_state(json.dumps(payload).encode(), root / "invalid")
+    path = root / "backup/hearth.db"
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE run_memory SET resident_id='other' WHERE run_id=?", (run.id,))
+    manifest_path = root / "backup/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["hearth.db"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        restore(root / "backup", root / "invalid")
     assert not (root / "invalid").exists()
     from hearth.observation import snapshot
 

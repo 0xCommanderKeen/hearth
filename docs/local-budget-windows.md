@@ -1,7 +1,7 @@
 # Resident-local budget windows
 
 Declarations have an explicit IANA `budget_timezone`, validated at save time.
-Existing declarations and runs default to UTC during schema-9-to-10 migration.
+New declarations default to UTC unless an explicit budget zone is selected.
 Each new run pins its declaration revision, local budget date and timezone for
 provenance. The browser displays the resident's budget timezone.
 
@@ -18,7 +18,6 @@ cap. Outstanding exposure still spans day boundaries, and missing-usage/operator
 holds remain enforced. Reconciliation preserves the original admission timestamp.
 
 Synthetic tests cover local versus UTC midnight, spring/fall day lengths, repeated
-hour spending, timezone edits, invalid timezone refusal and upgrade preservation.
-This defines Hearth's behavior independently of any external migration format.
+hour spending, timezone edits and invalid timezone refusal.
 External imports must preserve their source accounting timestamps and explicitly
 validate any differences before execution is enabled.

@@ -19,7 +19,7 @@ message, including after approval expiry. Unreadable/corrupt receipts remain vis
 as unconfirmed and are checked later. If no receipt exists, expired notifications
 and resolved approval requests become obsolete rather than being sent. Run notices
 expire after seven days; approval notices share the request's exclusive expiry.
-No historical events are backfilled by schema migration.
+Notifications are created by current operational events.
 
 The authenticated snapshot and local browser inbox distinguish queued, unconfirmed,
 delivered and obsolete records. Links open exact approval previews or results even

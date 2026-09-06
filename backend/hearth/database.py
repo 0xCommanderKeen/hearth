@@ -1,76 +1,26 @@
 """One database transaction owns each state change and its corresponding audit fact."""
 
 import sqlite3
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from hearth.migrations import (
-    accounting_schema,
-    approval_schema,
-    budget_zone_schema,
-    control_schema,
-    execution_schema,
-    memory_schema,
-    notification_schema,
-    observation_schema,
-    routine_schema,
-    run_access_schema,
-    skill_schema,
-)
 from hearth.models import Refused
+from hearth.schema import SCHEMA
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 1
 
-SCHEMA = (
-    """CREATE TABLE residents (
-        id TEXT PRIMARY KEY,
-        revision INTEGER NOT NULL CHECK (revision > 0)
-    )""",
-    """CREATE TABLE declarations (
-        resident_id TEXT NOT NULL REFERENCES residents(id),
-        revision INTEGER NOT NULL CHECK (revision > 0),
-        name TEXT NOT NULL,
-        purpose TEXT NOT NULL,
-        daily_limit INTEGER NOT NULL CHECK (daily_limit >= 0),
-        created_at INTEGER NOT NULL,
-        PRIMARY KEY (resident_id, revision)
-    )""",
-    """CREATE TABLE tasks (
-        id TEXT PRIMARY KEY,
-        resident_id TEXT NOT NULL REFERENCES residents(id),
-        instruction TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('queued', 'starting')),
-        created_at INTEGER NOT NULL
-    )""",
-    """CREATE TABLE commands (
-        id TEXT PRIMARY KEY,
-        payload_digest TEXT NOT NULL,
-        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id),
-        accepted_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL
-    )""",
-    """CREATE TABLE runs (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id),
-        resident_id TEXT NOT NULL,
-        resident_revision INTEGER NOT NULL,
-        owner_token TEXT NOT NULL UNIQUE,
-        status TEXT NOT NULL CHECK (status = 'starting'),
-        reserved INTEGER NOT NULL CHECK (reserved >= 0),
-        budget_day TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (resident_id, resident_revision) REFERENCES declarations(resident_id, revision)
-    )""",
-    "CREATE UNIQUE INDEX active_resident ON runs(resident_id)",
-    """CREATE TABLE audit (
-        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind TEXT NOT NULL,
-        resource_id TEXT NOT NULL,
-        at INTEGER NOT NULL,
-        detail TEXT NOT NULL
-    )""",
-)
+
+def schema_matches(connection: sqlite3.Connection) -> bool:
+    """Reject incompatible layouts even if another database reused our version number."""
+    actual = {
+        row[0]
+        for row in connection.execute(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name != 'sqlite_sequence'"
+        )
+    }
+    return actual == set(SCHEMA)
 
 
 class Database:
@@ -78,7 +28,7 @@ class Database:
 
     def __init__(self, path: Path):
         self.path = path
-        # Do not mkdir or migrate on ordinary reads. Initialization is explicit.
+        # Initialization is explicit; constructing a handle does not create directories.
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, isolation_level=None, timeout=10)
@@ -88,56 +38,30 @@ class Database:
         return connection
 
     def initialize(self) -> None:
-        """Serialize first initialization and refuse schemas newer than this binary."""
+        """Create the complete schema once; never upgrade an existing store."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = self._connect()
         try:
-            # SQLite's table rebuild recipe requires disabling FK enforcement before BEGIN.
-            # Every migration is checked before commit, and ordinary connections enforce FKs.
-            connection.execute("PRAGMA foreign_keys = OFF")
             connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version > SCHEMA_VERSION:
-                raise RuntimeError("Database schema is newer than this Hearth binary")
             if version == 0:
+                if connection.execute("SELECT 1 FROM sqlite_master").fetchone():
+                    raise RuntimeError("Incompatible Hearth database; use a fresh data directory")
                 for statement in SCHEMA:
                     connection.execute(statement)
-                version = 1
-            if version == 1:
-                execution_schema(connection)
-                version = 2
-            if version == 2:
-                observation_schema(connection)
-                version = 3
-            if version == 3:
-                approval_schema(connection)
-                version = 4
-            if version == 4:
-                routine_schema(connection)
-                version = 5
-            if version == 5:
-                notification_schema(connection)
-                version = 6
-            if version == 6:
-                control_schema(connection)
-                version = 7
-            if version == 7:
-                run_access_schema(connection)
-                version = 8
-            if version == 8:
-                accounting_schema(connection)
-                version = 9
-            if version == 9:
-                budget_zone_schema(connection)
-                version = 10
-            if version == 10:
-                skill_schema(connection)
-                version = 11
-            if version == 11:
-                memory_schema(connection)
+                connection.execute(
+                    "INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),)
+                )
+                connection.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
+                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            elif version != SCHEMA_VERSION:
+                raise RuntimeError("Incompatible Hearth database; use a fresh data directory")
+            if not schema_matches(connection):
+                raise RuntimeError(
+                    "Incompatible Hearth database layout; use a fresh data directory"
+                )
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                raise RuntimeError("Migration would leave invalid references")
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                raise RuntimeError("Database contains invalid references")
             connection.commit()
         except BaseException:
             connection.rollback()

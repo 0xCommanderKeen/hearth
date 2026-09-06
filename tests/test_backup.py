@@ -195,8 +195,23 @@ def test_uncertain_action_and_receipt_survive_restore_without_consumption(
     copy_effect = MockNoticeboard(restored / "mock-noticeboard")
     copy_broker = Broker(Authority(copy, Artifacts(restored / "artifacts")), copy_effect)
     assert copy_broker.inspect(proposal.id)["status"] == "unknown"
-    assert copy_effect.inspect(proposal.id).digest == proposal.digest
+    receipt = copy_effect.inspect(proposal.id)
+    assert receipt is not None and receipt.digest == proposal.digest
     with pytest.raises(Refused, match="restored_copy_read_only"):
         copy_broker.execute(proposal.id)
     assert copy_broker.inspect(proposal.id)["status"] == "unknown"
     assert broker.inspect(proposal.id)["status"] == "unknown"
+
+
+@pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=12"])
+def test_incompatible_database_cannot_be_published_as_a_current_backup(system, tmp_path, change):
+    hearth, _, _, root = system
+    import sqlite3
+
+    with sqlite3.connect(hearth.database.path) as db:
+        db.execute(change)
+    before = hearth.database.path.read_bytes()
+    with pytest.raises(Refused, match="backup_schema_"):
+        capture(root, tmp_path / "invalid-backup")
+    assert not (tmp_path / "invalid-backup").exists()
+    assert hearth.database.path.read_bytes() == before

@@ -1,8 +1,7 @@
 # Persistent resident memory
 
 Each resident has one operator-authored Markdown memory note. Reader can read its
-pinned copy but cannot write memory. This first workflow uses only synthetic text;
-it is not an importer for arbitrary source-system memory trees.
+pinned copy but cannot write memory. This first workflow uses only synthetic text.
 
 `Memory.save(resident_id, text, expected_revision=N)` serializes with admission and
 other writes in Hearth's SQLite database. Revision zero means no prior memory.
@@ -62,24 +61,14 @@ The source is raw UTF-8 Markdown. Save/read use the same core validation as HTTP
 stale saves fail without changing memory. Resolve ambiguous responses by reading
 back the current revision; do not automatically overwrite another edit.
 
-## Backup and migration evidence
+## Backup evidence
 
-Schema 12 adds memory revisions and run-memory references with foreign keys. Older
-backups 6–11 upgrade explicitly into held copies with empty memory history; older
-runs remain pinned to no memory. Failed migrations retain the prior schema.
-
-Portable format 3/schema 12 preserves every memory revision, run reference and
-file, including orphans. Verification rejects missing/corrupt referenced memory and
-references to another resident's memory. Nested memory paths are allowlisted and
-checked without following symlinks. Restore/import verify before publishing a new
-held destination; all new directory links are synced before publication.
-
-Formats 1/schema 10 and 2/schema 11 remain verifiable. `upgrade-state` creates a
-fresh current-format export, adding empty memory tables while retaining every old
-value/file; format 1 also gains empty skill text. No memory content or historical
-run context is invented. Compare same-format documents, or upgrade first.
+Current-schema backups preserve every memory revision, run reference and file,
+including orphans. Verification rejects missing/corrupt content and references to
+another resident's memory. Nested paths are checked without following symlinks.
+Restore verifies before publishing a new held destination; new directory links are
+synced before publication.
 
 Synthetic tests cover concurrent saves, publication/commit failure, admission
-rollback, original-input pinning, corruption/symlink/FIFO refusal, scope enforcement,
-held restore/import and reverse semantic equality. Real resident memory, source
-identity/capability mappings and full transfer/rollback remain separate gates.
+rollback, original-input pinning, corruption/symlink/FIFO refusal, scope enforcement
+and memory history through held backup/restore.

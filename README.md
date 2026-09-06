@@ -4,9 +4,8 @@ A home for agents that do useful work. Persistent residents have purpose, memory
 and enforced permissions. Hamlet shows their real activity; Townhall provides
 operator controls in the same application.
 
-Hearth is being built as a private successor to Warren. The first workflow is a
-new read-only daily-summary resident. Existing residents remain on Warren while
-the lifecycle and migration procedures are proven.
+Hearth is a standalone project, starting with a new read-only daily-summary
+Reader and fresh data. Development currently uses mocks and synthetic notes.
 
 ## Current implementation
 
@@ -29,8 +28,10 @@ contains the compiled browser, and verifies its referenced assets are present.
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 
-The demo stores its local state in ignored `.hearth/demo`. Use `--data /some/path`
-for a separate simulation. Every output and cost is labeled simulated. The mock
+The demo stores its local state in ignored `.hearth/demo`. Use `--data /some/fresh/path`
+for a separate simulation. Incompatible prototype databases are refused; there is
+no upgrade or data-import command. Existing data is never automatically rewritten.
+Every output and cost is labeled simulated. The mock
 returns a fixed synthetic summary; it does not interpret arbitrary instructions.
 Runtime scenarios include success, held execution, failure, and unknown usage for
 deterministic recovery tests.
@@ -53,4 +54,4 @@ not runtime/provider selectors. For browser development, `pnpm --dir web dev`
 proxies its `/api` requests to the same local backend.
 
 See the [implementation gates](docs/implementation.md),
-[rebuild plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).
+[project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).
