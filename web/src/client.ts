@@ -51,6 +51,7 @@ export type Run = {
   cancellation_requested: number;
 };
 export type Snapshot = {
+  restore_hold?: boolean;
   schema_version: 1;
   simulated: true;
   epoch: string;
@@ -126,12 +127,18 @@ export function decodeSnapshot(value: unknown): Snapshot {
 }
 
 export class Client {
+  private readOnly = false;
   constructor(private token: string) {}
   clear() {
     this.token = "";
   }
 
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    if (
+      this.readOnly &&
+      !["GET", "HEAD"].includes((options.method ?? "GET").toUpperCase())
+    )
+      throw new RequestError(409, "This restored copy is read-only.");
     // Callers supply only local API paths; credentials cannot be redirected to another origin.
     if (!path.startsWith("/api/") || path.includes("\\"))
       throw new Error("Invalid local API path");
@@ -159,7 +166,9 @@ export class Client {
   }
 
   async state() {
-    return decodeSnapshot(await this.request("/api/state"));
+    const state = decodeSnapshot(await this.request("/api/state"));
+    this.readOnly = state.restore_hold === true;
+    return state;
   }
   seed() {
     return this.request("/api/demo/reader", { method: "POST" });

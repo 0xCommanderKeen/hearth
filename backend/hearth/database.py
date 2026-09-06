@@ -12,6 +12,7 @@ from hearth.migrations import (
     observation_schema,
     routine_schema,
 )
+from hearth.models import Refused
 
 SCHEMA_VERSION = 6
 
@@ -120,6 +121,13 @@ class Database:
         finally:
             connection.close()
 
+    def restored(self) -> bool:
+        with self.transaction() as db:
+            return (
+                db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
+                is not None
+            )
+
     @contextmanager
     def transaction(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
         connection = self._connect()
@@ -129,6 +137,13 @@ class Database:
             connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
                 raise RuntimeError("Initialize a compatible Hearth database before use")
+            if (
+                write
+                and connection.execute(
+                    "SELECT 1 FROM system_meta WHERE key='restore_hold'"
+                ).fetchone()
+            ):
+                raise Refused("restored_copy_read_only")
             yield connection
             connection.commit()
         except BaseException:

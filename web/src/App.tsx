@@ -432,6 +432,12 @@ export function App() {
           </section>
         ) : (
           <>
+            {snapshot.restore_hold && (
+              <div className="notice" role="status">
+                Restored copy · read-only. Execution, scheduling and effects are
+                disabled.
+              </div>
+            )}
             <div className="status-strip">
               <span>
                 <i className={`dot ${connected ? "working" : ""}`} />

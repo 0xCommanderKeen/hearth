@@ -121,6 +121,8 @@ def create_app(
         raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
     database.initialize()
+    if database.restored():
+        supervise = False
     hearth = Hearth(database)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     executor = Executor(execution, MockRuntime(data / "mock-runtime", scenario=scenario))

@@ -115,3 +115,28 @@ it("allows a fresh command when an expired submission was never accepted", async
     }),
   ).rejects.toMatchObject({ status: 410 });
 });
+
+it("keeps restored-state reads available but refuses mutations before fetch", async () => {
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          schema_version: 1,
+          simulated: true,
+          epoch: "restored",
+          cursor: 1,
+          restore_hold: true,
+          residents: [],
+          tasks: [],
+          runs: [],
+          activity: [],
+        }),
+      ),
+  );
+  const client = new Client("synthetic-test-token");
+  await client.state();
+  await expect(client.seed()).rejects.toThrow("read-only");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await client.state();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

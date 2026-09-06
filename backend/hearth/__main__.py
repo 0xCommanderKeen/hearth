@@ -17,9 +17,28 @@ from hearth.runtime import MockRuntime
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["demo"])
+    parser.add_argument("command", choices=["demo", "backup", "verify-backup", "restore"])
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
+    if args.command != "demo":
+        from hearth.backup import capture, restore, verify
+
+        if args.command == "backup":
+            if args.destination is None:
+                parser.error("backup requires --destination")
+            result = capture(args.data, args.destination)
+        elif args.command == "verify-backup":
+            if args.source is None:
+                parser.error("verify-backup requires --source")
+            result = verify(args.source)
+        else:
+            if args.source is None or args.destination is None:
+                parser.error("restore requires --source and --destination")
+            result = restore(args.source, args.destination)
+        print(json.dumps(result, indent=2))
+        return
     db = Database(args.data / "hearth.db")
     db.initialize()
     hearth = Hearth(db)

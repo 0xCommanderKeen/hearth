@@ -178,6 +178,8 @@ class Executor:
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
     def step(self) -> list[Run]:
+        if self.execution.hearth.database.restored():
+            raise Refused("restored_copy_read_only")
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         with self.lock_path.open("a") as lock:
             try:
