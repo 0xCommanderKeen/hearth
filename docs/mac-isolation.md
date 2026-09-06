@@ -77,9 +77,9 @@ establishes the actual Codex process/tool boundary. [Codex permissions](https://
 The [offline Reader integration rehearsal](container-rehearsal.md) now verifies
 actual 0400/0700 staged input using the non-root host UID/GID, durable container
 claims and fresh-process reconciliation with a fixed synthetic executable. The
-original UID-65534 canary probe remains a separate boundary check. The actual worker
-still needs application launch authority, durable terminal receipts, a pinned Codex
-image/version, final-file/event handling and provenance through accounting/artifacts.
+original UID-65534 canary probe remains a separate boundary check. The rehearsal
+now retains durable terminal receipts. The actual worker still needs application
+launch authority, backup integration, a pinned Codex image/version, final-file/event handling and provenance through accounting/artifacts.
 
 A network-disabled runner cannot call the model. The future trusted model channel
 must keep provider credentials outside generated tools, constrain requests and

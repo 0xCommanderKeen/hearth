@@ -160,3 +160,19 @@ fresh SQLite, synthetic memory and the fixed Python image; no Codex or credentia
 an application runtime and describe unavailable terminal logs after explicit cleanup.
 Full `make check` passes 306 backend/35 browser plus both installed mock journeys;
 14 fault-boundary tests use real SQLite, and the Mac rehearsal is separately opt-in.
+
+## Durable container terminal evidence
+
+Issue #64 preserves bounded immutable terminal receipts tied to the exact claim
+and container ID before cleanup. Validated raw events and exit status survive
+container removal and daemon loss. Corrupt/missing receipts remain unknown; competing
+conflicting captures leave a durable hold marker. No evidence is overwritten and
+storage failures prevent removal. Invalid transcripts remain visibly invalid, with
+no invented usage or costs. Automatic container restart is explicitly disabled.
+
+Full `make check` passes 330 backend/35 browser and both installed mock journeys,
+including 38 container ownership/receipt checks. Twenty concurrent-conflict
+repetitions pass. The updated actual Mac rehearsal verifies success and cancellation
+receipts survive container removal; its report records the final module hash.
+[Receipt behavior and remaining gates](container-rehearsal.md) still defer operational
+worker/backup integration, actual Codex/model-channel execution and real acceptance.
