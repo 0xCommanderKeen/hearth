@@ -293,9 +293,13 @@ Current-data backup/held restore independently revalidates the SQLite receipt an
 preserves explicit operator reconciliation. Run inspection and the browser identify
 API-equivalent simulated amounts. See [the accounting seam](codex-accounting.md).
 
-Full `make check` passed 446 backend and 35 browser tests, lint/types/build and both
-installed-wheel journeys. Fourteen accounting tests cover ownership/binding,
+Full `make check` passed 448 backend and 35 browser tests, lint/types/build and both
+installed-wheel journeys. Sixteen accounting tests cover ownership/binding,
 standard/Fast pricing, $10/day exposure, atomic rollback, unknown usage and held
 recovery. An unsupported priced run stays interrupted while unrelated mock work
 continues. This does not enable a Codex worker or complete issue #69; production
 collector isolation, terminal handoff and operational dispatch/recovery remain.
+
+Review regressions ensure missing counters cannot mask contradictions in known
+request/CLI totals or cache subsets. The refreshed Mac probe passes all three
+synthetic scenarios with the final journal and pricing source pins.

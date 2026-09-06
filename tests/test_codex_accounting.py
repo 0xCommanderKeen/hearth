@@ -234,3 +234,23 @@ def test_api_snapshot_labels_estimated_usage(system):
     assert response.status_code == 200
     observed = next(item for item in response.json()["runs"] if item["id"] == run.id)
     assert observed["usage_source"] == "api_equivalent_mock"
+
+
+@pytest.mark.parametrize("usage", [TokenUsage(31, 10, 8, 3, None), TokenUsage(30, 31, 8, 3, None)])
+def test_missing_usage_cannot_hide_known_contradictions(system, usage):
+    hearth, execution, _ = system
+    run = admit(system)
+    # Sealing persists the terminal evidence before rejecting its interpretation.
+    try:
+        journal_for(system, run, usage=usage)
+    except ValueError:
+        pass
+    journal = UsageJournal(
+        system[2] / run.id, UsageBinding(run.id, run.input_digest, MODEL, "standard")
+    )
+    with pytest.raises(Refused, match="run_usage_invalid"):
+        execution.finish_from_usage(run.id, run.owner_token, journal)
+    assert hearth.run(run.id).finished_at is None
+    with hearth.database.transaction() as db:
+        assert db.execute("SELECT COUNT(*) FROM run_usage").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 0
