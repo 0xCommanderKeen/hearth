@@ -5,9 +5,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from hearth.migrations import execution_schema, observation_schema
+from hearth.migrations import approval_schema, execution_schema, observation_schema
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = (
     """CREATE TABLE residents (
@@ -95,6 +95,9 @@ class Database:
                 version = 2
             if version == 2:
                 observation_schema(connection)
+                version = 3
+            if version == 3:
+                approval_schema(connection)
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Migration would leave invalid references")
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

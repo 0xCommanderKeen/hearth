@@ -1,5 +1,8 @@
 """One consistent operator snapshot. Credentials and ownership tokens never leave it."""
 
+from dataclasses import asdict
+
+from hearth.authority import _approval
 from hearth.core import ACTIVE_RUNS, Hearth
 
 
@@ -51,5 +54,30 @@ def snapshot(hearth: Hearth) -> dict:
             "tasks": tasks,
             "runs": runs,
             "activity": audit,
-            "limits": {"tasks": 100, "runs": 100, "activity": 30},
+            "publication_policies": [
+                dict(row)
+                for row in db.execute(
+                    "SELECT resident_id, revision, enabled FROM publication_policies "
+                    "ORDER BY resident_id"
+                )
+            ],
+            "approvals": [
+                asdict(_approval(row))
+                for row in db.execute(
+                    "SELECT approvals.* FROM approvals LEFT JOIN publication_actions a "
+                    "ON a.id = approvals.id ORDER BY "
+                    "COALESCE(a.status IN ('executing','unknown'), 0) DESC, "
+                    "approvals.status = 'pending' DESC, "
+                    "approvals.created_at DESC, approvals.id DESC LIMIT 100"
+                )
+            ],
+            "actions": [
+                dict(row)
+                for row in db.execute(
+                    "SELECT id, status, reason FROM publication_actions "
+                    "ORDER BY status IN ('executing','unknown') DESC, "
+                    "updated_at DESC, id DESC LIMIT 100"
+                )
+            ],
+            "limits": {"tasks": 100, "runs": 100, "activity": 30, "approvals": 100, "actions": 100},
         }

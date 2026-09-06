@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from hearth.artifacts import Artifacts
+from hearth.authority import Authority
+from hearth.broker import Broker, MockNoticeboard
 from hearth.core import Hearth
 from hearth.database import Database
 from hearth.execution import Execution, Executor
@@ -82,6 +84,24 @@ class TaskPost(BaseModel):
     expires_at: int
 
 
+class PolicyPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    enabled: bool
+    expected_revision: int = Field(ge=0)
+
+
+class ApprovalPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    artifact_id: str = Field(min_length=1, max_length=128)
+    expires_at: int
+
+
+class DecisionPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reviewed_digest: str = Field(min_length=64, max_length=64)
+    approve: bool
+
+
 def create_app(
     data: Path, token: str, *, scenario: str = "success", supervise: bool = True
 ) -> FastAPI:
@@ -92,6 +112,8 @@ def create_app(
     hearth = Hearth(database)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     executor = Executor(execution, MockRuntime(data / "mock-runtime", scenario=scenario))
+    authority = Authority(hearth, execution.artifacts)
+    broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
     health = {"executor_error": None}
 
     async def supervise_runs():
@@ -232,6 +254,39 @@ def create_app(
     def artifact(artifact_id: str):
         metadata, content = execution.artifact(artifact_id)
         return {"artifact": asdict(metadata), "content": content}
+
+    @app.post("/api/residents/{resident_id}/publication-policy")
+    def publication_policy(resident_id: str, body: PolicyPost):
+        revision = authority.set_publication_policy(
+            resident_id, enabled=body.enabled, expected_revision=body.expected_revision
+        )
+        return {"revision": revision, "enabled": body.enabled, "simulated": True}
+
+    @app.post("/api/approvals", status_code=201)
+    def propose(body: ApprovalPost, idempotency_key: str = Header(min_length=1, max_length=128)):
+        return asdict(
+            authority.request(idempotency_key, body.artifact_id, expires_at=body.expires_at)
+        )
+
+    @app.get("/api/approvals/{approval_id}")
+    def review(approval_id: str):
+        approval = authority.inspect(approval_id)
+        metadata, content = execution.artifact(approval.artifact_id)
+        if metadata.sha256 != approval.payload["sha256"]:
+            raise Refused("artifact_changed")
+        return {"approval": asdict(approval), "content": content}
+
+    @app.post("/api/approvals/{approval_id}/decision")
+    def decide(approval_id: str, body: DecisionPost):
+        return asdict(
+            authority.decide(
+                approval_id, reviewed_digest=body.reviewed_digest, approve=body.approve
+            )
+        )
+
+    @app.post("/api/approvals/{approval_id}/execute")
+    def execute_action(approval_id: str):
+        return broker.execute(approval_id)
 
     web = Path(__file__).parent / "web"
     if web.is_dir():

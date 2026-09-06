@@ -1,3 +1,19 @@
+export type Approval = {
+  id: string;
+  artifact_id: string;
+  resident_id: string;
+  digest: string;
+  expires_at: number;
+  status: string;
+  payload: {
+    action: string;
+    destination: string;
+    sha256: string;
+    resident_revision: number;
+    policy_revision: number;
+    destination_revision: number;
+  };
+};
 export type Resident = {
   id: string;
   name: string;
@@ -32,6 +48,13 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
+  approvals?: Approval[];
+  publication_policies?: {
+    resident_id: string;
+    revision: number;
+    enabled: number;
+  }[];
+  actions?: { id: string; status: string; reason: string | null }[];
   activity: {
     sequence: number;
     kind: string;
@@ -128,6 +151,42 @@ export class Client {
     return this.request<{ content: string }>(
       `/api/artifacts/${encodeURIComponent(id)}`,
     );
+  }
+
+  publicationPolicy(resident: string, enabled: boolean, revision: number) {
+    return this.request(
+      `/api/residents/${encodeURIComponent(resident)}/publication-policy`,
+      {
+        method: "POST",
+        body: JSON.stringify({ enabled, expected_revision: revision }),
+      },
+    );
+  }
+  propose(id: string, artifact: string, expires: number) {
+    return this.request<Approval>("/api/approvals", {
+      method: "POST",
+      headers: { "Idempotency-Key": id },
+      body: JSON.stringify({ artifact_id: artifact, expires_at: expires }),
+    });
+  }
+  review(id: string) {
+    return this.request<{ approval: Approval; content: string }>(
+      `/api/approvals/${encodeURIComponent(id)}`,
+    );
+  }
+  decide(approval: Approval, approve: boolean) {
+    return this.request<Approval>(
+      `/api/approvals/${encodeURIComponent(approval.id)}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reviewed_digest: approval.digest, approve }),
+      },
+    );
+  }
+  execute(id: string) {
+    return this.request(`/api/approvals/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+    });
   }
 
   async submit(pending: PendingTask) {

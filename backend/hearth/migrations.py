@@ -56,3 +56,33 @@ def execution_schema(db: sqlite3.Connection) -> None:
 def observation_schema(db: sqlite3.Connection) -> None:
     db.execute("CREATE TABLE system_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     db.execute("INSERT INTO system_meta VALUES (?, ?)", ("epoch", str(uuid.uuid4())))
+
+
+def approval_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE publication_policies (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id),
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        enabled INTEGER NOT NULL CHECK (enabled IN (0,1))
+    )""")
+    db.execute("""CREATE TABLE publication_targets (
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK (revision > 0)
+    )""")
+    db.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
+    db.execute("""CREATE TABLE approvals (
+        id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        payload TEXT NOT NULL, digest TEXT NOT NULL,
+        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','denied','expired')),
+        decided_at INTEGER
+    )""")
+    db.execute("""CREATE TABLE publication_actions (
+        id TEXT PRIMARY KEY REFERENCES approvals(id),
+        destination TEXT NOT NULL REFERENCES publication_targets(id),
+        digest TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('executing','unknown','completed','refused')),
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        reason TEXT, receipt TEXT
+    )""")
+    db.execute("""CREATE UNIQUE INDEX publication_claim ON publication_actions(destination)
+        WHERE status IN ('executing','unknown')""")
