@@ -64,3 +64,12 @@ class UsagePost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     amount: int = Field(ge=0, le=1_000_000_000_000)
     evidence: str = Field(min_length=1, max_length=2000)
+
+
+class HouseholdPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    daily_limit: int
+    timezone: str
+    resident_limit: int
+    concurrency_limit: int
+    expected_revision: int = Field(ge=0)

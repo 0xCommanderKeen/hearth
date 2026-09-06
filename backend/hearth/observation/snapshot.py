@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict
 
+from hearth.authority.household import household_state
 from hearth.authority.permissions import _approval
 from hearth.work.service import ACTIVE_RUNS, Hearth
 
@@ -67,6 +68,7 @@ def snapshot(hearth: Hearth) -> dict:
             )
         ]
         return {
+            "household": household_state(db, int(hearth.clock())),
             "restore_hold": bool(
                 db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
             ),

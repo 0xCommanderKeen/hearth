@@ -15,6 +15,7 @@ from contextlib import ExitStack, contextmanager
 from importlib.metadata import version
 from pathlib import Path
 
+from hearth.authority.household import validate_windows
 from hearth.execution import usage as codex_accounting
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
@@ -243,6 +244,7 @@ def _check_database(root: Path) -> dict:
                     or boundary[0] != "container"
                 ):
                     raise Refused("backup_runtime_invalid")
+        validate_windows(db)
         for run in db.execute("SELECT * FROM runs"):
             if (
                 run["runtime_kind"] != selected[0]

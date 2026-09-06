@@ -16,6 +16,7 @@ from hearth.api.requests import (
     ApprovalPost,
     DecisionPost,
     DeclarationPost,
+    HouseholdPost,
     MemoryPost,
     PausePost,
     PolicyPost,
@@ -24,6 +25,7 @@ from hearth.api.requests import (
     UsagePost,
 )
 from hearth.authority.broker import Broker, MockNoticeboard
+from hearth.authority.household import Household
 from hearth.authority.permissions import Authority
 from hearth.authority.run_access import RunAccess
 from hearth.execution.accounting import Accounting
@@ -156,6 +158,14 @@ def create_app(
         return StreamingResponse(
             changes(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
         )
+
+    @app.get("/api/household")
+    def household():
+        return Household(hearth).read()
+
+    @app.put("/api/household")
+    def save_household(body: HouseholdPost):
+        return Household(hearth).save(**body.model_dump())
 
     @app.get("/api/residents/{resident_id}")
     def resident(resident_id: str, revision: int | None = None):
