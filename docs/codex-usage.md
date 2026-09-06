@@ -5,7 +5,10 @@ generated request, then its terminal usage before delivering completion to the
 CLI. Its binding pins run ID, admitted input digest, model, service mode and price
 schedule. It never dispatches a request, supplies credentials or mutates a budget.
 
-Files are exclusive, bounded and synced with their directories. A lock serializes
+Files are exclusive, bounded and synced with their directories. Recovered reads
+re-establish file and directory synchronization before trusting bytes left by a
+failed write. Duplicate comparisons preserve JSON scalar types, including after
+sealing; late contradictions invalidate subsequent estimates. A lock serializes
 request intent, completion and sealing. An unresolved request or unknown prior
 usage prevents another intent; reopening is observation, not permission to retry.
 Identical response receipt replay is harmless; contradictory receipts leave a

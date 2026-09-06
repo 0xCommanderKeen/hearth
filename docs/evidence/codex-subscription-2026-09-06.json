@@ -11,7 +11,7 @@
     "probe-codex-subscription-child.py": "8d70e8c29b50aef1365e390cca027deb8b18f0557d6ee14bab81419d45061692",
     "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e",
     "codex_pricing.py": "2d65db5725b2d9f4a93d36bc238fea35f1bbb2ca00b49d461a860d6a66fc4c58",
-    "codex_usage.py": "b13aa93be5db59646bb3f36fb3b1e4d1e8c7770dc0f5ea801773307bf1d1ad12"
+    "codex_usage.py": "00dfef03c69a7b6f9c0518c670d0fe018e1f7ce12228ab7c2228e535f2c01e57"
   },
   "cases": [
     {
@@ -34,7 +34,7 @@
             "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
             "mode": "standard",
             "model": "gpt-6-astra",
-            "run_id": "hearth-codex-offline-aeb41feb84c54f3daa3564744dedd6c4",
+            "run_id": "hearth-codex-offline-1516b7fef5e14d4b9156d7ed147cd313",
             "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
           },
           "request-000.json": {
@@ -43,12 +43,12 @@
           "terminal.json": {
             "exit_code": 0,
             "final": "Synthetic summary: the Reader mock is ready. No model was called.",
-            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-ef88-7a82-a082-a8cb35d09d5f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n"
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077b3-755b-7082-8179-96fd7b48151f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n"
           }
         },
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-ef88-7a82-a082-a8cb35d09d5f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077b3-755b-7082-8179-96fd7b48151f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
         "stderr": "Reading additional input from stdin...\n",
         "requests": [
           {
@@ -193,7 +193,7 @@
             "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
             "mode": "standard",
             "model": "gpt-6-astra",
-            "run_id": "hearth-codex-offline-c6c1e5bb4f5d4517a1a2a07ec4b0ea7b",
+            "run_id": "hearth-codex-offline-5cb59864f549468998feb4bc285fe48a",
             "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
           },
           "request-000.json": {
@@ -205,13 +205,13 @@
           "terminal.json": {
             "exit_code": 0,
             "final": "Synthetic summary: the Reader mock is ready. No model was called.",
-            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-f986-7fd2-89ef-12c44e63633f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n"
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077b3-7caf-7123-ad9f-a4ae1727f731\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n"
           }
         },
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-f986-7fd2-89ef-12c44e63633f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
-        "stderr": "Reading additional input from stdin...\n2026-09-06T17:02:34.769253Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T17:02:34.770114Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077b3-7caf-7123-ad9f-a4ae1727f731\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
+        "stderr": "Reading additional input from stdin...\n2026-09-06T17:10:47.099476Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T17:10:47.100213Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
         "requests": [
           {
             "method": "POST",
@@ -365,7 +365,7 @@
                 "call_id": "call_exec",
                 "output": "unsupported call: exec_command",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a077ab-fa2b-7f82-892a-9ea269a65251"
+                  "turn_id": "01a077b3-7d1c-70e1-929d-2218419d77a5"
                 }
               },
               {
@@ -373,7 +373,7 @@
                 "call_id": "call_image",
                 "output": "view_image is not allowed because you do not support image inputs",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a077ab-fa2b-7f82-892a-9ea269a65251"
+                  "turn_id": "01a077b3-7d1c-70e1-929d-2218419d77a5"
                 }
               }
             ]
@@ -406,7 +406,7 @@
           "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
           "mode": "standard",
           "model": "gpt-6-astra",
-          "run_id": "hearth-codex-offline-92f4dd36767e4192bae52323b29010ce",
+          "run_id": "hearth-codex-offline-9c4d73cf823d41c8b3540e3b6574e65d",
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
         },
         "request-000.json": {

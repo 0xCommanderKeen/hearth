@@ -273,8 +273,12 @@ checks it after container exit. Production collector isolation, admission pins,
 atomic accounting/audit and backup integration remain next; no real credentials
 or provider calls are enabled.
 
-Validation: 424 backend and 35 browser tests, lint/types/build and both installed
-journeys passed. Twenty real-file journal checks cover interruption, conflict,
+Validation: 432 backend and 35 browser tests, lint/types/build and both installed
+journeys passed. Twenty-eight real-file journal checks cover interruption, conflict,
 reopening, mismatched bindings, malformed/linked evidence, sync failure and
 concurrent intent. The actual Mac probe passed completion, tool injection and
 interrupted-request persistence with owned container cleanup.
+
+Review regressions verify type-sensitive duplicate receipts, sticky late conflicts
+after sealing and successful file/directory resynchronization before trusting
+recovered evidence left by failed writes.

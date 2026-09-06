@@ -134,8 +134,13 @@ def test_unsafe_or_corrupt_files_do_not_produce_estimates(tmp_path, damage):
 def test_lost_sync_acknowledgement_leaves_intent_unresolved(tmp_path, monkeypatch):
     journal = UsageJournal.create(tmp_path / "journal", BINDING)
 
+    original_sync = os.fsync
+
     def failed_sync(fd):
-        raise OSError("sync failed")
+        path = journal.root / "request-000.json"
+        if path.exists() and os.fstat(fd).st_ino == path.stat().st_ino:
+            raise OSError("sync failed")
+        original_sync(fd)
 
     with monkeypatch.context() as patch:
         patch.setattr(os, "fsync", failed_sync)
@@ -162,3 +167,82 @@ def test_competing_dispatch_intents_cannot_bypass_unresolved_usage(tmp_path):
         None,
     ]
     assert len(list(journal.root.glob("request-*.json"))) == 1
+
+
+@pytest.mark.parametrize("field,value", [("input_tokens", 30.0), ("cached_input_tokens", False)])
+def test_malformed_duplicate_usage_is_a_permanent_conflict(tmp_path, field, value):
+    usage = replace(USAGE, cached_input_tokens=0) if field == "cached_input_tokens" else USAGE
+    journal = UsageJournal.create(tmp_path / "journal", BINDING)
+    request = journal.begin()
+    journal.complete(request, usage)
+    with pytest.raises(ValueError, match="conflicting"):
+        journal.complete(request, replace(usage, **{field: value}))
+    with pytest.raises(ValueError, match="conflicting"):
+        journal.seal(transcript(usage), exit_code=0, final="summary")
+
+
+def test_boolean_duplicate_exit_code_cannot_preserve_known_terminal_evidence(tmp_path):
+    journal = UsageJournal.create(tmp_path / "journal", BINDING)
+    journal.complete(journal.begin(), USAGE)
+    journal.seal(transcript(), exit_code=0, final="summary")
+    with pytest.raises(ValueError, match="conflicting"):
+        journal.seal(transcript(), exit_code=False, final="summary")
+    with pytest.raises(ValueError, match="conflicting"):
+        journal.estimate()
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("directory", [False, True])
+def test_recovered_receipt_requires_successful_file_and_directory_sync(
+    tmp_path, monkeypatch, terminal, directory
+):
+    journal = UsageJournal.create(tmp_path / "journal", BINDING)
+    request = journal.begin()
+    if terminal:
+        journal.complete(request, USAGE)
+    path = journal.root / ("terminal.json" if terminal else "usage-000.json")
+    original_sync = os.fsync
+
+    def failed_sync(fd):
+        target = journal.root if directory else path
+        if path.exists() and os.fstat(fd).st_ino == target.stat().st_ino:
+            raise OSError("receipt sync failed")
+        original_sync(fd)
+
+    def replay():
+        if terminal:
+            return journal.estimate()
+        return journal.complete(request, USAGE)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", failed_sync)
+        with pytest.raises(OSError, match="receipt sync failed"):
+            if terminal:
+                journal.seal(transcript(), exit_code=0, final="summary")
+            else:
+                journal.complete(request, USAGE)
+        with pytest.raises(OSError, match="receipt sync failed"):
+            replay()
+    synced = []
+
+    def tracked_sync(fd):
+        synced.append(os.fstat(fd).st_ino)
+        original_sync(fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", tracked_sync)
+        replay()
+    assert path.stat().st_ino in synced and journal.root.stat().st_ino in synced
+
+
+def test_late_identical_receipt_is_harmless_and_late_conflict_invalidates_estimate(tmp_path):
+    journal = UsageJournal.create(tmp_path / "journal", BINDING)
+    request = journal.begin()
+    journal.complete(request, USAGE)
+    journal.seal(transcript(), exit_code=0, final="summary")
+    journal.complete(request, USAGE)
+    assert journal.estimate().microdollars == 623
+    with pytest.raises(ValueError, match="conflicting"):
+        journal.complete(request, replace(USAGE, input_tokens=31))
+    with pytest.raises(ValueError, match="conflicting"):
+        UsageJournal(journal.root, BINDING).estimate()

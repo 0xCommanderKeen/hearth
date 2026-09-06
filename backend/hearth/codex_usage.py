@@ -35,9 +35,14 @@ def read(path: Path):
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValueError("unsafe usage file")
         raw = stream.read(MAX_STREAM + 1)
-    if len(raw) > MAX_STREAM:
-        raise ValueError("oversized usage file")
-    return json.loads(raw, object_pairs_hook=unique_object)
+        if len(raw) > MAX_STREAM:
+            raise ValueError("oversized usage file")
+        value = json.loads(raw, object_pairs_hook=unique_object)
+        # A readable file may be left by an unsuccessful publish/fsync. Reconcile
+        # both file and directory durability before relying on recovered evidence.
+        os.fsync(stream.fileno())
+        sync_directory(path.parent)
+    return value
 
 
 def publish(path: Path, value):
@@ -58,6 +63,16 @@ def sync_directory(path: Path):
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def same_document(left, right) -> bool:
+    # JSON scalar types matter: 0 != false and 30 != 30.0 for token evidence.
+    try:
+        return json.dumps(left, sort_keys=True, allow_nan=False) == json.dumps(
+            right, sort_keys=True, allow_nan=False
+        )
+    except TypeError, ValueError:
+        return False
 
 
 class UsageJournal:
@@ -147,18 +162,18 @@ class UsageJournal:
 
     def complete(self, request: int, usage: TokenUsage) -> None:
         with self.locked():
-            if (self.root / "terminal.json").exists():
-                raise ValueError("usage already sealed")
             intents = self._requests()
             if type(request) is not int or not 0 <= request < len(intents):
                 raise ValueError("unknown usage request")
             path = self.root / f"usage-{request:03}.json"
             value = asdict(usage)
             if path.exists():
-                if read(path) != value:
+                if not same_document(read(path), value):
                     publish(self.root / "conflict.json", {"request": request})
                     raise ValueError("conflicting usage")
                 return
+            if (self.root / "terminal.json").exists():
+                raise ValueError("usage already sealed")
             publish(path, value)
 
     def seal(self, stdout: str, *, exit_code: int, final: str | None) -> Estimate:
@@ -168,7 +183,7 @@ class UsageJournal:
             terminal = {"stdout": stdout, "exit_code": exit_code, "final": final}
             path = self.root / "terminal.json"
             if path.exists():
-                if read(path) != terminal:
+                if not same_document(read(path), terminal):
                     publish(self.root / "conflict.json", {"terminal": True})
                     raise ValueError("conflicting terminal evidence")
             else:
