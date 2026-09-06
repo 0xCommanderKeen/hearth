@@ -76,8 +76,9 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    cost. Test this parser with documented synthetic event fixtures, including
    interrupted and malformed streams; fixture success is not real compatibility.
 4. **Stage only Reader's pinned inputs.** The internal [staging helper](staged-input.md)
-   now publishes digest-checked synthetic context; worker exposure and isolation
-   remain pending. Materialize purpose, skill, task, memory
+   now publishes digest-checked synthetic context. The [container rehearsal](container-rehearsal.md)
+   verifies its unchanged permissions and durable ownership with a fixed synthetic
+   executable; application/Codex worker integration remains pending. Materialize purpose, skill, task, memory
    and synthetic notes from the admitted context into an isolated per-run directory.
    Do not mount Hearth's database, host home, other residents, operator token,
    approval credentials or engine socket. Treat notes as data, not permission.

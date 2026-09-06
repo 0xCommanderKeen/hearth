@@ -74,11 +74,12 @@ is not its only option. Neither configuration alone nor this Python-image probe
 establishes the actual Codex process/tool boundary. [Codex permissions](https://learn.chatgpt.com/docs/permissions),
 [sandbox behavior](https://learn.chatgpt.com/docs/agent-approvals-security).
 
-The actual worker still needs durable container identity/reconciliation, staged
-input exposure with compatible UID permissions, a pinned Codex image/version,
-verified final-file/event handling and provenance through accounting/artifacts.
-The synthetic fixture uses readable files; it does not yet mount `stage_run`'s
-0400 files into a UID-65534 runner. Do not silently broaden actual input permissions.
+The [offline Reader integration rehearsal](container-rehearsal.md) now verifies
+actual 0400/0700 staged input using the non-root host UID/GID, durable container
+claims and fresh-process reconciliation with a fixed synthetic executable. The
+original UID-65534 canary probe remains a separate boundary check. The actual worker
+still needs application launch authority, durable terminal receipts, a pinned Codex
+image/version, final-file/event handling and provenance through accounting/artifacts.
 
 A network-disabled runner cannot call the model. The future trusted model channel
 must keep provider credentials outside generated tools, constrain requests and
