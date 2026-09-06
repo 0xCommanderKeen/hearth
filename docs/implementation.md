@@ -78,10 +78,21 @@ backups preserve validated durable claims; active/unknown runs refuse capture.
 Restored stores infer their runtime and stay held. The schema is defined directly;
 incompatible prototype layouts require fresh data and are never converted.
 
-Real model/pricing provenance, Codex event parsing and Mac confinement remain
+Real model/pricing provenance, live Codex event compatibility and Mac confinement remain
 pending. This wiring enables process-backed simulations only. Full `make check`
 passes 226 backend and 35 browser tests. Installed-wheel HTTP journeys pass for
 both runtimes, including pinned result/restart and verified held backup restore.
+
+## Codex event interpretation
+
+Issue #56 adds an [offline exec JSONL parser](codex-events.md), tested only with
+synthetic streams. It bounds framing/output, validates lifecycle and token values,
+preserves unknown usage and ambiguous final messages, and requires observed process
+exit before completed interpretation. It returns no runtime evidence or dollar cost.
+Real CLI event compatibility, final-file ownership, pricing and Mac isolation remain
+pending; no Codex task was launched. Full `make check` passes 273 backend and
+35 browser tests, including 47 synthetic parser checks and installed-wheel journeys
+for both mock runtimes.
 
 ## Remaining acceptance
 
