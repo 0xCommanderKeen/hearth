@@ -90,8 +90,8 @@ synthetic streams. It bounds framing/output, validates lifecycle and token value
 preserves unknown usage and ambiguous final messages, and requires observed process
 exit before completed interpretation. It returns no runtime evidence or dollar cost.
 Real CLI event compatibility, final-file ownership, pricing and Mac isolation remain
-pending; no Codex task was launched. Full `make check` passes 271 backend and
-35 browser tests, including 45 synthetic parser checks and installed-wheel journeys
+pending; no Codex task was launched. Full `make check` passes 273 backend and
+35 browser tests, including 47 synthetic parser checks and installed-wheel journeys
 for both mock runtimes.
 
 ## Remaining acceptance

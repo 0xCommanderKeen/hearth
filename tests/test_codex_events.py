@@ -172,6 +172,20 @@ def test_invalid_json_is_bounded_failure_not_an_exception(raw):
     assert result.status == "invalid" and result.output is None
 
 
+@pytest.mark.parametrize("number", [b"1e999", b"-1e999"])
+def test_overflow_in_opaque_field_invalidates_otherwise_complete_stream(number):
+    parser = CodexEvents()
+    parser.feed(
+        b'{"type":"thread.started","thread_id":"synthetic-thread","extra":'
+        + number
+        + b"}\n"
+        + wire([START, message(), DONE])
+    )
+    result = parser.finish(exit_code=0)
+    assert result.status == "invalid" and result.reason == "invalid_json"
+    assert result.output is None and result.usage is None
+
+
 @pytest.mark.parametrize(
     "usage",
     [

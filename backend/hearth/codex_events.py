@@ -1,6 +1,7 @@
 """Bounded offline interpretation of Codex exec JSONL, not a runtime or billing adapter."""
 
 import json
+import math
 from dataclasses import dataclass
 
 MAX_RECORD = 1024 * 1024
@@ -48,6 +49,13 @@ def unique_object(pairs: list[tuple[str, object]]) -> dict:
 
 def reject_constant(value: str) -> None:
     raise ValueError("non-finite JSON number")
+
+
+def finite_float(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("non-finite JSON number")
+    return result
 
 
 def short_string(value: object) -> bool:
@@ -117,7 +125,10 @@ class CodexEvents:
             return
         try:
             event = json.loads(
-                raw.decode("utf-8"), object_pairs_hook=unique_object, parse_constant=reject_constant
+                raw.decode("utf-8"),
+                object_pairs_hook=unique_object,
+                parse_constant=reject_constant,
+                parse_float=finite_float,
             )
         except ValueError, RecursionError:
             self.error = "invalid_json"
