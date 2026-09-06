@@ -37,7 +37,7 @@ For the browser application, set `HEARTH_OPERATOR_TOKEN` to a local credential o
 at least 16 characters and `HEARTH_DATA` to a fresh data directory, then run:
 
 ```sh
-./venv/bin/python -I -m uvicorn hearth.api:from_env --factory \
+./venv/bin/python -I -m uvicorn hearth.app:from_env --factory \
   --host 127.0.0.1 --port 8766
 ```
 

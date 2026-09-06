@@ -13,10 +13,10 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from hearth.api import create_app
-from hearth.backup import capture, restore, verify
-from hearth.container_rehearsal import ContainerRehearsal, LocalDocker
-from hearth.models import Declaration, Refused
+from hearth.app import create_app
+from hearth.integrations.mock.container import ContainerRehearsal, LocalDocker
+from hearth.residents.models import Declaration, Refused
+from hearth.storage.backup import capture, restore, verify
 
 TOKEN = "synthetic-offline-container-worker-token"
 
@@ -85,11 +85,14 @@ def main():
 
             def capture_worker(*args, spawn=spawn, owned_workers=owned_workers, **kwargs):
                 process = spawn(*args, **kwargs)
-                if len(args[0]) > 4 and args[0][3:5] == ["hearth.process_mock", "worker"]:
+                if len(args[0]) > 4 and args[0][3:5] == [
+                    "hearth.integrations.mock.process",
+                    "worker",
+                ]:
                     owned_workers.append(process)
                 return process
 
-            with patch("hearth.process_mock.subprocess.Popen", capture_worker):
+            with patch("hearth.integrations.mock.process.subprocess.Popen", capture_worker):
                 app.state.executor.step()
             assert len(owned_workers) == 1
             runtime = ContainerRehearsal(hearth.database, data / "container-runs")

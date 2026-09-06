@@ -13,11 +13,11 @@ from urllib.request import Request, urlopen
 
 import hearth
 import uvicorn
-from hearth.api import create_app
-from hearth.backup import capture, restore
-from hearth.core import Hearth
-from hearth.database import Database
-from hearth.memory import Memory
+from hearth.app import create_app
+from hearth.residents.memory import Memory
+from hearth.storage.backup import capture, restore
+from hearth.storage.database import Database
+from hearth.work.service import Hearth
 
 TOKEN = "synthetic-installed-release-token"
 

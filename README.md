@@ -44,7 +44,7 @@ Build with `make check`, set `HEARTH_OPERATOR_TOKEN` to a local operator credent
 of at least 16 characters, then start:
 
 ```sh
-uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8766
+uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
 Open `http://127.0.0.1:8766` and enter that token. Set up mock Reader, assign a task,

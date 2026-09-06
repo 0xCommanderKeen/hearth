@@ -394,3 +394,25 @@ Lock and rejected credentials clear it. Browser refresh/Lock verification passed
 frontend regressions cover re-entry and server rejection. Review fixes cover
 stalled CLI stdin, partial JSON/UTF-8 termination receipts and modified persisted
 launch inputs, using synthetic subprocesses without provider calls.
+
+## Module organization — issue #95
+
+The backend, browser and tests now follow [module responsibilities](architecture.md).
+Provider event parsing, pricing and receipt validation sit behind the integration
+interface. Shared execution uses one receipted lifecycle while retaining distinct
+subscription lost-launch recovery behavior. Hearth retains transactional accounting
+and dispatch authority; no schema, receipt format, routes or configuration changed.
+
+Verified 2026-09-06: `make check` passes 489 backend and 40 frontend tests,
+format/lint/types/build and both installed-wheel journeys (inline and process mock),
+including auth, results, restart and held restore. Two interface checks reject
+changed cancellation run/input/runtime pins. A collector regression checks the
+previously pinned bundle hashes, unchanged manifest and isolated imports. All three
+collector sources and the emitted fixture match the pre-refactor release bytes.
+
+An actual isolated browser passed login → Reader → saved visible result, refresh
+persistence, Hamlet canvas, mobile overflow and Lock/logout checks using synthetic
+mock data. No provider call, live-data edit or credential access was needed.
+Independent Standards and Spec reviews both report zero remaining findings after
+fixing offline bundle preservation. Karen/shared Skills (#85) and deployment remain
+outside this issue.
