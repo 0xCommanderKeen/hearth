@@ -121,6 +121,16 @@ def test_uncertain_publication_receipt_is_preserved_without_replay(system, tmp_p
     assert doc["tables"]["approvals"][0]["status"] == "approved"
     assert any(name.startswith("mock-noticeboard/") for name in doc["files"])
     assert broker.inspect(proposal.id)["status"] == "unknown"
+    from hearth.portable import import_state
+
+    import_state((tmp_path / "export/state.json").read_bytes(), tmp_path / "imported")
+    copy = Hearth(Database(tmp_path / "imported/hearth.db"), clock=hearth.clock)
+    copy_effect = MockNoticeboard(tmp_path / "imported/mock-noticeboard")
+    copy_broker = Broker(Authority(copy, Artifacts(tmp_path / "imported/artifacts")), copy_effect)
+    assert copy_effect.inspect(proposal.id).digest == proposal.digest
+    with pytest.raises(Refused, match="restored_copy_read_only"):
+        copy_broker.execute(proposal.id)
+    assert copy_broker.inspect(proposal.id)["status"] == "unknown"
 
 
 def test_digest_ignores_order_and_epoch_but_detects_operational_changes(system, tmp_path):
@@ -302,3 +312,123 @@ def test_empty_database_can_be_exported(tmp_path):
     capture(tmp_path / "empty", tmp_path / "backup")
     result = export(tmp_path / "backup", tmp_path / "export")
     assert result["rows"]["runs"] == 0 and result["files"] == 0
+
+
+@pytest.mark.parametrize("scenario", ["success", "hold", "unknown_usage"])
+def test_import_roundtrip_and_retry_preserve_state_under_a_read_only_hold(
+    system, tmp_path, scenario
+):
+    from hearth.portable import import_state
+
+    hearth, executor, run, _, _ = system
+    executor.runtime.scenario = scenario
+    executor.step()
+    if scenario == "hold":
+        executor.execution.cancel(run.id)
+    hearth.set_paused("reader", paused=True, expected_revision=0)
+    _, expected, raw = produce(system, tmp_path)
+    target = tmp_path / "imported"
+    result = import_state(raw, target)
+    assert result == import_state(raw, target)
+    assert result["semantic_sha256"] == expected["semantic_sha256"]
+    copy = Hearth(Database(target / "hearth.db"), clock=hearth.clock)
+    assert copy.database.restored()
+    assert copy.run(run.id).owner_token != run.owner_token
+    assert copy.run(run.id).status == hearth.run(run.id).status
+    assert copy.receipt("summary") == hearth.receipt("summary")
+    with copy.database.transaction() as db:
+        assert db.execute("SELECT count(*) FROM run_credentials").fetchone()[0] == 0
+    with pytest.raises(Refused, match="restored_copy_read_only"):
+        Executor(
+            Execution(copy, Artifacts(target / "artifacts")), MockRuntime(target / "mock-runtime")
+        ).step()
+    capture(target, tmp_path / "reverse-backup")
+    reverse = export(tmp_path / "reverse-backup", tmp_path / "reverse")
+    assert reverse["semantic_sha256"] == expected["semantic_sha256"]
+    second = import_state((tmp_path / "reverse/state.json").read_bytes(), tmp_path / "second")
+    assert second["epoch"] != result["epoch"]
+    assert second["semantic_sha256"] == result["semantic_sha256"]
+
+
+def test_imported_api_remains_read_only_and_old_runtime_token_is_denied(system, tmp_path):
+    from fastapi.testclient import TestClient
+    from hearth.api import create_app
+    from hearth.portable import import_state
+
+    _, _, run, credential, _ = system
+    _, _, raw = produce(system, tmp_path)
+    import_state(raw, tmp_path / "imported")
+    token = "synthetic-operator-token"
+    with TestClient(create_app(tmp_path / "imported", token, supervise=True)) as client:
+        headers = {"Authorization": "Bearer " + token}
+        assert client.get("/api/state", headers=headers).json()["restore_hold"] is True
+        response = client.post(
+            "/api/residents/reader/pause",
+            headers=headers,
+            json={"paused": True, "expected_revision": 0},
+        )
+        assert response.status_code == 409
+        response = client.get(
+            f"/api/runtime/runs/{run.id}/context",
+            headers={"Authorization": "Bearer " + credential.token},
+        )
+        assert response.status_code == 401
+
+
+@pytest.mark.parametrize("change", ["input", "row", "file", "hold", "symlink"])
+def test_import_retry_never_overwrites_different_or_changed_state(system, tmp_path, change):
+    from hearth.portable import import_state
+
+    system[1].step()
+    doc, _, raw = produce(system, tmp_path)
+    target = tmp_path / "imported"
+    import_state(raw, target)
+    if change == "input":
+        doc["tables"]["declarations"][0]["daily_limit"] += 1
+        raw = json.dumps(doc).encode()
+    elif change == "row":
+        with sqlite3.connect(target / "hearth.db") as db:
+            db.execute("UPDATE declarations SET daily_limit=daily_limit+1")
+    elif change == "file":
+        next((target / "artifacts").iterdir()).write_text("changed")
+    elif change == "hold":
+        with sqlite3.connect(target / "hearth.db") as db:
+            db.execute("DELETE FROM system_meta WHERE key='restore_hold'")
+    else:
+        alias = tmp_path / "alias"
+        alias.symlink_to(target, target_is_directory=True)
+        target = alias
+    before = (target / "hearth.db").read_bytes()
+    with pytest.raises(Refused):
+        import_state(raw, target)
+    assert (target / "hearth.db").read_bytes() == before
+
+
+def test_concurrent_imports_converge_on_one_copy(system, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from hearth.portable import import_state
+
+    _, _, raw = produce(system, tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: import_state(raw, tmp_path / "imported"), range(2)))
+    assert results[0] == results[1]
+
+
+def test_failed_import_does_not_publish_partial_destination(system, tmp_path, monkeypatch):
+    import hearth.backup as backup
+    from hearth.portable import import_state
+
+    system[1].step()
+    _, _, raw = produce(system, tmp_path)
+
+    def disk_full(*args):
+        raise OSError("synthetic disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backup, "_write", disk_full)
+        with pytest.raises(OSError, match="disk full"):
+            import_state(raw, tmp_path / "imported")
+    assert not (tmp_path / "imported").exists()
+    assert not list(tmp_path.glob(".hearth-copy-*"))
+    assert import_state(raw, tmp_path / "imported")["read_only"] is True

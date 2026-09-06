@@ -19,14 +19,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=["demo", "backup", "verify-backup", "restore", "export-state", "verify-state"],
+        choices=[
+            "demo",
+            "backup",
+            "verify-backup",
+            "restore",
+            "export-state",
+            "verify-state",
+            "import-state",
+        ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
-    if args.command in {"export-state", "verify-state"}:
-        from hearth.portable import MAX_EXPORT, export, validate
+    if args.command in {"export-state", "verify-state", "import-state"}:
+        from hearth.portable import MAX_EXPORT, export, import_state, validate
 
         if args.source is None:
             parser.error(f"{args.command} requires --source")
@@ -36,7 +44,13 @@ def main() -> None:
             result = export(args.source, args.destination)
         else:
             with args.source.open("rb") as file:
-                result = validate(file.read(MAX_EXPORT + 1))
+                content = file.read(MAX_EXPORT + 1)
+            if args.command == "import-state":
+                if args.destination is None:
+                    parser.error("import-state requires --destination")
+                result = import_state(content, args.destination)
+            else:
+                result = validate(content)
         print(json.dumps(result, indent=2))
         return
     if args.command != "demo":
