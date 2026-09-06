@@ -14,8 +14,9 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from hearth import codex_events
-from hearth.codex_events import CodexEvents
+from hearth import codex_events, codex_pricing
+from hearth.codex_events import CodexEvents, TokenUsage
+from hearth.codex_pricing import estimate_api_equivalent
 from hearth.container_rehearsal import IMAGE, LocalDocker
 
 ARCHIVE_URL = "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz"
@@ -35,7 +36,7 @@ def validate(result, attack):
     parser.feed(result["stdout"].encode())
     transcript = parser.finish(exit_code=result["returncode"])
     assert transcript.status == "completed" and transcript.output == result["final"]
-    assert transcript.usage is not None and transcript.usage.cache_write_input_tokens == 0
+    assert transcript.usage is not None
     requests = result["requests"]
     assert 2 <= len(requests) <= 12
     assert all(request["authorization_synthetic"] for request in requests)
@@ -49,6 +50,29 @@ def validate(result, attack):
             ("function", "request_user_input"),
             ("function", "view_image"),
         }
+    # Only this fully observed synthetic fixture supplies request-level usage.
+    # A production worker must establish equivalent completeness before settlement.
+    usage = tuple(
+        TokenUsage(
+            value["input_tokens"],
+            value["input_tokens_details"]["cached_tokens"],
+            value["output_tokens"],
+            value["output_tokens_details"]["reasoning_tokens"],
+            value["input_tokens_details"]["cache_write_tokens"],
+        )
+        for request in inference
+        if (value := request["response_usage"]) is not None
+    )
+    for field in TokenUsage.__dataclass_fields__:
+        assert getattr(transcript.usage, field) == sum(getattr(value, field) for value in usage)
+    estimate = estimate_api_equivalent(usage, model="gpt-6-astra", mode="standard")
+    assert estimate.microdollars == (1245 if attack else 623)
+    result["accounting"] = {
+        "basis": estimate.basis,
+        "schedule": estimate.schedule,
+        "microdollars": estimate.microdollars,
+        "synthetic": True,
+    }
     outputs = [output for request in inference for output in request["tool_outputs"]]
     if attack:
         assert any(
@@ -186,7 +210,12 @@ def main():
         "archive_integrity": "sha512-" + ARCHIVE_SHA512,
         "source_sha256": {
             path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in (Path(__file__), child, Path(codex_events.__file__))
+            for path in (
+                Path(__file__),
+                child,
+                Path(codex_events.__file__),
+                Path(codex_pricing.__file__),
+            )
         },
         "cases": [],
     }
