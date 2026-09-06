@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from hearth.artifacts import Artifact, Artifacts
 from hearth.core import Hearth, _audit
 from hearth.models import Refused, identifier
+from hearth.notifications import enqueue
 
 MAX_APPROVAL_LIFETIME = 24 * 60 * 60
 
@@ -123,6 +124,7 @@ class Authority:
                 (request_id, artifact_id, run["resident_id"], encoded, digest, expires_at, now),
             )
             _audit(db, "approval.requested", request_id, now, {"digest": digest})
+            enqueue(db, "approval.requested", request_id, now, expires_at=expires_at)
             return _approval(
                 db.execute("SELECT * FROM approvals WHERE id = ?", (request_id,)).fetchone()
             )

@@ -182,6 +182,7 @@ export function App() {
   const [instruction, setInstruction] = useState(
     "Summarize today’s synthetic notes.",
   );
+  const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
@@ -296,6 +297,41 @@ export function App() {
       }
     });
   }
+  useEffect(() => {
+    const openLinkedView = () => {
+      let hash: string;
+      try {
+        hash = decodeURIComponent(window.location.hash);
+      } catch {
+        setError("Invalid notification link");
+        return;
+      }
+      if (hash.startsWith("#approval-")) {
+        setView("townhall");
+        setLinkedApproval(hash.slice(10));
+      }
+      if (hash.startsWith("#run-") && client) {
+        const id = hash.slice(5);
+        void act(async () => {
+          const run = await client.run(id);
+          const content = run.artifact_id
+            ? (await client.artifact(run.artifact_id)).content
+            : `Run ${run.status}`;
+          if (currentSession.current === client) setOutput(content);
+        });
+      }
+    };
+    openLinkedView();
+    window.addEventListener("hashchange", openLinkedView);
+    return () => window.removeEventListener("hashchange", openLinkedView);
+  }, [client]);
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith("#approval-") || hash.startsWith("#run-"))
+      document
+        .getElementById(hash.slice(1))
+        ?.scrollIntoView?.({ block: "center" });
+  }, [view, snapshot]);
   const residents = snapshot?.residents ?? [];
   const completed =
     snapshot?.runs.filter((r) => r.status === "succeeded").length ?? 0;
@@ -491,7 +527,10 @@ export function App() {
                         (r) => r.task_id === task.id,
                       );
                       return (
-                        <li key={task.id}>
+                        <li
+                          key={task.id}
+                          id={run ? `run-${run.id}` : undefined}
+                        >
                           <div className="task-meta">
                             <span className={`state state-${task.status}`}>
                               {statusLabel(task.status)}
@@ -566,6 +605,7 @@ export function App() {
             )}
             {view === "townhall" && (
               <Approvals
+                linkedId={linkedApproval}
                 client={client}
                 snapshot={snapshot}
                 busy={busy}
@@ -583,6 +623,53 @@ export function App() {
                 <pre>{output}</pre>
               </section>
             )}
+            <section className="output" aria-label="Mock notifications">
+              <span className="eyebrow">LOCAL MOCK INBOX</span>
+              <h2>News from Hearth.</h2>
+              <p>
+                Delivery status is separate from work status. These
+                notifications stay local and never approve an action.
+              </p>
+              {!snapshot.notifications?.length && (
+                <p className="muted">
+                  Results and approval requests will appear here.
+                </p>
+              )}
+              <ul className="tasks">
+                {snapshot.notifications?.map((n) => (
+                  <li key={n.id}>
+                    <h3>
+                      {n.kind === "approval.requested"
+                        ? "A mock action needs review"
+                        : n.kind.replace("run.", "Run ")}
+                    </h3>
+                    <p>
+                      {n.status === "retry"
+                        ? "Delivery unconfirmed; retry scheduled"
+                        : n.status === "pending"
+                          ? "Waiting for delivery confirmation"
+                          : n.status === "obsolete"
+                            ? "No longer current"
+                            : "Delivered to the local mock inbox"}{" "}
+                      · {n.attempts} attempts
+                    </p>
+                    {n.status !== "obsolete" && (
+                      <a
+                        href={`/#${n.kind === "approval.requested" ? "approval" : "run"}-${encodeURIComponent(n.resource_id)}`}
+                        onClick={() => {
+                          if (n.kind === "approval.requested")
+                            setView("townhall");
+                        }}
+                      >
+                        {n.kind === "approval.requested"
+                          ? "Open approval review"
+                          : "Open run and result"}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
             <section className="activity">
               <span className="eyebrow">RECENT ACTIVITY</span>
               {snapshot.activity.slice(0, 5).map((item) => (

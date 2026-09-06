@@ -58,6 +58,16 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
+  notifications?: {
+    id: string;
+    kind: string;
+    resource_id: string;
+    status: string;
+    attempts: number;
+    next_at: number;
+    reason: string | null;
+    payload: { simulated: boolean; link: string };
+  }[];
   routines?: Routine[];
   occurrences?: {
     routine_id: string;
@@ -158,6 +168,13 @@ export class Client {
     return this.request(`/api/tasks/${encodeURIComponent(id)}/start`, {
       method: "POST",
     });
+  }
+  run(id: string) {
+    return this.request<{
+      id: string;
+      status: string;
+      artifact_id: string | null;
+    }>(`/api/runs/${encodeURIComponent(id)}`);
   }
   cancel(id: string) {
     return this.request(`/api/runs/${encodeURIComponent(id)}/cancel`, {

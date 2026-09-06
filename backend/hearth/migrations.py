@@ -107,3 +107,14 @@ def routine_schema(db: sqlite3.Connection) -> None:
         PRIMARY KEY(routine_id, scheduled_at),
         FOREIGN KEY(routine_id, revision) REFERENCES routine_revisions(routine_id, revision)
     )""")
+
+
+def notification_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE deliveries (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, resource_id TEXT NOT NULL,
+        payload TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','retry','delivered','obsolete')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL,
+        delivered_at INTEGER, reason TEXT,
+        UNIQUE(kind, resource_id)
+    )""")

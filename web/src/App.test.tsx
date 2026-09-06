@@ -15,6 +15,7 @@ let state: Snapshot;
 let publish: (snapshot: Snapshot) => void;
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   state = {
     schema_version: 1,
     simulated: true,
@@ -251,4 +252,44 @@ it("keeps a newer streamed snapshot when an older snapshot arrives later", async
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
     "Outcome unknown",
   );
+});
+
+it("shows mock delivery uncertainty and opens Townhall without deciding", async () => {
+  addReader();
+  state.notifications = [
+    {
+      id: "delivery",
+      kind: "approval.requested",
+      resource_id: "review",
+      status: "retry",
+      attempts: 2,
+      next_at: 2_000_000_000,
+      reason: "mock_delivery_unconfirmed",
+      payload: { simulated: true, link: "/#approval-review" },
+    },
+  ];
+  const decide = vi.spyOn(Client.prototype, "decide");
+  await login();
+  expect(
+    screen.getByText(/Delivery unconfirmed; retry scheduled/),
+  ).toBeTruthy();
+  const link = screen.getByRole("link", { name: "Open approval review" });
+  expect(link.getAttribute("href")).toBe("/#approval-review");
+  fireEvent.click(link);
+  await screen.findByRole("region", { name: "Mock approvals" });
+  expect(decide).not.toHaveBeenCalled();
+});
+
+it("opens a linked result outside the recent task list after authentication", async () => {
+  window.history.replaceState(null, "", "/#run-older");
+  vi.spyOn(Client.prototype, "run").mockResolvedValue({
+    id: "older",
+    status: "succeeded",
+    artifact_id: "older-output",
+  });
+  vi.spyOn(Client.prototype, "artifact").mockResolvedValue({
+    content: "Older linked synthetic result",
+  });
+  await login();
+  await screen.findByText("Older linked synthetic result");
 });
