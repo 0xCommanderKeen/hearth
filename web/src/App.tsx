@@ -46,6 +46,40 @@ function Emblem() {
   );
 }
 
+function SummaryOutput({
+  content,
+  simulated,
+  onClose,
+}: {
+  content: string;
+  simulated: boolean;
+  onClose: () => void;
+}) {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.focus({ preventScroll: true });
+    panel.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+  }, [content]);
+  return (
+    <section
+      ref={panel}
+      tabIndex={-1}
+      className="output"
+      aria-label="Summary output"
+    >
+      <div className="section-title">
+        <span className="eyebrow">
+          {simulated ? "SIMULATED ARTIFACT" : "CODEX RESULT"}
+        </span>
+        <button className="quiet" onClick={onClose}>
+          Close ×
+        </button>
+      </div>
+      <pre>{content}</pre>
+    </section>
+  );
+}
+
 type Page =
   | "townhall"
   | "residents"
@@ -289,7 +323,13 @@ export function App() {
             </a>
           ))}
         </nav>
-        <span className="mode">✳ SIMULATION</span>
+        <span className="mode">
+          {snapshot
+            ? snapshot.simulated
+              ? "✳ SIMULATION"
+              : "CODEX · SUBSCRIPTION"
+            : "HEARTH"}
+        </span>
         {client && (
           <button className="quiet" onClick={lock}>
             Lock
@@ -365,7 +405,9 @@ export function App() {
               <span>
                 <i className={`dot ${connected ? "working" : ""}`} />
                 {connected
-                  ? "Connected to the simulation"
+                  ? snapshot.simulated
+                    ? "Connected to the simulation"
+                    : "Connected to Codex"
                   : "Reconnecting · displayed state may be stale"}
               </span>
               <span>
@@ -410,7 +452,9 @@ export function App() {
                       disabled={busy || snapshot.restore_hold}
                       onClick={() => void act(() => client.seed())}
                     >
-                      Set up mock Reader
+                      {snapshot.simulated
+                        ? "Set up mock Reader"
+                        : "Set up Reader"}
                     </button>
                   </div>
                 )}
@@ -509,7 +553,7 @@ export function App() {
                       </div>
                       <p className="muted">
                         {residents.length
-                          ? "A small, read-only assignment. The mock returns a fixed summary from synthetic notes."
+                          ? "A read-only assignment using synthetic notes."
                           : "Your first resident summarizes synthetic notes. No model calls, real files, or external actions."}
                       </p>
                       {!residents.length ? (
@@ -518,7 +562,10 @@ export function App() {
                           disabled={busy}
                           onClick={() => void act(() => client.seed())}
                         >
-                          Set up mock Reader <span>＋</span>
+                          {snapshot.simulated
+                            ? "Set up mock Reader"
+                            : "Set up Reader"}{" "}
+                          <span>＋</span>
                         </button>
                       ) : (
                         <form onSubmit={submit}>
@@ -554,10 +601,16 @@ export function App() {
                           >
                             {pending.current
                               ? "Retry pending submission"
-                              : "Run a mock summary"}{" "}
+                              : snapshot.simulated
+                                ? "Run a mock summary"
+                                : "Run summary"}{" "}
                             <span>↗</span>
                           </button>
-                          <small>Mock usage only. No money is spent.</small>
+                          <small>
+                            {snapshot.simulated
+                              ? "Mock usage only. No money is spent."
+                              : "Uses your Codex subscription. Dollar amounts are API-equivalent estimates."}
+                          </small>
                         </form>
                       )}
                       {residents.length > 0 && (
@@ -701,6 +754,7 @@ export function App() {
                                   className="result-link"
                                   onClick={() =>
                                     void act(async () => {
+                                      setOutput(null);
                                       const result = await client.artifact(
                                         run.artifact_id!,
                                       );
@@ -718,7 +772,7 @@ export function App() {
                               {run && (
                                 <small>
                                   {run.usage_known
-                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated ${run.usage_source === "api_equivalent_mock" ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
+                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${snapshot.simulated ? "simulated " : ""}${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
                                     : "Usage not yet known"}
                                 </small>
                               )}
@@ -763,15 +817,12 @@ export function App() {
             {output &&
               (view === "tasks" ||
                 (view === "resident" && output.residentId === residentId)) && (
-                <section className="output" aria-label="Summary output">
-                  <div className="section-title">
-                    <span className="eyebrow">SIMULATED ARTIFACT</span>
-                    <button className="quiet" onClick={() => setOutput(null)}>
-                      Close ×
-                    </button>
-                  </div>
-                  <pre>{output.content}</pre>
-                </section>
+                <SummaryOutput
+                  key={output.content}
+                  content={output.content}
+                  simulated={snapshot.simulated}
+                  onClose={() => setOutput(null)}
+                />
               )}
             {(view === "activity" || view === "townhall") && (
               <section className="output" aria-label="Mock notifications">
@@ -845,7 +896,7 @@ export function App() {
           <span>
             Hearth <span className="muted">/</span> Local development
           </span>
-          <span>Synthetic notes. Simulated residents. Honest state.</span>
+          <span>Synthetic notes. Read-only summaries.</span>
         </footer>
       </main>
     </>

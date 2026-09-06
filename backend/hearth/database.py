@@ -41,7 +41,13 @@ class Database:
         self, *, runtime_kind: str | None = None, process_boundary: str | None = None
     ) -> None:
         """Create the complete schema once; never upgrade an existing store."""
-        if runtime_kind not in {None, "inline_mock", "process_mock", "codex_mock"}:
+        if runtime_kind not in {
+            None,
+            "inline_mock",
+            "process_mock",
+            "codex_mock",
+            "codex_subscription",
+        }:
             raise Refused("runtime_kind_invalid")
         if process_boundary not in {None, "posix", "container"}:
             raise Refused("process_boundary_invalid")
@@ -77,7 +83,12 @@ class Database:
             stored = connection.execute(
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
             ).fetchone()
-            if stored is None or stored[0] not in {"inline_mock", "process_mock", "codex_mock"}:
+            if stored is None or stored[0] not in {
+                "inline_mock",
+                "process_mock",
+                "codex_mock",
+                "codex_subscription",
+            }:
                 raise Refused("runtime_configuration_invalid")
             if runtime_kind is not None and runtime_kind != stored[0]:
                 raise Refused("runtime_store_mismatch")
@@ -102,7 +113,12 @@ class Database:
     def runtime_kind(self) -> str:
         with self.transaction() as db:
             row = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-            if row is None or row[0] not in {"inline_mock", "process_mock", "codex_mock"}:
+            if row is None or row[0] not in {
+                "inline_mock",
+                "process_mock",
+                "codex_mock",
+                "codex_subscription",
+            }:
                 raise Refused("runtime_configuration_invalid")
             return row[0]
 

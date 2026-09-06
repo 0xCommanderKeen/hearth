@@ -210,7 +210,12 @@ def _check_database(root: Path) -> dict:
         if not schema_matches(db):
             raise Refused("backup_schema_unexpected")
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-        if selected is None or selected[0] not in {"inline_mock", "process_mock", "codex_mock"}:
+        if selected is None or selected[0] not in {
+            "inline_mock",
+            "process_mock",
+            "codex_mock",
+            "codex_subscription",
+        }:
             raise Refused("backup_runtime_invalid")
         boundary = db.execute(
             "SELECT value FROM system_meta WHERE key='process_boundary'"
@@ -311,6 +316,7 @@ def _check_database(root: Path) -> dict:
         ).fetchone():
             raise Refused("backup_references_invalid")
         return {
+            "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),
             "runs": db.execute("SELECT count(*) FROM runs").fetchone()[0],
             "epoch": db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0],
@@ -328,7 +334,7 @@ def verify(source: Path) -> dict:
         or manifest.get("format") != FORMAT
         or type(manifest.get("schema")) is not int
         or manifest.get("schema") != SCHEMA_VERSION
-        or manifest.get("simulated") is not True
+        or type(manifest.get("simulated")) is not bool
     ):
         raise Refused("backup_format_incompatible")
     files = manifest.get("files")
@@ -356,6 +362,8 @@ def verify(source: Path) -> dict:
     if actual != set(files):
         raise Refused("backup_manifest_mismatch")
     checked = _check_database(source)
+    if manifest["simulated"] != checked["simulated"]:
+        raise Refused("backup_runtime_invalid")
     return manifest | {"verified": checked}
 
 
@@ -454,7 +462,7 @@ def capture(data: Path, destination: Path) -> dict:
                 )
             ).hexdigest(),
             "created_at": int(time.time()),
-            "simulated": True,
+            "simulated": _check_database(temporary)["simulated"],
             "files": {
                 str(path.relative_to(temporary)): hashlib.sha256(_read(path)).hexdigest()
                 for path in sorted(temporary.rglob("*"))

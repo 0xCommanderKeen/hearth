@@ -183,6 +183,8 @@ def create_app(
     runtime_kind: str | None = None,
     process_boundary: str | None = None,
     codex_archive: Path | None = None,
+    codex_binary: Path | None = None,
+    codex_auth_home: Path | None = None,
 ) -> FastAPI:
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
@@ -199,6 +201,10 @@ def create_app(
         if database.runtime_kind() == "process_mock"
         else MockRuntime(data / "mock-runtime", scenario=scenario)
     )
+    if database.runtime_kind() == "codex_subscription":
+        from hearth.codex_live import CodexLiveRuntime
+
+        runtime = CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home)
     if database.runtime_kind() == "codex_mock":
         from hearth.codex_runtime import CodexMockRuntime
 
@@ -246,7 +252,7 @@ def create_app(
 
     @app.get("/health")
     def healthcheck():
-        return {"service": "hearth", "simulated": True}
+        return {"service": "hearth", "simulated": database.runtime_kind() != "codex_subscription"}
 
     @app.get("/api/state")
     def state(cursor: int | None = None, epoch: str | None = None):
@@ -257,7 +263,7 @@ def create_app(
 
     @app.get("/api/health")
     def operator_health():
-        return {"simulated": True, **supervisor.health()}
+        return {"simulated": database.runtime_kind() != "codex_subscription", **supervisor.health()}
 
     @app.get("/api/events")
     async def events(request: Request, cursor: int = -1, epoch: str = ""):
@@ -358,7 +364,12 @@ def create_app(
             if row is None:
                 raise Refused("run_not_found") from None
             run = hearth.run(row["id"])
-        return {"run_id": run.id, "task_id": run.task_id, "status": run.status, "simulated": True}
+        return {
+            "run_id": run.id,
+            "task_id": run.task_id,
+            "status": run.status,
+            "simulated": database.runtime_kind() != "codex_subscription",
+        }
 
     @app.get("/api/runs/{run_id}")
     def inspect_run(run_id: str):
@@ -380,7 +391,11 @@ def create_app(
     @app.post("/api/runs/{run_id}/cancel")
     def cancel(run_id: str):
         run = execution.cancel(run_id)
-        return {"run_id": run.id, "status": run.status, "simulated": True}
+        return {
+            "run_id": run.id,
+            "status": run.status,
+            "simulated": database.runtime_kind() != "codex_subscription",
+        }
 
     @app.get("/api/artifacts/{artifact_id}")
     def artifact(artifact_id: str):
@@ -392,7 +407,11 @@ def create_app(
         revision = authority.set_publication_policy(
             resident_id, enabled=body.enabled, expected_revision=body.expected_revision
         )
-        return {"revision": revision, "enabled": body.enabled, "simulated": True}
+        return {
+            "revision": revision,
+            "enabled": body.enabled,
+            "simulated": True,
+        }
 
     @app.post("/api/approvals", status_code=201)
     def propose(body: ApprovalPost, idempotency_key: str = Header(min_length=1, max_length=128)):
@@ -460,7 +479,13 @@ def from_env() -> FastAPI:
         Path(os.environ.get("HEARTH_DATA", ".hearth/local")),
         os.environ.get("HEARTH_OPERATOR_TOKEN", ""),
         scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
-        runtime_kind=os.environ.get("HEARTH_MOCK_RUNTIME"),
+        runtime_kind=os.environ.get("HEARTH_RUNTIME") or os.environ.get("HEARTH_MOCK_RUNTIME"),
+        codex_binary=Path(os.environ["HEARTH_CODEX_BINARY"])
+        if os.environ.get("HEARTH_CODEX_BINARY")
+        else None,
+        codex_auth_home=Path(os.environ["HEARTH_CODEX_AUTH_HOME"])
+        if os.environ.get("HEARTH_CODEX_AUTH_HOME")
+        else None,
         process_boundary=os.environ.get("HEARTH_PROCESS_BOUNDARY"),
         codex_archive=Path(os.environ["HEARTH_CODEX_ARCHIVE"])
         if os.environ.get("HEARTH_CODEX_ARCHIVE")

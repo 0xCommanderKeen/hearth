@@ -51,6 +51,10 @@ def binding(db, run) -> UsageBinding:
 
 def encode_receipt(receipt: dict, expected: UsageBinding) -> tuple[str, str, Evidence]:
     """Validate the exact serialized copy that will commit with accounting/audit."""
+    if receipt.get("kind") == "codex_subscription":
+        from hearth.codex_live import encode
+
+        return encode(receipt, expected)
     try:
         raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(raw.encode()) > MAX_STREAM:
@@ -101,16 +105,33 @@ def verify_stored(db, run) -> None:
     if raw != row["receipt"] or digest != row["sha256"] or evidence.status != run["status"]:
         raise Refused("backup_runtime_invalid")
     value = json.loads(raw)
+    if run["runtime_kind"] == "codex_subscription":
+        pin = db.execute("SELECT value FROM system_meta WHERE key='codex_live_binary'").fetchone()
+        if (
+            pin is None
+            or value.get("binary") != pin[0]
+            or value.get("kind") != "codex_subscription"
+        ):
+            raise Refused("backup_runtime_invalid")
     if run["runtime_kind"] == "codex_mock":
         assets = db.execute("SELECT value FROM system_meta WHERE key='codex_assets'").fetchone()
         if assets is None or value.get("assets") != assets[0] or "containers" not in value:
             raise Refused("backup_runtime_invalid")
-    if not run["launch_attempted"] and not (
-        run["runtime_kind"] == "codex_mock"
-        and run["cancellation_requested"]
-        and evidence.status == "cancelled"
-        and evidence.cost == 0
-        and value.get("containers") == {"cli": None, "collector": None}
+    if (
+        not run["launch_attempted"]
+        and not (
+            run["runtime_kind"] == "codex_subscription"
+            and run["cancellation_requested"]
+            and value.get("launched") is False
+            and value.get("cancelled") is True
+        )
+        and not (
+            run["runtime_kind"] == "codex_mock"
+            and run["cancellation_requested"]
+            and evidence.status == "cancelled"
+            and evidence.cost == 0
+            and value.get("containers") == {"cli": None, "collector": None}
+        )
     ):
         raise Refused("backup_runtime_invalid")
     reconciliation = db.execute(

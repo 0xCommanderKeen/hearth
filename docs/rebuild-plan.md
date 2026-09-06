@@ -10,8 +10,8 @@ continue independently; they are not an implementation dependency or data source
 Hearth is a home for persistent agents doing useful work under human supervision.
 Hamlet is the village view; Townhall is the operator view in the same browser.
 Start with a new read-only daily-summary Reader, one operator and one execution
-machine. Current development uses mocks and synthetic notes only; real testing
-will be selected after the workflow is proven.
+machine. The user has now selected a bounded real Codex subscription demo on this Mac,
+reusing the existing login with synthetic notes. Mock execution remains available.
 
 Miha selected Codex Astra for the eventual runtime/model, synthetic example notes,
 and confirmed this Mac for development with a $10 per-day allowance. Fresh mock
@@ -19,9 +19,9 @@ Reader setup uses Europe/Ljubljana budget days. Codex will use ChatGPT subscript
 Budget accounting uses reported tokens at API-equivalent prices for both
 subscription and any future API execution, under the same $10/day policy.
 Subscription amounts are estimates, not actual charges. Exact runtime
-configuration, usage provenance and credential isolation
-remain to be verified. This selection does not
-enable real calls; mock-only execution remains in force. The
+configuration, usage provenance and credential isolation are recorded in
+[ADR 0008](adr/0008-native-subscription-demo.md). The real subscription connection
+is explicitly authorized; personal source connections remain out of scope. The
 [Codex Reader design](codex-reader.md) records verified interface facts and the
 ordered implementation steps before enabling that runtime.
 

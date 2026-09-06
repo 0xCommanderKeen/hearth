@@ -371,3 +371,20 @@ start intent, then reopening the same data, recovered the original run to succes
 with 623 microdollars and both owned containers removed. Review also added asset
 revalidation before worker setup and each guarded start, with a regression proving
 that post-startup asset changes dispatch no containers.
+
+## Real subscription connection — 2026-09-06
+
+The user explicitly authorized real Codex and reuse of the existing Mac login.
+A separate pinned 0.153.4 CLI/home now runs Astra through `codex_subscription`.
+A real standalone fictional-notes summary passed, followed by the browser flow
+Reader → Run summary → saved real result. The initial application transcript-order
+failure is covered by an exact pre-turn diagnostic regression. API/artifact/audit/
+backup/browser provenance distinguish real execution from mocks. See
+[codex-subscription-demo.md](codex-subscription-demo.md) and ADR0008 for setup,
+accounting and limits. Real source connectors and production deployment remain
+unselected; this does not complete the daily-observation gate.
+
+Read-summary visibility correction: an actual browser reproduction found the saved
+result below the viewport after clicking. The result now receives focus and scrolls
+into view; the same browser assertion failed before the change and passed afterward.
+No additional model call was needed to verify the fix.

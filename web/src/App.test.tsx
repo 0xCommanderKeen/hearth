@@ -190,7 +190,8 @@ it("displays simulated output and clears it when the operator locks the session"
   });
   await login();
   fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
-  await screen.findByLabelText("Summary output");
+  const summaryPanel = await screen.findByLabelText("Summary output");
+  expect(document.activeElement).toBe(summaryPanel);
   expect(screen.getByText(/No model was called/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   expect(screen.getByLabelText("Operator token")).toBeTruthy();

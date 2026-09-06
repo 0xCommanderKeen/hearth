@@ -10,7 +10,7 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     """Trusted internal read, not an authorization check or a credential issuer."""
     row = db.execute(
         "SELECT r.id, r.task_id, r.resident_id, r.resident_revision, "
-        "d.purpose, d.skill_text, t.instruction "
+        "d.purpose, d.skill_text, t.instruction, r.runtime_kind "
         "FROM runs r JOIN declarations d ON d.resident_id=r.resident_id "
         "AND d.revision=r.resident_revision JOIN tasks t ON t.id=r.task_id WHERE r.id=?",
         (run_id,),
@@ -34,7 +34,7 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
             db, memory, row["resident_id"], pinned["revision"] if pinned else 0
         ),
         "instruction": row["instruction"],
-        "simulated": True,
+        "simulated": row["runtime_kind"] != "codex_subscription",
         "notes": [
             "Synthetic note: drafted the Hearth foundation.",
             "Synthetic note: task submission survives retries.",
