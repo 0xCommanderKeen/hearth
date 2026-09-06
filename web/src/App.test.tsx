@@ -293,3 +293,16 @@ it("opens a linked result outside the recent task list after authentication", as
   await login();
   await screen.findByText("Older linked synthetic result");
 });
+
+it("pauses new runs using the displayed operator revision", async () => {
+  addReader();
+  state.residents[0].control_revision = 3;
+  state.residents[0].operator_paused = 0;
+  const pause = vi
+    .spyOn(Client.prototype, "pauseResident")
+    .mockResolvedValue({});
+  await login();
+  fireEvent.click(screen.getByText("Pause new runs"));
+  await waitFor(() => expect(pause).toHaveBeenCalledWith("reader", true, 3));
+  expect(screen.getByText(/Existing work continues/)).toBeTruthy();
+});

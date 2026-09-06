@@ -304,3 +304,25 @@ def test_notification_payload_and_delivery_are_authenticated_observation(client)
     assert set(delivery["payload"]) == {"kind", "resource_id", "link", "simulated"}
     assert delivery["payload"]["link"].startswith("/#run-")
     assert client.get("/api/state").status_code == 401
+
+
+def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
+    client.post("/api/demo/reader", headers=AUTH)
+    receipt = task(client).json()
+    route = "/api/residents/reader/pause"
+    assert client.post(route, json={"paused": True, "expected_revision": 0}).status_code == 401
+    assert (
+        client.post(route, headers=AUTH, json={"paused": True, "expected_revision": 0}).status_code
+        == 200
+    )
+    start = "/api/tasks/" + receipt["task_id"] + "/start"
+    assert client.post(start, headers=AUTH).json()["error"] == "resident_paused"
+    assert (
+        client.post(route, headers=AUTH, json={"paused": False, "expected_revision": 0}).status_code
+        == 409
+    )
+    assert (
+        client.post(route, headers=AUTH, json={"paused": False, "expected_revision": 1}).status_code
+        == 200
+    )
+    assert client.post(start, headers=AUTH).status_code == 200
