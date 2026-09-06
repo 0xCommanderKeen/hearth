@@ -564,5 +564,11 @@ scoped and revoked run access, inert malicious source text, serialized size limi
 and held backup/restore with original historical text. Browser component tests
 retain unconfirmed requests, preserve conflict drafts and lock historical source
 editing. Module ownership and provisioning documentation now describe inputs.
-Rendered browser acceptance and independent reviews are next. No provider calls,
-credential changes or live-data changes were performed.
+A fresh rendered browser created two named sets and three residents, started and
+read distinct orchard/harbor summaries plus an explicit empty result, edited the
+orchard set and verified a subsequent revision-2 summary alongside read-only
+revision-1 source history. Desktop/mobile screenshots were inspected and mobile
+overflow checks passed. Both independent review axes found no blocking issue.
+Standards recorded one optional P3 cleanup for repeated HTTP failure classification;
+the small feature-local draft recovery branches remain explicit. PR/CI/merge are
+next. No provider calls, credential changes or live-data changes were performed.
