@@ -29,6 +29,9 @@ def main() -> None:
             "verify-state",
             "import-state",
             "diff-state",
+            "upgrade-state",
+            "show-resident",
+            "save-resident",
         ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
@@ -36,6 +39,9 @@ def main() -> None:
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--against", type=Path)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--resident")
+    parser.add_argument("--revision", type=int)
+    parser.add_argument("--expected-revision", type=int)
     parser.add_argument(
         "--upgrade",
         action="store_true",
@@ -44,6 +50,37 @@ def main() -> None:
     args = parser.parse_args()
     if args.upgrade and args.command != "restore":
         parser.error("--upgrade is only valid with restore")
+    if args.command in {"show-resident", "save-resident"}:
+        if args.resident is None:
+            parser.error("resident commands require --resident")
+        hearth = Hearth(Database(args.data / "hearth.db"))
+        try:
+            if args.command == "show-resident":
+                resident = hearth.resident(args.resident, revision=args.revision)
+            else:
+                if args.source is None or args.expected_revision is None:
+                    parser.error("save-resident requires --source and --expected-revision")
+                with args.source.open("rb") as file:
+                    content = file.read(262_145)
+                if len(content) > 262_144:
+                    raise Refused("declaration_file_too_large")
+                values = json.loads(content)
+                if not isinstance(values, dict) or set(values) != {
+                    "name",
+                    "purpose",
+                    "daily_limit",
+                    "budget_timezone",
+                    "skill_text",
+                }:
+                    raise Refused("declaration_fields_invalid")
+                declaration = Declaration(**values)
+                resident = hearth.save_resident(
+                    args.resident, declaration, expected_revision=args.expected_revision
+                )
+            print(json.dumps(asdict(resident), indent=2, ensure_ascii=True))
+        except (Refused, OSError, TypeError, ValueError) as error:
+            parser.error(str(error))
+        return
     if args.command == "ownership-demo":
         from hearth.rehearsal import execution_handoff
 
@@ -63,8 +100,8 @@ def main() -> None:
             parser.error(str(error))
         print(json.dumps(result, indent=2))
         raise SystemExit(0 if result["equal"] else 1)
-    if args.command in {"export-state", "verify-state", "import-state"}:
-        from hearth.portable import MAX_EXPORT, export, import_state, validate
+    if args.command in {"export-state", "verify-state", "import-state", "upgrade-state"}:
+        from hearth.portable import MAX_EXPORT, export, import_state, upgrade_state, validate
 
         if args.source is None:
             parser.error(f"{args.command} requires --source")
@@ -75,10 +112,11 @@ def main() -> None:
         else:
             with args.source.open("rb") as file:
                 content = file.read(MAX_EXPORT + 1)
-            if args.command == "import-state":
+            if args.command in {"import-state", "upgrade-state"}:
                 if args.destination is None:
-                    parser.error("import-state requires --destination")
-                result = import_state(content, args.destination)
+                    parser.error(f"{args.command} requires --destination")
+                operation = import_state if args.command == "import-state" else upgrade_state
+                result = operation(content, args.destination)
             else:
                 result = validate(content)
         print(json.dumps(result, indent=2))

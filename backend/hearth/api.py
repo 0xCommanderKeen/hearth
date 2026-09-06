@@ -117,6 +117,16 @@ class PolicyPost(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class DeclarationPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str
+    purpose: str
+    daily_limit: int
+    budget_timezone: str
+    skill_text: str
+    expected_revision: int = Field(ge=0)
+
+
 class ApprovalPost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     artifact_id: str = Field(min_length=1, max_length=128)
@@ -240,6 +250,20 @@ def create_app(
 
         return StreamingResponse(
             changes(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+        )
+
+    @app.get("/api/residents/{resident_id}")
+    def resident(resident_id: str, revision: int | None = None):
+        return asdict(hearth.resident(resident_id, revision=revision))
+
+    @app.put("/api/residents/{resident_id}")
+    def save_resident(resident_id: str, body: DeclarationPost):
+        return asdict(
+            hearth.save_resident(
+                resident_id,
+                Declaration(**body.model_dump(exclude={"expected_revision"})),
+                expected_revision=body.expected_revision,
+            )
         )
 
     @app.post("/api/demo/reader")

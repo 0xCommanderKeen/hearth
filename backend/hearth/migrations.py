@@ -147,3 +147,7 @@ def accounting_schema(db: sqlite3.Connection) -> None:
 def budget_zone_schema(db: sqlite3.Connection) -> None:
     db.execute("ALTER TABLE declarations ADD COLUMN budget_timezone TEXT NOT NULL DEFAULT 'UTC'")
     db.execute("ALTER TABLE runs ADD COLUMN budget_timezone TEXT NOT NULL DEFAULT 'UTC'")
+
+
+def skill_schema(db: sqlite3.Connection) -> None:
+    db.execute("ALTER TABLE declarations ADD COLUMN skill_text TEXT NOT NULL DEFAULT ''")

@@ -80,7 +80,7 @@ class Hearth:
             else:
                 db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
             db.execute(
-                "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     resident_id,
                     revision,
@@ -89,6 +89,7 @@ class Hearth:
                     declaration.daily_limit,
                     now,
                     declaration.budget_timezone,
+                    declaration.skill_text,
                 ),
             )
             _audit(db, "resident.saved", resident_id, now, {"revision": revision})
@@ -138,7 +139,11 @@ class Hearth:
                 row["resident_id"],
                 row["revision"],
                 Declaration(
-                    row["name"], row["purpose"], row["daily_limit"], row["budget_timezone"]
+                    row["name"],
+                    row["purpose"],
+                    row["daily_limit"],
+                    row["budget_timezone"],
+                    row["skill_text"],
                 ),
             )
 

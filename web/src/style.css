@@ -640,3 +640,25 @@ footer > span:first-child {
     animation: none !important;
   }
 }
+/* Skill drafts stay beside their resident, in the existing Townhall paper palette. */
+.skill-editor {
+  border-top: 1px solid #d6d0c4;
+  padding: 1.2rem 0;
+  margin-top: 1rem;
+}
+.skill-editor summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.skill-editor p,
+.skill-editor small {
+  line-height: 1.6;
+}
+.skill-editor textarea {
+  min-height: 12rem;
+  font-family: ui-monospace, monospace;
+}
+.skill-editor button {
+  max-width: 100%;
+  white-space: normal;
+}

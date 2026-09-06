@@ -13,6 +13,7 @@ from hearth.database import SCHEMA, SCHEMA_VERSION, Database
 from hearth.migrations import (
     accounting_schema,
     approval_schema,
+    budget_zone_schema,
     control_schema,
     execution_schema,
     notification_schema,
@@ -23,7 +24,7 @@ from hearth.migrations import (
 from hearth.models import Refused
 
 
-@pytest.fixture(params=[6, 7, 8, 9])
+@pytest.fixture(params=[6, 7, 8, 9, 10])
 def historical(request, tmp_path):
     version = request.param
     root = tmp_path / "historical"
@@ -46,11 +47,15 @@ def historical(request, tmp_path):
             run_access_schema(db)
         if version >= 9:
             accounting_schema(db)
+        if version >= 10:
+            budget_zone_schema(db)
         db.execute(f"PRAGMA user_version={version}")
         for resident in ("reader", "other"):
             db.execute("INSERT INTO residents VALUES (?, 1)", (resident,))
             db.execute(
-                "INSERT INTO declarations VALUES (?, 1, ?, 'Synthetic purpose', 10000, 100)",
+                "INSERT INTO declarations "
+                "(resident_id,revision,name,purpose,daily_limit,created_at) "
+                "VALUES (?, 1, ?, 'Synthetic purpose', 10000, 100)",
                 (resident, resident),
             )
         db.execute(

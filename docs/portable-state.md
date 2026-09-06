@@ -3,7 +3,7 @@
 Issue #25 adds readable export and validation for a consistent Hearth mock backup.
 Issue #27 adds isolated read-only import and verified repeat import. Neither operation
 activates residents. The format is deliberately pinned to
-schema 10; unsupported versions and schema changes require an explicit conversion.
+schema 11; unsupported versions and schema changes require an explicit conversion.
 
 ```sh
 python -m hearth backup --data /tmp/synthetic-hearth --destination /tmp/synthetic-backup
@@ -20,8 +20,8 @@ text somebody placed in the source database.
 
 ## Contract
 
-The JSON envelope identifies `hearth-mock-state`, format version 1, database schema
-10, `simulated: true`, the source observation epoch, table rows, and file contents.
+The JSON envelope identifies `hearth-mock-state`, format version 2, database schema
+11, `simulated: true`, the source observation epoch, table rows, and file contents.
 Every operational table is included, including empty tables. Revisions, identities,
 commands, queued work, active/uncertain runs, reservations, original accounting
 timestamps, usage reports, both kinds of pause, approvals, pending effects, routines,
@@ -60,7 +60,7 @@ notification receipts, credential exclusion, source immutability, empty state,
 pruned audit sequence preservation, stable comparison and malformed input refusal.
 
 Still required: explicit compatibility mappings, memory/capability
-models, ownership contention and rollback rehearsals. Cross-version conversion and
+models and complete ownership/rollback rehearsals. Source-system conversion and
 live migration acceptance are not established by these rehearsals. No HTTP export or
 import endpoint is exposed, and no real data is used by the tests.
 
@@ -127,3 +127,20 @@ invalid input or arguments. Validation occurs even with `--limit 0`. Comparison 
 read-only and does not apply changes or authorize a transfer. Equal current-schema
 Hearth exports do not establish compatibility with another system or prove that
 source data excluded by this format has been migrated.
+
+## Explicit version-1 upgrade
+
+Format 1/schema 10 remains supported for verification and comparison with another
+format-1 document. Import requires format 2/schema 11. Upgrade into a fresh directory:
+
+```sh
+python -m hearth upgrade-state --source /tmp/old-export/state.json --destination /tmp/upgraded-export
+python -m hearth import-state --source /tmp/upgraded-export/state.json --destination /tmp/held-copy
+```
+
+The upgrade validates the old document before adding empty `skill_text` to every
+declaration revision. All prior values, file content and source epoch are retained;
+the original document is untouched. A new semantic digest includes the new format
+and fields; the report also carries the source digest. Unknown old fields are
+refused, never discarded. Cross-format comparison requires upgrading first. This
+conversion neither recovers absent skills nor activates execution.

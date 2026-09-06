@@ -11,12 +11,12 @@ from pathlib import Path
 
 from hearth import backup
 from hearth.database import SCHEMA_VERSION, Database
-from hearth.models import Refused
+from hearth.models import Refused, validate_skill_text
 
 FORMAT = "hearth-mock-state"
-VERSION = 1
+VERSION = 2
 # Deliberately pinned: a database upgrade requires an explicit format compatibility decision.
-SUPPORTED_SCHEMA = 10
+SUPPORTED_SCHEMA = 11
 MAX_EXPORT = 32 * 1024 * 1024
 MAX_ROWS = 100_000
 EXCLUDED = {"system_meta", "run_credentials"}
@@ -52,7 +52,7 @@ def _canonical_tables(tables: dict) -> dict:
     return {name: sorted(rows, key=_json) for name, rows in tables.items()}
 
 
-def _check(payload: dict, reference: sqlite3.Connection) -> dict:
+def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False) -> dict:
     if not isinstance(payload, dict) or set(payload) != {
         "format",
         "version",
@@ -66,9 +66,9 @@ def _check(payload: dict, reference: sqlite3.Connection) -> dict:
     if (
         payload["format"] != FORMAT
         or type(payload["version"]) is not int
-        or payload["version"] != VERSION
+        or payload["version"] != (1 if legacy else VERSION)
         or type(payload["schema"]) is not int
-        or payload["schema"] != SUPPORTED_SCHEMA
+        or payload["schema"] != (10 if legacy else SUPPORTED_SCHEMA)
         or SCHEMA_VERSION != SUPPORTED_SCHEMA
         or payload["simulated"] is not True
     ):
@@ -110,6 +110,8 @@ def _check(payload: dict, reference: sqlite3.Connection) -> dict:
                 elif type(value) is not {"INTEGER": int, "TEXT": str}[kind]:
                     raise Refused("portable_value_invalid")
             values = dict(row)
+            if name == "declarations" and not legacy:
+                validate_skill_text(values["skill_text"])
             if name == "runs":
                 # A reconstruction used for constraint checking only, never an owner grant.
                 values["owner_token"] = "portable:" + values["id"]
@@ -181,7 +183,14 @@ def validate(content: bytes) -> dict:
             database = Database(Path(temporary) / "reference.db")
             database.initialize()
             with sqlite3.connect(database.path) as reference:
-                normalized = _check(payload, reference)
+                legacy = (
+                    isinstance(payload, dict)
+                    and payload.get("version") == 1
+                    and payload.get("schema") == 10
+                )
+                if legacy:
+                    reference.execute("ALTER TABLE declarations DROP COLUMN skill_text")
+                normalized = _check(payload, reference, legacy=legacy)
     except Refused:
         raise
     except ValueError, TypeError, KeyError, OverflowError, sqlite3.DatabaseError, RecursionError:
@@ -189,13 +198,30 @@ def validate(content: bytes) -> dict:
     semantic = {key: value for key, value in normalized.items() if key != "source_epoch"}
     return {
         "format": FORMAT,
-        "version": VERSION,
-        "schema": SUPPORTED_SCHEMA,
+        "version": normalized["version"],
+        "schema": normalized["schema"],
         "simulated": True,
         "semantic_sha256": hashlib.sha256(_json(semantic)).hexdigest(),
         "rows": {name: len(rows) for name, rows in normalized["tables"].items()},
         "files": len(normalized["files"]),
     }
+
+
+def upgrade_state(content: bytes, destination: Path) -> dict:
+    """Explicitly preserve v1 values in a new v2 export; absent skills become empty."""
+    source = validate(content)
+    if source["version"] != 1:
+        raise Refused("portable_upgrade_not_required")
+    payload = json.loads(content)
+    for declaration in payload["tables"]["declarations"]:
+        declaration["skill_text"] = ""
+    payload["version"], payload["schema"] = VERSION, SUPPORTED_SCHEMA
+    upgraded = json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=True).encode() + b"\n"
+    result = validate(upgraded)
+    destination = destination.parent.resolve() / destination.name
+    with backup._destination(destination) as pending:
+        backup._write(pending / "state.json", upgraded)
+    return result | {"source_version": 1, "source_semantic_sha256": source["semantic_sha256"]}
 
 
 def export(source: Path, destination: Path) -> dict:
@@ -263,6 +289,8 @@ def export(source: Path, destination: Path) -> dict:
 def import_state(content: bytes, destination: Path) -> dict:
     """Publish a held reconstruction; identical retries verify the existing copy."""
     report = validate(content)
+    if report["schema"] != SUPPORTED_SCHEMA:
+        raise Refused("portable_upgrade_required")
     payload = json.loads(content)
     destination = destination.parent.resolve() / destination.name
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -342,6 +370,8 @@ def compare(before: bytes, after: bytes, *, limit: int = 1000) -> dict:
     if type(limit) is not int or not 0 <= limit <= 10_000:
         raise Refused("portable_diff_limit_invalid")
     reports = [validate(content) for content in (before, after)]
+    if reports[0]["schema"] != reports[1]["schema"]:
+        raise Refused("portable_comparison_requires_same_format")
     left, right = [json.loads(content) for content in (before, after)]
     changes = []
     totals = {"added": 0, "removed": 0, "modified": 0}

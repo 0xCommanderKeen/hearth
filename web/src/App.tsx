@@ -10,6 +10,7 @@ import "./style.css";
 import { Approvals } from "./Approvals";
 import { RoutinePanel } from "./Routines";
 import { UsageReport } from "./UsageReport";
+import { Skills } from "./Skills";
 
 const statusLabel = (s: string) =>
   ({
@@ -535,6 +536,16 @@ export function App() {
                       Budget day: {r.budget_timezone ?? "UTC"}
                     </span>
                   </div>
+                ))}
+                {residents.map((r) => (
+                  <Skills
+                    key={`${snapshot.epoch}:${r.id}`}
+                    client={client}
+                    resident={r}
+                    busy={busy}
+                    readOnly={snapshot.restore_hold === true}
+                    act={act}
+                  />
                 ))}
               </section>
               <section className="task-panel">
