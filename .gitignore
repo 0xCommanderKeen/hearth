@@ -10,4 +10,4 @@ htmlcov/
 .env*
 node_modules/
 web/dist/
-
+backend/hearth/web/

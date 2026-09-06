@@ -14,7 +14,8 @@ The Python core persists resident revisions, deduplicated task commands, run
 admission, and budget reservations. Each change commits with its audit record in
 one SQLite transaction. A deterministic mock runtime produces a simulated summary
 and exercises recovery, cancellation, and accounting. No real agents, model calls,
-or live source files are used. The browser UI is next.
+or live source files are used. Hamlet and Townhall share one browser application,
+an authenticated client, and the authoritative snapshot stream.
 
 ```sh
 uv sync --frozen
@@ -22,7 +23,9 @@ make check
 uv run python -m hearth demo
 ```
 
-Python 3.14 and uv are required. The initial core has no production dependencies.
+Python 3.14, uv, Node 22.22+, and pnpm 11.22 are required. The backend uses FastAPI;
+the browser uses React and TypeScript. `make check` builds one Python wheel that
+contains the compiled browser, and verifies its referenced assets are present.
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 
@@ -31,6 +34,23 @@ for a separate simulation. Every output and cost is labeled simulated. The mock
 returns a fixed synthetic summary; it does not interpret arbitrary instructions.
 Runtime scenarios include success, held execution, failure, and unknown usage for
 deterministic recovery tests.
+
+## Open the local mock application
+
+Build with `make check`, set `HEARTH_OPERATOR_TOKEN` to a local operator credential
+of at least 16 characters, then start:
+
+```sh
+uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8766
+```
+
+Open `http://127.0.0.1:8766` and enter that token. Set up mock Reader, assign a task,
+and open its summary. The credential stays in browser memory for the session.
+Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
+Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate demo to exercise cancellation.
+Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulations,
+not runtime/provider selectors. For browser development, `pnpm --dir web dev`
+proxies its `/api` requests to the same local backend.
 
 See the [implementation gates](docs/implementation.md),
 [rebuild plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).

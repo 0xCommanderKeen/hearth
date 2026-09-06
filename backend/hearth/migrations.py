@@ -1,6 +1,7 @@
 """Add execution outcomes without discarding foundation identities or receipts."""
 
 import sqlite3
+import uuid
 
 
 def execution_schema(db: sqlite3.Connection) -> None:
@@ -50,3 +51,8 @@ def execution_schema(db: sqlite3.Connection) -> None:
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
         size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated = 1)
     )""")
+
+
+def observation_schema(db: sqlite3.Connection) -> None:
+    db.execute("CREATE TABLE system_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    db.execute("INSERT INTO system_meta VALUES (?, ?)", ("epoch", str(uuid.uuid4())))

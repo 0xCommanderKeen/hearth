@@ -23,6 +23,11 @@ resident (Miha's selection, 2026-09-05).
   intent, cancellation, terminal evidence, artifact publication, synthetic usage
   settlement, unknown-usage pause, and schema upgrade. Combined validation: 47
   tests, Ruff and ty pass; local CLI demo produces a simulated summary artifact.
+- Issue #5: authenticated local API, complete snapshots/SSE, unified Hamlet and
+  Townhall, stable browser retries, cancellation/result views, session isolation,
+  and packaged web assets. Combined verification 2026-09-06: 58 backend tests,
+  14 client/component tests, types/lint/build pass; actual localhost SSE reset and
+  wheel asset references verified. Visual inspection remains pending OS permissions.
 
 GitHub CI is blocked at job creation: the account's recent payments failed or its
 spending limit prevents Actions execution (run 33993194801, job 101378980825).
@@ -33,8 +38,8 @@ account condition is unresolved.
 ## Next
 
 Miha directed mock-only development on 2026-09-05: synthetic notes and deterministic
-mock runtimes now; real tests later, after behavior is proven. Add the operator
-workflow, brokered mock approvals, notifications, scheduling, and restore/import
+mock runtimes now; real tests later, after behavior is proven. Add brokered mock
+approvals, notifications, scheduling, and restore/import
 rehearsals on the verified lifecycle. Keep live execution, source grants, provider/model
 choices, paid calls, and migration deferred. Mock evidence must be visibly labeled
 and cannot complete the real-host, live canary, or retirement gates.

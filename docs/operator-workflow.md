@@ -1,0 +1,44 @@
+# Mock operator workflow
+
+Hamlet and Townhall are views in one application, using one same-origin client and
+the same complete snapshot. A static SVG home represents Reader; it glows only when
+the connected server reports a running mock. A disconnected client explicitly
+labels its state stale. This initial view supports the selected one-reader workflow;
+rendering an imported fleet remains a later migration acceptance requirement.
+
+All `/api/` requests authenticate with an operator bearer credential before body
+parsing. Request bodies are capped at 64 KiB. The browser keeps the credential in
+memory, refuses external API paths and redirects, clears rejected credentials, and
+does not cache private responses. Late results from a locked session cannot restore
+content. The mock server binds to localhost in the documented startup command;
+this is not an internet deployment or a completed production authentication design.
+
+Submission receipts survive retries and remain queryable after their deadline.
+The browser preserves the exact command/payload while a submission is uncertain.
+If its deadline passes, it looks up the accepted receipt; only a confirmed absence
+allows a fresh submission. Start retries resolve to the same run. Acceptance is
+displayed separately from runtime completion, and cancellation remains stopping
+until runtime evidence confirms a terminal outcome.
+
+State and audit cursor are read in one SQLite transaction. Database epoch plus
+cursor identify the snapshot; reconnect fetches a complete snapshot, and SSE sends
+complete snapshots or explicit resets. The client rejects unsupported schema or
+non-simulated state and prevents an older same-epoch response replacing a newer one.
+Active work takes priority over recent history under the 100-task/run display cap.
+Artifacts are read through their checksummed metadata, not exposed as arbitrary paths.
+
+## Verification, 2026-09-06
+
+- 58 Python tests cover the domain, runtime, migrations, auth, API journeys, cursor
+  behavior, and active-work retention. Ruff, ty, source/wheel build pass.
+- 14 client/component tests cover login, seeding, view switching, stable submission
+  retries, expiry reconciliation, cancellation intent, output, logout and late
+  responses, credential rejection, and snapshot ordering. TypeScript/build pass.
+- Actual localhost HTTP returned the built HTML and schema-1 state; authenticated
+  `/api/events` returned `text/event-stream` and an explicit reset with a complete
+  simulated snapshot. Wheel inspection verifies all referenced assets are included.
+- Visual browser inspection is pending: no connected browser was available, and
+  native Chrome access waited on macOS Accessibility/Screen Recording permissions.
+  Do not claim screenshot, responsive-layout, or accessibility-tree verification.
+- GitHub CI is still blocked before job execution by the account billing/spending
+  restriction. Local verification is not a substitute claim of a CI pass.
