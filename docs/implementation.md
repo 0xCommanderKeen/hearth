@@ -123,3 +123,23 @@ original combined create/open intermittently failed with ENOENT on this Mac.
 Full `make check` passes 289 backend and 35 browser tests plus both installed mock
 journeys. Actual worker wiring and Mac filesystem/network isolation remain pending;
 read-only file permissions are not evidence of confinement. No Codex call was made.
+
+## Offline Mac container boundary
+
+Issue #60 adds an opt-in credential-free probe using the local Docker Desktop
+Linux VM on macOS 26.5.2 arm64, Docker 27.3.1 and a digest-pinned Python image.
+[Recorded host evidence](evidence/mac-container-2026-09-06.json) verifies denied
+unmounted canary reads, readonly input/root, bounded scratch, denied outbound
+network, non-root/capability/no-new-privileges/seccomp controls and cgroup limits.
+A live double-forked setsid descendant is terminated with its container; daemon
+terminal state and unavailable process listing are checked before owned cleanup.
+
+The daemon default is unconfined; explicit built-in seccomp and an in-container
+Seccomp=2 assertion avoid relying on it. Dormant tunnel interfaces are present;
+the probe checks no active non-loopback interfaces/routes and connection denial.
+Three offline cleanup checks cover daemon loss and foreign-ownership refusal.
+Full `make check` passes 292 backend/35 browser plus both installed mock journeys.
+This is host evidence for the synthetic image, not a Codex integration or a real
+summary. [Reproduction and remaining gates](mac-isolation.md) cover actual staged
+mount permissions, durable worker identity, model transport/credential separation,
+pricing, real-test selection and the remaining observation/operation gates.

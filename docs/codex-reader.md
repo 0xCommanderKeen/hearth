@@ -84,6 +84,8 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    The first summary should have no external effects or source connectors. Keep
    the trusted launch/evidence worker outside the model's writable filesystem.
 5. **Verify on the selected burrow, then enable one bounded real test explicitly.**
+   The [offline Mac container probe](mac-isolation.md) verifies one synthetic
+   outer boundary. Actual Codex image, staged mount and model-channel checks remain.
    With a credential-free probe, demonstrate denied reads/writes outside staged
    inputs, denied arbitrary network access, denied access to control/credential
    paths, and reliable descendant termination. Permit only the model connection
@@ -101,9 +103,9 @@ cannot establish model quality or the host isolation boundary.
 
 ## Decisions still needed
 
-- Mac process and isolation mechanism, verified with credential-free probes before
-  connecting the model. Development on this Mac is selected; no remote deployment
-  is selected.
+- Integrate the verified offline Mac container boundary with the actual Codex
+  worker, staged inputs and trusted model channel before connecting the model.
+  Development on this Mac is selected; no remote deployment is selected.
 - Applicable billing and stop policy for the confirmed $10/day allowance. Hearth
   admission/accounting is not a provider-enforced ceiling; delayed token telemetry
   cannot establish an exact billed-cost cap.
