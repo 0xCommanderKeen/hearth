@@ -515,3 +515,8 @@ coverage includes dropped headers/rows, changed content/order/digests and a corr
 queued routine alongside healthy queued and active work. Browser conflict and exact
 unconfirmed-retry tests pass. The final mobile check verified the separate resident
 instructions label and persisted text. Independent reviews and PR merge are next.
+
+Standards review corrected historical skill-error wording: unavailable provenance
+no longer claims execution is held when the run is completed or still running. A
+completed-run regression failed before the correction and passes afterward; all
+16 App tests and the browser typecheck/build pass.

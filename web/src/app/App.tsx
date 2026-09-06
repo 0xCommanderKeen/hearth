@@ -792,9 +792,8 @@ export function App() {
                             )}
                             {run?.skills_error && (
                               <p className="notice error">
-                                Skill input unavailable:{" "}
+                                Skill provenance unavailable:{" "}
                                 {run.skills_error.replaceAll("_", " ")}.
-                                Execution is held.
                               </p>
                             )}
                             {!!run?.skills?.length && (
