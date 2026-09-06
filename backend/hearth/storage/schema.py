@@ -2,6 +2,29 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE resident_skill_sets (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL,
+        count INTEGER NOT NULL, sha256 TEXT NOT NULL
+    )""",
+    """CREATE TABLE assigned_skills (
+        resident_id TEXT NOT NULL REFERENCES resident_skill_sets(resident_id), position INTEGER NOT NULL,
+        skill_id TEXT NOT NULL, skill_revision INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(resident_id, position), UNIQUE(resident_id, skill_id),
+        FOREIGN KEY(skill_id, skill_revision) REFERENCES skill_revisions(skill_id, revision)
+    )""",
+    """CREATE TABLE assignment_operations (
+        command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, receipt TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_skill_sets (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
+        revision INTEGER NOT NULL, count INTEGER NOT NULL, sha256 TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_skills (
+        run_id TEXT NOT NULL REFERENCES run_skill_sets(run_id), position INTEGER NOT NULL,
+        skill_id TEXT NOT NULL, skill_revision INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(run_id, position), UNIQUE(run_id, skill_id),
+        FOREIGN KEY(skill_id, skill_revision) REFERENCES skill_revisions(skill_id, revision)
+    )""",
     """CREATE TABLE skills (
         id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision > 0),
         created_by TEXT NOT NULL, created_at INTEGER NOT NULL,

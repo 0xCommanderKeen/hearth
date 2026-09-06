@@ -297,6 +297,9 @@ class Hearth:
             ).fetchone()[0]
             if memory is not None:
                 db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
+            from hearth.skills.assignments import pin_skills
+
+            pin_skills(db, run.id, resident_id)
             context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
             digest = hashlib.sha256(
                 json.dumps(context, sort_keys=True, separators=(",", ":")).encode()

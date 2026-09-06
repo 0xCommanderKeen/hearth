@@ -22,7 +22,7 @@ export function TextEditor<T extends { revision: number }>({
   description,
   hint,
 }: EditorControls & {
-  kind: "memory" | "skill text";
+  kind: "memory" | "resident instructions";
   revision: number;
   load: () => Promise<T>;
   save: (saved: T, draft: string) => Promise<T>;
@@ -36,7 +36,7 @@ export function TextEditor<T extends { revision: number }>({
   const [notice, setNotice] = useState("");
   const changed = saved !== null && saved.revision !== revision;
   const memory = kind === "memory";
-  const label = memory ? "Memory" : "Skill text";
+  const label = memory ? "Memory" : "Resident instructions";
   const id = `${memory ? "memory" : "skills"}-${resident.id}`;
   return (
     <details className="skill-editor">
@@ -70,7 +70,7 @@ export function TextEditor<T extends { revision: number }>({
               setNotice(
                 memory
                   ? `Saved memory revision ${result.revision}.`
-                  : `Saved skill text at revision ${result.revision}.`,
+                  : `Saved resident instructions at revision ${result.revision}.`,
               );
             });
           }}

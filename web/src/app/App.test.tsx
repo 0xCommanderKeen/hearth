@@ -460,3 +460,35 @@ it("forgets a saved token when the server rejects it after refresh", async () =>
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
   expect(sessionStorage.length).toBe(0);
 });
+
+it("reports damaged historical skill provenance without inventing an execution hold", async () => {
+  window.location.hash = "#tasks";
+  addReader();
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "Completed summary",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: "result",
+      actual_cost: 2000,
+      usage_known: 1,
+      cancellation_requested: 0,
+      skills_error: "skill_content_changed",
+    },
+  ];
+  await login(false);
+  expect(screen.getByText("Completed")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Read summary/ })).toBeTruthy();
+  expect(screen.queryByText(/Execution is held/)).toBeNull();
+  expect(screen.getByText(/Skill provenance unavailable/)).toBeTruthy();
+});

@@ -4,6 +4,7 @@ import sqlite3
 
 from hearth.residents.memory import MemoryFiles, read_revision
 from hearth.residents.models import Refused
+from hearth.skills.assignments import run_skills
 
 
 def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> dict:
@@ -23,7 +24,8 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     if pinned is not None and pinned["resident_id"] != row["resident_id"]:
         raise Refused("memory_run_mismatch")
     return {
-        "context_version": 3,
+        "context_version": 4,
+        "skills": run_skills(db, run_id),
         "run_id": row["id"],
         "task_id": row["task_id"],
         "resident_id": row["resident_id"],

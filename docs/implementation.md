@@ -486,3 +486,37 @@ cases failed with runs stuck in `starting` before the fix and pass afterward: an
 active run settles despite either household hold, and the capacity-blocked routine
 then completes when the slot is released. All 25 supervisor/routine/household checks,
 lint/format and backend types pass. Integrity failures remain visible refusals.
+
+## Exact resident skill assignments — issue #87
+
+Resident profiles now attach, detach, order and explicitly select reusable skill
+revisions, distinct from resident-specific instructions. Skill pages list assigned
+residents; run history shows the revisions actually used. Publishing or archiving
+never silently rewrites assignments or admitted input. Independent assignment-set
+revisions preserve existing declaration dispatch guards. Ordered manifests and
+content digests pin even empty run sets in the same admission transaction.
+
+Context version 4 composes all assigned text through the existing authoritative
+runtime context. Missing/corrupt sets or content refuse launch with a visible cause.
+Current-data backup verifies manifests/content, and held restore preserves assignments
+and used history read-only. Scheduler errors stay visible while healthy queued and
+active residents continue. See [the operation and pinning contract](skill-assignments.md).
+
+A real rendered browser passed: attach one shared revision to two residents, publish
+a new revision, deliberately update only one, run both through the mock runtime and
+observe revision 2 versus revision 1. Detach/archive left run history unchanged;
+reverse resident links, archived assignment labels and mobile overflow checks passed.
+Desktop/mobile screenshots were inspected. All inputs were synthetic; the live demo,
+credentials and provider accounts were untouched.
+
+Final `make check` passed 517 backend and 47 browser tests, lint, formatting,
+Python/TypeScript checks, build and both installed-wheel journeys. Focused corruption
+coverage includes dropped headers/rows, changed content/order/digests and a corrupt
+queued routine alongside healthy queued and active work. Browser conflict and exact
+unconfirmed-retry tests pass. The final mobile check verified the separate resident
+instructions label and persisted text. Independent reviews and PR merge are next.
+
+Standards review corrected historical skill-error wording: unavailable provenance
+no longer claims execution is held when the run is completed or still running. A
+completed-run regression failed before the correction and passes afterward; all
+16 App tests and the browser typecheck/build pass.

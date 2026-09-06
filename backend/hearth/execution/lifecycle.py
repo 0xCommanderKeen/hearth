@@ -13,6 +13,7 @@ from hearth.integrations.interface import Evidence, Runtime
 from hearth.observation.notifications import enqueue
 from hearth.residents.memory import Memory
 from hearth.residents.models import Refused, Run, microdollars
+from hearth.skills.assignments import run_skills
 from hearth.storage.artifacts import Artifact, Artifacts
 from hearth.work.service import ACTIVE_RUNS, Hearth, _audit
 
@@ -329,6 +330,19 @@ class Executor:
                     self.runtime.version,
                 ):
                     raise Refused("runtime_run_mismatch")
+                if (
+                    run.status == "starting"
+                    and not run.launch_attempted
+                    and not run.cancellation_requested
+                ):
+                    try:
+                        with self.execution.hearth.database.transaction() as db:
+                            run_skills(db, run.id)
+                    except Refused:
+                        results.append(
+                            self.execution.observe(run.id, run.owner_token, "interrupted")
+                        )
+                        continue
                 if interface.uses_receipts(self.runtime.kind):
                     results.append(self._step_receipted(run))
                     continue
@@ -357,6 +371,7 @@ class Executor:
                         if not (
                             error.code.startswith("memory_")
                             or error.code.startswith("invalid_memory_")
+                            or error.code.startswith("skill_")
                         ):
                             raise
                         results.append(

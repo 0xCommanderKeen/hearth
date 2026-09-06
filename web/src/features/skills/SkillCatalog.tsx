@@ -6,6 +6,7 @@ import {
   type SkillChange,
   type SkillDraft,
 } from "../../shared/client";
+import { SkillUsers } from "./SkillUsers";
 import { Markdown } from "./Markdown";
 import "./skills.css";
 
@@ -376,6 +377,7 @@ function SkillEditor({
               Retry pending save
             </button>
           )}
+          {saved && <SkillUsers client={client} id={saved.skill_id} />}
           {saved && (
             <section
               className="skill-history"

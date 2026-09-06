@@ -148,3 +148,29 @@
     gap: 1rem;
   }
 }
+.assignment-editor {
+  border-top: 1px solid #343537;
+  margin-top: 2rem;
+  padding-top: 1rem;
+}
+.assigned-skills {
+  padding-left: 1.5rem;
+}
+.assigned-skills > li {
+  padding: 0.7rem 0 1.2rem;
+  border-bottom: 1px solid #343537;
+}
+.assigned-skills > li > a {
+  font-size: 1.1rem;
+}
+.assigned-skills p {
+  margin: 0.5rem 0;
+}
+.assignment-editor select {
+  width: 100%;
+  margin: 0.5rem 0 1rem;
+  padding: 0.65rem;
+  background: #181b20;
+  color: #e8e0ce;
+  border: 1px solid #343537;
+}
