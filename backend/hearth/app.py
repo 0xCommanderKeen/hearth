@@ -256,7 +256,11 @@ def create_app(
 
         with database.transaction() as db:
             accounting = details(db, run_id)
+            from hearth.skills.assignments import skill_summary
+
+            used_skills = skill_summary(db, run_id, run=True)
         return {
+            **used_skills,
             "accounting": accounting,
             "id": run.id,
             "status": run.status,

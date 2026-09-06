@@ -21,6 +21,7 @@ class Supervisor:
         self._health: dict = {
             "supervisor": "stopped",
             "executor_error": None,
+            "scheduler_error": None,
             "notification_error": None,
         }
 
@@ -43,7 +44,12 @@ class Supervisor:
                 lock.close()
                 raise Refused("supervisor_busy") from None
             self._stop.clear()
-            self._health.update(supervisor="running", executor_error=None, notification_error=None)
+            self._health.update(
+                supervisor="running",
+                executor_error=None,
+                scheduler_error=None,
+                notification_error=None,
+            )
             self._thread = threading.Thread(
                 target=self._run, args=(lock,), name="hearth-supervisor"
             )
@@ -79,8 +85,15 @@ class Supervisor:
                     if self._stop.is_set():
                         break
                     self.routines.admit_queued()
-                    if self._stop.is_set():
-                        break
+                    self._set("scheduler_error", None)
+                except Exception as error:
+                    self._set(
+                        "scheduler_error",
+                        error.code if isinstance(error, Refused) else type(error).__name__,
+                    )
+                if self._stop.is_set():
+                    break
+                try:
                     self.executor.step()
                     self._set("executor_error", None)
                 except Exception as error:

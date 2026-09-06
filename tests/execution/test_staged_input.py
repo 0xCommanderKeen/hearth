@@ -49,6 +49,7 @@ def test_staging_pins_context_and_excludes_authority_and_other_residents(system)
         assert secret not in raw.decode()
     assert set(context) == {
         "context_version",
+        "skills",
         "run_id",
         "task_id",
         "resident_id",

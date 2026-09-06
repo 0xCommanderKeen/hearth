@@ -1,3 +1,25 @@
+export type AssignedSkill = Omit<
+  CatalogSkill,
+  "status" | "created_by" | "edited_by" | "created_at" | "edited_at"
+> & { latest_revision?: number; catalog_status?: string };
+export type AssignmentSet = {
+  resident_id: string;
+  revision: number;
+  sha256: string;
+  skills: AssignedSkill[];
+};
+export type AssignmentChange = {
+  resident_id: string;
+  command_id: string;
+  expected_revision: number;
+  skills: { skill_id: string; revision: number }[];
+};
+export type SkillUser = {
+  resident_id: string;
+  name: string;
+  revision: number;
+  position: number;
+};
 export type SkillDraft = {
   name: string;
   description: string;
@@ -80,6 +102,8 @@ export type Resident = {
   operator_paused?: number;
   control_revision?: number;
   memory_revision?: number;
+  skills?: AssignedSkill[];
+  skills_error?: string | null;
 };
 export type ResidentMemory = {
   resident_id: string;
@@ -116,6 +140,8 @@ export type Run = {
   usage_source?: string;
   cancellation_requested: number;
   memory_revision?: number;
+  skills?: AssignedSkill[];
+  skills_error?: string | null;
 };
 export type Snapshot = {
   household?: HouseholdPolicy;
@@ -237,6 +263,35 @@ export class Client {
     const state = decodeSnapshot(await this.request("/api/state"));
     this.readOnly = state.restore_hold === true;
     return state;
+  }
+  assignments(id: string) {
+    return this.request<AssignmentSet>(
+      `/api/residents/${encodeURIComponent(id)}/skills`,
+    );
+  }
+  async saveAssignments(change: AssignmentChange) {
+    const receipt = await this.request<{
+      revision: number;
+      command_id: string;
+    }>(`/api/residents/${encodeURIComponent(change.resident_id)}/skills`, {
+      method: "PUT",
+      headers: { "Idempotency-Key": change.command_id },
+      body: JSON.stringify({
+        expected_revision: change.expected_revision,
+        skills: change.skills,
+      }),
+    });
+    if (
+      receipt.command_id !== change.command_id ||
+      !Number.isSafeInteger(receipt.revision)
+    )
+      throw new Error("Assignment receipt incomplete; retry to recover it.");
+    return receipt;
+  }
+  skillUsers(id: string) {
+    return this.request<SkillUser[]>(
+      `/api/skills/${encodeURIComponent(id)}/assignments`,
+    );
   }
   skills(query = "", includeArchived = false) {
     return this.request<CatalogSkill[]>(

@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 from hearth.authority.household import household_state
 from hearth.authority.permissions import _approval
+from hearth.skills.assignments import skill_summary
 from hearth.work.service import ACTIVE_RUNS, Hearth
 
 
@@ -32,6 +33,7 @@ def snapshot(hearth: Hearth) -> dict:
             resident["presence"] = (
                 active[0] if active else ("paused" if row["pause_reason"] else "ready")
             )
+            resident.update(skill_summary(db, row["id"]))
             residents.append(resident)
         tasks = [
             dict(row)
@@ -61,6 +63,8 @@ def snapshot(hearth: Hearth) -> dict:
                    (usage_known=0 AND finished_at IS NOT NULL) DESC,
                    created_at DESC, id DESC LIMIT 100""")
         ]
+        for run in runs:
+            run.update(skill_summary(db, run["id"], run=True))
         audit = [
             dict(row)
             for row in db.execute(

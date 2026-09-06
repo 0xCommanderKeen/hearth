@@ -12,6 +12,7 @@ import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { Skills } from "../features/residents/Skills";
 import { Memory } from "../features/residents/Memory";
+import { Assignments } from "../features/skills/Assignments";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { Hamlet } from "../features/hamlet/Hamlet";
@@ -717,6 +718,16 @@ export function App() {
                       {residents
                         .filter((r) => r.id === residentId)
                         .map((r) => (
+                          <Assignments
+                            key={`assigned:${snapshot.epoch}:${r.id}`}
+                            client={client}
+                            residentId={r.id}
+                            readOnly={snapshot.restore_hold === true}
+                          />
+                        ))}
+                      {residents
+                        .filter((r) => r.id === residentId)
+                        .map((r) => (
                           <Skills
                             key={`${snapshot.epoch}:${r.id}`}
                             client={client}
@@ -778,6 +789,30 @@ export function App() {
                                   ? "Admitted without memory"
                                   : `Memory revision ${run.memory_revision}`}
                               </small>
+                            )}
+                            {run?.skills_error && (
+                              <p className="notice error">
+                                Skill input unavailable:{" "}
+                                {run.skills_error.replaceAll("_", " ")}.
+                                Execution is held.
+                              </p>
+                            )}
+                            {!!run?.skills?.length && (
+                              <div aria-label="Skills used by run">
+                                <small>Skills used · in order</small>
+                                <ol>
+                                  {run.skills.map((skill) => (
+                                    <li key={skill.skill_id}>
+                                      <a
+                                        href={`#skills/${encodeURIComponent(skill.skill_id)}`}
+                                      >
+                                        {skill.name}
+                                      </a>{" "}
+                                      · revision {skill.revision}
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
                             )}
                             <div className="task-actions">
                               {task.status === "queued" && (

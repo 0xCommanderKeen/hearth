@@ -163,17 +163,26 @@ class Routines:
                     "ON t.id=o.task_id WHERE t.status='queued' ORDER BY o.scheduled_at LIMIT 100"
                 )
             ]
+        first_refusal = None
         for task in tasks:
             try:
                 self.hearth.admit(task, reserve=10_000)
             except Refused as error:
-                if error.code not in {
-                    "resident_busy",
-                    "resident_paused",
-                    "capacity_exhausted",
-                    "budget_exhausted",
-                    "household_budget_exhausted",
-                    "household_concurrency_limit",
-                    "task_already_admitted",
-                }:
-                    raise
+                if (
+                    error.code
+                    not in {
+                        "resident_busy",
+                        "resident_paused",
+                        "capacity_exhausted",
+                        "budget_exhausted",
+                        "household_budget_exhausted",
+                        "household_concurrency_limit",
+                        "task_already_admitted",
+                    }
+                    and first_refusal is None
+                ):
+                    first_refusal = error
+        # A broken resident must not starve healthy queued residents. The caller still
+        # receives the first integrity/policy error after this bounded admission pass.
+        if first_refusal is not None:
+            raise first_refusal

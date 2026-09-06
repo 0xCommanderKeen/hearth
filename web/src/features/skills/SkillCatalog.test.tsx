@@ -24,6 +24,7 @@ const skill: CatalogSkill = {
 };
 function setup() {
   const client = new Client("synthetic-token");
+  vi.spyOn(client, "skillUsers").mockResolvedValue([]);
   vi.spyOn(client, "skills").mockResolvedValue([skill]);
   vi.spyOn(client, "skill").mockResolvedValue(skill);
   vi.spyOn(client, "skillHistory").mockResolvedValue([skill]);
@@ -119,6 +120,7 @@ it("loads history without replacing the editor and archives using the displayed 
 
 it("shows loading failures, retry and an empty searchable catalog", async () => {
   const client = new Client("synthetic-token");
+  vi.spyOn(client, "skillUsers").mockResolvedValue([]);
   vi.spyOn(client, "skills")
     .mockRejectedValueOnce(new Error("Unavailable"))
     .mockResolvedValue([]);

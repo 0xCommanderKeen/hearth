@@ -62,11 +62,12 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
     sent = inputs[0][1]
     assert json.loads(sent) == expected
     assert expected["purpose"] == "Original synthetic purpose"
-    assert expected["resident_revision"] == 1 and expected["context_version"] == 3
+    assert expected["resident_revision"] == 1 and expected["context_version"] == 4
     assert expected["instruction"] == "Summarize the synthetic notes"
     assert expected["notes"] and expected["simulated"] is True
     assert set(expected) == {
         "context_version",
+        "skills",
         "skill_text",
         "memory",
         "run_id",
