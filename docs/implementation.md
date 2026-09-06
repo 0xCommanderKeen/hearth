@@ -259,3 +259,22 @@ requires complete request provenance and admission-time schedule binding.
 Validation: full `make check` passed 404 backend and 35 browser tests, lint/types/
 build and both installed-wheel journeys. Thirty-two pricing checks cover token
 categories, long-context thresholds, Fast rates, rounding and unknown usage.
+
+## Durable request usage evidence
+
+Issue #73 adds the [run-bound usage journal](codex-usage.md). Intent precedes
+transport dispatch; completion is immutable and conflicting receipts remain held.
+Unresolved or unknown previous usage refuses another intent. Terminal CLI/final
+output and known counter totals must agree; reopened and copied receipts recompute
+costs without model execution. This prepares settlement but does not mutate budgets.
+
+The offline CLI fixture now persists the journal outside container scratch and
+checks it after container exit. Production collector isolation, admission pins,
+atomic accounting/audit and backup integration remain next; no real credentials
+or provider calls are enabled.
+
+Validation: 424 backend and 35 browser tests, lint/types/build and both installed
+journeys passed. Twenty real-file journal checks cover interruption, conflict,
+reopening, mismatched bindings, malformed/linked evidence, sync failure and
+concurrent intent. The actual Mac probe passed completion, tool injection and
+interrupted-request persistence with owned container cleanup.

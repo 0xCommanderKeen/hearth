@@ -14,7 +14,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from hearth import codex_events, codex_pricing
+from hearth import codex_events, codex_pricing, codex_usage
 from hearth.codex_events import CodexEvents, TokenUsage
 from hearth.codex_pricing import estimate_api_equivalent
 from hearth.container_rehearsal import IMAGE, LocalDocker
@@ -23,6 +23,7 @@ ARCHIVE_URL = "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-ar
 ARCHIVE_SHA512 = (
     "8OLcPXaAol/FOrRoDxWhIiHIFa73KRsM41EKocjRZOwiT4TcelzJWn3dHyiuSb7teWF25rrslvSPyvhULYRRCQ=="
 )
+PROMPT = "Summarize this synthetic note: the Reader mock is ready. Do not use tools."
 SUMMARY = "Synthetic summary: the Reader mock is ready. No model was called."
 LABEL = "org.hearth.codex-probe"
 
@@ -67,6 +68,11 @@ def validate(result, attack):
         assert getattr(transcript.usage, field) == sum(getattr(value, field) for value in usage)
     estimate = estimate_api_equivalent(usage, model="gpt-6-astra", mode="standard")
     assert estimate.microdollars == (1245 if attack else 623)
+    assert result["journal_estimate"] == {
+        "microdollars": estimate.microdollars,
+        "schedule": estimate.schedule,
+        "basis": estimate.basis,
+    }
     result["accounting"] = {
         "basis": estimate.basis,
         "schedule": estimate.schedule,
@@ -90,7 +96,7 @@ def validate(result, attack):
         assert not outputs
 
 
-def run_case(vendor, child, attack, claims):
+def run_case(vendor, child, attack, claims, *, interrupt=False):
     docker = LocalDocker()
     name = "hearth-codex-offline-" + uuid.uuid4().hex
     claim = claims / (name + ".json")
@@ -99,6 +105,8 @@ def run_case(vendor, child, attack, claims):
         stream.flush()
         os.fsync(stream.fileno())
     print(f"Offline container ownership claim: {claim}", flush=True)
+    journal_root = claims / (name + "-journal")
+    journal_root.mkdir(mode=0o700)
     cid = None
     try:
         cid = docker(
@@ -137,11 +145,20 @@ def run_case(vendor, child, attack, claims):
             f"type=bind,source={vendor},target=/runtime,readonly",
             "--mount",
             f"type=bind,source={child},target=/probe.py,readonly",
+            "--mount",
+            f"type=bind,source={claims / 'app'},target=/app,readonly",
+            "--mount",
+            f"type=bind,source={journal_root},target=/journal",
             IMAGE,
             "python3",
             "-I",
             "/probe.py",
+            "--run-id",
+            name,
+            "--prompt",
+            PROMPT,
             *(["--attack"] if attack else []),
+            *(["--interrupt"] if interrupt else []),
         ).strip()
         assert re.fullmatch("[0-9a-f]{64}", cid)
         before = json.loads(docker("inspect", cid))[0]
@@ -151,6 +168,8 @@ def run_case(vendor, child, attack, claims):
         assert {(mount["Destination"], mount["RW"]) for mount in before["Mounts"]} == {
             ("/runtime", False),
             ("/probe.py", False),
+            ("/app", False),
+            ("/journal", True),
         }
         # Capture only this exact owned container. The child is bounded by cgroups,
         # scratch capacity and a 25-second CLI timeout; the host also has a deadline.
@@ -167,7 +186,45 @@ def run_case(vendor, child, attack, claims):
         result = json.loads(process.stdout)
         after = json.loads(docker("inspect", cid))[0]
         assert not after["State"]["Running"] and after["State"]["ExitCode"] == 0
+        binding = codex_usage.UsageBinding(
+            name, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
+        )
+        persisted = codex_usage.UsageJournal(journal_root / "usage", binding)
+        if interrupt:
+            assert result.get("timeout") is True
+            assert (journal_root / "usage/request-000.json").is_file()
+            for operation in (persisted.estimate, persisted.begin):
+                try:
+                    operation()
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise AssertionError("Interrupted request became known or allowed dispatch")
+            return {
+                "scenario": "interrupted_request",
+                "usage_unknown": True,
+                "redispatch_refused": True,
+                "journal_survived_exit": True,
+                "journal": {
+                    path.name: json.loads(path.read_text())
+                    for path in (journal_root / "usage").glob("*.json")
+                },
+            }
         validate(result, attack)
+        assert persisted.estimate().microdollars == result["accounting"]["microdollars"]
+        recovered = claims / (name + "-usage")
+        recovered.mkdir(mode=0o700)
+        for filename, value in result["journal"].items():
+            assert filename in {"binding.json", "terminal.json"} or re.fullmatch(
+                r"(request|usage)-[0-9]{3}\.json", filename
+            )
+            codex_usage.publish(recovered / filename, value)
+        binding = codex_usage.UsageBinding(
+            name, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
+        )
+        replayed = codex_usage.UsageJournal(recovered, binding).estimate()
+        assert replayed.microdollars == result["accounting"]["microdollars"]
+        result["held_usage_replay"] = True
         return {"scenario": "tool_injection" if attack else "success", "result": result}
     finally:
         # An uncertain create reply permits inspection of this pre-recorded name,
@@ -215,12 +272,19 @@ def main():
                 child,
                 Path(codex_events.__file__),
                 Path(codex_pricing.__file__),
+                Path(codex_usage.__file__),
             )
         },
         "cases": [],
     }
     temporary = Path(tempfile.mkdtemp(prefix="hearth-codex-offline-"))
     try:
+        package = temporary / "app/hearth"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("")
+        for module in (codex_events, codex_pricing, codex_usage):
+            source = Path(module.__file__)
+            shutil.copyfile(source, package / source.name)
         # Verify the exact bytes being extracted, not a mutable caller path again.
         pinned = Path(temporary) / "codex.tgz"
         pinned.write_bytes(archive)
@@ -232,6 +296,7 @@ def main():
         ).hexdigest()
         for attack in (False, True):
             report["cases"].append(run_case(vendor, child, attack, temporary))
+        report["cases"].append(run_case(vendor, child, False, temporary, interrupt=True))
     except BaseException:
         print(f"Offline probe evidence and ownership claims retained at {temporary}")
         raise

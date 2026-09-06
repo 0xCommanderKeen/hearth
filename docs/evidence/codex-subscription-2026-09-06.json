@@ -7,18 +7,48 @@
   "archive_url": "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz",
   "archive_integrity": "sha512-8OLcPXaAol/FOrRoDxWhIiHIFa73KRsM41EKocjRZOwiT4TcelzJWn3dHyiuSb7teWF25rrslvSPyvhULYRRCQ==",
   "source_sha256": {
-    "probe-codex-subscription.py": "aeecce91c8d564df5774e5ded69bd6a599960c1c6ddc2e2e4ae4bba8c27e770c",
-    "probe-codex-subscription-child.py": "72fe7bafd9e187431998655fa8d05db0235ea29459087b22fdb8076769c1fb18",
+    "probe-codex-subscription.py": "e9cf22079df0df368305c1d5c7cec7f8aa80544355e14d50df56a6c55ff82df0",
+    "probe-codex-subscription-child.py": "8d70e8c29b50aef1365e390cca027deb8b18f0557d6ee14bab81419d45061692",
     "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e",
-    "codex_pricing.py": "2d65db5725b2d9f4a93d36bc238fea35f1bbb2ca00b49d461a860d6a66fc4c58"
+    "codex_pricing.py": "2d65db5725b2d9f4a93d36bc238fea35f1bbb2ca00b49d461a860d6a66fc4c58",
+    "codex_usage.py": "b13aa93be5db59646bb3f36fb3b1e4d1e8c7770dc0f5ea801773307bf1d1ad12"
   },
   "cases": [
     {
       "scenario": "success",
       "result": {
+        "journal_estimate": {
+          "microdollars": 623,
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "basis": "api_equivalent_estimate"
+        },
+        "journal": {
+          "usage-000.json": {
+            "cache_write_input_tokens": 5,
+            "cached_input_tokens": 10,
+            "input_tokens": 30,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 3
+          },
+          "binding.json": {
+            "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
+            "mode": "standard",
+            "model": "gpt-6-astra",
+            "run_id": "hearth-codex-offline-aeb41feb84c54f3daa3564744dedd6c4",
+            "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
+          },
+          "request-000.json": {
+            "request": 0
+          },
+          "terminal.json": {
+            "exit_code": 0,
+            "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-ef88-7a82-a082-a8cb35d09d5f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n"
+          }
+        },
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0779a-b59e-73f2-a03d-725448987e99\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-ef88-7a82-a082-a8cb35d09d5f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
         "stderr": "Reading additional input from stdin...\n",
         "requests": [
           {
@@ -132,16 +162,56 @@
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
           "microdollars": 623,
           "synthetic": true
-        }
+        },
+        "held_usage_replay": true
       }
     },
     {
       "scenario": "tool_injection",
       "result": {
+        "journal_estimate": {
+          "microdollars": 1245,
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "basis": "api_equivalent_estimate"
+        },
+        "journal": {
+          "usage-000.json": {
+            "cache_write_input_tokens": 5,
+            "cached_input_tokens": 10,
+            "input_tokens": 30,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 3
+          },
+          "usage-001.json": {
+            "cache_write_input_tokens": 5,
+            "cached_input_tokens": 10,
+            "input_tokens": 30,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 3
+          },
+          "binding.json": {
+            "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
+            "mode": "standard",
+            "model": "gpt-6-astra",
+            "run_id": "hearth-codex-offline-c6c1e5bb4f5d4517a1a2a07ec4b0ea7b",
+            "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
+          },
+          "request-000.json": {
+            "request": 0
+          },
+          "request-001.json": {
+            "request": 1
+          },
+          "terminal.json": {
+            "exit_code": 0,
+            "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-f986-7fd2-89ef-12c44e63633f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n"
+          }
+        },
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0779a-bc31-77b0-886a-f1010d8c7319\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
-        "stderr": "Reading additional input from stdin...\n2026-09-06T16:43:44.908385Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T16:43:44.909229Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077ab-f986-7fd2-89ef-12c44e63633f\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
+        "stderr": "Reading additional input from stdin...\n2026-09-06T17:02:34.769253Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T17:02:34.770114Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
         "requests": [
           {
             "method": "POST",
@@ -295,7 +365,7 @@
                 "call_id": "call_exec",
                 "output": "unsupported call: exec_command",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a0779a-bc94-7f82-9418-be0847167270"
+                  "turn_id": "01a077ab-fa2b-7f82-892a-9ea269a65251"
                 }
               },
               {
@@ -303,7 +373,7 @@
                 "call_id": "call_image",
                 "output": "view_image is not allowed because you do not support image inputs",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a0779a-bc94-7f82-9418-be0847167270"
+                  "turn_id": "01a077ab-fa2b-7f82-892a-9ea269a65251"
                 }
               }
             ]
@@ -322,6 +392,25 @@
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
           "microdollars": 1245,
           "synthetic": true
+        },
+        "held_usage_replay": true
+      }
+    },
+    {
+      "scenario": "interrupted_request",
+      "usage_unknown": true,
+      "redispatch_refused": true,
+      "journal_survived_exit": true,
+      "journal": {
+        "binding.json": {
+          "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
+          "mode": "standard",
+          "model": "gpt-6-astra",
+          "run_id": "hearth-codex-offline-92f4dd36767e4192bae52323b29010ce",
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
+        },
+        "request-000.json": {
+          "request": 0
         }
       }
     }
