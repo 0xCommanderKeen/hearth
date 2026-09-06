@@ -384,3 +384,52 @@ it("keeps an ambiguous submission attached to its original resident", async () =
   ).toBe(true);
   expect(submit).toHaveBeenCalledTimes(1);
 });
+
+it("does not display another resident's late artifact response on a profile", async () => {
+  addReader();
+  state.residents.push({
+    ...state.residents[0],
+    id: "gardener",
+    name: "Gardener",
+  });
+  state.tasks.push({
+    id: "task",
+    resident_id: "reader",
+    instruction: "Reader summary",
+    status: "succeeded",
+    created_at: 1,
+  });
+  state.runs.push({
+    id: "run",
+    task_id: "task",
+    resident_id: "reader",
+    status: "succeeded",
+    artifact_id: "artifact",
+    actual_cost: 1,
+    usage_known: 1,
+    cancellation_requested: 0,
+  });
+  let complete!: (result: { content: string }) => void;
+  vi.spyOn(Client.prototype, "artifact").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByLabelText("Resident information");
+  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
+  await screen.findByRole("heading", { level: 1, name: "Residents" });
+  fireEvent.click(
+    screen.getByRole("link", { name: /Gardener.*View resident/ }),
+  );
+  await screen.findByRole("heading", { level: 1, name: "Gardener" });
+  await act(async () => complete({ content: "Reader private result" }));
+  expect(screen.queryByLabelText("Summary output")).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
+  await screen.findByRole("heading", { level: 1, name: "Residents" });
+  fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByText("Reader private result");
+});

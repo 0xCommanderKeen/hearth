@@ -46,11 +46,21 @@ function Emblem() {
   );
 }
 
+type Page =
+  | "townhall"
+  | "residents"
+  | "resident"
+  | "tasks"
+  | "routines"
+  | "approvals"
+  | "activity"
+  | "hamlet";
+
 export function App() {
   const [client, setClient] = useState<Client | null>(null);
   const [token, setToken] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [view, setView] = useState<string>("townhall");
+  const [view, setView] = useState<Page>("townhall");
   const [residentId, setResidentId] = useState("reader");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +69,10 @@ export function App() {
     "Summarize today’s synthetic notes.",
   );
   const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
+  const [output, setOutput] = useState<{
+    content: string;
+    residentId?: string;
+  } | null>(null);
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
 
@@ -196,7 +209,7 @@ export function App() {
           "#activity",
         ].includes(hash)
       ) {
-        setView(hash.slice(1));
+        setView(hash.slice(1) as Page);
       }
       if (hash.startsWith("#approval-")) {
         setView("approvals");
@@ -210,7 +223,7 @@ export function App() {
           const content = run.artifact_id
             ? (await client.artifact(run.artifact_id)).content
             : `Run ${run.status}`;
-          if (currentSession.current === client) setOutput(content);
+          if (currentSession.current === client) setOutput({ content });
         });
       }
     };
@@ -454,7 +467,9 @@ export function App() {
                       <span className="eyebrow">PURPOSE</span>
                       <h2>{r.purpose}</h2>
                       <span className={`state state-${r.presence}`}>
-                        {statusLabel(r.presence)}
+                        {connected
+                          ? statusLabel(r.presence)
+                          : `Last known: ${statusLabel(r.presence)}`}
                       </span>
                       {r.pause_reason && (
                         <p>{r.pause_reason.replaceAll("_", " ")}</p>
@@ -559,7 +574,9 @@ export function App() {
                             <div>
                               <strong>{r.name}</strong>
                               <span>
-                                {statusLabel(r.presence)}
+                                {connected
+                                  ? statusLabel(r.presence)
+                                  : `Last known: ${statusLabel(r.presence)}`}
                                 {r.pause_reason
                                   ? ` · ${r.pause_reason.replaceAll("_", " ")}`
                                   : ""}
@@ -688,7 +705,10 @@ export function App() {
                                         run.artifact_id!,
                                       );
                                       if (currentSession.current === client)
-                                        setOutput(result.content);
+                                        setOutput({
+                                          content: result.content,
+                                          residentId: task.resident_id,
+                                        });
                                     })
                                   }
                                 >
@@ -740,17 +760,19 @@ export function App() {
                 act={act}
               />
             )}
-            {output && (view === "resident" || view === "tasks") && (
-              <section className="output" aria-label="Summary output">
-                <div className="section-title">
-                  <span className="eyebrow">SIMULATED ARTIFACT</span>
-                  <button className="quiet" onClick={() => setOutput(null)}>
-                    Close ×
-                  </button>
-                </div>
-                <pre>{output}</pre>
-              </section>
-            )}
+            {output &&
+              (view === "tasks" ||
+                (view === "resident" && output.residentId === residentId)) && (
+                <section className="output" aria-label="Summary output">
+                  <div className="section-title">
+                    <span className="eyebrow">SIMULATED ARTIFACT</span>
+                    <button className="quiet" onClick={() => setOutput(null)}>
+                      Close ×
+                    </button>
+                  </div>
+                  <pre>{output.content}</pre>
+                </section>
+              )}
             {(view === "activity" || view === "townhall") && (
               <section className="output" aria-label="Mock notifications">
                 <span className="eyebrow">LOCAL MOCK INBOX</span>
