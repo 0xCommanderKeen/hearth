@@ -326,3 +326,24 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
         == 200
     )
     assert client.post(start, headers=AUTH).status_code == 200
+
+
+def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False, scenario="unknown_usage")
+    with TestClient(app) as client:
+        client.post("/api/demo/reader", headers=AUTH)
+        receipt = task(client).json()
+        client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
+        run = app.state.executor.step()[0]
+        route = "/api/runs/" + run.id + "/usage"
+        body = {"amount": 2000, "evidence": "Synthetic meter reading"}
+        assert client.post(route, json=body).status_code == 401
+        headers = {**AUTH, "Idempotency-Key": "report"}
+        response = client.post(route, headers=headers, json=body)
+        assert response.status_code == 200
+        assert response.json()["source"] == "operator_reported_mock"
+        assert "evidence" not in response.json()
+        assert client.post(route, headers=headers, json=body).json() == response.json()
+        state = client.get("/api/state", headers=AUTH).json()
+        assert state["runs"][0]["usage_source"] == "operator_reported_mock"
+        assert state["residents"][0]["pause_reason"] is None

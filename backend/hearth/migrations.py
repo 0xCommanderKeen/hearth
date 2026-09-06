@@ -133,3 +133,12 @@ def run_access_schema(db: sqlite3.Connection) -> None:
         run_id TEXT PRIMARY KEY REFERENCES runs(id), digest TEXT NOT NULL,
         expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER
     )""")
+
+
+def accounting_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE usage_reconciliations (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), command_id TEXT NOT NULL UNIQUE,
+        digest TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount >= 0),
+        evidence TEXT NOT NULL, recorded_at INTEGER NOT NULL,
+        source TEXT NOT NULL CHECK (source='operator_reported_mock')
+    )""")

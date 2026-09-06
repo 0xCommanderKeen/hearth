@@ -33,15 +33,20 @@ def snapshot(hearth: Hearth) -> dict:
             dict(row)
             for row in db.execute(
                 f"SELECT * FROM tasks ORDER BY status IN {ACTIVE_RUNS} DESC, "
-                "created_at DESC, id DESC LIMIT 100"
+                "EXISTS(SELECT 1 FROM runs WHERE runs.task_id=tasks.id AND usage_known=0 "
+                "AND finished_at IS NOT NULL) DESC, created_at DESC, id DESC LIMIT 100"
             )
         ]
         runs = [
             dict(row)
             for row in db.execute(f"""SELECT id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, created_at, actual_cost,
-                   usage_known, finished_at, artifact_id, cancellation_requested
+                   usage_known, finished_at, artifact_id, cancellation_requested,
+                   CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
+                   THEN 'operator_reported_mock' WHEN usage_known=1 THEN 'mock_runtime'
+                   ELSE 'unknown' END AS usage_source
                    FROM runs ORDER BY status IN {ACTIVE_RUNS} DESC,
+                   (usage_known=0 AND finished_at IS NOT NULL) DESC,
                    created_at DESC, id DESC LIMIT 100""")
         ]
         audit = [

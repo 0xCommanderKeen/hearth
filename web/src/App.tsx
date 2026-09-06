@@ -9,6 +9,7 @@ import {
 import "./style.css";
 import { Approvals } from "./Approvals";
 import { RoutinePanel } from "./Routines";
+import { UsageReport } from "./UsageReport";
 
 const statusLabel = (s: string) =>
   ({
@@ -609,11 +610,23 @@ export function App() {
                             {run && (
                               <small>
                                 {run.usage_known
-                                  ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated USD`
+                                  ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
                                   : "Usage not yet known"}
                               </small>
                             )}
                           </div>
+                          {run &&
+                            !run.usage_known &&
+                            ["succeeded", "failed", "cancelled"].includes(
+                              run.status,
+                            ) && (
+                              <UsageReport
+                                client={client}
+                                runId={run.id}
+                                busy={busy || !!snapshot.restore_hold}
+                                act={act}
+                              />
+                            )}
                         </li>
                       );
                     })}

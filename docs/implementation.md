@@ -68,10 +68,15 @@ API supervisor fails startup; in-flight work retains the lock through shutdown.
 Tests include a foreign process, path aliases, blocked work and fatal-worker health.
 See `supervision.md`; real runtime termination and v1/v2 transfer remain separate.
 
-Issue #19 adds exact-run read-only runtime credentials and a separate authenticated
+Issue #19 / PR #20 (`015588b`, CI 34020483432 green) adds exact-run read-only runtime credentials and a separate authenticated
 context route, exercised with mock HTTP clients. Rotation, revocation, expiry,
 state/configuration changes and restored-copy denial are enforced. Actual runtime
 injection and host isolation remain pending; see `run-context-access.md`.
+
+Issue #21 adds explicit mock usage reconciliation with immutable command/report
+identity, original-day charging, source labeling and guarded safety-hold release.
+Full checks: 152 backend and 25 browser tests pass. See `mock-usage-reconciliation.md`.
+Provider evidence ingestion and corrections are not claimed.
 
 ## Next
 

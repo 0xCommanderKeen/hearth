@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from hearth.migrations import (
+    accounting_schema,
     approval_schema,
     control_schema,
     execution_schema,
@@ -16,7 +17,7 @@ from hearth.migrations import (
 )
 from hearth.models import Refused
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = (
     """CREATE TABLE residents (
@@ -119,6 +120,9 @@ class Database:
                 version = 7
             if version == 7:
                 run_access_schema(connection)
+                version = 8
+            if version == 8:
+                accounting_schema(connection)
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Migration would leave invalid references")
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

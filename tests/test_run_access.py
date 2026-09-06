@@ -60,6 +60,7 @@ def test_runtime_reads_own_synthetic_context_without_authority_secrets(system):
     [
         ("GET", "/api/state"),
         ("POST", "/api/tasks"),
+        ("POST", "/api/runs/work/usage"),
         ("POST", "/api/approvals"),
         ("POST", "/api/approvals/review/decision"),
         ("POST", "/api/approvals/review/execute"),
