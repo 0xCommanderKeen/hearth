@@ -111,21 +111,9 @@ def main() -> None:
     db = Database(args.data / "hearth.db")
     db.initialize(runtime_kind="inline_mock")
     hearth = Hearth(db)
-    try:
-        hearth.resident("reader")
-    except Refused as error:
-        if error.code != "resident_not_found":
-            raise
-        hearth.save_resident(
-            "reader",
-            Declaration(
-                "Reader",
-                "Summarize synthetic notes.",
-                10_000_000,
-                budget_timezone="Europe/Ljubljana",
-            ),
-            expected_revision=0,
-        )
+    from hearth.inputs.demo import seed_reader
+
+    seed_reader(hearth)
     receipt = hearth.submit(
         str(uuid.uuid4()),
         "reader",

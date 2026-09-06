@@ -1,3 +1,33 @@
+export type SyntheticInput = {
+  input_set_id: string;
+  revision: number;
+  name: string;
+  notes: string[];
+  sha256: string;
+  synthetic: true;
+  created_at: number;
+  created_by: string;
+  edited_at: number;
+  edited_by: string;
+};
+export type InputChange = {
+  command_id: string;
+  input_set_id?: string;
+  expected_revision?: number;
+  name: string;
+  notes: string[];
+};
+export type InputSelectionSet = {
+  resident_id: string;
+  revision: number;
+  input_sets: SyntheticInput[];
+};
+export type InputProvenance = {
+  input_sets?: Omit<SyntheticInput, "notes">[];
+  inputs_error?: string | null;
+  input_revision?: number | null;
+  input_state?: "empty" | "configured" | "unavailable";
+};
 export type ProvisionRequest = {
   name: string;
   purpose: string;
@@ -32,6 +62,7 @@ export type ProvisionReceipt = {
   setup: ProvisionRequest;
 };
 export type ResidentProfile = {
+  inputs_error?: string | null;
   creator_name?: string;
   manager_name?: string;
   command_id: string;
@@ -41,7 +72,7 @@ export type ResidentProfile = {
   creation_reason: string;
   originating_run_id: string | null;
   execution_profile: string;
-  input_sets: { input_set_id: string }[];
+  input_sets: { input_set_id: string; name?: string }[];
   setup_status: string;
 };
 export type ResidentOptions = {
@@ -141,7 +172,7 @@ export type Approval = {
     destination_revision: number;
   };
 };
-export type Resident = {
+export type Resident = InputProvenance & {
   profile?: ResidentProfile | null;
   id: string;
   name: string;
@@ -181,7 +212,7 @@ export type Task = {
   status: string;
   created_at: number;
 };
-export type Run = {
+export type Run = InputProvenance & {
   id: string;
   task_id: string;
   resident_id: string;
@@ -345,6 +376,76 @@ export class Client {
     return this.request<SkillUser[]>(
       `/api/skills/${encodeURIComponent(id)}/assignments`,
     );
+  }
+  inputSets() {
+    return this.request<SyntheticInput[]>("/api/input-sets");
+  }
+  inputSet(id: string, revision?: number) {
+    return this.request<SyntheticInput>(
+      `/api/input-sets/${encodeURIComponent(id)}${revision !== undefined ? `?revision=${revision}` : ""}`,
+    );
+  }
+  async saveInput(change: InputChange) {
+    const result = await this.request<{
+      command_id: string;
+      input_set_id: string;
+      revision: number;
+    }>(
+      change.input_set_id
+        ? `/api/input-sets/${encodeURIComponent(change.input_set_id)}`
+        : "/api/input-sets",
+      {
+        method: change.input_set_id ? "PUT" : "POST",
+        headers: { "Idempotency-Key": change.command_id },
+        body: JSON.stringify({
+          name: change.name,
+          notes: change.notes,
+          ...(change.input_set_id
+            ? { expected_revision: change.expected_revision }
+            : {}),
+        }),
+      },
+    );
+    if (
+      result.command_id !== change.command_id ||
+      typeof result.input_set_id !== "string" ||
+      !Number.isSafeInteger(result.revision)
+    )
+      throw new Error("Input receipt is incomplete; retry the pending save.");
+    return result;
+  }
+  inputSelection(residentId: string) {
+    return this.request<InputSelectionSet>(
+      `/api/residents/${encodeURIComponent(residentId)}/inputs`,
+    );
+  }
+  async selectInputs(change: {
+    resident_id: string;
+    command_id: string;
+    expected_revision: number;
+    input_sets: { input_set_id: string }[];
+  }) {
+    const result = await this.request<{
+      command_id: string;
+      resident_id: string;
+      revision: number;
+    }>(`/api/residents/${encodeURIComponent(change.resident_id)}/inputs`, {
+      method: "PUT",
+      headers: { "Idempotency-Key": change.command_id },
+      body: JSON.stringify({
+        expected_revision: change.expected_revision,
+        input_sets: change.input_sets,
+      }),
+    });
+    if (
+      result.command_id !== change.command_id ||
+      result.resident_id !== change.resident_id ||
+      !Number.isSafeInteger(result.revision)
+    )
+      throw new Error(
+        "Input selection receipt is incomplete; retry the pending save.",
+      );
+    return result;
   }
   async provision(command_id: string, body: ProvisionRequest) {
     const receipt = await this.request<ProvisionReceipt>(

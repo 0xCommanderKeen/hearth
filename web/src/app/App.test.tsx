@@ -27,6 +27,19 @@ beforeEach(() => {
     runs: [],
     activity: [],
   };
+  vi.spyOn(Client.prototype, "inputSets").mockResolvedValue([]);
+  vi.spyOn(Client.prototype, "inputSelection").mockImplementation(
+    async (resident_id) => ({ resident_id, revision: 0, input_sets: [] }),
+  );
+  vi.spyOn(Client.prototype, "skills").mockResolvedValue([]);
+  vi.spyOn(Client.prototype, "assignments").mockImplementation(
+    async (resident_id) => ({
+      resident_id,
+      revision: 0,
+      sha256: "empty-fixture",
+      skills: [],
+    }),
+  );
   vi.spyOn(Client.prototype, "state").mockImplementation(async () =>
     structuredClone(state),
   );

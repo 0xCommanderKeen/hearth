@@ -56,10 +56,10 @@ one operation. Old generic declaration PUT is update-only: creating a new HTTP
 resident must use provisioning. The explicit Reader example and internal test/demo
 setup remain supported.
 
-At this slice, new residents explicitly choose no inputs or the built-in
-`synthetic-reader-notes`; no personal files or external connectors are offered.
-An empty provisioned selection yields an empty trusted notes context. Mutable
-named synthetic input sets and removal of the older Reader fallback are #89.
+New residents explicitly choose up to four named synthetic input sets or no inputs.
+No personal files or external connectors are offered. An empty selection yields
+an empty notes context; see [synthetic inputs](synthetic-inputs.md) for revision
+pinning and future-admission behavior.
 All residents currently use the installation's configured execution profile.
 Normal admission retains the shared household/resident budget and execution
 controls; initial assignment creation performs no runtime launch.

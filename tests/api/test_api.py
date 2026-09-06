@@ -57,7 +57,7 @@ def test_seed_is_idempotent_and_snapshot_has_no_owner_token(client):
     assert body["simulated"] and body["schema_version"] == 1
     assert body["residents"][0]["presence"] == "starting"
     assert "owner_token" not in state.text and TOKEN not in state.text
-    assert body["cursor"] == 3
+    assert body["cursor"] == 5
 
 
 def test_lost_submission_response_is_reconcilable(client):

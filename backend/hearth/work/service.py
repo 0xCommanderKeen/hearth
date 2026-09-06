@@ -84,6 +84,9 @@ class Hearth:
         else:
             check_creation(db, now)
             db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
+            from hearth.inputs.selection import initialize_selection
+
+            initialize_selection(db, resident_id)
         db.execute(
             "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -308,10 +311,16 @@ class Hearth:
             from hearth.skills.assignments import pin_skills
 
             pin_skills(db, run.id, resident_id)
+            from hearth.inputs.selection import pin_inputs
+
+            pin_inputs(db, run.id, resident_id)
             context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
-            digest = hashlib.sha256(
-                json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
-            ).hexdigest()
+            encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+            from hearth.execution.staging import MAX_INPUT
+
+            if len(encoded_context) > MAX_INPUT:
+                raise Refused("input_context_too_large")
+            digest = hashlib.sha256(encoded_context).hexdigest()
             run = replace(run, input_digest=digest)
             db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
             from hearth.integrations.interface import pricing_pin

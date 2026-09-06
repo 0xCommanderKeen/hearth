@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 from hearth.execution import usage as usage_accounting
 from hearth.execution.context import read_context
+from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.observation.notifications import enqueue
@@ -338,6 +339,7 @@ class Executor:
                     try:
                         with self.execution.hearth.database.transaction() as db:
                             run_skills(db, run.id)
+                            run_inputs(db, run.id)
                     except Refused:
                         results.append(
                             self.execution.observe(run.id, run.owner_token, "interrupted")
@@ -372,6 +374,7 @@ class Executor:
                             error.code.startswith("memory_")
                             or error.code.startswith("invalid_memory_")
                             or error.code.startswith("skill_")
+                            or error.code.startswith("input_")
                         ):
                             raise
                         results.append(

@@ -1,0 +1,110 @@
+.input-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  margin: 1.5rem 0 2rem;
+}
+.input-heading h2 {
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  max-width: 38rem;
+  margin: 0.5rem 0;
+}
+.input-heading p {
+  max-width: 43rem;
+}
+.input-add {
+  background: #aa5035;
+  color: #fff;
+  padding: 1rem 1.3rem;
+  white-space: nowrap;
+}
+.input-shelves {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.3rem;
+  margin: 1.8rem 0;
+}
+.input-card {
+  border: 1px solid var(--line);
+  border-top: 3px solid #bb9568;
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-wrap: anywhere;
+}
+.input-card h3 {
+  font-size: 1.7rem;
+  margin: 0.2rem 0;
+}
+.input-card p {
+  line-height: 1.6;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.input-card small {
+  margin-top: auto;
+}
+.input-card:hover {
+  border-color: #bb9568;
+}
+.input-editor fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.input-notebook {
+  border-left: 3px solid #bb9568;
+  padding-left: 1.4rem;
+  margin: 1.5rem 0;
+}
+.input-note {
+  margin-bottom: 1.3rem;
+}
+.input-note textarea {
+  min-height: 8rem;
+  line-height: 1.7;
+}
+.input-selection {
+  border-top: 1px solid var(--line);
+  margin-top: 1.8rem;
+  padding-top: 1.4rem;
+}
+.input-choice {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  padding: 0.8rem 0;
+}
+.input-choice input {
+  width: auto;
+  margin-top: 0.3rem;
+}
+.input-choice small {
+  display: block;
+  margin-top: 0.4rem;
+}
+.input-provenance {
+  padding-left: 1.2rem;
+}
+.input-provenance li {
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .input-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .input-shelves {
+    grid-template-columns: 1fr;
+  }
+  .input-notebook {
+    padding-left: 0.8rem;
+  }
+}

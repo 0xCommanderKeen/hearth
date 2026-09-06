@@ -2,6 +2,40 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE input_selections (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>=0),
+        count INTEGER NOT NULL CHECK(count BETWEEN 0 AND 4), sha256 TEXT NOT NULL
+    )""",
+    """CREATE TABLE selected_inputs (
+        resident_id TEXT NOT NULL REFERENCES input_selections(resident_id), position INTEGER NOT NULL,
+        input_set_id TEXT NOT NULL REFERENCES input_sets(id), PRIMARY KEY(resident_id,position), UNIQUE(resident_id,input_set_id)
+    )""",
+    """CREATE TABLE input_selection_operations (
+        command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, receipt TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_input_sets (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
+        revision INTEGER NOT NULL, count INTEGER NOT NULL CHECK(count BETWEEN 0 AND 4), sha256 TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_inputs (
+        run_id TEXT NOT NULL REFERENCES run_input_sets(run_id), position INTEGER NOT NULL,
+        input_set_id TEXT NOT NULL, input_revision INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(run_id,position), UNIQUE(run_id,input_set_id),
+        FOREIGN KEY(input_set_id,input_revision) REFERENCES input_revisions(input_set_id,revision)
+    )""",
+    """CREATE TABLE input_sets (
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0),
+        created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+        FOREIGN KEY(id,revision) REFERENCES input_revisions(input_set_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )""",
+    """CREATE TABLE input_revisions (
+        input_set_id TEXT NOT NULL REFERENCES input_sets(id), revision INTEGER NOT NULL CHECK(revision>0),
+        name TEXT NOT NULL, notes TEXT NOT NULL, sha256 TEXT NOT NULL, edited_by TEXT NOT NULL, edited_at INTEGER NOT NULL,
+        PRIMARY KEY(input_set_id,revision)
+    )""",
+    """CREATE TABLE input_operations (
+        command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, receipt TEXT NOT NULL
+    )""",
     """CREATE TABLE resident_provisioning (
         command_id TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, resident_id TEXT NOT NULL UNIQUE,
         request TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('setup','ready','failed')),
@@ -13,7 +47,7 @@ SCHEMA = (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), command_id TEXT NOT NULL UNIQUE REFERENCES resident_provisioning(command_id),
         creator TEXT NOT NULL, manager TEXT NOT NULL, originating_run_id TEXT,
         created_at INTEGER NOT NULL, creation_reason TEXT NOT NULL,
-        execution_profile TEXT NOT NULL, input_sets TEXT NOT NULL
+        execution_profile TEXT NOT NULL
     )""",
     """CREATE TABLE resident_skill_sets (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL,

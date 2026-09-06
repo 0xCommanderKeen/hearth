@@ -81,7 +81,7 @@ def test_admission_pins_absence_and_then_exact_revision_despite_later_edits(syst
     monkeypatch.setattr(app.state.executor.runtime, "start", capture_input)
     app.state.executor.step()
     assert inputs[0]["memory"] == pinned
-    assert inputs[0]["context_version"] == 4
+    assert inputs[0]["context_version"] == 5
 
 
 def test_concurrent_writers_have_one_winner(system):
@@ -240,6 +240,10 @@ def test_operator_memory_routes_read_only_runtime_and_large_bounded_text(system)
         state = client.get("/api/state", headers=auth).json()
         assert all("text" not in r for r in state["residents"])
         assert next(r for r in state["residents"] if r["id"] == "reader")["memory_revision"] == 1
+        with pytest.raises(Refused, match="input_context_too_large"):
+            admit(app)
+        text = TEXT
+        memory.save("reader", text, expected_revision=1)
         run = admit(app)
         credential = RunAccess(app.state.hearth).issue(run.id, run.owner_token)
         runtime = {"Authorization": "Bearer " + credential.token}

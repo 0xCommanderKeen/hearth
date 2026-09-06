@@ -9,6 +9,9 @@
   owns the transactional application service, task receipts/admission and routines.
   Resident declaration writes remain on that service so revision checks and
   admission serialize through the same SQLite authority.
+- `inputs/` owns bounded synthetic note revisions, resident selections, explicit
+  Reader seeding and ordered run input manifests; all mutations use the caller's
+  SQLite writer. `skills/` owns the reusable skill library and exact assignments.
 - `execution/` owns run transitions, supervision, pinned context/staging, budget
   reconciliation and immutable usage persistence. Its usage module reads pins and
   validates provider evidence through `integrations/interface.py`; it does not
@@ -35,9 +38,9 @@ ownership immediately around launch; this is not provider authority over policy.
 The existing supported runtime names and version pins are unchanged.
 
 The browser entrypoint loads `web/src/app/`; features own residents, routines,
-approvals, tasks and Hamlet, including their tests. `shared/` owns the authenticated
+approvals, tasks, skills, synthetic inputs and Hamlet, including their tests. `shared/` owns the authenticated
 client and text editor. Backend tests mirror owning modules; provider fixtures live
-with provider tests. Empty future Skills or Claude packages are deliberately absent.
+with provider tests. No unused future-provider packages are present.
 
 This refactor changes Python import/worker paths, not schema, receipt JSON, URLs,
 login storage, styling or model configuration. The isolated offline collector bundle retains its separately pinned flat namespace
