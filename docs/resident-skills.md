@@ -46,7 +46,7 @@ request-body limit. Oversized input is refused without changing the revision.
 Saves and their audit facts commit together; only one concurrent expected-revision
 save wins. Earlier declaration revisions remain readable.
 
-Context version 2 includes the skill text from the admitted declaration revision.
+Context version 3 includes the skill text from the admitted declaration revision.
 The executor and scoped runtime route use the same reader. An edit before launch
 authorization refuses a new launch; an already-authorized input stays pinned, and
 existing runtime evidence remains recoverable. Configuration changes revoke old
@@ -55,8 +55,9 @@ fixed simulated summary; this does not demonstrate a model following the skills.
 
 Schema 11 adds empty skill text to older declaration revisions. Backup format 1
 supports schemas 6–11, requiring explicit `restore --upgrade` for older copies.
-Portable format 2/schema 11 preserves every declaration's skill text through held
+Portable format 3/schema 12 preserves every declaration's skill text through held
 import and reverse export. Version 1/schema 10 remains verifiable and comparable
-with itself; `upgrade-state` creates a new version-2 document with empty skills,
+with itself; `upgrade-state` creates a new version-3 document with empty skills,
 preserving all previous values and files. It cannot infer missing skill content.
-No resident memory, tool authorization or live migration is established here.
+Persistent memory is covered separately in `resident-memory.md`; skill text does
+not establish tool authorization or live migration.

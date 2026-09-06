@@ -14,6 +14,8 @@ def snapshot(hearth: Hearth) -> dict:
         residents = []
         for row in db.execute("""SELECT r.id, r.revision, d.name, d.purpose, d.daily_limit,
                              d.budget_timezone,
+                             (SELECT COALESCE(MAX(revision),0) FROM memory_revisions m
+                              WHERE m.resident_id=r.id) AS memory_revision,
                              COALESCE(p.reason, CASE WHEN c.paused=1 THEN 'operator' END)
                              AS pause_reason,
                              COALESCE(c.paused,0) AS operator_paused,
@@ -43,6 +45,8 @@ def snapshot(hearth: Hearth) -> dict:
             for row in db.execute(f"""SELECT id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
                    created_at, actual_cost,
+                   COALESCE((SELECT revision FROM run_memory m WHERE m.run_id=runs.id),0)
+                   AS memory_revision,
                    usage_known, finished_at, artifact_id, cancellation_requested,
                    CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
                    THEN 'operator_reported_mock' WHEN usage_known=1 THEN 'mock_runtime'

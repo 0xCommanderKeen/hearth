@@ -40,7 +40,7 @@ The restored database retains runs (including active/unknown ownership), command
 receipts, approvals, actions, occurrence identities, usage, queues, and mock runtime/
 effect evidence. This preserves information for reconciliation without claiming
 that copied execution is authoritative. The backup format does not include real
-resident memory or real runtime credentials; those do not exist in the current
+runtime credentials; those do not exist in the current
 mock workflow. Production restore requires an ownership reconciliation plan and
 actual host checks before activation.
 
@@ -53,7 +53,7 @@ epoch and remains held. Live disaster recovery and activation remain unproven.
 
 ## Explicit upgrades of older backups
 
-Format 1 began with schema 6. This binary supports backup schemas 6, 7, 8, 9, 10 and 11;
+Format 1 began with schema 6. This binary supports backup schemas 6, 7, 8, 9, 10, 11 and 12;
 unknown/future versions are refused. Verification checks an older backup's actual
 tables, definitions, columns, indexes and foreign keys against the supported
 historical layout, as well as its version, integrity, file checksums and references.
@@ -80,3 +80,7 @@ operator holds, source immutability, explicit opt-in, incorrect layouts/version
 claims, failed migrations and CLI behavior. The original schema-6 synthetic backup
 from the earlier rehearsal also upgraded to schema 10 and stayed held; source file
 hashes remained unchanged. This establishes mock compatibility, not live recovery.
+
+Schema 12 includes resident memory revisions and run pins. Backups preserve nested
+`memory/{resident_id}/{sha256}.md` files and verify every reference. See
+`resident-memory.md` for exact-byte, orphan, path and held-restore guarantees.

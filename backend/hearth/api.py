@@ -22,6 +22,7 @@ from hearth.broker import Broker, MockNoticeboard
 from hearth.core import Hearth
 from hearth.database import Database
 from hearth.execution import Execution, Executor
+from hearth.memory import MAX_MEMORY, Memory
 from hearth.models import Declaration, Refused
 from hearth.notifications import MockInbox, Notifications
 from hearth.observation import snapshot
@@ -71,13 +72,18 @@ class OperatorAuth:
             await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
             return
         body = bytearray()
+        body_limit = MAX_BODY
+        if scope["method"] == "PUT" and re.fullmatch(
+            r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}/memory", scope["path"]
+        ):
+            body_limit = MAX_MEMORY * 6 + 1024  # JSON escaping may expand UTF-8 bytes.
         try:
             while True:
                 message = await asyncio.wait_for(receive(), timeout=15)
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))
-                if len(body) > MAX_BODY:
+                if len(body) > body_limit:
                     await JSONResponse({"error": "body_too_large"}, status_code=413)(
                         scope, receive, send
                     )
@@ -124,6 +130,12 @@ class DeclarationPost(BaseModel):
     daily_limit: int
     budget_timezone: str
     skill_text: str
+    expected_revision: int = Field(ge=0)
+
+
+class MemoryPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    text: str
     expected_revision: int = Field(ge=0)
 
 
@@ -255,6 +267,14 @@ def create_app(
     @app.get("/api/residents/{resident_id}")
     def resident(resident_id: str, revision: int | None = None):
         return asdict(hearth.resident(resident_id, revision=revision))
+
+    @app.get("/api/residents/{resident_id}/memory")
+    def memory(resident_id: str, revision: int | None = None):
+        return Memory(hearth).read(resident_id, revision=revision)
+
+    @app.put("/api/residents/{resident_id}/memory")
+    def save_memory(resident_id: str, body: MemoryPost):
+        return Memory(hearth).save(resident_id, body.text, expected_revision=body.expected_revision)
 
     @app.put("/api/residents/{resident_id}")
     def save_resident(resident_id: str, body: DeclarationPost):

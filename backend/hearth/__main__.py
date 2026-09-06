@@ -32,6 +32,8 @@ def main() -> None:
             "upgrade-state",
             "show-resident",
             "save-resident",
+            "show-memory",
+            "save-memory",
         ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
@@ -50,6 +52,29 @@ def main() -> None:
     args = parser.parse_args()
     if args.upgrade and args.command != "restore":
         parser.error("--upgrade is only valid with restore")
+    if args.command in {"show-memory", "save-memory"}:
+        from hearth.memory import MAX_MEMORY, Memory
+
+        if args.resident is None:
+            parser.error("memory commands require --resident")
+        memory = Memory(Hearth(Database(args.data / "hearth.db")))
+        try:
+            if args.command == "show-memory":
+                result = memory.read(args.resident, revision=args.revision)
+            else:
+                if args.source is None or args.expected_revision is None:
+                    parser.error("save-memory requires --source and --expected-revision")
+                with args.source.open("rb") as file:
+                    data = file.read(MAX_MEMORY + 1)
+                if len(data) > MAX_MEMORY:
+                    raise Refused("memory_too_large")
+                result = memory.save(
+                    args.resident, data.decode("utf-8"), expected_revision=args.expected_revision
+                )
+            print(json.dumps(result, indent=2, ensure_ascii=True))
+        except (Refused, OSError, ValueError) as error:
+            parser.error(str(error))
+        return
     if args.command in {"show-resident", "save-resident"}:
         if args.resident is None:
             parser.error("resident commands require --resident")

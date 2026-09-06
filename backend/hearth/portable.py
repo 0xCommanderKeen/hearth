@@ -11,12 +11,13 @@ from pathlib import Path
 
 from hearth import backup
 from hearth.database import SCHEMA_VERSION, Database
+from hearth.memory import memory_path
 from hearth.models import Refused, validate_skill_text
 
 FORMAT = "hearth-mock-state"
-VERSION = 2
+VERSION = 3
 # Deliberately pinned: a database upgrade requires an explicit format compatibility decision.
-SUPPORTED_SCHEMA = 11
+SUPPORTED_SCHEMA = 12
 MAX_EXPORT = 32 * 1024 * 1024
 MAX_ROWS = 100_000
 EXCLUDED = {"system_meta", "run_credentials"}
@@ -52,7 +53,7 @@ def _canonical_tables(tables: dict) -> dict:
     return {name: sorted(rows, key=_json) for name, rows in tables.items()}
 
 
-def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False) -> dict:
+def _check(payload: dict, reference: sqlite3.Connection, *, schema: int = SUPPORTED_SCHEMA) -> dict:
     if not isinstance(payload, dict) or set(payload) != {
         "format",
         "version",
@@ -66,9 +67,9 @@ def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False
     if (
         payload["format"] != FORMAT
         or type(payload["version"]) is not int
-        or payload["version"] != (1 if legacy else VERSION)
+        or payload["version"] != {10: 1, 11: 2, 12: 3}[schema]
         or type(payload["schema"]) is not int
-        or payload["schema"] != (10 if legacy else SUPPORTED_SCHEMA)
+        or payload["schema"] != schema
         or SCHEMA_VERSION != SUPPORTED_SCHEMA
         or payload["simulated"] is not True
     ):
@@ -110,7 +111,7 @@ def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False
                 elif type(value) is not {"INTEGER": int, "TEXT": str}[kind]:
                     raise Refused("portable_value_invalid")
             values = dict(row)
-            if name == "declarations" and not legacy:
+            if name == "declarations" and schema >= 11:
                 validate_skill_text(values["skill_text"])
             if name == "runs":
                 # A reconstruction used for constraint checking only, never an owner grant.
@@ -150,6 +151,8 @@ def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False
     for name, file in files.items():
         if name == "hearth.db" or not backup._allowed(name):
             raise Refused("portable_path_invalid")
+        if schema < 12 and name.startswith("memory/"):
+            raise Refused("portable_path_invalid")
         if (
             not isinstance(file, dict)
             or set(file) != {"sha256", "text"}
@@ -166,6 +169,20 @@ def _check(payload: dict, reference: sqlite3.Connection, *, legacy: bool = False
             or len(file["text"].encode()) != artifact["size"]
         ):
             raise Refused("portable_artifact_invalid")
+    if schema >= 12:
+        if reference.execute(
+            "SELECT 1 FROM run_memory m JOIN runs r ON r.id=m.run_id "
+            "WHERE m.resident_id != r.resident_id"
+        ).fetchone():
+            raise Refused("portable_references_invalid")
+        for memory in tables["memory_revisions"]:
+            file = files.get("memory/" + memory_path(memory["resident_id"], memory["sha256"]))
+            if (
+                file is None
+                or file["sha256"] != memory["sha256"]
+                or len(file["text"].encode()) != memory["size"]
+            ):
+                raise Refused("portable_memory_invalid")
     return payload | {"tables": _canonical_tables(tables)}
 
 
@@ -183,14 +200,15 @@ def validate(content: bytes) -> dict:
             database = Database(Path(temporary) / "reference.db")
             database.initialize()
             with sqlite3.connect(database.path) as reference:
-                legacy = (
-                    isinstance(payload, dict)
-                    and payload.get("version") == 1
-                    and payload.get("schema") == 10
-                )
-                if legacy:
+                schema = payload.get("schema") if isinstance(payload, dict) else None
+                if type(schema) is not int or schema not in {10, 11, 12}:
+                    schema = SUPPORTED_SCHEMA
+                if schema < 12:
+                    reference.execute("DROP TABLE run_memory")
+                    reference.execute("DROP TABLE memory_revisions")
+                if schema < 11:
                     reference.execute("ALTER TABLE declarations DROP COLUMN skill_text")
-                normalized = _check(payload, reference, legacy=legacy)
+                normalized = _check(payload, reference, schema=schema)
     except Refused:
         raise
     except ValueError, TypeError, KeyError, OverflowError, sqlite3.DatabaseError, RecursionError:
@@ -208,20 +226,26 @@ def validate(content: bytes) -> dict:
 
 
 def upgrade_state(content: bytes, destination: Path) -> dict:
-    """Explicitly preserve v1 values in a new v2 export; absent skills become empty."""
+    """Preserve older values in a current export; never invent absent memory."""
     source = validate(content)
-    if source["version"] != 1:
+    if source["version"] == VERSION:
         raise Refused("portable_upgrade_not_required")
     payload = json.loads(content)
-    for declaration in payload["tables"]["declarations"]:
-        declaration["skill_text"] = ""
+    if source["version"] == 1:
+        for declaration in payload["tables"]["declarations"]:
+            declaration["skill_text"] = ""
+    payload["tables"]["memory_revisions"] = []
+    payload["tables"]["run_memory"] = []
     payload["version"], payload["schema"] = VERSION, SUPPORTED_SCHEMA
     upgraded = json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=True).encode() + b"\n"
     result = validate(upgraded)
     destination = destination.parent.resolve() / destination.name
     with backup._destination(destination) as pending:
         backup._write(pending / "state.json", upgraded)
-    return result | {"source_version": 1, "source_semantic_sha256": source["semantic_sha256"]}
+    return result | {
+        "source_version": source["version"],
+        "source_semantic_sha256": source["semantic_sha256"],
+    }
 
 
 def export(source: Path, destination: Path) -> dict:

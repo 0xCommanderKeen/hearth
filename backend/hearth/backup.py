@@ -17,16 +17,18 @@ from pathlib import Path
 
 from hearth.artifacts import Artifact, Artifacts, sync_directory
 from hearth.database import SCHEMA_VERSION, Database
+from hearth.memory import MemoryFiles, memory_path
 from hearth.models import Refused, identifier
 
 FORMAT = 1
 # Format 1 first shipped with schema 6. Older databases were never backup inputs.
-SUPPORTED_SCHEMAS = frozenset({6, 7, 8, 9, 10, 11})
+SUPPORTED_SCHEMAS = frozenset({6, 7, 8, 9, 10, 11, 12})
 STORES = {
     "artifacts": ".md",
     "mock-runtime": ".json",
     "mock-inbox": ".md",
     "mock-noticeboard": ".md",
+    "memory": ".md",
 }
 MAX_FILE = 128 * 1024 * 1024
 
@@ -35,7 +37,16 @@ def _read(path: Path) -> bytes:
     if path.parent.is_symlink():
         raise Refused("backup_file_missing_or_unsafe")
     try:
-        directory = os.open(path.parent, os.O_RDONLY | os.O_NOFOLLOW)
+        if path.parent.parent.name == "memory":
+            root = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                directory = os.open(
+                    path.parent.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root
+                )
+            finally:
+                os.close(root)
+        else:
+            directory = os.open(path.parent, os.O_RDONLY | os.O_NOFOLLOW)
         try:
             fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
         finally:
@@ -65,6 +76,13 @@ def _allowed(name: str) -> bool:
     if name == "hearth.db":
         return True
     pieces = name.split("/")
+    if len(pieces) == 3 and pieces[0] == "memory":
+        try:
+            return name == "memory/" + memory_path(pieces[1], Path(pieces[2]).stem)
+        except Refused:
+            return False
+    if pieces[0] == "memory":
+        return False
     if len(pieces) != 2 or pieces[0] not in STORES:
         return False
     path = Path(pieces[1])
@@ -77,6 +95,31 @@ def _allowed(name: str) -> bool:
     return True
 
 
+def _store_files(folder: Path, *, skip_hidden: bool = False):
+    """Only memory has one resident directory level; no symlink traversal."""
+    if folder.is_symlink() or not folder.is_dir():
+        raise Refused("backup_source_unsafe")
+    for child in folder.iterdir():
+        if skip_hidden and child.name.startswith("."):
+            continue
+        if child.is_symlink():
+            raise Refused("backup_source_unsafe")
+        if folder.name == "memory":
+            identifier(child.name)
+            if not child.is_dir():
+                raise Refused("backup_path_invalid")
+            candidates = child.iterdir()
+        else:
+            candidates = (child,)
+        for path in candidates:
+            if skip_hidden and path.name.startswith("."):
+                continue
+            relative = str(path.relative_to(folder.parent))
+            if not _allowed(relative):
+                raise Refused("backup_path_invalid")
+            yield path
+
+
 @contextmanager
 def _destination(destination: Path):
     if destination.exists() or destination.is_symlink():
@@ -85,6 +128,14 @@ def _destination(destination: Path):
     temporary = Path(tempfile.mkdtemp(prefix=".hearth-copy-", dir=destination.parent))
     try:
         yield temporary
+        # Persist every newly created directory link, including resident memory folders.
+        for directory in sorted(
+            (path for path in temporary.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        ):
+            sync_directory(directory)
+        sync_directory(temporary)
         # Reserve the name without replacing even an empty existing directory.
         destination.mkdir(mode=0o700)
         try:
@@ -116,6 +167,16 @@ def _check_database(root: Path, *, schema: int = SCHEMA_VERSION) -> dict:
             if not (root / "artifacts").is_dir() or (root / "artifacts").is_symlink():
                 raise Refused("backup_artifact_missing")
             Artifacts(root / "artifacts").read(Artifact(**dict(row)))
+        if schema >= 12:
+            for memory in db.execute("SELECT * FROM memory_revisions"):
+                MemoryFiles(root / "memory").read(
+                    memory["resident_id"], memory["sha256"], memory["size"]
+                )
+            if db.execute(
+                "SELECT 1 FROM run_memory m JOIN runs r ON r.id=m.run_id "
+                "WHERE m.resident_id != r.resident_id"
+            ).fetchone():
+                raise Refused("backup_references_invalid")
         return {
             "artifacts": len(rows),
             "runs": db.execute("SELECT count(*) FROM runs").fetchone()[0],
@@ -124,7 +185,7 @@ def _check_database(root: Path, *, schema: int = SCHEMA_VERSION) -> dict:
 
 
 def _check_upgrade_layout(root: Path, schema: int) -> None:
-    """The supported 6–11 path is additive; validate the actual historical layout."""
+    """The supported 6–12 path is additive; validate the actual historical layout."""
     with tempfile.TemporaryDirectory(prefix="hearth-schema-") as temporary:
         reference = Path(temporary) / "reference.db"
         Database(reference).initialize()
@@ -140,6 +201,8 @@ def _check_upgrade_layout(root: Path, schema: int) -> None:
                 (7, "operator_controls"),
                 (8, "run_credentials"),
                 (9, "usage_reconciliations"),
+                (12, "memory_revisions"),
+                (12, "run_memory"),
             ):
                 if schema < introduced:
                     tables.remove(name)
@@ -201,6 +264,8 @@ def verify(source: Path) -> dict:
     for name, digest in files.items():
         if not isinstance(name, str) or not _allowed(name):
             raise Refused("backup_path_invalid")
+        if manifest["schema"] < 12 and name.startswith("memory/"):
+            raise Refused("backup_path_invalid")
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise Refused("backup_manifest_invalid")
         path = source / name
@@ -214,7 +279,7 @@ def verify(source: Path) -> dict:
         if child.is_dir():
             if child.name not in STORES:
                 raise Refused("backup_path_invalid")
-            actual.update(f"{child.name}/{item.name}" for item in child.iterdir())
+            actual.update(str(item.relative_to(source)) for item in _store_files(child))
         elif child.name != "manifest.json":
             actual.add(child.name)
     if actual != set(files):
@@ -252,18 +317,14 @@ def capture(data: Path, destination: Path) -> dict:
             os.chmod(temporary / "hearth.db", 0o600)
             with (temporary / "hearth.db").open("rb") as file:
                 os.fsync(file.fileno())
-            for name, extension in STORES.items():
+            for name in STORES:
                 folder = data / name
                 if folder.is_symlink():
                     raise Refused("backup_source_unsafe")
                 if not folder.exists():
                     continue
-                for path in folder.iterdir():
-                    if path.name.startswith("."):
-                        continue
-                    if path.suffix != extension or not _allowed(f"{name}/{path.name}"):
-                        raise Refused("backup_path_invalid")
-                    _write(temporary / name / path.name, _read(path))
+                for path in _store_files(folder, skip_hidden=True):
+                    _write(temporary / path.relative_to(data), _read(path))
         manifest = {
             "format": FORMAT,
             "schema": SCHEMA_VERSION,

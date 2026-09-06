@@ -11,6 +11,7 @@ import { Approvals } from "./Approvals";
 import { RoutinePanel } from "./Routines";
 import { UsageReport } from "./UsageReport";
 import { Skills } from "./Skills";
+import { Memory } from "./Memory";
 
 const statusLabel = (s: string) =>
   ({
@@ -547,6 +548,16 @@ export function App() {
                     act={act}
                   />
                 ))}
+                {residents.map((r) => (
+                  <Memory
+                    key={`${snapshot.epoch}:${r.id}`}
+                    client={client}
+                    resident={r}
+                    busy={busy}
+                    readOnly={snapshot.restore_hold === true}
+                    act={act}
+                  />
+                ))}
               </section>
               <section className="task-panel">
                 <div className="section-title">
@@ -580,6 +591,13 @@ export function App() {
                             <time>{clock(task.created_at)}</time>
                           </div>
                           <h3>{task.instruction}</h3>
+                          {run?.memory_revision !== undefined && (
+                            <small>
+                              {run.memory_revision === 0
+                                ? "Admitted without memory"
+                                : `Memory revision ${run.memory_revision}`}
+                            </small>
+                          )}
                           <div className="task-actions">
                             {task.status === "queued" && (
                               <button
