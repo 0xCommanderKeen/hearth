@@ -20,6 +20,8 @@ from hearth.database import SCHEMA_VERSION, Database
 from hearth.models import Refused, identifier
 
 FORMAT = 1
+# Format 1 first shipped with schema 6. Older databases were never backup inputs.
+SUPPORTED_SCHEMAS = frozenset({6, 7, 8, 9, 10})
 STORES = {
     "artifacts": ".md",
     "mock-runtime": ".json",
@@ -96,11 +98,11 @@ def _destination(destination: Path):
             shutil.rmtree(temporary)
 
 
-def _check_database(root: Path) -> dict:
+def _check_database(root: Path, *, schema: int = SCHEMA_VERSION) -> dict:
     path = root / "hearth.db"
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
         db.row_factory = sqlite3.Row
-        if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        if db.execute("PRAGMA user_version").fetchone()[0] != schema:
             raise Refused("backup_schema_incompatible")
         if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise Refused("backup_database_corrupt")
@@ -121,6 +123,60 @@ def _check_database(root: Path) -> dict:
         }
 
 
+def _check_upgrade_layout(root: Path, schema: int) -> None:
+    """The supported 6–10 path is additive; validate the actual historical layout."""
+    with tempfile.TemporaryDirectory(prefix="hearth-schema-") as temporary:
+        reference = Path(temporary) / "reference.db"
+        Database(reference).initialize()
+        with (
+            sqlite3.connect(reference) as expected,
+            sqlite3.connect((root / "hearth.db").as_uri() + "?mode=ro", uri=True) as actual,
+        ):
+            tables = {
+                row[0]
+                for row in expected.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+            for introduced, name in (
+                (7, "operator_controls"),
+                (8, "run_credentials"),
+                (9, "usage_reconciliations"),
+            ):
+                if schema < introduced:
+                    tables.remove(name)
+            if tables != {
+                row[0]
+                for row in actual.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }:
+                raise Refused("backup_schema_layout_incompatible")
+            for table in tables:
+                sql = expected.execute(
+                    "SELECT sql FROM sqlite_master WHERE name=?", (table,)
+                ).fetchone()[0]
+                if schema < 10 and table in {"declarations", "runs"}:
+                    sql = re.sub(r",\s*budget_timezone TEXT NOT NULL DEFAULT 'UTC'", "", sql)
+                actual_sql = actual.execute(
+                    "SELECT sql FROM sqlite_master WHERE name=?", (table,)
+                ).fetchone()[0]
+                if " ".join(sql.split()) != " ".join(actual_sql.split()):
+                    raise Refused("backup_schema_layout_incompatible")
+                columns = expected.execute(f'PRAGMA table_info("{table}")').fetchall()
+                if schema < 10 and table in {"declarations", "runs"}:
+                    columns = [row for row in columns if row[1] != "budget_timezone"]
+                if columns != actual.execute(f'PRAGMA table_info("{table}")').fetchall():
+                    raise Refused("backup_schema_layout_incompatible")
+                for query in (
+                    f'PRAGMA foreign_key_list("{table}")',
+                    "SELECT name,sql FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name=? ORDER BY name",
+                ):
+                    args = (table,) if "?" in query else ()
+                    if (
+                        expected.execute(query, args).fetchall()
+                        != actual.execute(query, args).fetchall()
+                    ):
+                        raise Refused("backup_schema_layout_incompatible")
+
+
 def verify(source: Path) -> dict:
     source = source.absolute()
     if source.is_symlink() or not source.is_dir():
@@ -130,7 +186,8 @@ def verify(source: Path) -> dict:
         not isinstance(manifest, dict)
         or type(manifest.get("format")) is not int
         or manifest.get("format") != FORMAT
-        or manifest.get("schema") != SCHEMA_VERSION
+        or type(manifest.get("schema")) is not int
+        or manifest.get("schema") not in SUPPORTED_SCHEMAS
         or manifest.get("simulated") is not True
     ):
         raise Refused("backup_format_incompatible")
@@ -158,7 +215,10 @@ def verify(source: Path) -> dict:
             actual.add(child.name)
     if actual != set(files):
         raise Refused("backup_manifest_mismatch")
-    return manifest | {"verified": _check_database(source)}
+    checked = _check_database(source, schema=manifest["schema"])
+    if manifest["schema"] != SCHEMA_VERSION:
+        _check_upgrade_layout(source, manifest["schema"])
+    return manifest | {"verified": checked}
 
 
 def capture(data: Path, destination: Path) -> dict:
@@ -223,10 +283,12 @@ def capture(data: Path, destination: Path) -> dict:
     return result
 
 
-def restore(source: Path, destination: Path) -> dict:
+def restore(source: Path, destination: Path, *, upgrade: bool = False) -> dict:
     source = source.absolute()
     destination = destination.parent.resolve() / destination.name
     manifest = verify(source)
+    if manifest["schema"] != SCHEMA_VERSION and not upgrade:
+        raise Refused("backup_upgrade_required")
     if destination.is_relative_to(source):
         raise Refused("backup_destination_inside_source")
     with _destination(destination) as temporary:
@@ -235,7 +297,7 @@ def restore(source: Path, destination: Path) -> dict:
             if hashlib.sha256(content).hexdigest() != expected:
                 raise Refused("backup_changed_during_restore")
             _write(temporary / name, content)
-        _check_database(temporary)
+        _check_database(temporary, schema=manifest["schema"])
         epoch = str(uuid.uuid4())
         with sqlite3.connect(temporary / "hearth.db") as db:
             db.execute("PRAGMA synchronous=FULL")
@@ -245,14 +307,28 @@ def restore(source: Path, destination: Path) -> dict:
                     json.dumps(
                         {
                             "source_epoch": manifest["verified"]["epoch"],
+                            "source_schema": manifest["schema"],
                             "restored_at": int(time.time()),
                         }
                     ),
                 ),
             )
             db.execute("UPDATE system_meta SET value=? WHERE key='epoch'", (epoch,))
+        # No copied work can run, including if a migration is interrupted. The
+        # private staging copy is never exposed until the upgraded state verifies.
+        if manifest["schema"] != SCHEMA_VERSION:
+            Database(temporary / "hearth.db").initialize()
+            _check_upgrade_layout(temporary, SCHEMA_VERSION)
+        _check_database(temporary)
         _write(
             temporary / "restore-manifest.json",
             json.dumps(manifest, sort_keys=True, indent=2).encode(),
         )
-    return {"read_only": True, "epoch": epoch, "source_epoch": manifest["verified"]["epoch"]}
+    return {
+        "read_only": True,
+        "epoch": epoch,
+        "source_epoch": manifest["verified"]["epoch"],
+        "source_schema": manifest["schema"],
+        "schema": SCHEMA_VERSION,
+        "upgraded": manifest["schema"] != SCHEMA_VERSION,
+    }

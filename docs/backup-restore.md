@@ -50,3 +50,33 @@ artifacts, extra files, symlinks, FIFOs, traversal, busy workers and overwrite r
 An actual CLI demo → backup → restore rehearsal ran on synthetic data on 2026-09-06
 under `/private/tmp/hearth-restore-rehearsal-{source,backup,copy}`. The copy has a new
 epoch and remains held. Live disaster recovery and activation remain unproven.
+
+## Explicit upgrades of older backups
+
+Format 1 began with schema 6. This binary supports backup schemas 6, 7, 8, 9 and 10;
+unknown/future versions are refused. Verification checks an older backup's actual
+tables, definitions, columns, indexes and foreign keys against the supported
+historical layout, as well as its version, integrity, file checksums and references.
+It never upgrades or writes to the source. Manually modified layouts are refused.
+
+```sh
+python -m hearth restore --source /path/to/older-backup --destination /path/to/new-copy --upgrade
+```
+
+Without `--upgrade`, older backups are refused. The option is valid only for
+restore. A private copied database receives its durable hold and fresh epoch before
+migrations run. Migration failure leaves no published destination and does not
+change the source. After upgrading, schema and artifacts are verified again. The
+original backup manifest is retained, and the result/hold record the source schema.
+New budget timezones default to UTC for records predating that field; no costs or
+holds are reset. These additive upgrades do not provide downgrade or activation.
+
+Portable export still requires a current-schema backup. To export older evidence,
+explicitly upgrade into a held restore first, capture that copy, then export its
+current-schema backup. No implicit upgrade occurs during portable export.
+
+Tests cover each supported older schema, active cancellation, missing usage,
+operator holds, source immutability, explicit opt-in, incorrect layouts/version
+claims, failed migrations and CLI behavior. The original schema-6 synthetic backup
+from the earlier rehearsal also upgraded to schema 10 and stayed held; source file
+hashes remained unchanged. This establishes mock compatibility, not live recovery.
