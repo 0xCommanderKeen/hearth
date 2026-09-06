@@ -48,8 +48,8 @@ files and servers are cleaned up. See [the installation recipe](release.md).
 
 Miha selected Codex Astra, synthetic notes, this Mac for development and $10 per
 day. Fresh CLI/browser Reader setup uses 10,000,000 microdollars and Europe/Ljubljana
-budget days; repeated setup preserves existing declarations. Exact runtime,
-authentication and pricing remain open. Real execution is still deferred.
+budget days; repeated setup preserves existing declarations. ChatGPT subscription authentication is selected; API keys and API billing are
+excluded. Exact runtime, credential isolation and subscription usage remain open. Real execution is still deferred.
 
 ## Selected runtime design
 
@@ -220,3 +220,20 @@ app restart, loss of the trusted worker and its retained timeout, plus container
 cleanup and held restore.
 See [configuration and evidence](container-worker.md). This completes the contained
 mock integration, not actual Codex/model-channel execution or daily-use acceptance.
+
+## Offline subscription CLI compatibility
+
+Issue #69 now includes a reproducible, opt-in CLI 0.145.0 probe with synthetic
+ChatGPT authentication and a local WebSocket model fixture inside the network-none
+Mac container. It verifies the selected model string, final-file/JSONL agreement,
+synthetic authentication headers and rejection of injected shell/image calls for
+this text-only profile. The fifth reported token counter, cache-write-input, is
+preserved separately by the parser without assigning any dollar amount.
+
+See [probe reproduction and limits](codex-subscription-probe.md). This does not
+complete issue #69 or enable the Codex runtime: production credential separation,
+transport failure/recovery and operational integration remain to be established.
+No real account, login, model call, subscription charge or source data was used.
+Full `make check` passed 368 backend and 35 browser tests, lint/types/build and both
+installed-wheel journeys. The [Mac report](evidence/codex-subscription-2026-09-06.json)
+records successful completion and tool-injection cases with exact source pins.

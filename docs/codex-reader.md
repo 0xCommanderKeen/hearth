@@ -1,6 +1,6 @@
 # Bounded Codex Astra Reader integration
 
-Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred.
+Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred. Miha subsequently selected Codex subscription authentication (ChatGPT sign-in), not API keys or API billing.
 
 Mock integration now pins adapter kind, contract version and exact input digest
 at admission. Fresh stores can select the process mock, which participates in
@@ -28,7 +28,7 @@ Codex's sandbox constrains spawned commands and filesystem operations. **Inferen
 
 Codex state lives under `CODEX_HOME`; project config is also discovered, trusted project layers can load, and user/system layers remain separate. Hooks can load independently. Setting `project_root_markers = []` stops parent-directory project discovery. **Design implication:** use a fresh execution workspace and isolated state directory, explicitly controlled configuration/environment, and audited tool availability. Merely ignoring the main user config is insufficient evidence that nothing else loads. [Advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced).
 
-Authentication can use ChatGPT subscription access or API usage billing. Credential storage can be a file under `CODEX_HOME`, the OS credential store, or automatic selection. API authentication uses standard API rates. **Decision still needed:** select the dedicated authentication/billing method before creating a credential or using an existing account. No host login should be inherited implicitly. [Authentication](https://learn.chatgpt.com/docs/auth).
+Authentication can use ChatGPT subscription access or API usage billing. Credential storage can be a file under `CODEX_HOME`, the OS credential store, or automatic selection. API authentication uses standard API rates. **Selected:** use ChatGPT subscription authentication. Verify a supported isolated sign-in/credential path before connecting it. Do not inherit a host login implicitly or fall back to API billing. [Authentication](https://learn.chatgpt.com/docs/auth).
 
 ## Accounting and recovery limits
 
@@ -78,7 +78,7 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
 4. **Stage only Reader's pinned inputs.** The internal [staging helper](staged-input.md)
    now publishes digest-checked synthetic context. The [container rehearsal](container-rehearsal.md)
    verifies its unchanged permissions and durable ownership with a fixed synthetic
-   executable; application/Codex worker integration remains pending. Materialize purpose, skill, task, memory
+   executable; the application container worker is now integrated, while actual Codex wiring remains pending. Materialize purpose, skill, task, memory
    and synthetic notes from the admitted context into an isolated per-run directory.
    Do not mount Hearth's database, host home, other residents, operator token,
    approval credentials or engine socket. Treat notes as data, not permission.
@@ -92,7 +92,7 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    paths, and reliable descendant termination. Permit only the model connection
    needed by the trusted runtime, with credentials inaccessible to generated tools.
    Then pin the installed CLI, model availability, authentication/billing mode,
-   pricing, allowance window and stop policy. Explicit real-test selection remains
+   subscription usage provenance, allowance window and stop policy. Explicit real-test selection remains
    required; neither the model choice nor passing mocks enables paid execution.
 
 For the first real output, use a small fictional notes fixture with known facts:
@@ -107,11 +107,12 @@ cannot establish model quality or the host isolation boundary.
 - Integrate the verified offline Mac container boundary with the actual Codex
   worker, staged inputs and trusted model channel before connecting the model.
   Development on this Mac is selected; no remote deployment is selected.
-- Applicable billing and stop policy for the confirmed $10/day allowance. Hearth
-  admission/accounting is not a provider-enforced ceiling; delayed token telemetry
-  cannot establish an exact billed-cost cap.
-- Account/authentication mode and accessible exact Astra model on that burrow,
-  verified without exposing existing personal credentials. No fallback model.
+- Subscription usage and stop policy for the confirmed $10/day allowance. Keep
+  included usage, credits and any estimated dollar policy distinct; do not price
+  subscription tokens using API rates or claim a provider-enforced dollar ceiling.
+- An isolated ChatGPT subscription sign-in path and accessible exact Astra model
+  on that burrow, verified without exposing existing personal credentials. The
+  authentication mode is selected; no API-key or fallback-model path is planned.
 - Explicit selection of a real test after mock worker checks and host evidence.
 
 The application supports inline and process-backed mocks. This document is an
