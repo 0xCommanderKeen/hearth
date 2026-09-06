@@ -106,3 +106,20 @@ for both mock runtimes.
 The mock runtime emits a fixed fixture. Its output does not establish real summary
 quality or model behavior. No migration, source mapping, ownership transfer or
 retirement work remains in the project scope.
+
+## Pinned worker input staging
+
+Issue #58 adds the internal `stage_run` helper: one SQLite snapshot, exact admitted
+context digest, bounded canonical JSON and private atomic publication. Retry checks
+preserve exact bytes and refuse partial, changed or linked destinations. The only
+published input is `context.json`; no worker activation or launch authority is added.
+See [the boundary and remaining work](staged-input.md).
+
+Sixteen fresh-SQLite checks cover pinned edits, other-resident/authority exclusion,
+concurrency, digest and size limits, unsafe paths and sync failures before/after
+publication. Fifty repeated concurrent staging checks pass after switching lock
+creation to exclusive create followed by existing-file open on contention; the
+original combined create/open intermittently failed with ENOENT on this Mac.
+Full `make check` passes 289 backend and 35 browser tests plus both installed mock
+journeys. Actual worker wiring and Mac filesystem/network isolation remain pending;
+read-only file permissions are not evidence of confinement. No Codex call was made.
