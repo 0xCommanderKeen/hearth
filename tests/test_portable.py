@@ -432,3 +432,25 @@ def test_failed_import_does_not_publish_partial_destination(system, tmp_path, mo
     assert not (tmp_path / "imported").exists()
     assert not list(tmp_path.glob(".hearth-copy-*"))
     assert import_state(raw, tmp_path / "imported")["read_only"] is True
+
+
+def test_diff_explains_usage_reconciliation_and_hold_release(system, tmp_path):
+    from hearth.accounting import Accounting
+    from hearth.portable import compare
+
+    hearth, executor, run, _, root = system
+    executor.runtime.scenario = "unknown_usage"
+    executor.step()
+    _, _, before = produce(system, tmp_path)
+    Accounting(hearth).reconcile("report", run.id, amount=2345, evidence="Synthetic report")
+    capture(root, tmp_path / "after-backup")
+    export(tmp_path / "after-backup", tmp_path / "after")
+    result = compare(before, (tmp_path / "after/state.json").read_bytes())
+    changes = {entry["section"]: entry for entry in result["changes"]}
+    assert changes["pauses"]["kind"] == "removed"
+    assert changes["usage_reconciliations"]["kind"] == "added"
+    assert changes["runs"]["identity"] == {"id": run.id}
+    assert changes["runs"]["fields"] == {
+        "actual_cost": {"before": None, "after": 2345},
+        "usage_known": {"before": 0, "after": 1},
+    }

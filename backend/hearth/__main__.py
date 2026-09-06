@@ -27,12 +27,29 @@ def main() -> None:
             "export-state",
             "verify-state",
             "import-state",
+            "diff-state",
         ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
+    parser.add_argument("--against", type=Path)
+    parser.add_argument("--limit", type=int, default=1000)
     args = parser.parse_args()
+    if args.command == "diff-state":
+        from hearth.portable import MAX_EXPORT, compare
+
+        if args.source is None or args.against is None:
+            parser.error("diff-state requires --source and --against")
+        try:
+            with args.source.open("rb") as before, args.against.open("rb") as after:
+                result = compare(
+                    before.read(MAX_EXPORT + 1), after.read(MAX_EXPORT + 1), limit=args.limit
+                )
+        except (Refused, OSError) as error:
+            parser.error(str(error))
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["equal"] else 1)
     if args.command in {"export-state", "verify-state", "import-state"}:
         from hearth.portable import MAX_EXPORT, export, import_state, validate
 

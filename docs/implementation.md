@@ -116,3 +116,11 @@ migration/rollback acceptance remain pending.
 Verification 2026-09-06: full `make check` passes (210 backend, 25 browser tests).
 CLI import/retry/reverse-export rehearsal produced one stable imported epoch on
 retry and matching semantic fingerprints throughout. No live data or activation.
+
+Issue #29 adds deterministic identity-based semantic comparison with exact changed
+fields, file checksum/size differences, complete totals, explicit truncation and
+CLI exit statuses. Mock import/reverse export compares equal; accounting resolution
+reports both usage changes and hold removal. Compatibility conversion and transfer
+remain separate requirements; comparison does not authorize execution.
+Verification 2026-09-06: full `make check` passes (225 backend, 25 browser tests),
+including CLI equal/different/invalid exit statuses and an equal import round trip.

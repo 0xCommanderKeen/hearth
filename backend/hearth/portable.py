@@ -335,3 +335,75 @@ def _existing_import(destination: Path, digest: str) -> dict:
         if actual["semantic_sha256"] != digest:
             raise Refused("portable_destination_changed")
         return _import_report(meta["epoch"], hold)
+
+
+def compare(before: bytes, after: bytes, *, limit: int = 1000) -> dict:
+    """Compare validated records by primary key; never infer a conversion or activation."""
+    if type(limit) is not int or not 0 <= limit <= 10_000:
+        raise Refused("portable_diff_limit_invalid")
+    reports = [validate(content) for content in (before, after)]
+    left, right = [json.loads(content) for content in (before, after)]
+    changes = []
+    totals = {"added": 0, "removed": 0, "modified": 0}
+
+    def record(section: str, identity: dict, old: dict | None, new: dict | None) -> None:
+        if old == new:
+            return
+        kind = "added" if old is None else "removed" if new is None else "modified"
+        totals[kind] += 1
+        if len(changes) >= limit:
+            return
+        fields = {}
+        for field in sorted((old or {}).keys() | (new or {}).keys()):
+            previous, current = (old or {}).get(field), (new or {}).get(field)
+            if old is None or new is None or previous != current:
+                fields[field] = {"before": previous, "after": current}
+        changes.append({"section": section, "identity": identity, "kind": kind, "fields": fields})
+
+    with tempfile.TemporaryDirectory(prefix="hearth-diff-") as temporary:
+        database = Database(Path(temporary) / "reference.db")
+        database.initialize()
+        with sqlite3.connect(database.path) as db:
+            columns = _columns(db)
+    for name in sorted(left["tables"]):
+        keys = [col[1] for col in sorted(columns[name], key=lambda col: col[5]) if col[5]]
+        if name == "sqlite_sequence":
+            keys = ["name"]
+        if not keys:
+            raise Refused("portable_identity_unsupported")
+        old_rows, new_rows = [
+            {tuple(row[key] for key in keys): row for row in document["tables"][name]}
+            for document in (left, right)
+        ]
+        for identity in sorted(old_rows.keys() | new_rows.keys(), key=_json):
+            record(
+                name,
+                dict(zip(keys, identity, strict=True)),
+                old_rows.get(identity),
+                new_rows.get(identity),
+            )
+    for path in sorted(left["files"].keys() | right["files"].keys()):
+        summaries = []
+        for document in (left, right):
+            file = document["files"].get(path)
+            summaries.append(
+                None
+                if file is None
+                else {"sha256": file["sha256"], "bytes": len(file["text"].encode())}
+            )
+        record("files", {"path": path}, *summaries)
+    count = sum(totals.values())
+    return {
+        "equal": count == 0,
+        "before_sha256": reports[0]["semantic_sha256"],
+        "after_sha256": reports[1]["semantic_sha256"],
+        "source_epochs": {
+            "before": left["source_epoch"],
+            "after": right["source_epoch"],
+            "affects_equality": False,
+        },
+        "totals": totals,
+        "change_count": count,
+        "omitted_changes": count - len(changes),
+        "changes": changes,
+    }
