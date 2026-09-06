@@ -4,7 +4,7 @@
   "image": "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
   "synthetic_fixture": true,
   "real_host_probe": true,
-  "module_sha256": "3ce0ea71728539aa77cd672e391e52a0c5596dd0145ede750097b891ab254f7e",
+  "module_sha256": "807b1e06a3a847f149d441701ff55e7bef1ec69c0e82811e17aa59e212d6c258",
   "cases": [
     {
       "scenario": "success",
@@ -12,7 +12,7 @@
         "status": "exited",
         "transcript": {
           "status": "completed",
-          "thread_id": "a65d2922-0096-4394-8163-d91c847bc8d2",
+          "thread_id": "10bea754-5a73-46e6-ad62-9e9fe5a2ec1e",
           "messages": [
             {
               "id": "answer",
@@ -28,6 +28,7 @@
       "input_mode": "0400",
       "directory_mode": "0700",
       "lost_start_reply": true,
+      "operational_dispatch_guard": true,
       "fresh_process_observed": "running",
       "receipt_survived_removal": true
     },
@@ -48,6 +49,7 @@
       "input_mode": "0400",
       "directory_mode": "0700",
       "lost_start_reply": true,
+      "operational_dispatch_guard": true,
       "fresh_process_observed": "running",
       "receipt_survived_removal": true
     }

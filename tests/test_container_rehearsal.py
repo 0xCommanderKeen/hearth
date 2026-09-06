@@ -481,3 +481,124 @@ def test_cleanup_waits_for_dispatch_and_preserves_fast_completion(system):
         removing.result(timeout=3)
     assert worker.inspect(run.id).transcript.status == "completed"
     assert docker.container is None
+
+
+@pytest.fixture
+def operational_system(tmp_path):
+    from hearth.artifacts import Artifacts
+    from hearth.execution import Execution
+
+    database = Database(tmp_path / "hearth.db")
+    database.initialize(runtime_kind="process_mock")
+    hearth = Hearth(database, clock=lambda: 1000)
+    hearth.save_resident(
+        "reader", Declaration("Reader", "Synthetic purpose", 10000), expected_revision=0
+    )
+    task = hearth.submit("task", "reader", "Synthetic summary", expires_at=1500)
+    run = hearth.admit(task.task_id, reserve=3000)
+    execution = Execution(hearth, Artifacts(tmp_path / "artifacts"))
+    assert execution.prepare_start(run.id, run.owner_token)
+    with database.transaction() as db:
+        epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0]
+    docker = Docker(run.id)
+    worker = ContainerRehearsal(database, tmp_path / "containers", docker=docker)
+    return execution, run, epoch, docker, worker
+
+
+def operational_guard(execution, run, epoch):
+    return execution.dispatch_guard(
+        run.id, run.owner_token, epoch=epoch, input_digest=run.input_digest
+    )
+
+
+@pytest.mark.parametrize("state", ["starting", "running", "interrupted"])
+def test_operational_dispatch_accepts_observed_active_run(operational_system, state):
+    execution, run, epoch, docker, worker = operational_system
+    if state != "starting":
+        execution.observe(run.id, run.owner_token, state)
+    result = worker.start(run.id, dispatch_guard=operational_guard(execution, run, epoch))
+    assert result.status == "running"
+    assert [call[0] for call in docker.calls].count("start") == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["cancel", "declaration", "epoch", "owner", "digest", "intent", "held", "finished"],
+)
+def test_change_during_container_creation_prevents_dispatch(operational_system, change):
+    execution, run, epoch, docker, worker = operational_system
+
+    def changed_docker(*args):
+        result = docker(*args)
+        if args[0] == "create":
+            hearth = execution.hearth
+            if change == "cancel":
+                execution.cancel(run.id)
+            elif change == "declaration":
+                hearth.save_resident(
+                    "reader", Declaration("Reader", "Changed purpose", 10000), expected_revision=1
+                )
+            else:
+                statements = {
+                    "epoch": "UPDATE system_meta SET value='changed' WHERE key='epoch'",
+                    "owner": "UPDATE runs SET owner_token='changed'",
+                    "digest": "UPDATE runs SET input_digest='changed'",
+                    "intent": "UPDATE runs SET launch_attempted=0",
+                    "held": "INSERT INTO system_meta VALUES ('restore_hold', '{}')",
+                    "finished": "UPDATE runs SET status='failed', finished_at=1001",
+                }
+                with hearth.database.transaction(write=True) as db:
+                    db.execute(statements[change])
+        return result
+
+    worker.docker = changed_docker
+    with pytest.raises(Refused):
+        worker.start(run.id, dispatch_guard=operational_guard(execution, run, epoch))
+    assert not any(call[0] == "start" for call in docker.calls)
+    assert (worker.root / run.id / "identity.json").is_file()
+    # A later replay cannot start the already-created claim, even if the original
+    # authority check is no longer supplied by this standalone rehearsal caller.
+    if change == "digest":
+        with pytest.raises(Refused, match="staged_input_digest_mismatch"):
+            worker.start(run.id)
+    else:
+        assert worker.start(run.id).status == "unknown"
+    assert [call[0] for call in docker.calls].count("create") == 1
+    assert not any(call[0] == "start" for call in docker.calls)
+
+
+def test_dispatch_serializes_cancellation_until_start_returns(operational_system):
+    import sqlite3
+
+    execution, run, epoch, docker, worker = operational_system
+    checked = False
+
+    def serialized_docker(*args):
+        nonlocal checked
+        if args[0] == "start":
+            # A separate connection represents a concurrent operator command.
+            with sqlite3.connect(execution.hearth.database.path, timeout=0) as competing:
+                with pytest.raises(sqlite3.OperationalError, match="locked"):
+                    competing.execute("BEGIN IMMEDIATE")
+            checked = True
+        return docker(*args)
+
+    worker.docker = serialized_docker
+    worker.start(run.id, dispatch_guard=operational_guard(execution, run, epoch))
+    assert checked
+    assert execution.cancel(run.id).cancellation_requested
+    assert worker.stop(run.id).status == "exited"
+
+
+def test_lost_dispatch_reply_releases_database_but_never_relaunches(operational_system):
+    execution, run, epoch, docker, worker = operational_system
+    docker.lose = "start"
+    with pytest.raises(OSError):
+        worker.start(run.id, dispatch_guard=operational_guard(execution, run, epoch))
+    assert execution.cancel(run.id).cancellation_requested
+    docker.lose = None
+    assert worker.start(run.id, dispatch_guard=operational_guard(execution, run, epoch)).status == (
+        "running"
+    )
+    assert [call[0] for call in docker.calls].count("start") == 1
+    assert worker.stop(run.id).status == "exited"

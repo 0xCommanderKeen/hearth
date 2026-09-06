@@ -3,6 +3,7 @@
 import fcntl
 import hashlib
 import json
+from contextlib import contextmanager
 from dataclasses import asdict
 
 from hearth.artifacts import Artifact, Artifacts
@@ -95,6 +96,42 @@ class Execution:
                     {"task_id": row["task_id"]},
                 )
         return self.hearth.run(run_id)
+
+    @contextmanager
+    def dispatch_guard(self, run_id: str, owner_token: str, *, epoch: str, input_digest: str):
+        """Recheck a detached worker's authority and serialize it with actual dispatch.
+
+        The caller holds this context only around the bounded start operation,
+        after staging and container creation. SQLite writers cannot change policy
+        or cancellation between the check and dispatch. A lost start reply still
+        requires runtime reconciliation; this grants no retry authority.
+        """
+        with self.hearth.database.transaction(write=True) as db:
+            current_epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if current_epoch is None or current_epoch[0] != epoch:
+                raise Refused("run_epoch_changed")
+            if row is None or row["owner_token"] != owner_token:
+                raise Refused("run_ownership_lost")
+            if (
+                row["runtime_kind"] != "process_mock"
+                or row["runtime_version"] != 1
+                or row["input_digest"] != input_digest
+                or not row["launch_attempted"]
+            ):
+                raise Refused("run_dispatch_identity_invalid")
+            if (
+                row["finished_at"] is not None
+                or row["cancellation_requested"]
+                or row["status"] not in {"starting", "running", "interrupted"}
+            ):
+                raise Refused("run_dispatch_inactive")
+            revision = db.execute(
+                "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
+            ).fetchone()
+            if revision is None or revision[0] != row["resident_revision"]:
+                raise Refused("run_declaration_changed")
+            yield
 
     def finish(self, run_id: str, owner_token: str, evidence: Evidence) -> Run:
         if evidence.status not in {"succeeded", "failed", "cancelled"}:
