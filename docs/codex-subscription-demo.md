@@ -20,7 +20,9 @@ the displayed dollar amount is an API-equivalent estimate for subscription usage
 The default daily limit is $10 in Europe/Ljubljana time. Incomplete or unpriceable
 usage keeps new admission paused. Existing mock effects/notifications stay local.
 
-The local control password is unrelated to Codex authentication. Expired or
+The local control password is unrelated to Codex authentication. A successful login
+is remembered in this browser tab across refreshes; Lock or closing the tab clears
+it. The saved token is revalidated by the server after refresh. Expired or
 unavailable subscription access fails visibly; no model or billing fallback is
 selected. See [the execution decision](adr/0008-native-subscription-demo.md) for
 boundaries and remaining recovery limits.

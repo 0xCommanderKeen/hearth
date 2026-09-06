@@ -15,6 +15,7 @@ let state: Snapshot;
 let publish: (snapshot: Snapshot) => void;
 
 beforeEach(() => {
+  sessionStorage.clear();
   window.history.replaceState(null, "", "/");
   state = {
     schema_version: 1,
@@ -433,4 +434,29 @@ it("does not display another resident's late artifact response on a profile", as
   await screen.findByRole("heading", { level: 1, name: "Residents" });
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
   await screen.findByText("Reader private result");
+});
+
+it("keeps an authenticated tab unlocked after refresh and clears it on Lock", async () => {
+  await login(false);
+  cleanup();
+  render(<App />);
+  await screen.findByText("Connected to the simulation");
+  expect(screen.queryByLabelText("Operator token")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+  cleanup();
+  render(<App />);
+  expect(screen.getByLabelText("Operator token")).toBeTruthy();
+  expect(sessionStorage.length).toBe(0);
+});
+
+it("forgets a saved token when the server rejects it after refresh", async () => {
+  await login(false);
+  cleanup();
+  vi.mocked(Client.prototype.state).mockRejectedValue(
+    new RequestError(401, "unauthorized"),
+  );
+  render(<App />);
+  await screen.findByRole("alert");
+  expect(screen.getByLabelText("Operator token")).toBeTruthy();
+  expect(sessionStorage.length).toBe(0);
 });

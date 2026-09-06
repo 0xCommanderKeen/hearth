@@ -388,3 +388,9 @@ Read-summary visibility correction: an actual browser reproduction found the sav
 result below the viewport after clicking. The result now receives focus and scrolls
 into view; the same browser assertion failed before the change and passed afterward.
 No additional model call was needed to verify the fix.
+
+Operator login now survives refresh in the same browser tab using session storage;
+Lock and rejected credentials clear it. Browser refresh/Lock verification passed;
+frontend regressions cover re-entry and server rejection. Review fixes cover
+stalled CLI stdin, partial JSON/UTF-8 termination receipts and modified persisted
+launch inputs, using synthetic subprocesses without provider calls.

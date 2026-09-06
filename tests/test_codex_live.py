@@ -147,3 +147,116 @@ def test_live_result_and_usage_survive_backup_without_auth_files(tmp_path, monke
     held = Database(tmp_path / "held/hearth.db")
     assert held.restored()
     assert Hearth(held).run(run.id).actual_cost == 43482
+
+
+@pytest.mark.parametrize(
+    "tail", ['{"type":', "[1]", '{"type":"item.completed","item":null}', '{"message":"�']
+)
+@pytest.mark.parametrize("cancelled", [True, False])
+def test_truncated_transcript_keeps_observed_termination_with_unknown_usage(tail, cancelled):
+    value = receipt() | {
+        "stdout": '{"type":"thread.started","thread_id":"test"}\n' + tail,
+        "exit_code": -15,
+        "final": None,
+        "cancelled": cancelled,
+    }
+    evidence = encode(value, BINDING)[2]
+    assert evidence.status == ("cancelled" if cancelled else "failed")
+    assert evidence.cost is None
+
+
+def prepared_worker(tmp_path, monkeypatch):
+    import sys
+
+    from hearth.artifacts import Artifacts
+    from hearth.codex_live import CodexLiveRuntime
+    from hearth.core import Hearth
+    from hearth.database import Database
+    from hearth.execution import Execution
+    from hearth.memory import Memory
+    from hearth.models import Declaration
+    from hearth.run_context import read_context
+
+    data = tmp_path / "data"
+    auth = tmp_path / "login"
+    auth.mkdir()
+    (auth / "auth.json").write_text("synthetic-only")
+    binary = tmp_path / "codex"
+    binary.write_text(
+        f"#!{sys.executable}\nimport sys, time\n"
+        "if '--version' in sys.argv:\n print('codex-cli 0.153.4')\n sys.exit()\n"
+        'sys.stdout.buffer.write(b\'{"type":"\\xe2\')\n'
+        "sys.stdout.buffer.flush()\ntime.sleep(30)\n"
+    )
+    binary.chmod(0o700)
+    db = Database(data / "hearth.db")
+    db.initialize(runtime_kind=KIND)
+    runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth)
+    hearth = Hearth(db)
+    hearth.save_resident(
+        "reader", Declaration("Reader", "Synthetic", 10_000_000), expected_revision=0
+    )
+    task = hearth.submit("worker", "reader", "界" * 32000, expires_at=int(hearth.clock()) + 100)
+    run = hearth.admit(task.task_id, reserve=100_000)
+    Execution(hearth, Artifacts(data / "artifacts")).prepare_start(run.id, run.owner_token)
+    with db.transaction() as connection:
+        prompt = json.dumps(
+            read_context(connection, run.id, Memory(hearth).files),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    with monkeypatch.context() as patch:
+        patch.setattr("hearth.codex_live.subprocess.Popen", lambda *a, **kw: None)
+        runtime.start(run.id, prompt)
+    return runtime, run
+
+
+def test_worker_timeout_covers_child_that_never_reads_large_prompt(tmp_path, monkeypatch):
+    import time
+
+    from hearth.codex_live import worker
+
+    runtime, run = prepared_worker(tmp_path, monkeypatch)
+    monkeypatch.setattr("hearth.codex_live.RUN_TIMEOUT", 0.2)
+    started = time.monotonic()
+    worker(runtime.folder(run.id))
+    assert time.monotonic() - started < 5
+    evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+    assert evidence.status == "failed" and evidence.cost is None
+    assert runtime.receipt(run.id)["exit_code"] is not None
+
+
+@pytest.mark.parametrize("field", ["prompt", "sha256"])
+def test_worker_refuses_changed_persisted_launch_input(tmp_path, monkeypatch, field):
+    from hearth.codex_live import worker
+
+    runtime, run = prepared_worker(tmp_path, monkeypatch)
+    path = runtime.folder(run.id) / "request.json"
+    value = json.loads(path.read_text())
+    value[field] = "changed"
+    path.write_text(json.dumps(value))
+
+    def unexpected_launch(*a, **kw):
+        pytest.fail("Changed input reached process launch")
+
+    monkeypatch.setattr("hearth.codex_live.subprocess.Popen", unexpected_launch)
+    worker(runtime.folder(run.id))
+    assert runtime.inspect(run.id).status == "unknown"
+
+
+def test_worker_cancellation_retains_partial_utf8_termination_receipt(tmp_path, monkeypatch):
+    import threading
+
+    from hearth.codex_live import worker
+
+    runtime, run = prepared_worker(tmp_path, monkeypatch)
+    monkeypatch.setattr("hearth.codex_live.RUN_TIMEOUT", 3)
+    timer = threading.Timer(0.2, runtime.stop, args=(run.id,))
+    timer.start()
+    try:
+        worker(runtime.folder(run.id))
+    finally:
+        timer.join()
+    evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+    assert evidence.status == "cancelled" and evidence.cost is None
+    assert runtime.receipt(run.id)["exit_code"] is not None

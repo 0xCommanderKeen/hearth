@@ -14,6 +14,23 @@ import { Skills } from "./Skills";
 import { Memory } from "./Memory";
 import { Hamlet } from "./Hamlet";
 
+const SESSION_KEY = "hearth.operator-token";
+function savedToken(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+function saveToken(value: string | null) {
+  try {
+    if (value === null) sessionStorage.removeItem(SESSION_KEY);
+    else sessionStorage.setItem(SESSION_KEY, value);
+  } catch {
+    /* Storage may be disabled; the current login still works. */
+  }
+}
+
 const statusLabel = (s: string) =>
   ({
     ready: "Ready for work",
@@ -118,6 +135,7 @@ export function App() {
     );
   }
   function lock() {
+    saveToken(null);
     currentSession.current?.clear();
     currentSession.current = null;
     setClient(null);
@@ -170,15 +188,15 @@ export function App() {
         setBusy(false);
     }
   }
-  async function login(event: FormEvent) {
-    event.preventDefault();
+  async function connect(credential: string) {
     setBusy(true);
     setError("");
-    const candidate = new Client(token);
+    const candidate = new Client(credential);
     currentSession.current = candidate;
     try {
       const next = await candidate.state();
       if (currentSession.current !== candidate) return;
+      saveToken(credential);
       setSnapshot(next);
       setClient(candidate);
       setToken("");
@@ -193,6 +211,18 @@ export function App() {
         setBusy(false);
     }
   }
+  async function login(event: FormEvent) {
+    event.preventDefault();
+    await connect(token);
+  }
+  useEffect(() => {
+    const credential = savedToken();
+    if (credential) void connect(credential);
+    return () => {
+      currentSession.current?.clear();
+      currentSession.current = null;
+    };
+  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!client) return;
@@ -374,8 +404,8 @@ export function App() {
               <span className="eyebrow">WELCOME HOME</span>
               <h2>Open the gate.</h2>
               <p>
-                Enter your local operator token to explore the simulation. It
-                stays in memory for this visit.
+                Enter your local operator token to open Hearth. This tab stays
+                signed in across refreshes until you select Lock or close it.
               </p>
             </div>
             <form onSubmit={login}>

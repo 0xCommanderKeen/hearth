@@ -8,6 +8,7 @@ import selectors
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -24,6 +25,7 @@ from hearth.runtime import Evidence
 
 KIND = "codex_subscription"
 VERSION = "codex-cli 0.153.4"
+RUN_TIMEOUT = 120
 CONFIG = {
     "forced_login_method": "chatgpt",
     "cli_auth_credentials_store": "file",
@@ -59,7 +61,8 @@ CONFIG = {
 
 def encode(receipt, expected):
     if (
-        set(receipt)
+        not isinstance(receipt, dict)
+        or set(receipt)
         != {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
@@ -67,7 +70,10 @@ def encode(receipt, expected):
         raise Refused("run_usage_invalid")
     raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
     if (
-        len(raw.encode()) > MAX_STREAM
+        not isinstance(receipt["stdout"], str)
+        or (receipt["final"] is not None and not isinstance(receipt["final"], str))
+        or (receipt["exit_code"] is not None and type(receipt["exit_code"]) is not int)
+        or len(raw.encode()) > MAX_STREAM
         or type(receipt["cancelled"]) is not bool
         or type(receipt["launched"]) is not bool
     ):
@@ -75,8 +81,15 @@ def encode(receipt, expected):
     parser = CodexEvents()
     skipped_diagnostic = False
     for line in receipt["stdout"].splitlines():
-        event = json.loads(line)
-        item = event.get("item", {}) if isinstance(event, dict) else {}
+        try:
+            event = json.loads(line)
+        except ValueError, RecursionError:
+            event = {}
+        if not isinstance(event, dict):
+            event = {}
+        item = event.get("item", {})
+        if not isinstance(item, dict):
+            item = {}
         if (
             not skipped_diagnostic
             and parser.thread_id is not None
@@ -251,6 +264,18 @@ def worker(folder):
         request = read(folder / "request.json")
         database = Database(folder.parent.parent / "hearth.db")
         execution = Execution(Hearth(database), Artifacts(folder.parent.parent / "artifacts"))
+        prompt_bytes = request["prompt"].encode()
+        prompt_digest = hashlib.sha256(prompt_bytes).hexdigest()
+        with database.transaction() as db:
+            pin = db.execute(
+                "SELECT value FROM system_meta WHERE key='codex_live_binary'"
+            ).fetchone()
+        if (
+            pin is None
+            or pin[0] != request["sha256"]
+            or prompt_digest != request["binding"]["input_digest"]
+        ):
+            return
         binary = Path(request["binary"])
         if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
             return
@@ -285,23 +310,25 @@ def worker(folder):
                 folder.name,
                 request["owner"],
                 epoch=request["epoch"],
-                input_digest=request["binding"]["input_digest"],
+                input_digest=prompt_digest,
             ):
                 if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
                     raise Refused("codex_subscription_binary_changed")
-                child = subprocess.Popen(
-                    cmd,
-                    cwd=workspace,
-                    env={"PATH": os.defpath, "CODEX_HOME": request["auth_home"]},
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-            assert child.stdin is not None and child.stdout is not None
-            child.stdin.write(request["prompt"].encode())
-            child.stdin.close()
-            deadline = time.monotonic() + 120
+                # A regular file cannot block prompt delivery when the CLI stalls.
+                with tempfile.TemporaryFile() as prompt:
+                    prompt.write(prompt_bytes)
+                    prompt.seek(0)
+                    child = subprocess.Popen(
+                        cmd,
+                        cwd=workspace,
+                        env={"PATH": os.defpath, "CODEX_HOME": request["auth_home"]},
+                        stdin=prompt,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+            assert child.stdout is not None
+            deadline = time.monotonic() + RUN_TIMEOUT
             with selectors.DefaultSelector() as selector:
                 selector.register(child.stdout, selectors.EVENT_READ)
                 while time.monotonic() < deadline:
@@ -339,7 +366,7 @@ def worker(folder):
             "kind": KIND,
             "binding": request["binding"],
             "binary": request["sha256"],
-            "stdout": output.decode("utf-8"),
+            "stdout": output.decode("utf-8", errors="replace"),
             "final": final.read_text()
             if final.exists() and final.stat().st_size <= 512 * 1024
             else None,
