@@ -33,13 +33,18 @@ GitHub CI reruns pass on 2026-09-06 after Miha made Hearth public: foundation
 33993194801, mock execution 33993818685, operator workflow 34017217477.
 PRs #2/#4/#6 remain open; the browser PR is still draft pending visual QA.
 
-Issue #7 is in progress on `feat/mock-approvals`: exact artifact/revision-bound
+Issue #7 / draft PR #8 (`e9da64b`, CI 34018103469 green): exact artifact/revision-bound
 requests, first-decision-wins, expiry, versioned grants, and a local mock-effect
 broker. The broker records dispatch intent transactionally, holds the destination
 while uncertain, and recovers a matching receipt without resending. Authenticated API and Townhall controls now support the review and reconciliation
 journey. Verification: 80 backend and 17 browser tests pass, including concurrency,
 schema upgrade, and action audit rollback. See `mock-approvals.md` for guarantees
 and remaining runtime-origin, notification, and visual acceptance gates.
+
+Issue #9 adds daily routines: revisioned wall-clock schedules, durable occurrences,
+DST gap/fold rules, latest-only outage catch-up, overlap skipping, ordinary task
+admission, and Townhall controls. See `daily-routines.md`. Mock notification delivery
+remains next; this does not complete the live daily-use gate.
 
 ## Next
 

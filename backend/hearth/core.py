@@ -34,6 +34,21 @@ def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: di
     )
 
 
+def _queue_task(
+    db: sqlite3.Connection, resident_id: str, instruction: str, now: int, source: dict
+) -> str:
+    identifier(resident_id)
+    bounded_text(instruction, 32_000, "invalid_instruction")
+    if not db.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone():
+        raise Refused("resident_not_found")
+    task_id = str(uuid.uuid4())
+    db.execute(
+        "INSERT INTO tasks VALUES (?, ?, ?, 'queued', ?)", (task_id, resident_id, instruction, now)
+    )
+    _audit(db, "task.queued", task_id, now, {"resident_id": resident_id, **source})
+    return task_id
+
+
 class Hearth:
     """The initial operational interface. No runtime or provider credentials are used."""
 
@@ -120,26 +135,10 @@ class Hearth:
                     previous["accepted_at"],
                     previous["expires_at"],
                 )
-            if (
-                db.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone()
-                is None
-            ):
-                raise Refused("resident_not_found")
-            task_id = str(uuid.uuid4())
-            db.execute(
-                "INSERT INTO tasks VALUES (?, ?, ?, 'queued', ?)",
-                (task_id, resident_id, instruction, now),
-            )
+            task_id = _queue_task(db, resident_id, instruction, now, {"command_id": command_id})
             db.execute(
                 "INSERT INTO commands VALUES (?, ?, ?, ?, ?)",
                 (command_id, digest, task_id, now, expires_at),
-            )
-            _audit(
-                db,
-                "task.queued",
-                task_id,
-                now,
-                {"command_id": command_id, "resident_id": resident_id},
             )
             return Receipt(command_id, task_id, now, expires_at)
 

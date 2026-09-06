@@ -86,3 +86,24 @@ def approval_schema(db: sqlite3.Connection) -> None:
     )""")
     db.execute("""CREATE UNIQUE INDEX publication_claim ON publication_actions(destination)
         WHERE status IN ('executing','unknown')""")
+
+
+def routine_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE routines (
+        id TEXT PRIMARY KEY, resident_id TEXT NOT NULL REFERENCES residents(id),
+        revision INTEGER NOT NULL, enabled INTEGER NOT NULL CHECK (enabled IN (0,1)),
+        next_at INTEGER NOT NULL
+    )""")
+    db.execute("""CREATE TABLE routine_revisions (
+        routine_id TEXT NOT NULL REFERENCES routines(id), revision INTEGER NOT NULL,
+        instruction TEXT NOT NULL, local_time TEXT NOT NULL, timezone TEXT NOT NULL,
+        created_at INTEGER NOT NULL, PRIMARY KEY(routine_id, revision)
+    )""")
+    db.execute("""CREATE TABLE occurrences (
+        routine_id TEXT NOT NULL, scheduled_at INTEGER NOT NULL, revision INTEGER NOT NULL,
+        task_id TEXT UNIQUE REFERENCES tasks(id),
+        status TEXT NOT NULL CHECK (status IN ('queued','skipped_overlap')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(routine_id, scheduled_at),
+        FOREIGN KEY(routine_id, revision) REFERENCES routine_revisions(routine_id, revision)
+    )""")

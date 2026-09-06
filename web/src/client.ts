@@ -1,3 +1,13 @@
+export type Routine = {
+  id: string;
+  resident_id: string;
+  revision: number;
+  enabled: number;
+  next_at: number;
+  instruction: string;
+  local_time: string;
+  timezone: string;
+};
 export type Approval = {
   id: string;
   artifact_id: string;
@@ -48,6 +58,13 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
+  routines?: Routine[];
+  occurrences?: {
+    routine_id: string;
+    scheduled_at: number;
+    status: string;
+    task_id: string | null;
+  }[];
   approvals?: Approval[];
   publication_policies?: {
     resident_id: string;
@@ -153,6 +170,22 @@ export class Client {
     );
   }
 
+  saveRoutine(
+    id: string,
+    body: {
+      resident_id: string;
+      instruction: string;
+      local_time: string;
+      timezone: string;
+      enabled: boolean;
+      expected_revision: number;
+    },
+  ) {
+    return this.request(`/api/routines/${encodeURIComponent(id)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
   publicationPolicy(resident: string, enabled: boolean, revision: number) {
     return this.request(
       `/api/residents/${encodeURIComponent(resident)}/publication-policy`,

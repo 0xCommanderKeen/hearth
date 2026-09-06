@@ -54,6 +54,20 @@ def snapshot(hearth: Hearth) -> dict:
             "tasks": tasks,
             "runs": runs,
             "activity": audit,
+            "routines": [
+                dict(row)
+                for row in db.execute(
+                    "SELECT r.*, d.instruction, d.local_time, d.timezone FROM routines r "
+                    "JOIN routine_revisions d ON d.routine_id=r.id AND d.revision=r.revision "
+                    "ORDER BY r.id"
+                )
+            ],
+            "occurrences": [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM occurrences ORDER BY scheduled_at DESC, routine_id LIMIT 100"
+                )
+            ],
             "publication_policies": [
                 dict(row)
                 for row in db.execute(
