@@ -127,11 +127,11 @@ def test_active_run_cannot_be_settled_to_release_ownership(system):
 
 def test_remaining_unknown_usage_retains_and_repoints_the_hold(system, tmp_path):
     hearth, first, accounting, _ = system
-    # Simulate imported legacy state containing more than one unresolved terminal run.
+    # Inject multiple unresolved records: one report must only clear its own hold.
     with hearth.database.transaction(write=True) as db:
         db.execute("DELETE FROM pauses")
     task = hearth.submit(
-        "legacy-second", "reader", "Synthetic", expires_at=int(hearth.clock()) + 600
+        "second-unknown", "reader", "Synthetic", expires_at=int(hearth.clock()) + 600
     )
     second = hearth.admit(task.task_id, reserve=10_000)
     Executor(

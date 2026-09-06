@@ -269,35 +269,6 @@ def test_mismatched_receipt_never_finalizes_or_releases_destination(system, tmp_
         assert db.execute("SELECT revision FROM publication_targets").fetchone()[0] == 1
 
 
-def test_schema_three_upgrade_preserves_existing_result_and_epoch(system):
-    authority, artifact, _ = system
-    database = authority.hearth.database
-    with database.transaction(write=True) as db:
-        epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0]
-        db.execute("DROP TABLE run_memory")
-        db.execute("DROP TABLE memory_revisions")
-        db.execute("ALTER TABLE declarations DROP COLUMN skill_text")
-        db.execute("ALTER TABLE declarations DROP COLUMN budget_timezone")
-        db.execute("ALTER TABLE runs DROP COLUMN budget_timezone")
-        db.execute("DROP TABLE usage_reconciliations")
-        db.execute("DROP TABLE run_credentials")
-        db.execute("DROP TABLE operator_controls")
-        db.execute("DROP TABLE deliveries")
-        db.execute("DROP TABLE occurrences")
-        db.execute("DROP TABLE routine_revisions")
-        db.execute("DROP TABLE routines")
-        db.execute("DROP TABLE publication_actions")
-        db.execute("DROP TABLE approvals")
-        db.execute("DROP TABLE publication_targets")
-        db.execute("DROP TABLE publication_policies")
-        db.execute("PRAGMA user_version = 3")
-    database.initialize()
-    with database.transaction() as db:
-        assert db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0] == epoch
-        assert db.execute("SELECT id FROM artifacts").fetchone()[0] == artifact
-    assert propose(system).status == "pending"
-
-
 @pytest.mark.parametrize("corruption", ["missing_content", "changed_content", "forged_checksum"])
 def test_recovery_checks_published_bytes_before_releasing_destination(system, tmp_path, corruption):
     import hashlib

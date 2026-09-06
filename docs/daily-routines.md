@@ -25,7 +25,7 @@ resident work is handled by ordinary admission ownership, rather than a separate
 scheduler execution mechanism.
 
 The bounded scheduler handles at most 100 due routines per tick and at most 100
-queued scheduled tasks per admission pass. It does not run live Warren schedules,
+queued scheduled tasks per admission pass. It does not run live schedules,
 call models, or send notifications. Timezone rules come from the host's ZoneInfo
 database; deployment must provide the configured zones. Unsupported calendar gaps
 are refused instead of guessed.

@@ -103,21 +103,3 @@ def test_invalid_timezone_is_not_a_configuration_revision(system):
         resident(system, "Not/AZone")
     with pytest.raises(Refused, match="resident_not_found"):
         hearth.resident("reader")
-
-
-def test_schema_nine_upgrade_pins_existing_records_to_utc(system):
-    hearth, executor, _ = system
-    resident(system, "UTC")
-    run = admit(system, "first")
-    executor.step()
-    with hearth.database.transaction(write=True) as db:
-        db.execute("ALTER TABLE runs DROP COLUMN budget_timezone")
-        db.execute("DROP TABLE run_memory")
-        db.execute("DROP TABLE memory_revisions")
-        db.execute("ALTER TABLE declarations DROP COLUMN skill_text")
-        db.execute("ALTER TABLE declarations DROP COLUMN budget_timezone")
-        db.execute("PRAGMA user_version=9")
-    hearth.database.initialize()
-    assert hearth.run(run.id).budget_timezone == "UTC"
-    assert hearth.run(run.id).actual_cost == 2000
-    assert hearth.resident("reader").declaration.budget_timezone == "UTC"

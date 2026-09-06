@@ -21,15 +21,9 @@ def main() -> None:
         "command",
         choices=[
             "demo",
-            "ownership-demo",
             "backup",
             "verify-backup",
             "restore",
-            "export-state",
-            "verify-state",
-            "import-state",
-            "diff-state",
-            "upgrade-state",
             "show-resident",
             "save-resident",
             "show-memory",
@@ -39,19 +33,10 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
-    parser.add_argument("--against", type=Path)
-    parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--resident")
     parser.add_argument("--revision", type=int)
     parser.add_argument("--expected-revision", type=int)
-    parser.add_argument(
-        "--upgrade",
-        action="store_true",
-        help="Upgrade a supported older backup during isolated restore",
-    )
     args = parser.parse_args()
-    if args.upgrade and args.command != "restore":
-        parser.error("--upgrade is only valid with restore")
     if args.command in {"show-memory", "save-memory"}:
         from hearth.memory import MAX_MEMORY, Memory
 
@@ -106,46 +91,6 @@ def main() -> None:
         except (Refused, OSError, TypeError, ValueError) as error:
             parser.error(str(error))
         return
-    if args.command == "ownership-demo":
-        from hearth.rehearsal import execution_handoff
-
-        print(json.dumps(execution_handoff(args.data), indent=2))
-        return
-    if args.command == "diff-state":
-        from hearth.portable import MAX_EXPORT, compare
-
-        if args.source is None or args.against is None:
-            parser.error("diff-state requires --source and --against")
-        try:
-            with args.source.open("rb") as before, args.against.open("rb") as after:
-                result = compare(
-                    before.read(MAX_EXPORT + 1), after.read(MAX_EXPORT + 1), limit=args.limit
-                )
-        except (Refused, OSError) as error:
-            parser.error(str(error))
-        print(json.dumps(result, indent=2))
-        raise SystemExit(0 if result["equal"] else 1)
-    if args.command in {"export-state", "verify-state", "import-state", "upgrade-state"}:
-        from hearth.portable import MAX_EXPORT, export, import_state, upgrade_state, validate
-
-        if args.source is None:
-            parser.error(f"{args.command} requires --source")
-        if args.command == "export-state":
-            if args.destination is None:
-                parser.error("export-state requires --destination")
-            result = export(args.source, args.destination)
-        else:
-            with args.source.open("rb") as file:
-                content = file.read(MAX_EXPORT + 1)
-            if args.command in {"import-state", "upgrade-state"}:
-                if args.destination is None:
-                    parser.error(f"{args.command} requires --destination")
-                operation = import_state if args.command == "import-state" else upgrade_state
-                result = operation(content, args.destination)
-            else:
-                result = validate(content)
-        print(json.dumps(result, indent=2))
-        return
     if args.command != "demo":
         from hearth.backup import capture, restore, verify
 
@@ -160,7 +105,7 @@ def main() -> None:
         else:
             if args.source is None or args.destination is None:
                 parser.error("restore requires --source and --destination")
-            result = restore(args.source, args.destination, upgrade=args.upgrade)
+            result = restore(args.source, args.destination)
         print(json.dumps(result, indent=2))
         return
     db = Database(args.data / "hearth.db")

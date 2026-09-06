@@ -228,22 +228,23 @@ def test_initialize_is_concurrent_and_idempotent(tmp_path):
     assert Hearth(Database(path)).audit() == []
 
 
-def test_newer_schema_is_never_downgraded(hearth):
+@pytest.mark.parametrize("version", [12, 99])
+def test_incompatible_schema_is_never_changed(hearth, version):
     with sqlite3.connect(hearth.database.path) as db:
-        db.execute("PRAGMA user_version = 99")
-    with pytest.raises(RuntimeError, match="newer"):
+        db.execute(f"PRAGMA user_version = {version}")
+    with pytest.raises(RuntimeError, match="Incompatible"):
         hearth.database.initialize()
     with pytest.raises(RuntimeError, match="compatible"):
         hearth.audit()
     with sqlite3.connect(hearth.database.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 99
+        assert db.execute("PRAGMA user_version").fetchone()[0] == version
 
 
-def test_failed_initial_migration_does_not_publish_partial_schema(tmp_path):
+def test_nonempty_unversioned_database_is_not_initialized(tmp_path):
     path = tmp_path / "collision.db"
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE tasks(legacy TEXT)")
-    with pytest.raises(sqlite3.OperationalError, match="already exists"):
+    with pytest.raises(RuntimeError, match="Incompatible"):
         Database(path).initialize()
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 0
@@ -260,7 +261,7 @@ def test_read_transactions_refuse_mutation(hearth):
         db.execute("DELETE FROM audit")
 
 
-def test_uninitialized_database_is_not_implicitly_migrated(tmp_path):
+def test_uninitialized_database_is_not_implicitly_initialized(tmp_path):
     database = Database(tmp_path / "uninitialized.db")
     with pytest.raises(RuntimeError, match="Initialize"):
         Hearth(database).audit()
@@ -282,3 +283,27 @@ def test_deadline_is_checked_after_waiting_for_write_transaction(hearth, monkeyp
     with pytest.raises(Refused, match="invalid_command_deadline"):
         submit(hearth)
     assert [fact["kind"] for fact in hearth.audit()] == ["resident.saved"]
+
+
+def test_same_version_foreign_layout_is_refused_without_changes(tmp_path):
+    path = tmp_path / "foreign.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE valuable(note TEXT)")
+        db.execute("INSERT INTO valuable VALUES ('keep')")
+        db.execute("PRAGMA user_version=1")
+    before = path.read_bytes()
+    with pytest.raises(RuntimeError, match="Incompatible"):
+        Database(path).initialize()
+    assert path.read_bytes() == before
+
+
+def test_failed_initialization_rolls_back_all_schema_and_seed_writes(tmp_path, monkeypatch):
+    import hearth.database as module
+
+    path = tmp_path / "new.db"
+    monkeypatch.setattr(module, "SCHEMA", (*module.SCHEMA, "INVALID SQL"))
+    with pytest.raises(sqlite3.OperationalError):
+        Database(path).initialize()
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert db.execute("SELECT name FROM sqlite_master").fetchall() == []

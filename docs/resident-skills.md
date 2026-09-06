@@ -2,8 +2,7 @@
 
 Skill text is operator-authored Markdown instruction content. It belongs to a
 resident declaration revision alongside purpose, daily allowance and budget zone.
-It is not a permission grant, executable plugin, skill marketplace or source-system
-skill importer. Only synthetic text is used in this phase.
+It does not grant permissions or execute code. Only synthetic text is used in this phase.
 
 Townhall's **Skill text** drawer loads a declaration explicitly. Editing preserves
 its other fields and uses its expected revision. Incoming snapshots never replace
@@ -53,11 +52,5 @@ existing runtime evidence remains recoverable. Configuration changes revoke old
 scoped context access. MockRuntime records only the input digest and still emits a
 fixed simulated summary; this does not demonstrate a model following the skills.
 
-Schema 11 adds empty skill text to older declaration revisions. Backup format 1
-supports schemas 6–11, requiring explicit `restore --upgrade` for older copies.
-Portable format 3/schema 12 preserves every declaration's skill text through held
-import and reverse export. Version 1/schema 10 remains verifiable and comparable
-with itself; `upgrade-state` creates a new version-3 document with empty skills,
-preserving all previous values and files. It cannot infer missing skill content.
-Persistent memory is covered separately in `resident-memory.md`; skill text does
-not establish tool authorization or live migration.
+Current-schema backups and held restores preserve all declaration revisions and
+skill text. Persistent memory is covered separately in `resident-memory.md`.

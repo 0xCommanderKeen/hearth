@@ -21,4 +21,4 @@ reconciliation remain distinct recovery operations.
 Tests use actual threads, an independent Python process, canonical path aliases,
 blocked-operation barriers, API startup/shutdown, fatal worker exit and restart.
 This proves local mock process coordination. It does not prove real runtime
-termination or replace the later v1/v2 execution-ownership transfer mechanism.
+termination or host isolation.

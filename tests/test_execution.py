@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 from hearth.artifacts import Artifacts
 from hearth.core import Hearth
-from hearth.database import SCHEMA, SCHEMA_VERSION, Database
+from hearth.database import Database
 from hearth.execution import Execution, Executor
 from hearth.models import Declaration, Refused
 from hearth.runtime import Evidence, MockRuntime
@@ -220,53 +220,6 @@ def test_runtime_success_without_output_cannot_finish_task(system):
     with pytest.raises(Refused, match="successful_output_required"):
         execution.finish(run.id, run.owner_token, Evidence("succeeded", "", 1))
     assert hearth.task(run.task_id).status == "starting"
-
-
-def test_upgrade_preserves_foundation_records_and_foreign_keys(tmp_path):
-    path = tmp_path / "old.db"
-    with sqlite3.connect(path) as db:
-        for statement in SCHEMA:
-            db.execute(statement)
-        db.execute("PRAGMA user_version = 1")
-        db.execute("INSERT INTO residents VALUES ('reader', 1)")
-        db.execute("INSERT INTO declarations VALUES ('reader', 1, 'Reader', 'Read', 10000, 1)")
-        db.execute("INSERT INTO tasks VALUES ('task', 'reader', 'Read', 'starting', 1)")
-        db.execute("INSERT INTO commands VALUES ('cmd', 'digest', 'task', 1, 2)")
-        db.execute(
-            "INSERT INTO runs VALUES "
-            "('run', 'task', 'reader', 1, 'token', 'starting', 5000, '2026-09-05', 1)"
-        )
-    database = Database(path)
-    database.initialize()
-    hearth = Hearth(database)
-    assert hearth.run("run").reserved == 5_000
-    assert hearth.receipt("cmd").task_id == "task"
-    with database.transaction() as db:
-        assert list(db.execute("PRAGMA foreign_key_check")) == []
-        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-
-
-def test_upgrade_failure_preserves_original_schema_and_version(tmp_path, monkeypatch):
-    import hearth.database as module
-
-    path = tmp_path / "old.db"
-    with sqlite3.connect(path) as db:
-        for statement in SCHEMA:
-            db.execute(statement)
-        db.execute("PRAGMA user_version = 1")
-    original = module.execution_schema
-
-    def fail_after_rebuild(db):
-        original(db)
-        raise RuntimeError("injected migration failure")
-
-    monkeypatch.setattr(module, "execution_schema", fail_after_rebuild)
-    with pytest.raises(RuntimeError, match="injected migration failure"):
-        Database(path).initialize()
-    with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
-        assert len(list(db.execute("PRAGMA table_info(runs)"))) == 9
-        assert not list(db.execute("SELECT name FROM sqlite_master WHERE name LIKE '%next'"))
 
 
 def test_second_executor_cannot_enter_while_first_owns_database_lock(system):
