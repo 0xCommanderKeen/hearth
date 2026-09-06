@@ -181,17 +181,20 @@ def create_app(
     scenario: str = "success",
     supervise: bool = True,
     runtime_kind: str | None = None,
+    process_boundary: str | None = None,
 ) -> FastAPI:
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
-    database.initialize(runtime_kind=runtime_kind)
+    database.initialize(runtime_kind=runtime_kind, process_boundary=process_boundary)
     if database.restored():
         supervise = False
     hearth = Hearth(database)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     runtime = (
-        ProcessMockRuntime(data / "process-mock", scenario=scenario)
+        ProcessMockRuntime(
+            data / "process-mock", scenario=scenario, boundary=database.process_boundary()
+        )
         if database.runtime_kind() == "process_mock"
         else MockRuntime(data / "mock-runtime", scenario=scenario)
     )
@@ -448,4 +451,5 @@ def from_env() -> FastAPI:
         os.environ.get("HEARTH_OPERATOR_TOKEN", ""),
         scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
         runtime_kind=os.environ.get("HEARTH_MOCK_RUNTIME"),
+        process_boundary=os.environ.get("HEARTH_PROCESS_BOUNDARY"),
     )

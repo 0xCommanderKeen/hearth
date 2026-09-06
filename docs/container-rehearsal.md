@@ -5,7 +5,9 @@
 integration rehearsal with a fixed synthetic executable. It is not a Runtime
 adapter or application runtime selector. It accepts an operational dispatch guard;
 the actual-host script supplies it, while standalone fault rehearsals may omit it.
-Use only a dedicated synthetic database and worker root, with no app executor.
+Standalone rehearsals use a dedicated synthetic database and worker root. The
+[contained process worker](container-worker.md) supplies operational ownership when
+this module is used through the application.
 
 ## Ownership and uncertain dispatch
 
@@ -30,7 +32,8 @@ ancestors are trusted operator storage and never mounted
 into the container. Claimed input paths must belong to that root; linked claim
 folders refuse. File evidence is bounded and must be regular, singly linked files.
 Do not copy a live claim to another root and treat that as execution ownership.
-This rehearsal is not included in operational backup/restore or admission accounting.
+The standalone rehearsal does not perform accounting. Its operational worker now
+preserves these files through quiescent backup and held restore.
 
 ## Operational dispatch guard
 
@@ -48,8 +51,8 @@ the created claim inspect-only; it does not grant a retry. A lost start reply re
 the database transaction, preserves the launch claim and requires observation.
 The existing launch-intent audit remains durable even when dispatch raises.
 
-This is a prerequisite for issue #66, not activation of the asynchronous container
-worker. The application still selects only its existing inline/POSIX mock paths.
+The contained process worker supplies this guard from its pinned private request.
+Standalone fixture tests may omit the guard; application dispatch must supply it.
 
 ## Actual input and output boundary
 
@@ -106,8 +109,8 @@ recover the same claim before cleanup. It never pulls images or changes Docker.
 module hash and image digest in that report. Default CI uses fault-injected Docker
 responses and actual temporary SQLite; the host rehearsal is opt-in.
 
-Remaining: trusted asynchronous worker integration and passing its pinned authority,
-quiescent backup/restore, actual Codex image/version,
+The [operational worker](container-worker.md) now connects these claims to task
+execution and held recovery. Remaining: actual Codex image/version,
 final-file ownership and real provenance/accounting. The model transport must keep
 credentials outside generated tools and constrain allowed requests. A real test
 still requires explicit selection. Mac development and $10/day remain confirmed;

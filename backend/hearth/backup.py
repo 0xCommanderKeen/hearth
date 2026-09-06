@@ -30,6 +30,7 @@ STORES = {
     "mock-noticeboard": ".md",
     "memory": ".md",
     "process-mock": "",
+    "container-runs": "",
 }
 PROCESS_FILES = {"request.json", "result.json", "started", "cancel.json"}
 PROCESS_TRANSIENT = {"worker.lock", "heartbeat", "child-started", "child-result.json", "fixture"}
@@ -79,6 +80,17 @@ def _allowed(name: str) -> bool:
     if name == "hearth.db":
         return True
     pieces = name.split("/")
+    if pieces[0] == "container-runs":
+        try:
+            if len(pieces) == 3:
+                identifier(pieces[1])
+                return pieces[2] in {"claim.json", "identity.json", "terminal.json"}
+            if len(pieces) == 4 and pieces[1] == "inputs":
+                identifier(pieces[2])
+                return pieces[3] == "context.json"
+        except Refused:
+            pass
+        return False
     if len(pieces) == 3 and pieces[0] == "process-mock":
         try:
             identifier(pieces[1])
@@ -110,6 +122,28 @@ def _store_files(folder: Path, *, skip_hidden: bool = False):
     """Memory and process evidence have one identity level; no symlink traversal."""
     if folder.is_symlink() or not folder.is_dir():
         raise Refused("backup_source_unsafe")
+    if folder.name == "container-runs":
+        for directory, dirs, names in os.walk(folder, followlinks=False):
+            for name in dirs + names:
+                path = Path(directory) / name
+                if path.is_symlink():
+                    raise Refused("backup_source_unsafe")
+                if name in dirs:
+                    parts = path.relative_to(folder).parts
+                    if parts == ("inputs",):
+                        continue
+                    if len(parts) == 1 or (len(parts) == 2 and parts[0] == "inputs"):
+                        identifier(parts[-1])
+                    else:
+                        raise Refused("backup_path_invalid")
+            for name in names:
+                path = Path(directory) / name
+                if skip_hidden and name.startswith("."):
+                    continue
+                if not _allowed(str(path.relative_to(folder.parent))):
+                    raise Refused("backup_path_invalid")
+                yield path
+        return
     for child in folder.iterdir():
         if skip_hidden and child.name.startswith("."):
             continue
@@ -177,6 +211,29 @@ def _check_database(root: Path) -> dict:
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
         if selected is None or selected[0] not in {"inline_mock", "process_mock"}:
             raise Refused("backup_runtime_invalid")
+        boundary = db.execute(
+            "SELECT value FROM system_meta WHERE key='process_boundary'"
+        ).fetchone()
+        if boundary is None or boundary[0] not in {"posix", "container"}:
+            raise Refused("backup_runtime_invalid")
+        if boundary[0] == "container" and selected[0] != "process_mock":
+            raise Refused("backup_runtime_invalid")
+        containers = root / "container-runs"
+        if containers.exists():
+            claimed = {p.name for p in containers.iterdir() if p.is_dir() and p.name != "inputs"}
+            inputs = containers / "inputs"
+            if inputs.exists() and {p.name for p in inputs.iterdir() if p.is_dir()} != claimed:
+                raise Refused("backup_runtime_invalid")
+            for run_id in claimed:
+                owned = db.execute(
+                    "SELECT runtime_kind, launch_attempted FROM runs WHERE id=?", (run_id,)
+                ).fetchone()
+                if (
+                    owned is None
+                    or tuple(owned) != ("process_mock", 1)
+                    or boundary[0] != "container"
+                ):
+                    raise Refused("backup_runtime_invalid")
         for run in db.execute("SELECT * FROM runs"):
             if (
                 run["runtime_kind"] != selected[0]
@@ -204,12 +261,17 @@ def _check_database(root: Path) -> dict:
                         _read(folder / "result.json"), expected_digest=run["input_digest"]
                     )
                     if (
-                        request["instruction_digest"] != run["input_digest"]
+                        request["boundary"] != boundary[0]
+                        or request["instruction_digest"] != run["input_digest"]
                         or evidence.status != run["status"]
                         or evidence.status not in {"succeeded", "failed", "cancelled"}
                         or not (folder / "started").is_file()
                     ):
                         raise Refused("backup_runtime_invalid")
+                    if request["boundary"] == "container":
+                        from hearth.container_worker import verify_backup_run
+
+                        verify_backup_run(root, db, run, request, evidence)
                     if (
                         run["usage_known"]
                         and not db.execute(
@@ -345,6 +407,19 @@ def capture(data: Path, destination: Path) -> dict:
                     if not (folder / "result.json").is_file():
                         raise Refused("backup_process_unsettled")
                     _process_lock(stack, folder / "worker.lock")
+            container_root = data / "container-runs"
+            if container_root.exists():
+                if container_root.is_symlink() or not container_root.is_dir():
+                    raise Refused("backup_source_unsafe")
+                _process_lock(stack, container_root / ".launch.lock")
+                for folder in container_root.iterdir():
+                    if folder.name.startswith(".") or folder.name == "inputs":
+                        continue
+                    if folder.is_symlink() or not folder.is_dir():
+                        raise Refused("backup_source_unsafe")
+                    if not (folder / "terminal.json").is_file():
+                        raise Refused("backup_process_unsettled")
+                    _process_lock(stack, folder / ".terminal.lock")
             with sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True) as source:
                 with sqlite3.connect(temporary / "hearth.db") as target:
                     source.backup(target)
@@ -398,12 +473,20 @@ def restore(source: Path, destination: Path) -> dict:
         epoch = str(uuid.uuid4())
         with sqlite3.connect(temporary / "hearth.db") as db:
             db.execute("PRAGMA synchronous=FULL")
+            previous_hold = db.execute(
+                "SELECT value FROM system_meta WHERE key='restore_hold'"
+            ).fetchone()
+            execution_epoch = manifest["verified"]["epoch"]
+            if previous_hold:
+                previous = json.loads(previous_hold[0])
+                execution_epoch = previous.get("source_execution_epoch", previous["source_epoch"])
             db.execute(
                 "INSERT OR REPLACE INTO system_meta VALUES ('restore_hold', ?)",
                 (
                     json.dumps(
                         {
                             "source_epoch": manifest["verified"]["epoch"],
+                            "source_execution_epoch": execution_epoch,
                             "source_schema": manifest["schema"],
                             "restored_at": int(time.time()),
                         }

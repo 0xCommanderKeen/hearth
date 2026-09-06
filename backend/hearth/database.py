@@ -37,10 +37,14 @@ class Database:
         connection.execute("PRAGMA synchronous = FULL")
         return connection
 
-    def initialize(self, *, runtime_kind: str | None = None) -> None:
+    def initialize(
+        self, *, runtime_kind: str | None = None, process_boundary: str | None = None
+    ) -> None:
         """Create the complete schema once; never upgrade an existing store."""
         if runtime_kind not in {None, "inline_mock", "process_mock"}:
             raise Refused("runtime_kind_invalid")
+        if process_boundary not in {None, "posix", "container"}:
+            raise Refused("process_boundary_invalid")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = self._connect()
         try:
@@ -58,6 +62,10 @@ class Database:
                     "INSERT INTO system_meta VALUES ('runtime_kind', ?)",
                     (runtime_kind or "inline_mock",),
                 )
+                connection.execute(
+                    "INSERT INTO system_meta VALUES ('process_boundary', ?)",
+                    (process_boundary or "posix",),
+                )
                 connection.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             elif version != SCHEMA_VERSION:
@@ -73,6 +81,15 @@ class Database:
                 raise Refused("runtime_configuration_invalid")
             if runtime_kind is not None and runtime_kind != stored[0]:
                 raise Refused("runtime_store_mismatch")
+            boundary = connection.execute(
+                "SELECT value FROM system_meta WHERE key='process_boundary'"
+            ).fetchone()
+            if boundary is None or boundary[0] not in {"posix", "container"}:
+                raise Refused("runtime_configuration_invalid")
+            if boundary[0] == "container" and stored[0] != "process_mock":
+                raise Refused("runtime_configuration_invalid")
+            if process_boundary is not None and process_boundary != boundary[0]:
+                raise Refused("runtime_store_mismatch")
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Database contains invalid references")
             connection.commit()
@@ -86,6 +103,15 @@ class Database:
         with self.transaction() as db:
             row = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
             if row is None or row[0] not in {"inline_mock", "process_mock"}:
+                raise Refused("runtime_configuration_invalid")
+            return row[0]
+
+    def process_boundary(self) -> str:
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT value FROM system_meta WHERE key='process_boundary'"
+            ).fetchone()
+            if row is None or row[0] not in {"posix", "container"}:
                 raise Refused("runtime_configuration_invalid")
             return row[0]
 
