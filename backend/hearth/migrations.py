@@ -142,3 +142,8 @@ def accounting_schema(db: sqlite3.Connection) -> None:
         evidence TEXT NOT NULL, recorded_at INTEGER NOT NULL,
         source TEXT NOT NULL CHECK (source='operator_reported_mock')
     )""")
+
+
+def budget_zone_schema(db: sqlite3.Connection) -> None:
+    db.execute("ALTER TABLE declarations ADD COLUMN budget_timezone TEXT NOT NULL DEFAULT 'UTC'")
+    db.execute("ALTER TABLE runs ADD COLUMN budget_timezone TEXT NOT NULL DEFAULT 'UTC'")

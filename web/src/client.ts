@@ -30,6 +30,7 @@ export type Resident = {
   purpose: string;
   revision: number;
   daily_limit: number;
+  budget_timezone?: string;
   presence: string;
   pause_reason: string | null;
   operator_paused?: number;

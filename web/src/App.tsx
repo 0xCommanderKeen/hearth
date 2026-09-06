@@ -529,7 +529,11 @@ export function App() {
                     >
                       {r.operator_paused ? "Resume new runs" : "Pause new runs"}
                     </button>
-                    <span className="revision">REV {r.revision}</span>
+                    <span className="revision">
+                      REV {r.revision}
+                      <br />
+                      Budget day: {r.budget_timezone ?? "UTC"}
+                    </span>
                   </div>
                 ))}
               </section>

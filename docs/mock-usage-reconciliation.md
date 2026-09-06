@@ -13,7 +13,9 @@ reports cannot overwrite each other. The record, accounted cost, hold transition
 and audit facts commit together. Evidence text is excluded from audit and snapshots;
 operator-safe observation exposes the accounting source.
 
-The recorded amount stays on the run's original budget day. Only a matching
+The report preserves the run's admission timestamp and original budget day/timezone.
+Admission evaluates recorded costs by timestamp within the current declaration's
+local-day window, including after a timezone change. Only a matching
 `usage_unknown` hold can be released. An independent operator pause or another
 safety reason remains. If another terminal run still has unknown usage, the matching
 hold moves to that unresolved run instead of being removed. New admission uses the
