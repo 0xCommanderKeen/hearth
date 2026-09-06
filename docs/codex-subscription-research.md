@@ -51,8 +51,11 @@ credentials from every generated capability.
 App-server reports ChatGPT rate-limit windows with usage percentages and reset
 times, and optional plan/remaining workspace credit information. Those fields do
 not establish a dollar cost for one Reader run or an enforceable $10/day ceiling.
-Do not multiply subscription token usage by API prices, label unknown cost as
-zero, or silently buy credits. Rate-limit reset consumption is outside this probe.
+Miha subsequently selected API-equivalent estimates for internal accounting:
+reported tokens will use API prices under the same $10/day policy as a future API
+backend. These estimates are distinct from subscription charges. Do not label
+unknown usage as zero or silently buy credits. Rate-limit reset consumption is
+outside this probe.
 [App-server rate limits](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt).
 
 ## Smallest offline compatibility probe

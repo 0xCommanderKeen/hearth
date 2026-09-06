@@ -237,3 +237,8 @@ No real account, login, model call, subscription charge or source data was used.
 Full `make check` passed 368 backend and 35 browser tests, lint/types/build and both
 installed-wheel journeys. The [Mac report](evidence/codex-subscription-2026-09-06.json)
 records successful completion and tool-injection cases with exact source pins.
+
+Miha subsequently confirmed a shared accounting policy: price subscription tokens
+at API-equivalent rates so a future API switch retains the same usage calculation
+and $10/day budget. Implementation of the versioned estimator remains next;
+subscription estimates must remain separate from actual provider charges.

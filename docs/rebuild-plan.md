@@ -16,7 +16,10 @@ will be selected after the workflow is proven.
 Miha selected Codex Astra for the eventual runtime/model, synthetic example notes,
 and confirmed this Mac for development with a $10 per-day allowance. Fresh mock
 Reader setup uses Europe/Ljubljana budget days. Codex will use ChatGPT subscription authentication, not an API key or API billing.
-Exact runtime configuration, subscription usage provenance and credential isolation
+Budget accounting uses reported tokens at API-equivalent prices for both
+subscription and any future API execution, under the same $10/day policy.
+Subscription amounts are estimates, not actual charges. Exact runtime
+configuration, usage provenance and credential isolation
 remain to be verified. This selection does not
 enable real calls; mock-only execution remains in force. The
 [Codex Reader design](codex-reader.md) records verified interface facts and the

@@ -49,6 +49,7 @@ than assuming all current documentation applies to that binary. See the
 
 The report records exact archive, executable, script and image identities, CLI
 events, final output and sanitized transport metadata. It contains only synthetic
-data. CLI token counters do not establish subscription dollars or a $10 provider
-cap. Real credential separation, failure/retry/cancellation behavior, authoritative
+data. The selected accounting policy prices reported tokens at API-equivalent rates
+for the $10/day Hearth allowance, consistently across subscription and a future
+API backend. These estimates do not establish subscription charges or a provider cap. Real credential separation, failure/retry/cancellation behavior, authoritative
 run receipts and real subscription usage remain open before application wiring.

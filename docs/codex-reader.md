@@ -1,6 +1,6 @@
 # Bounded Codex Astra Reader integration
 
-Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred. Miha subsequently selected Codex subscription authentication (ChatGPT sign-in), not API keys or API billing.
+Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred. Miha subsequently selected Codex subscription authentication (ChatGPT sign-in), not API keys or API billing. Miha then selected API-equivalent pricing for subscription token usage, so the same accounting and $10/day limit can carry over to a future API switch.
 
 Mock integration now pins adapter kind, contract version and exact input digest
 at admission. Fresh stores can select the process mock, which participates in
@@ -107,9 +107,11 @@ cannot establish model quality or the host isolation boundary.
 - Integrate the verified offline Mac container boundary with the actual Codex
   worker, staged inputs and trusted model channel before connecting the model.
   Development on this Mac is selected; no remote deployment is selected.
-- Subscription usage and stop policy for the confirmed $10/day allowance. Keep
-  included usage, credits and any estimated dollar policy distinct; do not price
-  subscription tokens using API rates or claim a provider-enforced dollar ceiling.
+- Implement the selected API-equivalent token accounting for the $10/day allowance.
+  Use the same versioned price schedule and calculation for subscription and any
+  future API execution. Label subscription totals as estimates, separate from
+  actual charges; unknown usage remains unknown. This is a Hearth admission limit,
+  not a provider-enforced ceiling.
 - An isolated ChatGPT subscription sign-in path and accessible exact Astra model
   on that burrow, verified without exposing existing personal credentials. The
   authentication mode is selected; no API-key or fallback-model path is planned.
