@@ -1,6 +1,7 @@
 """Real SQLite/input files, deterministic Docker fault boundary; no Docker in CI."""
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -40,6 +41,7 @@ class Docker:
                 "HostConfig": {
                     "NetworkMode": "none",
                     "ReadonlyRootfs": True,
+                    "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
                     "Privileged": False,
                     "PidMode": "",
                     "CapDrop": ["ALL"],
@@ -150,7 +152,7 @@ def test_cancellation_and_removed_container_never_release_claim(system):
     worker.start(run.id, scenario="hold")
     assert worker.stop(run.id).status == "exited"
     worker.remove(run.id)
-    assert worker.start(run.id, scenario="hold").status == "unknown"
+    assert worker.start(run.id, scenario="hold").status == "exited"
     assert [c[0] for c in docker.calls].count("create") == 1
 
 
@@ -240,3 +242,242 @@ def test_foreign_claim_directory_cannot_control_other_root(system, tmp_path):
     with pytest.raises(Refused, match="container_claim_invalid"):
         other.stop(run.id)
     assert not any(c[0] == "stop" for c in docker.calls)
+
+
+def test_terminal_receipt_survives_removal_and_daemon_loss(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    expected = worker.inspect(run.id)
+    receipt = root / run.id / "terminal.json"
+    original = receipt.read_bytes()
+    worker.remove(run.id)
+
+    def offline(*args):
+        raise AssertionError("Receipt read must not require daemon access")
+
+    reopened = ContainerRehearsal(hearth.database, root, docker=offline)
+    assert reopened.inspect(run.id) == expected
+    assert reopened.start(run.id) == expected
+    assert receipt.read_bytes() == original
+    assert receipt.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("binding", "foreign"),
+        ("container_id", "foreign"),
+        ("events_sha256", "bad"),
+        ("exit_code", True),
+        ("version", True),
+        ("events", []),
+        ("extra", "unknown"),
+    ],
+)
+def test_corrupt_receipt_is_not_replaced_and_prevents_removal(system, field, value):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    worker.inspect(run.id)
+    path = root / run.id / "terminal.json"
+    receipt = json.loads(path.read_text())
+    receipt[field] = value
+    path.write_text(json.dumps(receipt))
+    original = path.read_bytes()
+    assert worker.inspect(run.id).status == "unknown"
+    with pytest.raises(Refused, match="container_receipt_unproven"):
+        worker.remove(run.id)
+    assert path.read_bytes() == original
+    assert not any(c[0] == "rm" for c in docker.calls)
+
+
+@pytest.mark.parametrize("phase", ["link", "sync"])
+def test_storage_failure_blocks_cleanup_then_reconciles(system, monkeypatch, phase):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+
+    def fail(*args, **kwargs):
+        raise OSError("synthetic storage failure")
+
+    with monkeypatch.context() as patch:
+        target = "os.link" if phase == "link" else "sync_directory"
+        patch.setattr("hearth.container_rehearsal." + target, fail)
+        assert worker.inspect(run.id).status == "unknown"
+        with pytest.raises(Refused, match="container_receipt_unproven"):
+            worker.remove(run.id)
+    assert not any(c[0] == "rm" for c in docker.calls)
+    assert worker.inspect(run.id).transcript.status == "completed"
+    worker.remove(run.id)
+    assert worker.inspect(run.id).transcript.status == "completed"
+
+
+def test_conflicting_concurrent_terminal_capture_stays_unknown(system):
+    from hearth.container_rehearsal import publish_receipt
+
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    worker.inspect(run.id)
+    path = root / run.id / "terminal.json"
+    original = json.loads(path.read_text())
+    changed = {**original, "exit_code": 137}
+
+    def capture(document):
+        try:
+            publish_receipt(path, document)
+        except Refused:
+            pass
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(capture, [original, changed]))
+    assert (root / run.id / "terminal.conflict").exists()
+    assert worker.inspect(run.id).status == "unknown"
+    with pytest.raises(Refused, match="container_receipt_unproven"):
+        worker.remove(run.id)
+
+
+def test_concurrent_inspection_captures_terminal_logs_once(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: worker.inspect(run.id), range(8)))
+    assert all(result.transcript.status == "completed" for result in results)
+    assert [c[0] for c in docker.calls].count("logs") == 1
+
+
+def test_missing_receipt_after_container_removal_cannot_relaunch(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    worker.remove(run.id)
+    (root / run.id / "terminal.json").unlink()
+    assert worker.start(run.id).status == "unknown"
+    assert [c[0] for c in docker.calls].count("create") == 1
+
+
+def test_malformed_events_preserve_terminal_failure_evidence(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    docker.raw = "malformed synthetic event"
+    observed = worker.inspect(run.id)
+    assert observed.status == "exited" and observed.transcript.status == "invalid"
+    worker.remove(run.id)
+    assert worker.inspect(run.id) == observed
+
+
+@pytest.mark.parametrize("field,value", [("Pid", 12), ("ExitCode", True), ("Running", None)])
+def test_unproven_terminal_state_never_creates_receipt_or_removes(system, field, value):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    docker.container["State"][field] = value
+    assert worker.inspect(run.id).status == "unknown"
+    assert not (root / run.id / "terminal.json").exists()
+    with pytest.raises(Refused):
+        worker.remove(run.id)
+    assert not any(c[0] == "rm" for c in docker.calls)
+
+
+@pytest.mark.parametrize("kind", ["symlink", "hardlink", "fifo"])
+def test_unsafe_receipt_cannot_be_read_or_replaced(system, tmp_path, kind):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    worker.inspect(run.id)
+    path = root / run.id / "terminal.json"
+    original = path.read_bytes()
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(original)
+    path.unlink()
+    if kind == "symlink":
+        path.symlink_to(outside)
+    elif kind == "hardlink":
+        os.link(outside, path)
+    else:
+        os.mkfifo(path)
+    assert worker.inspect(run.id).status == "unknown"
+    with pytest.raises(Refused, match="container_receipt_unproven"):
+        worker.remove(run.id)
+    assert outside.read_bytes() == original
+
+
+def test_oversized_receipt_blocks_removal(system, monkeypatch):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    monkeypatch.setattr("hearth.container_rehearsal.MAX_STREAM", 64)
+    assert worker.inspect(run.id).status == "unknown"
+    assert not (root / run.id / "terminal.json").exists()
+    with pytest.raises(Refused, match="container_receipt_unproven"):
+        worker.remove(run.id)
+
+
+def test_deeply_nested_corrupt_receipt_stays_unknown(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    worker.inspect(run.id)
+    (root / run.id / "terminal.json").write_text("[" * 2000 + "]" * 2000)
+    assert worker.inspect(run.id).status == "unknown"
+    with pytest.raises(Refused, match="container_receipt_unproven"):
+        worker.remove(run.id)
+
+
+def test_cached_receipt_never_overrides_invalid_current_cleanup_state(system):
+    hearth, run, docker, root = system
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
+    worker.start(run.id)
+    docker.complete()
+    assert worker.inspect(run.id).status == "exited"
+    docker.container["State"]["ExitCode"] = False
+    with pytest.raises(Refused, match="container_termination_unproven"):
+        worker.remove(run.id)
+    assert not any(c[0] == "rm" for c in docker.calls)
+
+
+def test_cleanup_waits_for_dispatch_and_preserves_fast_completion(system):
+    import threading
+
+    hearth, run, docker, root = system
+    entered, release = threading.Event(), threading.Event()
+
+    def paused(*args):
+        if args[0] == "start":
+            entered.set()
+            assert release.wait(3)
+            result = docker(*args)
+            docker.complete()
+            return result
+        if args[0] == "rm":
+            assert (root / run.id / "terminal.json").exists()
+        return docker(*args)
+
+    worker = ContainerRehearsal(hearth.database, root, docker=paused)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        starting = pool.submit(worker.start, run.id)
+        assert entered.wait(3)
+        removing = pool.submit(worker.remove, run.id)
+        try:
+            with pytest.raises(TimeoutError):
+                removing.result(timeout=0.05)
+        finally:
+            release.set()
+        assert starting.result(timeout=3).status == "exited"
+        removing.result(timeout=3)
+    assert worker.inspect(run.id).transcript.status == "completed"
+    assert docker.container is None

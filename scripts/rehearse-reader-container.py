@@ -126,7 +126,8 @@ def main():
                     }
                 )
                 reopened.remove(run.id)
-                assert reopened.start(run.id, scenario=scenario).status == "unknown"
+                assert reopened.start(run.id, scenario=scenario) == result
+                report["cases"][-1]["receipt_survived_removal"] = True
             finally:
                 # Cleanup only the exact claim; preserve diagnostics if daemon recovery is needed.
                 try:

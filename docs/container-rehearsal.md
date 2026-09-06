@@ -24,7 +24,8 @@ unknown is not retry permission. Cancellation and removal require the same name,
 label and pinned ID. Removal requires a daemon-observed created/exited state and
 retains the claim, so it cannot authorize a later relaunch.
 
-The dedicated root and its ancestors are trusted operator storage and never mounted
+Automatic container restart is explicitly disabled. The dedicated root and its
+ancestors are trusted operator storage and never mounted
 into the container. Claimed input paths must belong to that root; linked claim
 folders refuse. File evidence is bounded and must be regular, singly linked files.
 Do not copy a live claim to another root and treat that as execution ownership.
@@ -48,9 +49,25 @@ No model runs, token counts are not invented, and no dollars are calculated.
 The existing bounded `CodexEvents` parser interprets terminal logs only after daemon
 state says exited with PID 0. The stream's thread ID must match the admitted run.
 An observed local exit is separate from a completed transcript; cancellation can
-have an incomplete transcript. A removed container's logs become unavailable and
-inspection returns unknown. This is deliberately not a durable terminal artifact
-or accounting receipt yet.
+have an incomplete transcript. Before removing an exited container, the worker
+must preserve a bounded immutable `terminal.json` containing the exact claim binding,
+container ID, observed exit code, raw events and their SHA-256. The total JSON receipt
+is capped at 4 MiB. Per-run capture is serialized, so concurrent inspection reads
+the same terminal evidence. Cleanup shares the launch and receipt locks, preventing
+removal during dispatch or publication. Publication syncs the file and directory and never overwrites
+existing evidence. Reopening validates the claim/identity/checksum and reparses the
+events without requiring the daemon; the same result survives container removal.
+This is terminal execution evidence, not a dollar-accounting receipt.
+
+Regular, singly linked files are required. Missing/corrupt receipt evidence stays
+unknown and never authorizes relaunch; corrupt existing files are not replaced from
+later daemon data. A competing capture with different bytes records a durable
+`terminal.conflict` marker, keeping later inspection and cleanup unknown. Storage
+failure blocks cleanup. A completed receipt with malformed events preserves an
+invalid transcript without publishing successful output. Cleanup still checks the
+current owned container is not running; it never uses a receipt to remove a foreign
+or live container. External manual restarts/mutations violate this dedicated worker's
+ownership assumptions and are not an application recovery mechanism.
 
 ## Reproduce and evidence
 
@@ -70,7 +87,7 @@ module hash and image digest in that report. Default CI uses fault-injected Dock
 responses and actual temporary SQLite; the host rehearsal is opt-in.
 
 Remaining: trusted asynchronous worker integration, admission/launch authority,
-quiescent backup/restore and durable terminal receipts, actual Codex image/version,
+quiescent backup/restore, actual Codex image/version,
 final-file ownership and real provenance/accounting. The model transport must keep
 credentials outside generated tools and constrain allowed requests. A real test
 still requires explicit selection. Mac development and $10/day remain confirmed;

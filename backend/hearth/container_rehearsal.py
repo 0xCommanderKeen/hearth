@@ -7,7 +7,9 @@ import os
 import re
 import stat
 import subprocess
+import tempfile
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,16 +44,69 @@ else:
 """
 
 
-def read_document(path: Path) -> dict:
+def read_document(path: Path, *, limit: int = 8192) -> dict:
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as file:
         info = os.fstat(file.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise Refused("container_claim_invalid")
-        raw = file.read(8193)
-    if len(raw) > 8192:
+        raw = file.read(limit + 1)
+    if len(raw) > limit:
         raise Refused("container_claim_invalid")
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except ValueError, RecursionError:
+        raise Refused("container_claim_invalid") from None
+
+
+def publish_receipt(path: Path, document: dict) -> None:
+    with container_lock(path.parent / ".terminal.lock"):
+        _publish_receipt(path, document)
+
+
+@contextmanager
+def container_lock(path: Path):
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise Refused("container_lock_invalid")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _publish_receipt(path: Path, document: dict) -> None:
+    data = json.dumps(document, sort_keys=True, ensure_ascii=False).encode()
+    if len(data) > MAX_STREAM:
+        raise Refused("container_receipt_too_large")
+    fd, temporary = tempfile.mkstemp(prefix=".terminal-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if read_document(path, limit=MAX_STREAM) != document:
+                marker = path.parent / "terminal.conflict"
+                try:
+                    conflict = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    pass
+                else:
+                    with os.fdopen(conflict, "wb") as marker_file:
+                        os.fsync(marker_file.fileno())
+                sync_directory(path.parent)
+                raise Refused("container_receipt_conflict") from None
+        Path(temporary).unlink()
+        sync_directory(path.parent)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 class LocalDocker:
@@ -145,15 +200,7 @@ class ContainerRehearsal:
         if scenario not in {"success", "hold"} or os.getuid() == 0:
             raise Refused("container_configuration_invalid")
         folder = self._folder(run_id)
-        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
-        try:
-            fd = os.open(self.root / ".launch.lock", flags | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            fd = os.open(self.root / ".launch.lock", flags)
-        with os.fdopen(fd, "rb") as lock:
-            if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
-                raise Refused("container_root_unsafe")
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with container_lock(self.root / ".launch.lock"):
             staged = stage_run(self.database, run_id, self.root / "inputs")
             digest = hashlib.sha256(staged.read_bytes()).hexdigest()
             if folder.exists() or folder.is_symlink():
@@ -190,6 +237,8 @@ class ContainerRehearsal:
                 f"{LABEL}={binding}",
                 "--pull",
                 "never",
+                "--restart",
+                "no",
                 "--network",
                 "none",
                 "--read-only",
@@ -243,6 +292,7 @@ class ContainerRehearsal:
                 or config["Cmd"] != ["-I", "-c", FIXTURE, digest, scenario]
                 or policy["NetworkMode"] != "none"
                 or policy["ReadonlyRootfs"] is not True
+                or policy["RestartPolicy"] != {"Name": "no", "MaximumRetryCount": 0}
                 or policy["Privileged"] is not False
                 or policy["PidMode"] != ""
                 or policy["CapDrop"] != ["ALL"]
@@ -258,35 +308,117 @@ class ContainerRehearsal:
             self.docker("start", owned["Id"])
         return self.inspect(run_id)
 
+    def _receipt(self, claim) -> Observation | None:
+        folder = self._folder(claim["run_id"])
+        path = folder / "terminal.json"
+        marker = folder / "terminal.conflict"
+        if marker.exists() or marker.is_symlink():
+            raise Refused("container_receipt_conflict")
+        if not path.exists() and not path.is_symlink():
+            return None
+        receipt = read_document(path, limit=MAX_STREAM)
+        identity = read_document(folder / "identity.json")
+        binding = hashlib.sha256(json.dumps(claim, sort_keys=True).encode()).hexdigest()
+        if (
+            set(receipt)
+            != {"version", "binding", "container_id", "exit_code", "events", "events_sha256"}
+            or type(receipt["version"]) is not int
+            or receipt["version"] != 1
+            or receipt["binding"] != binding
+            or identity != {"binding": binding, "id": receipt["container_id"]}
+            or type(receipt["exit_code"]) is not int
+            or not 0 <= receipt["exit_code"] <= 255
+            or not isinstance(receipt["events"], str)
+            or hashlib.sha256(receipt["events"].encode()).hexdigest() != receipt["events_sha256"]
+        ):
+            raise Refused("container_receipt_invalid")
+        parser = CodexEvents()
+        parser.feed(receipt["events"].encode())
+        transcript = parser.finish(exit_code=receipt["exit_code"])
+        if transcript.thread_id is not None and transcript.thread_id != claim["run_id"]:
+            raise Refused("container_receipt_invalid")
+        sync_directory(folder)
+        return Observation("exited", transcript)
+
     def inspect(self, run_id: str) -> Observation:
         claim = self._claim(run_id)
         try:
+            with container_lock(self._folder(run_id) / ".terminal.lock"):
+                return self._observe(claim)
+        except OSError, ValueError, KeyError, TypeError, IndexError, subprocess.TimeoutExpired:
+            return Observation("unknown")
+
+    def _observe(self, claim) -> Observation:
+        run_id = claim["run_id"]
+        try:
+            cached = self._receipt(claim)
+            if cached is not None:
+                return cached
             value = self._inspect(claim)
             state = value["State"]
-            if state["Running"]:
+            if state["Running"] is True:
                 return Observation("running")
-            if state["Status"] != "exited" or state["Pid"] != 0:
+            if (
+                state["Running"] is not False
+                or state["Status"] != "exited"
+                or type(state["Pid"]) is not int
+                or state["Pid"] != 0
+                or type(state["ExitCode"]) is not int
+                or not 0 <= state["ExitCode"] <= 255
+            ):
                 return Observation("unknown")
-            raw = self.docker("logs", value["Id"]).encode()
-            parser = CodexEvents()
-            parser.feed(raw)
-            transcript = parser.finish(exit_code=state["ExitCode"])
-            if transcript.thread_id is not None and transcript.thread_id != run_id:
-                return Observation("unknown")
-            return Observation("exited", transcript)
+            raw = self.docker("logs", value["Id"])
+            document = {
+                "version": 1,
+                "binding": hashlib.sha256(json.dumps(claim, sort_keys=True).encode()).hexdigest(),
+                "container_id": value["Id"],
+                "exit_code": state["ExitCode"],
+                "events": raw,
+                "events_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+            }
+            _publish_receipt(self._folder(run_id) / "terminal.json", document)
+            return self._receipt(claim) or Observation("unknown")
         except OSError, ValueError, KeyError, TypeError, IndexError, subprocess.TimeoutExpired:
             return Observation("unknown")
 
     def stop(self, run_id: str) -> Observation:
-        claim = self._claim(run_id)
-        value = self._inspect(claim)
-        if value["State"]["Running"]:
-            self.docker("stop", "--time", "1", value["Id"])
-        return self.inspect(run_id)
+        with container_lock(self.root / ".launch.lock"):
+            claim = self._claim(run_id)
+            value = self._inspect(claim)
+            if value["State"]["Running"]:
+                self.docker("stop", "--time", "1", value["Id"])
+            return self.inspect(run_id)
 
     def remove(self, run_id: str) -> None:
         """Explicit rehearsal cleanup; retaining the claim prevents a later relaunch."""
+        with container_lock(self.root / ".launch.lock"):
+            self._remove(run_id)
+
+    def _remove(self, run_id: str) -> None:
         value = self._inspect(self._claim(run_id))
-        if value["State"]["Running"] or value["State"]["Status"] not in {"created", "exited"}:
+        if (
+            value["State"]["Running"] is not False
+            or type(value["State"]["Pid"]) is not int
+            or value["State"]["Pid"] != 0
+            or value["State"]["Status"] not in {"created", "exited"}
+        ):
             raise Refused("container_termination_unproven")
-        self.docker("rm", value["Id"])
+        if value["State"]["Status"] == "exited":
+            if (
+                type(value["State"]["ExitCode"]) is not int
+                or not 0 <= value["State"]["ExitCode"] <= 255
+            ):
+                raise Refused("container_termination_unproven")
+            if self.inspect(run_id).status != "exited":
+                raise Refused("container_receipt_unproven")
+            with container_lock(self._folder(run_id) / ".terminal.lock"):
+                self._receipt(self._claim(run_id))
+                receipt = read_document(self._folder(run_id) / "terminal.json", limit=MAX_STREAM)
+                if (
+                    receipt["container_id"] != value["Id"]
+                    or receipt["exit_code"] != value["State"]["ExitCode"]
+                ):
+                    raise Refused("container_receipt_conflict")
+                self.docker("rm", value["Id"])
+        else:
+            self.docker("rm", value["Id"])
