@@ -41,6 +41,7 @@ def read_request(folder: Path) -> dict:
     if (
         not isinstance(value, dict)
         or value.get("simulated") is not True
+        or value.get("boundary") not in {"posix", "container"}
         or value.get("scenario") not in {"success", "hold", "failure", "unknown_usage"}
         or type(value.get("timeout")) not in {int, float}
         or not 0 < value["timeout"] <= 60
@@ -48,6 +49,13 @@ def read_request(folder: Path) -> dict:
         or len(value["instruction_digest"]) != 64
     ):
         raise ValueError("invalid request")
+    if value["boundary"] == "container" and (
+        value["scenario"] not in {"success", "hold"}
+        or not isinstance(value.get("authority"), dict)
+        or set(value["authority"]) != {"epoch", "owner_token"}
+        or any(not isinstance(v, str) or not v for v in value["authority"].values())
+    ):
+        raise ValueError("invalid container authority")
     return value
 
 
@@ -61,11 +69,23 @@ class ProcessMockRuntime:
     kind = "process_mock"
     version = 1
 
-    def __init__(self, root: Path, *, scenario: str = "success", timeout: float = 30):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        scenario: str = "success",
+        timeout: float = 30,
+        boundary: str = "posix",
+    ):
         if scenario not in {"success", "hold", "failure", "unknown_usage"}:
             raise ValueError("Unknown mock scenario")
         if not 0 < timeout <= 60:
             raise ValueError("Mock timeout must be in (0, 60]")
+        if boundary not in {"posix", "container"}:
+            raise ValueError("Unknown process boundary")
+        if boundary == "container" and scenario not in {"success", "hold"}:
+            raise ValueError("Container fixtures support success and hold only")
+        self.boundary = boundary
         self.root = root.resolve()
         self.scenario = scenario
         self.timeout = timeout
@@ -85,9 +105,31 @@ class ProcessMockRuntime:
                     previous = read_request(folder)
                 except OSError, ValueError:
                     raise Refused("runtime_evidence_corrupt") from None
-                if previous["instruction_digest"] != digest:
+                if (
+                    previous["instruction_digest"] != digest
+                    or previous["boundary"] != self.boundary
+                ):
                     raise Refused("runtime_identity_conflict")
                 return
+            authority = {}
+            if self.boundary == "container":
+                from hearth.database import Database
+
+                if self.root.name != "process-mock":
+                    raise Refused("container_process_root_invalid")
+                database = Database(self.root.parent / "hearth.db")
+                if database.restored() or database.process_boundary() != "container":
+                    raise Refused("runtime_store_mismatch")
+                with database.transaction() as db:
+                    row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+                    if row is None or row["input_digest"] != digest:
+                        raise Refused("runtime_identity_conflict")
+                    authority = {
+                        "epoch": db.execute(
+                            "SELECT value FROM system_meta WHERE key='epoch'"
+                        ).fetchone()[0],
+                        "owner_token": row["owner_token"],
+                    }
             folder.mkdir()
             sync_directory(self.root)
             write_json(
@@ -95,6 +137,8 @@ class ProcessMockRuntime:
                 {
                     "simulated": True,
                     "instruction_digest": digest,
+                    "boundary": self.boundary,
+                    "authority": authority,
                     "scenario": self.scenario,
                     "timeout": self.timeout,
                 },
@@ -104,7 +148,7 @@ class ProcessMockRuntime:
             worker = subprocess.Popen(
                 [sys.executable, "-I", "-m", "hearth.process_mock", "worker", str(folder)],
                 cwd=folder,
-                env={"PATH": os.defpath, "LANG": "C.UTF-8"},
+                env={"PATH": os.defpath + ":/usr/local/bin", "LANG": "C.UTF-8"},
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -127,13 +171,19 @@ class ProcessMockRuntime:
                 if document.get("instruction_digest") != request["instruction_digest"]:
                     return Evidence("unknown")
                 return result
+            if (folder / "result.json").exists():
+                return Evidence("unknown")
             with (folder / "worker.lock").open("a") as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return Evidence("running")
+                if request["boundary"] == "container":
+                    from hearth.container_worker import reconcile
+
+                    return reconcile(folder, request)
             return Evidence("unknown")
-        except OSError, ValueError, TypeError:
+        except OSError, ValueError, TypeError, Refused, subprocess.TimeoutExpired:
             return Evidence("unknown")
 
     def stop(self, run_id: str) -> None:
@@ -215,6 +265,16 @@ def worker(folder: Path) -> None:
         except FileExistsError:
             return
         request = read_request(folder)
+        if request["boundary"] == "container" and not (folder / "cancel.json").exists():
+            from hearth.container_worker import run_container
+
+            # Unknown dispatch leaves the exclusive started claim in place. A
+            # reopened adapter reconciles it; no second worker may start again.
+            try:
+                run_container(folder, request)
+            except OSError, Refused, subprocess.TimeoutExpired:
+                pass
+            return
         result = (
             Evidence("cancelled", cost=0)
             if (folder / "cancel.json").exists()

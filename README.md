@@ -65,3 +65,6 @@ from earlier prototype layouts, with no conversion. See [process recovery](docs/
 
 See the [implementation gates](docs/implementation.md),
 [project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).
+
+For the opt-in contained synthetic worker on the selected Mac, see
+[container setup and recovery](docs/container-worker.md).

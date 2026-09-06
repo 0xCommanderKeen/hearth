@@ -192,3 +192,28 @@ The actual Mac synthetic success/cancellation rehearsal passed with guarded disp
 and terminal receipts surviving cleanup. This does not enable a container selector
 or complete issue #66: detached worker wiring, reconciliation and quiescent backup/
 held restore for container evidence remain next. Real Codex execution stays deferred.
+
+## Operational contained mock and held recovery
+
+Issue #66 connects the guarded container fixture to the existing process runtime and
+normal executor. Fresh stores pin the process boundary; reopening infers it and a
+conflicting selector refuses. Private requests pin owner/epoch/input; only synthetic
+context reaches the container. The detached worker observes cancellation and timeout,
+and the reopened adapter can reconcile and stop an owned container after worker loss.
+Synthetic receipts become ordinary simulated artifacts and accounting. Unknown
+execution still prevents retry or release of the active run.
+
+Quiescent backup preserves and validates container claims, identities, staged input
+and terminal receipts against the process request, run and artifact. Verification
+uses no Docker access. Held restores cannot execute, and repeated held generations
+retain original execution provenance. Current required configuration/request fields
+are defined directly; incompatible prototype data is refused without conversion.
+
+Validation: full `make check` passed 359 backend and 35 browser tests, lint/types/build
+and both installed inline/POSIX mock journeys. Sixteen new integration checks cover
+normal execution, restart, worker loss, cancellation before/during dispatch, timeout,
+input contradiction, active-worker capture refusal, receipt corruption and repeated
+held recovery. The actual Mac worker rehearsal verifies synthetic success, cancellation,
+app restart and loss of the trusted worker, plus container cleanup and held restore.
+See [configuration and evidence](container-worker.md). This completes the contained
+mock integration, not actual Codex/model-channel execution or daily-use acceptance.

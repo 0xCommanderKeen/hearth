@@ -75,6 +75,7 @@ def test_pending_cancellation_is_observed_before_child_launch(tmp_path):
         folder / "request.json",
         {
             "simulated": True,
+            "boundary": "posix",
             "instruction_digest": hashlib.sha256(b"input").hexdigest(),
             "scenario": "hold",
             "timeout": 2,

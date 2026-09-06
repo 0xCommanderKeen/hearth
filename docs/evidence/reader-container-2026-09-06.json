@@ -4,7 +4,7 @@
   "image": "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
   "synthetic_fixture": true,
   "real_host_probe": true,
-  "module_sha256": "807b1e06a3a847f149d441701ff55e7bef1ec69c0e82811e17aa59e212d6c258",
+  "module_sha256": "d051c4b89670c3e75769020551a9ddce7526d94aceea513aaf8333aa8ef80df9",
   "cases": [
     {
       "scenario": "success",
@@ -12,7 +12,7 @@
         "status": "exited",
         "transcript": {
           "status": "completed",
-          "thread_id": "10bea754-5a73-46e6-ad62-9e9fe5a2ec1e",
+          "thread_id": "e5ec3431-07fe-4251-b386-3847bbc00279",
           "messages": [
             {
               "id": "answer",

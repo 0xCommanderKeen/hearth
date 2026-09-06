@@ -234,6 +234,11 @@ class Executor:
                 raise Refused("executor_busy") from None
             if self.execution.hearth.database.runtime_kind() != self.runtime.kind:
                 raise Refused("runtime_store_mismatch")
+            if self.runtime.kind == "process_mock" and (
+                getattr(self.runtime, "boundary", None)
+                != self.execution.hearth.database.process_boundary()
+            ):
+                raise Refused("runtime_store_mismatch")
             results = []
             for run in self.execution.active():
                 if (run.runtime_kind, run.runtime_version) != (

@@ -1,0 +1,47 @@
+{
+  "synthetic": true,
+  "real_host_probe": true,
+  "cases": [
+    {
+      "scenario": "success",
+      "status": "succeeded",
+      "synthetic_cost": 2000,
+      "restart": true,
+      "worker_loss": false,
+      "held_restore": true,
+      "owned_container_removed": true
+    },
+    {
+      "scenario": "hold",
+      "status": "cancelled",
+      "synthetic_cost": 1000,
+      "restart": true,
+      "worker_loss": false,
+      "held_restore": true,
+      "owned_container_removed": true
+    },
+    {
+      "scenario": "worker_loss",
+      "status": "cancelled",
+      "synthetic_cost": 1000,
+      "restart": true,
+      "worker_loss": true,
+      "held_restore": true,
+      "owned_container_removed": true
+    }
+  ],
+  "source_sha256": {
+    "hearth.api": "f9682fe1ffdd3932adc27d6156e077d1d5b104e2894c946796caa871e2d47fea",
+    "hearth.backup": "6f5679c53f8be0709eadcc5d5b0056cf25c057519af12561ee25eb874d7f933b",
+    "hearth.database": "6fc47fe6e349f73c8705844899b8277493e956b0289cfc0ad245ed17b56e8092",
+    "hearth.execution": "de64062356f81b65538385b238d2500a2895edd488302d08779d1fbd14e84fcd",
+    "hearth.container_worker": "c6bcde37d6703ff435cf0047e64a54b50d7de3024a1f3db9d72e340223c7c0b3",
+    "hearth.process_mock": "b7cba2a10d401f1ce3d1c87df45d1415d8496c770aaca6b0b2a9689513f5c767",
+    "hearth.container_rehearsal": "d051c4b89670c3e75769020551a9ddce7526d94aceea513aaf8333aa8ef80df9",
+    "hearth.staged_input": "b7eddf12cd0046f0c8bdf09f8cf7a9c4c742c842bd34dc54198a554ceb64f1ab",
+    "hearth.codex_events": "01255ef492b55921a4ce08e85c0a559d62f2b98e324d8b37fe2ae3efe9b7b3c0"
+  },
+  "script_sha256": "eca4d79cf1041be178dbe38cde4d11a22b5b93cab7e4bb742883e91ca08e916a",
+  "macos": "26.5.2",
+  "status": "passed"
+}

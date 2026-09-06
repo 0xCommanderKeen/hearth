@@ -133,11 +133,35 @@ class Observation:
     transcript: Transcript | None = None
 
 
+def decode_receipt(claim: dict, identity: dict, receipt: dict) -> Observation:
+    """Validate terminal evidence without a daemon or the original absolute root."""
+    binding = hashlib.sha256(json.dumps(claim, sort_keys=True).encode()).hexdigest()
+    if (
+        set(receipt)
+        != {"version", "binding", "container_id", "exit_code", "events", "events_sha256"}
+        or type(receipt["version"]) is not int
+        or receipt["version"] != 1
+        or receipt["binding"] != binding
+        or identity != {"binding": binding, "id": receipt["container_id"]}
+        or type(receipt["exit_code"]) is not int
+        or not 0 <= receipt["exit_code"] <= 255
+        or not isinstance(receipt["events"], str)
+        or hashlib.sha256(receipt["events"].encode()).hexdigest() != receipt["events_sha256"]
+    ):
+        raise Refused("container_receipt_invalid")
+    parser = CodexEvents()
+    parser.feed(receipt["events"].encode())
+    transcript = parser.finish(exit_code=receipt["exit_code"])
+    if transcript.thread_id is not None and transcript.thread_id != claim["run_id"]:
+        raise Refused("container_receipt_invalid")
+    return Observation("exited", transcript)
+
+
 class ContainerRehearsal:
     """One immutable claim; replay observes and never repeats create or start.
 
-    Use a dedicated synthetic database/root with no application executor. This is
-    not a Runtime adapter or launch-authority check. Root/ancestors are trusted and
+    Standalone probes use a dedicated synthetic database/root. The operational
+    process worker supplies its dispatch guard. Root/ancestors are trusted and
     must never be mounted into a container; only its selected staged run is exposed.
     """
 
@@ -328,27 +352,9 @@ class ContainerRehearsal:
             return None
         receipt = read_document(path, limit=MAX_STREAM)
         identity = read_document(folder / "identity.json")
-        binding = hashlib.sha256(json.dumps(claim, sort_keys=True).encode()).hexdigest()
-        if (
-            set(receipt)
-            != {"version", "binding", "container_id", "exit_code", "events", "events_sha256"}
-            or type(receipt["version"]) is not int
-            or receipt["version"] != 1
-            or receipt["binding"] != binding
-            or identity != {"binding": binding, "id": receipt["container_id"]}
-            or type(receipt["exit_code"]) is not int
-            or not 0 <= receipt["exit_code"] <= 255
-            or not isinstance(receipt["events"], str)
-            or hashlib.sha256(receipt["events"].encode()).hexdigest() != receipt["events_sha256"]
-        ):
-            raise Refused("container_receipt_invalid")
-        parser = CodexEvents()
-        parser.feed(receipt["events"].encode())
-        transcript = parser.finish(exit_code=receipt["exit_code"])
-        if transcript.thread_id is not None and transcript.thread_id != claim["run_id"]:
-            raise Refused("container_receipt_invalid")
+        observation = decode_receipt(claim, identity, receipt)
         sync_directory(folder)
-        return Observation("exited", transcript)
+        return observation
 
     def inspect(self, run_id: str) -> Observation:
         claim = self._claim(run_id)
