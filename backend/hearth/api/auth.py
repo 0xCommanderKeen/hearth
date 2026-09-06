@@ -61,6 +61,8 @@ class OperatorAuth:
             r"/api/skills(?:/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})?", scope["path"]
         ):
             body_limit = (120 + 2000 + 32000) * 6 + 1024
+        if scope["method"] == "POST" and scope["path"] == "/api/residents/provision":
+            body_limit = 1_500_000  # Aggregate transport cap; semantic/UTF-8 limits also apply.
         try:
             while True:
                 message = await asyncio.wait_for(receive(), timeout=15)

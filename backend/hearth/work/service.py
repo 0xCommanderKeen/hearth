@@ -61,41 +61,44 @@ class Hearth:
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
     ) -> Resident:
+        with self.database.transaction(write=True) as db:
+            return self.save_resident_in_transaction(
+                db, resident_id, declaration, expected_revision=expected_revision
+            )
+
+    def save_resident_in_transaction(
+        self, db, resident_id: str, declaration: Declaration, *, expected_revision: int
+    ) -> Resident:
         identifier(resident_id)
         declaration.validate()
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_revision")
-        with self.database.transaction(write=True) as db:
-            now = int(self.clock())
-            row = db.execute(
-                "SELECT revision FROM residents WHERE id = ?", (resident_id,)
-            ).fetchone()
-            current = row[0] if row else 0
-            if current != expected_revision:
-                raise Refused("revision_conflict")
-            revision = current + 1
-            if row:
-                db.execute(
-                    "UPDATE residents SET revision = ? WHERE id = ?", (revision, resident_id)
-                )
-            else:
-                check_creation(db, now)
-                db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
-            db.execute(
-                "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    resident_id,
-                    revision,
-                    declaration.name,
-                    declaration.purpose,
-                    declaration.daily_limit,
-                    now,
-                    declaration.budget_timezone,
-                    declaration.skill_text,
-                ),
-            )
-            _audit(db, "resident.saved", resident_id, now, {"revision": revision})
-            return Resident(resident_id, revision, declaration)
+        now = int(self.clock())
+        row = db.execute("SELECT revision FROM residents WHERE id = ?", (resident_id,)).fetchone()
+        current = row[0] if row else 0
+        if current != expected_revision:
+            raise Refused("revision_conflict")
+        revision = current + 1
+        if row:
+            db.execute("UPDATE residents SET revision = ? WHERE id = ?", (revision, resident_id))
+        else:
+            check_creation(db, now)
+            db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
+        db.execute(
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                resident_id,
+                revision,
+                declaration.name,
+                declaration.purpose,
+                declaration.daily_limit,
+                now,
+                declaration.budget_timezone,
+                declaration.skill_text,
+            ),
+        )
+        _audit(db, "resident.saved", resident_id, now, {"revision": revision})
+        return Resident(resident_id, revision, declaration)
 
     def set_paused(self, resident_id: str, *, paused: bool, expected_revision: int) -> dict:
         """Operator control affects new admission, never clears safety holds or cancels work."""
@@ -230,6 +233,11 @@ class Hearth:
             if task["status"] != "queued":
                 raise Refused("task_already_admitted")
             resident_id = task["resident_id"]
+            if db.execute(
+                "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",
+                (resident_id,),
+            ).fetchone():
+                raise Refused("resident_setup_incomplete")
             if (
                 db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone()
                 or db.execute(

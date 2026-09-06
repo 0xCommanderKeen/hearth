@@ -4,6 +4,7 @@ import sqlite3
 
 from hearth.residents.memory import MemoryFiles, read_revision
 from hearth.residents.models import Refused
+from hearth.residents.provisioning import provisioned_inputs
 from hearth.skills.assignments import run_skills
 
 
@@ -37,7 +38,9 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
         ),
         "instruction": row["instruction"],
         "simulated": row["runtime_kind"] != "codex_subscription",
-        "notes": [
+        "notes": []
+        if provisioned_inputs(db, row["resident_id"]) == []
+        else [
             "Synthetic note: drafted the Hearth foundation.",
             "Synthetic note: task submission survives retries.",
             "Synthetic note: exercise cancellation and recovery next.",

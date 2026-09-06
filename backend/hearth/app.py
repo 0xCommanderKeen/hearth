@@ -37,6 +37,7 @@ from hearth.observation.notifications import MockInbox, Notifications
 from hearth.observation.snapshot import snapshot
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
+from hearth.residents.provisioning import Provisioning, ProvisionRequest
 from hearth.skills.api import mount_skills
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -167,6 +168,28 @@ def create_app(
     def save_household(body: HouseholdPost):
         return Household(hearth).save(**body.model_dump())
 
+    @app.get("/api/resident-options")
+    def resident_options():
+        return Provisioning(hearth).options()
+
+    @app.post("/api/residents/provision")
+    def provision(
+        body: ProvisionRequest, idempotency_key: str = Header(min_length=1, max_length=128)
+    ):
+        return Provisioning(hearth).create(idempotency_key, body.model_dump(), actor="operator")
+
+    @app.get("/api/resident-provisioning/{command_id}")
+    def provisioning_receipt(command_id: str):
+        return Provisioning(hearth).read(command_id)
+
+    @app.post("/api/resident-provisioning/{command_id}/retry")
+    def retry_provisioning(command_id: str):
+        return Provisioning(hearth).retry(command_id, actor="operator")
+
+    @app.get("/api/residents/{resident_id}/profile")
+    def resident_profile(resident_id: str):
+        return Provisioning(hearth).profile(resident_id)
+
     @app.get("/api/residents/{resident_id}")
     def resident(resident_id: str, revision: int | None = None):
         return asdict(hearth.resident(resident_id, revision=revision))
@@ -181,6 +204,8 @@ def create_app(
 
     @app.put("/api/residents/{resident_id}")
     def save_resident(resident_id: str, body: DeclarationPost):
+        if body.expected_revision == 0:
+            raise Refused("use_resident_provisioning")
         return asdict(
             hearth.save_resident(
                 resident_id,

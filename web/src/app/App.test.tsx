@@ -492,3 +492,68 @@ it("reports damaged historical skill provenance without inventing an execution h
   expect(screen.queryByText(/Execution is held/)).toBeNull();
   expect(screen.getByText(/Skill provenance unavailable/)).toBeTruthy();
 });
+
+it.each(["navigation", "lock", "epoch"])(
+  "ignores stale provisioning navigation after %s",
+  async (mode) => {
+    vi.spyOn(Client.prototype, "request").mockResolvedValue({
+      execution_profiles: [
+        { id: "inline_mock", name: "Simulation", simulated: true },
+      ],
+      input_sets: [],
+      managers: [{ id: "operator", name: "Operator" }],
+    });
+    vi.spyOn(Client.prototype, "skills").mockResolvedValue([]);
+    vi.spyOn(Client.prototype, "provision").mockImplementation(
+      async (id, body) => ({
+        command_id: id,
+        resident_id: "created",
+        status: "ready",
+        reason: null,
+        creator: "operator",
+        manager: "operator",
+        originating_run_id: null,
+        created_at: 1,
+        routine_id: null,
+        task_id: null,
+        setup: body,
+      }),
+    );
+    await login(false);
+    fireEvent.click(screen.getByRole("link", { name: "New resident ＋" }));
+    await screen.findByLabelText("Resident name");
+    fireEvent.change(screen.getByLabelText("Resident name"), {
+      target: { value: "Reporter" },
+    });
+    fireEvent.change(screen.getByLabelText("Purpose"), {
+      target: { value: "Notes" },
+    });
+    fireEvent.change(screen.getByLabelText("Creation reason"), {
+      target: { value: "Synthetic" },
+    });
+    let release!: (value: Snapshot) => void;
+    vi.mocked(Client.prototype.state).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByText("Create resident", { exact: true }));
+    await waitFor(() => expect(release).toBeDefined());
+    if (mode === "navigation") {
+      fireEvent.click(screen.getByRole("link", { name: /Skills$/ }));
+      await waitFor(() => expect(window.location.hash).toBe("#skills"));
+    } else if (mode === "lock")
+      fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+    const expectedHash = window.location.hash;
+    await act(async () =>
+      release({
+        ...structuredClone(state),
+        epoch: mode === "epoch" ? "new-store" : state.epoch,
+      }),
+    );
+    expect(window.location.hash).toBe(expectedHash);
+    if (mode === "lock")
+      expect(screen.getByLabelText("Operator token")).toBeTruthy();
+  },
+);

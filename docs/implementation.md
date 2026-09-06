@@ -520,3 +520,28 @@ Standards review corrected historical skill-error wording: unavailable provenanc
 no longer claims execution is held when the run is completed or still running. A
 completed-run regression failed before the correction and passes afterward; all
 16 App tests and the browser typecheck/build pass.
+
+## Generic resident provisioning — issue #88
+
+New resident creates purpose/instructions, memory, ordered exact skills, configured
+profile, explicit built-in synthetic/empty inputs, budget and optional routine/first
+assignment through one repeatable application operation. Profiles show authenticated
+creator, named manager, creation reason/time and setup provenance; failed setups
+remain inspectable/retryable without active partial residents. Optional first tasks
+are visibly queued with the existing Start action. Generic declaration HTTP PUT is
+update-only. See [resident-provisioning.md](resident-provisioning.md) for the strict
+API, same-transaction management seam and failure/accounting semantics.
+
+Verified final `make check`: 526 backend tests, 56 frontend tests, lint/format/types,
+frontend build and installed-wheel journey. The nine provisioning tests cover replay,
+partial-failure rollback/retry, invalid references and UTF-8 bounds, concurrent count
+limits, authenticated same-transaction creation and complete held backup/restore.
+Corrupted immutable provenance and optional work links are refused by backup.
+Browser tests cover definite rejection versus uncertain replay and stale callbacks
+following navigation, logout or store changes. Both independent review axes cleared
+all findings. A clean Playwright journey created a second resident with memory,
+exact skill and routine/first task, replayed its request without duplicates, started
+and read the first saved result, refreshed provenance and verified Hamlet plus mobile
+creation/form layout. Desktop/mobile screenshots were inspected; a mobile creation
+link hidden by older table styles was fixed and reverified. PR/CI/merge are pending.
+No provider calls, credential changes or live-data changes were performed.
