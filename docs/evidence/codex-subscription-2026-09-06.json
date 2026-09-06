@@ -7,9 +7,10 @@
   "archive_url": "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz",
   "archive_integrity": "sha512-8OLcPXaAol/FOrRoDxWhIiHIFa73KRsM41EKocjRZOwiT4TcelzJWn3dHyiuSb7teWF25rrslvSPyvhULYRRCQ==",
   "source_sha256": {
-    "probe-codex-subscription.py": "bb9fcc595227cb14ec3b83187ea83b19ca5ef0e17a60eb2654d429b0e32405e4",
-    "probe-codex-subscription-child.py": "e014f704cb27ccd1c180efa672273f32de2ef6356ba24ee076cc8cbfaedfa037",
-    "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e"
+    "probe-codex-subscription.py": "aeecce91c8d564df5774e5ded69bd6a599960c1c6ddc2e2e4ae4bba8c27e770c",
+    "probe-codex-subscription-child.py": "72fe7bafd9e187431998655fa8d05db0235ea29459087b22fdb8076769c1fb18",
+    "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e",
+    "codex_pricing.py": "2d65db5725b2d9f4a93d36bc238fea35f1bbb2ca00b49d461a860d6a66fc4c58"
   },
   "cases": [
     {
@@ -17,7 +18,7 @@
       "result": {
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a07794-1d1f-7ad3-8dbe-ee4e0ca6e745\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":8,\"reasoning_output_tokens\":0}}\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0779a-b59e-73f2-a03d-725448987e99\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
         "stderr": "Reading additional input from stdin...\n",
         "requests": [
           {
@@ -29,6 +30,7 @@
             "method": "WS",
             "path": "/responses",
             "model": "gpt-6-astra",
+            "response_usage": null,
             "tools": [
               [
                 "function",
@@ -69,6 +71,18 @@
             "method": "WS",
             "path": "/responses",
             "model": "gpt-6-astra",
+            "response_usage": {
+              "input_tokens": 30,
+              "output_tokens": 8,
+              "total_tokens": 38,
+              "input_tokens_details": {
+                "cached_tokens": 10,
+                "cache_write_tokens": 5
+              },
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              }
+            },
             "tools": [
               [
                 "function",
@@ -112,7 +126,13 @@
         ],
         "errors": [],
         "tool_ran": false,
-        "final": "Synthetic summary: the Reader mock is ready. No model was called."
+        "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+        "accounting": {
+          "basis": "api_equivalent_estimate",
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "microdollars": 623,
+          "synthetic": true
+        }
       }
     },
     {
@@ -120,8 +140,8 @@
       "result": {
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a07794-2817-7381-9158-ee104e65c538\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":16,\"reasoning_output_tokens\":0}}\n",
-        "stderr": "Reading additional input from stdin...\n2026-09-06T16:36:34.655572Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T16:36:34.656743Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0779a-bc31-77b0-886a-f1010d8c7319\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
+        "stderr": "Reading additional input from stdin...\n2026-09-06T16:43:44.908385Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T16:43:44.909229Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
         "requests": [
           {
             "method": "POST",
@@ -132,6 +152,7 @@
             "method": "WS",
             "path": "/responses",
             "model": "gpt-6-astra",
+            "response_usage": null,
             "tools": [
               [
                 "function",
@@ -172,6 +193,18 @@
             "method": "WS",
             "path": "/responses",
             "model": "gpt-6-astra",
+            "response_usage": {
+              "input_tokens": 30,
+              "output_tokens": 8,
+              "total_tokens": 38,
+              "input_tokens_details": {
+                "cached_tokens": 10,
+                "cache_write_tokens": 5
+              },
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              }
+            },
             "tools": [
               [
                 "function",
@@ -211,6 +244,18 @@
             "method": "WS",
             "path": "/responses",
             "model": "gpt-6-astra",
+            "response_usage": {
+              "input_tokens": 30,
+              "output_tokens": 8,
+              "total_tokens": 38,
+              "input_tokens_details": {
+                "cached_tokens": 10,
+                "cache_write_tokens": 5
+              },
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              }
+            },
             "tools": [
               [
                 "function",
@@ -250,7 +295,7 @@
                 "call_id": "call_exec",
                 "output": "unsupported call: exec_command",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a07794-2b9c-71c2-b351-23f928cae5af"
+                  "turn_id": "01a0779a-bc94-7f82-9418-be0847167270"
                 }
               },
               {
@@ -258,7 +303,7 @@
                 "call_id": "call_image",
                 "output": "view_image is not allowed because you do not support image inputs",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a07794-2b9c-71c2-b351-23f928cae5af"
+                  "turn_id": "01a0779a-bc94-7f82-9418-be0847167270"
                 }
               }
             ]
@@ -271,7 +316,13 @@
         ],
         "errors": [],
         "tool_ran": false,
-        "final": "Synthetic summary: the Reader mock is ready. No model was called."
+        "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+        "accounting": {
+          "basis": "api_equivalent_estimate",
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "microdollars": 1245,
+          "synthetic": true
+        }
       }
     }
   ],

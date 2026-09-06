@@ -245,3 +245,17 @@ subscription estimates must remain separate from actual provider charges.
 
 Four probe recovery checks cover lost/invalid create replies, foreign ownership
 and unavailable daemon observation; uncertain creation never authorizes relaunch.
+
+## Shared API-equivalent cost calculation
+
+Issue #71 adds the [pinned Astra estimator](codex-pricing.md), independent of
+subscription/API authentication. It prices request-level ordinary/cache input and
+output with long-context/Fast multipliers and integer rounding. Missing or invalid
+usage remains unknown; a turn aggregate cannot establish per-request prices.
+The actual offline CLI probe now verifies nonzero cache/read/write and reasoning
+counter mapping and both synthetic cost examples. Operational accounting still
+requires complete request provenance and admission-time schedule binding.
+
+Validation: full `make check` passed 404 backend and 35 browser tests, lint/types/
+build and both installed-wheel journeys. Thirty-two pricing checks cover token
+categories, long-context thresholds, Fast rates, rounding and unknown usage.

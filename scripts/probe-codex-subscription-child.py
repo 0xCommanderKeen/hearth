@@ -76,6 +76,13 @@ model = {
 requests = []
 errors = []
 MAX_FRAME = 2 * 1024 * 1024
+RESPONSE_USAGE = {
+    "input_tokens": 30,
+    "output_tokens": 8,
+    "total_tokens": 38,
+    "input_tokens_details": {"cached_tokens": 10, "cache_write_tokens": 5},
+    "output_tokens_details": {"reasoning_tokens": 3},
+}
 text = "Synthetic summary: the Reader mock is ready. No model was called."
 item = {
     "id": "msg_synthetic",
@@ -107,13 +114,7 @@ def stream_events():
                 "id": "resp_synthetic",
                 "status": "completed",
                 "output": [item],
-                "usage": {
-                    "input_tokens": 30,
-                    "output_tokens": 8,
-                    "total_tokens": 38,
-                    "input_tokens_details": {"cached_tokens": 0},
-                    "output_tokens_details": {"reasoning_tokens": 0},
-                },
+                "usage": RESPONSE_USAGE,
             },
         },
     ]
@@ -133,6 +134,7 @@ class Server(BaseHTTPRequestHandler):
                 "method": "WS",
                 "path": self.path,
                 "model": body.get("model"),
+                "response_usage": RESPONSE_USAGE if body.get("generate") is not False else None,
                 "tools": [(t.get("type"), t.get("name")) for t in body.get("tools", [])],
                 "keys": list(body),
                 "generate": body.get("generate"),
@@ -211,7 +213,7 @@ class Server(BaseHTTPRequestHandler):
                             "id": "resp_attack",
                             "status": "completed",
                             "output": calls,
-                            "usage": {"input_tokens": 30, "output_tokens": 8, "total_tokens": 38},
+                            "usage": RESPONSE_USAGE,
                         },
                     }
                 ]
