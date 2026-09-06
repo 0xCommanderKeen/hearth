@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class Refused(ValueError):
@@ -34,11 +35,17 @@ class Declaration:
     name: str
     purpose: str
     daily_limit: int
+    budget_timezone: str = "UTC"
 
     def validate(self) -> None:
         bounded_text(self.name, 100, "invalid_name")
         bounded_text(self.purpose, 8_000, "invalid_purpose")
         microdollars(self.daily_limit)
+        bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
+        try:
+            ZoneInfo(self.budget_timezone)
+        except ZoneInfoNotFoundError, ValueError:
+            raise Refused("invalid_budget_timezone") from None
 
 
 @dataclass(frozen=True)
@@ -82,3 +89,4 @@ class Run:
     artifact_id: str | None = None
     cancellation_requested: bool = False
     launch_attempted: bool = False
+    budget_timezone: str = "UTC"

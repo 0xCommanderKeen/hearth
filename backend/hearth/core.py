@@ -8,7 +8,8 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from hearth.database import Database
 from hearth.models import (
@@ -79,7 +80,7 @@ class Hearth:
             else:
                 db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
             db.execute(
-                "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     resident_id,
                     revision,
@@ -87,6 +88,7 @@ class Hearth:
                     declaration.purpose,
                     declaration.daily_limit,
                     now,
+                    declaration.budget_timezone,
                 ),
             )
             _audit(db, "resident.saved", resident_id, now, {"revision": revision})
@@ -135,7 +137,9 @@ class Hearth:
             return Resident(
                 row["resident_id"],
                 row["revision"],
-                Declaration(row["name"], row["purpose"], row["daily_limit"]),
+                Declaration(
+                    row["name"], row["purpose"], row["daily_limit"], row["budget_timezone"]
+                ),
             )
 
     def submit(
@@ -199,7 +203,6 @@ class Hearth:
             raise Refused("invalid_concurrency_limit")
         with self.database.transaction(write=True) as db:
             now = int(self.clock())
-            day = datetime.fromtimestamp(now, UTC).date().isoformat()
             task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if task is None:
                 raise Refused("task_not_found")
@@ -229,6 +232,10 @@ class Hearth:
                    ON r.id = d.resident_id AND r.revision = d.revision WHERE r.id = ?""",
                 (resident_id,),
             ).fetchone()
+            local = datetime.fromtimestamp(now, ZoneInfo(declaration["budget_timezone"]))
+            start = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
+            end = (start + timedelta(days=1)).replace(fold=0)
+            day = local.date().isoformat()
             # Outstanding exposure carries across midnight; settlement must explicitly release it.
             outstanding = db.execute(
                 "SELECT COALESCE(SUM(reserved), 0) FROM runs "
@@ -237,8 +244,8 @@ class Hearth:
             ).fetchone()[0]
             spent = db.execute(
                 "SELECT COALESCE(SUM(actual_cost), 0) FROM runs "
-                "WHERE resident_id = ? AND budget_day = ? AND usage_known = 1",
-                (resident_id, day),
+                "WHERE resident_id = ? AND created_at >= ? AND created_at < ? AND usage_known = 1",
+                (resident_id, int(start.timestamp()), int(end.timestamp())),
             ).fetchone()[0]
             if outstanding + spent + reserve > declaration["daily_limit"]:
                 raise Refused("budget_exhausted")
@@ -252,9 +259,10 @@ class Hearth:
                 reserve,
                 day,
                 now,
+                budget_timezone=declaration["budget_timezone"],
             )
             db.execute(
-                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 tuple(asdict(run).values()),
             )
             db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
@@ -269,6 +277,7 @@ class Hearth:
                     "resident_revision": run.resident_revision,
                     "reserved": reserve,
                     "budget_day": day,
+                    "budget_timezone": run.budget_timezone,
                 },
             )
             return run

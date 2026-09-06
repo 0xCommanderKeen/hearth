@@ -73,10 +73,14 @@ context route, exercised with mock HTTP clients. Rotation, revocation, expiry,
 state/configuration changes and restored-copy denial are enforced. Actual runtime
 injection and host isolation remain pending; see `run-context-access.md`.
 
-Issue #21 adds explicit mock usage reconciliation with immutable command/report
+Issue #21 / draft PR #22 (`64167df`, CI 34020913868 green) adds explicit mock usage reconciliation with immutable command/report
 identity, original-day charging, source labeling and guarded safety-hold release.
 Full checks: 152 backend and 25 browser tests pass. See `mock-usage-reconciliation.md`.
 Provider evidence ingestion and corrections are not claimed.
+
+Issue #23 adds explicit resident-local budget timezones, per-run provenance and
+half-open calendar windows based on timestamps. UTC remains the migration default;
+DST and timezone-edit tests pass. See `local-budget-windows.md`.
 
 ## Next
 
