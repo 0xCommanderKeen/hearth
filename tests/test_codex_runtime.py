@@ -12,7 +12,7 @@ from hearth.core import Hearth
 from hearth.database import Database
 from hearth.execution import Execution
 from hearth.memory import Memory
-from hearth.models import Declaration
+from hearth.models import Declaration, Refused
 from hearth.run_context import read_context
 from test_codex_subscription_probe import Docker
 
@@ -69,3 +69,37 @@ def test_reopened_runtime_finishes_cleanup_before_returning_saved_settlement(tmp
     assert not docker.states
     assert [call[0] for call in docker.calls].count("create") == 1
     assert [call[0] for call in docker.calls].count("start") == 1
+
+
+def test_changed_assets_after_runtime_construction_prevent_container_dispatch(
+    tmp_path, monkeypatch
+):
+    database = Database(tmp_path / "hearth.db")
+    database.initialize(runtime_kind="codex_mock")
+    hearth = Hearth(database, clock=lambda: 1_788_640_000)
+    hearth.save_resident(
+        "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
+    )
+    fixture = tmp_path / "synthetic-asset"
+    fixture.write_text("original")
+
+    def verify_assets(*args):
+        if fixture.read_text() != "original":
+            raise Refused("codex_mock_assets_changed")
+        return "a" * 64
+
+    monkeypatch.setattr(codex_assets, "prepare", verify_assets)
+    monkeypatch.setattr(codex_runtime.threading.Thread, "start", lambda self: None)
+    docker = Docker()
+    runtime = CodexMockRuntime(tmp_path, docker=docker)
+    task = hearth.submit("request", "reader", "Synthetic summary", expires_at=1_788_640_100)
+    run = hearth.admit(task.task_id, reserve=1000)
+    execution = Execution(hearth, Artifacts(tmp_path / "artifacts"))
+    execution.prepare_start(run.id, run.owner_token)
+    with database.transaction() as db:
+        context = read_context(db, run.id, Memory(hearth).files)
+    runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
+    fixture.write_text("changed after server startup")
+    runtime._worker(run.id)
+    assert runtime.inspect(run.id).status == "unknown"
+    assert not any(call[0] in {"create", "start"} for call in docker.calls)

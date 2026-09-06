@@ -365,3 +365,9 @@ Cancellation during an incomplete request preserved unknown usage and passed hel
 restore. These checks used only synthetic inputs, auth and local responses.
 They do not establish real account/model access, upstream credentials, production
 isolation or observation gates.
+
+Additional actual Mac evidence: killing only a disposable API server after CLI
+start intent, then reopening the same data, recovered the original run to success
+with 623 microdollars and both owned containers removed. Review also added asset
+revalidation before worker setup and each guarded start, with a regression proving
+that post-startup asset changes dispatch no containers.

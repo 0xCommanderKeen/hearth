@@ -141,6 +141,7 @@ class CodexMockRuntime:
                 publish(folder / "worker-started.json", {"started": True})
                 request = self._request(run_id)
                 binding = UsageBinding(**request["binding"])
+                self._verify_assets(request)
                 (folder / "journal").mkdir(mode=0o700)
                 (folder / "secret").write_text("synthetic-upstream-demo")
                 (folder / "secret").chmod(0o400)
@@ -185,6 +186,7 @@ class CodexMockRuntime:
                         epoch=request["epoch"],
                         input_digest=binding.input_digest,
                     ):
+                        self._verify_assets(request)
                         container.start()
                     if role == "collector":
                         deadline = time.monotonic() + 10
@@ -197,6 +199,10 @@ class CodexMockRuntime:
         except Exception:
             # Durable identities remain for inspect-only recovery; no worker relaunch.
             return
+
+    def _verify_assets(self, request):
+        if codex_assets.prepare(self.assets, None) != request["assets"]:
+            raise Refused("codex_mock_assets_changed")
 
     def inspect(self, run_id, *, expected_digest=None):
         folder = self.folder(run_id)
