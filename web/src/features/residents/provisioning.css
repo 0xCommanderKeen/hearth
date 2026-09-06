@@ -58,3 +58,8 @@
   padding: 16px;
   border: 1px solid var(--line);
 }
+
+.resident-create {
+  color: var(--accent);
+  font-size: 13px;
+}

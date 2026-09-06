@@ -544,9 +544,7 @@ it.each(["navigation", "lock", "epoch"])(
       fireEvent.click(screen.getByRole("link", { name: /Skills$/ }));
       await waitFor(() => expect(window.location.hash).toBe("#skills"));
     } else if (mode === "lock")
-      fireEvent.click(
-        screen.getByRole("button", { name: "Lock" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Lock" }));
     const expectedHash = window.location.hash;
     await act(async () =>
       release({

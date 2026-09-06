@@ -64,7 +64,9 @@ All residents currently use the installation's configured execution profile.
 Normal admission retains the shared household/resident budget and execution
 controls; initial assignment creation performs no runtime launch.
 
-Request transport is capped at 1.5 MB, including JSON escaping; memory's owning
+Request transport is capped at 1.5 MB, including JSON escaping; a request exceeding
+that aggregate cap must be shortened even if individual fields meet their limits.
+HTTP 413 is a definite rejection and the browser keeps the draft editable. Memory's owning
 interface enforces an actual UTF-8 byte limit of 128 KiB. Other declarations,
 skill sets and routine/task instructions retain their owning bounds. Current-data
 backup validates request identity, immutable provenance, ready-profile presence,

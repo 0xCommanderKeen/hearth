@@ -532,10 +532,16 @@ are visibly queued with the existing Start action. Generic declaration HTTP PUT 
 update-only. See [resident-provisioning.md](resident-provisioning.md) for the strict
 API, same-transaction management seam and failure/accounting semantics.
 
-Verified full `make check`: 526 backend tests, 50 frontend tests, lint/format/types,
-frontend build and installed-wheel journey. Subsequent UI retry/refresh fixes passed
-four focused browser-component tests and the nine focused provisioning API/application
-tests, with typechecks/build green. Backup tests cover immutable provenance and
-optional-work corruption, concurrent creation limits, complete configuration and
-held restore. Actual browser inspection and independent reviews are pending.
+Verified final `make check`: 526 backend tests, 56 frontend tests, lint/format/types,
+frontend build and installed-wheel journey. The nine provisioning tests cover replay,
+partial-failure rollback/retry, invalid references and UTF-8 bounds, concurrent count
+limits, authenticated same-transaction creation and complete held backup/restore.
+Corrupted immutable provenance and optional work links are refused by backup.
+Browser tests cover definite rejection versus uncertain replay and stale callbacks
+following navigation, logout or store changes. Both independent review axes cleared
+all findings. A clean Playwright journey created a second resident with memory,
+exact skill and routine/first task, replayed its request without duplicates, started
+and read the first saved result, refreshed provenance and verified Hamlet plus mobile
+creation/form layout. Desktop/mobile screenshots were inspected; a mobile creation
+link hidden by older table styles was fixed and reverified. PR/CI/merge are pending.
 No provider calls, credential changes or live-data changes were performed.

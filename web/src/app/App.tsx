@@ -552,7 +552,7 @@ export function App() {
                 <div className="section-title">
                   <h2>Residents</h2>
                   {!snapshot.restore_hold && (
-                    <a className="profile-link" href="#new-resident">
+                    <a className="resident-create" href="#new-resident">
                       New resident ＋
                     </a>
                   )}
