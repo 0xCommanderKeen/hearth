@@ -323,3 +323,24 @@ Validation: full `make check` passed 450 backend and 35 browser tests, lint/type
 build and both installed-wheel journeys. Six offline ownership checks cover lost
 create replies, foreign identities, daemon loss and cleanup of the other owned
 container when the second creation fails.
+
+## UI alignment checkpoint — 2026-09-06 (working branch)
+
+User prioritized visible Warren parity over further runtime expansion. Townhall
+now has dark sidebar navigation, an all-residents directory and hash-addressable
+resident profiles with purpose, status, limit/timezone, memory/skills and work.
+Hamlet uses Warren's original Three.js miniature art kit (from the issue-466
+worktree), with orbit/zoom and home-to-profile links. No Warren data is imported.
+
+Verified: frontend typecheck/build and 35 tests; actual local demo browser
+directory → Reader → stored result; 3D canvas rendered and desktop/mobile
+screenshots inspected, no horizontal page overflow at 390px. These are local WIP
+checks, not a merged release or proof of full Warren parity. Village movement,
+full multi-resident layout and comprehensive accessibility remain unfinished.
+
+Follow-up: 37 frontend tests now cover multiple-resident directory/profile
+selection, empty per-resident history, assignment destination and preservation of
+a pending retry's original resident. Hamlet reserves Townhall's plot and sizes
+the ground/camera for additional rows. Full `make check` passed: 463 backend,
+37 frontend, type/format/build and both installed-wheel journeys. Log:
+`/private/tmp/hearth-demo-full-check.log` (local evidence, not a repository artifact).
