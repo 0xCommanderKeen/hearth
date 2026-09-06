@@ -1,6 +1,6 @@
 # Bounded Codex Astra Reader integration
 
-Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, and $10; the budget period and execution host remain unconfirmed.
+Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred.
 
 ## Established interface
 
@@ -89,12 +89,12 @@ cannot establish model quality or the host isolation boundary.
 
 ## Decisions still needed
 
-- Execution burrow: this Mac, the NAS or another machine. No remote host inspected
-  or deployed by this investigation.
-- $10 window: entire first test or each resident-local day. Daily was an assistant
-  proposal, not a confirmed user instruction. Also establish whether this is an
-  admission/accounting allowance or a strict billed-cost ceiling; the latter must
-  not be promised from delayed token telemetry.
+- Mac process and isolation mechanism, verified with credential-free probes before
+  connecting the model. Development on this Mac is selected; no remote deployment
+  is selected.
+- Applicable billing and stop policy for the confirmed $10/day allowance. Hearth
+  admission/accounting is not a provider-enforced ceiling; delayed token telemetry
+  cannot establish an exact billed-cost cap.
 - Account/authentication mode and accessible exact Astra model on that burrow,
   verified without exposing existing personal credentials. No fallback model.
 - Explicit selection of a real test after mock worker checks and host evidence.

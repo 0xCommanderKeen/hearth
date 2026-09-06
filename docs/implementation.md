@@ -46,9 +46,10 @@ packaged assets, authentication, Reader setup, duplicate command receipts, a
 simulated result, restart persistence and a held current-data restore. Temporary
 files and servers are cleaned up. See [the installation recipe](release.md).
 
-Miha selected Codex Astra, synthetic notes and a $10 allowance. A daily budget
-window is proposed but needs confirmation before spending; the host and exact
-runtime/pricing configuration remain open. Real execution is still deferred.
+Miha selected Codex Astra, synthetic notes, this Mac for development and $10 per
+day. Fresh CLI/browser Reader setup uses 10,000,000 microdollars and Europe/Ljubljana
+budget days; repeated setup preserves existing declarations. Exact runtime,
+authentication and pricing remain open. Real execution is still deferred.
 
 ## Selected runtime design
 
@@ -57,15 +58,15 @@ current official documentation, local CLI 0.145.0 help and the current Hearth co
 The CLI has a JSONL interface, but launch idempotency, process ownership, complete
 host isolation and a hard dollar cap are not established by those flags. The design
 orders explicit provenance, a durable fake-process worker, bounded event parsing,
-staged inputs and actual-host acceptance before real wiring. Model access, billing,
-the execution host and budget window remain unverified. No Codex task was launched.
+staged inputs and actual-host acceptance before real wiring. Model access, billing and
+Mac process/isolation behavior remain unverified. No Codex task was launched.
 
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
 | --- | --- | --- |
 | Fresh mock workflow | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
-| Bounded real Reader | Deferred by mock-only direction | Host, exact runtime/pricing and budget-window decisions; useful output and actual read-only isolation |
+| Bounded real Reader | Deferred by mock-only direction | Mac isolation, exact runtime/authentication/pricing; useful output and actual read-only isolation |
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
 | Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
 

@@ -14,9 +14,9 @@ machine. Current development uses mocks and synthetic notes only; real testing
 will be selected after the workflow is proven.
 
 Miha selected Codex Astra for the eventual runtime/model, synthetic example notes,
-and a $10 spending limit on 2026-09-06. The proposed budget window is daily; confirm
-that interpretation before enabling spending. The execution host, exact runtime
-configuration and pricing provenance remain undecided. This selection does not
+and confirmed this Mac for development with a $10 per-day allowance. Fresh mock
+Reader setup uses Europe/Ljubljana budget days. Exact runtime configuration,
+authentication and pricing provenance remain undecided. This selection does not
 enable real calls; mock-only execution remains in force. The
 [Codex Reader design](codex-reader.md) records verified interface facts and the
 ordered implementation steps before enabling that runtime.

@@ -118,7 +118,12 @@ def main() -> None:
             raise
         hearth.save_resident(
             "reader",
-            Declaration("Reader", "Summarize synthetic notes.", 1_000_000),
+            Declaration(
+                "Reader",
+                "Summarize synthetic notes.",
+                10_000_000,
+                budget_timezone="Europe/Ljubljana",
+            ),
             expected_revision=0,
         )
     receipt = hearth.submit(

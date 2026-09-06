@@ -300,7 +300,8 @@ def create_app(
                     Declaration(
                         "Reader",
                         "A daily summary of synthetic notes. Read-only; no external actions.",
-                        1_000_000,
+                        10_000_000,
+                        budget_timezone="Europe/Ljubljana",
                     ),
                     expected_revision=0,
                 )

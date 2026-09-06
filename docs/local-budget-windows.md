@@ -2,6 +2,7 @@
 
 Declarations have an explicit IANA `budget_timezone`, validated at save time.
 New declarations default to UTC unless an explicit budget zone is selected.
+Fresh mock Reader setup selects Europe/Ljubljana and a $10 daily allowance.
 Each new run pins its declaration revision, local budget date and timezone for
 provenance. The browser displays the resident's budget timezone.
 
@@ -19,5 +20,3 @@ holds remain enforced. Reconciliation preserves the original admission timestamp
 
 Synthetic tests cover local versus UTC midnight, spring/fall day lengths, repeated
 hour spending, timezone edits and invalid timezone refusal.
-External imports must preserve their source accounting timestamps and explicitly
-validate any differences before execution is enabled.
