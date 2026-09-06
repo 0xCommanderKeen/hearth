@@ -11,6 +11,24 @@ evidence under stable run IDs so a new application process can recover an old
 result. Repeating start with the same identity/instruction is idempotent; changed
 instructions under that identity are refused.
 
+The executor sends canonical JSON context version 1: run/task/resident identities,
+the declaration revision pinned at admission, its purpose, the task instruction and
+the fixed synthetic notes. The scoped runtime context route uses the same reader.
+Ownership tokens, credentials and other residents' data are absent. MockRuntime
+persists only the input digest, not the purpose or task text; its summary remains
+a deterministic fixture and does not interpret these instructions.
+
+Launch authorization rechecks the current declaration revision. If it changed
+before authorization, no new runtime starts and work becomes interrupted. Cancel
+and submit a new task to use the new declaration. Cancellation can settle a run
+without launch intent at zero usage; an existing launch intent retains uncertainty
+until evidence resolves it. A change after authorization cannot retract input
+already authorized: the runtime receives the original pinned revision. Existing
+runtime evidence is reconciled even when the current declaration has changed.
+Restart with the same context version reconstructs identical input from immutable
+task/declaration records. Changes to the synthetic fixture or context format need
+an explicit compatibility decision; this is not real runtime provenance.
+
 Launch intent is durable before calling start. Cancellation records desired state;
 confirmed runtime cancellation records the terminal. Never-launched work can be
 cancelled without starting the adapter. Missing evidence after launch is unknown

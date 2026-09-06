@@ -22,7 +22,9 @@ token cannot substitute for a runtime credential on this route. Malformed or
 unrecognized runtime routes do not fall back to operator authentication.
 
 Context contains only that run's identity, task identity, resident revision,
-purpose, instruction and explicit synthetic notes. It excludes run ownership
+purpose, instruction, context version and explicit synthetic notes. The executor
+and this route use the same pinned context reader; the route keeps its credential
+checks in the same read transaction. It excludes run ownership
 secrets, budgets, other residents, real notes and effect credentials. Responses use
 `Cache-Control: no-store`; a valid read is authorized at its database snapshot.
 Revocation cannot retract bytes from a read that was already authorized.
@@ -31,6 +33,7 @@ Tests exercise a mock runtime-origin HTTP client, exact-run isolation, credentia
 rotation/revocation/expiry, changed state/owner/configuration, audit rollback,
 restart validity, secret exclusion and restored-copy refusal. This is the credential
 contract for the read-only Reader. The deterministic in-process MockRuntime still
-runs without a network credential; actual runtime injection, private credential
+runs without a network credential, receiving the context directly as canonical
+JSON at launch. Actual runtime credential injection, private credential
 mounts, filesystem/network isolation and a real adapter contract remain pending.
 No publication capability has been added to Reader and no real model is invoked.

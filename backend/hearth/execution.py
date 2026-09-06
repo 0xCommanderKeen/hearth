@@ -1,6 +1,7 @@
 """One supervised lifecycle for mock execution, recovery, and terminal accounting."""
 
 import fcntl
+import json
 from dataclasses import asdict
 
 from hearth.artifacts import Artifact, Artifacts
@@ -8,6 +9,7 @@ from hearth.core import ACTIVE_RUNS, Hearth, _audit
 from hearth.models import Refused, Run, microdollars
 from hearth.notifications import enqueue
 from hearth.ownership import ExecutionGuard
+from hearth.run_context import read_context
 from hearth.runtime import Evidence, Runtime
 
 
@@ -51,6 +53,11 @@ class Execution:
             if row is None or row["owner_token"] != owner_token:
                 raise Refused("run_ownership_lost")
             if row["cancellation_requested"] or row["status"] != "starting":
+                return False
+            revision = db.execute(
+                "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
+            ).fetchone()[0]
+            if revision != row["resident_revision"]:
                 return False
             if not row["launch_attempted"]:
                 db.execute("UPDATE runs SET launch_attempted = 1 WHERE id = ?", (run_id,))
@@ -222,9 +229,12 @@ class Executor:
                             else Evidence("cancelled", cost=0)
                         )
                 elif run.status == "starting" and evidence.status == "absent":
-                    task = self.execution.hearth.task(run.task_id)
+                    with self.execution.hearth.database.transaction() as db:
+                        context = read_context(db, run.id)
                     if self.execution.prepare_start(run.id, run.owner_token):
-                        self.runtime.start(run.id, task.instruction)
+                        self.runtime.start(
+                            run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
+                        )
                     evidence = self.runtime.inspect(run.id)
                 if evidence.status in {"succeeded", "failed", "cancelled"}:
                     results.append(self.execution.finish(run.id, run.owner_token, evidence))

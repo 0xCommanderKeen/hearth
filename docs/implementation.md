@@ -101,3 +101,14 @@ missing-usage holds, interrupted settlement, replay/handback, audit rollback and
 progress for an unrelated resident after ownership denial. A fresh CLI rehearsal
 refused transfer during active work, cancelled and settled the source, completed
 target work and interrupted stale source work without launching it.
+
+Issue #37 closes an input gap: the executor previously launched with task text
+alone despite pinning a resident revision. It now sends the same versioned context
+as scoped runtime reads, including the pinned purpose and synthetic notes. Launch
+authorization rejects a changed declaration; existing evidence remains recoverable.
+Tests inspect actual adapter input, restart identity and both sides of the
+configuration/launch authorization ordering. This does not add resident memory,
+skills, live sources or a real runtime adapter.
+
+Verification for issue #37: full `make check` passes with 281 backend and 25 browser
+tests, including seven new pinned-context and configuration/recovery cases.
