@@ -39,15 +39,17 @@ reason yet to split them into separately deployed processes or generic framework
 - Unknown usage now has an explicit immutable operator-reported mock reconciliation
   flow (issue #21; `mock-usage-reconciliation.md`). It preserves unrelated holds.
   Real provider evidence ingestion and corrections remain pending.
-- Restore is deliberately read-only. There is no activation/ownership transfer,
-  reverse export, compatible cross-version restore rehearsal, or live memory copy.
-  Backups currently require the current schema; the package version alone is not a
-  sufficient production release identity. Runs still need exact runtime/pricing/
-  policy execution provenance when a real adapter is selected.
-- Native browser visual/accessibility verification, actual-host isolation, real
-  cancellation/usage/tool enforcement and useful output checks remain pending.
-- PRs are stacked and unmerged; passing their checks does not establish a shipped
-  release. Review/merge and production deployment verification are separate work.
+- Restore and import are deliberately read-only. Hearth mock reverse export and
+  detailed semantic comparison are implemented. Explicit cross-version backup
+  upgrade is exercised in issue #33; source-system conversion, live memory and
+  execution-ownership transfer remain incomplete. Package version alone is not a
+  sufficient production release identity; runs still need exact real runtime and
+  pricing provenance when that adapter is selected.
+- Rendered headless Chromium desktop/mobile journeys are verified. Native
+  assistive-technology auditing, actual-host isolation, real cancellation/usage/tool
+  enforcement and useful real output checks remain pending.
+- The initial stack is merged and main CI passes; see `implementation.md` for the
+  current checkpoint. Production deployment remains separate and unverified.
 
 ## Decision within current authorization
 
@@ -62,7 +64,7 @@ operator pause/resume gates new admissions. Safety holds remain independent reas
 for refusal in the same database. Existing work retains its actual runtime state
 and explicit cancellation; pausing never claims it has stopped.
 
-Verification at this checkpoint: `make check` passes with 116 backend tests and
+Historical verification at the original pause-control checkpoint: `make check` passes with 116 backend tests and
 24 browser tests, including pause/resume, conflicting controls, unknown-usage hold
 preservation, cancellation, and audit rollback. The behavioral matrix now names
 mock evidence and remaining real gates explicitly.

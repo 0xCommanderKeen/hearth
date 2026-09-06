@@ -40,8 +40,8 @@ in the actual rendered browser. Images are local review artifacts outside Git.
 This replaces the previous missing rendered-browser evidence; it does not claim a
 native accessibility-tree or assistive-technology audit.
 
-The initial mock rebuild remains under review until these fixes pass complete CI
-and the reviewed stack lands on main. Nothing is deployed or activated by merge.
+All sixteen PRs #2–#32, including these fixes, are merged into main at `a84bed6`.
+Main CI `34023432571` passed. Nothing was deployed or activated by merge.
 
 The extended rendered journey also passed: read result, pause/resume new work,
 enable/disable daily routine, request/review/approve/publish a local mock summary,

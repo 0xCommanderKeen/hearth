@@ -35,7 +35,14 @@ def main() -> None:
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--against", type=Path)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument(
+        "--upgrade",
+        action="store_true",
+        help="Upgrade a supported older backup during isolated restore",
+    )
     args = parser.parse_args()
+    if args.upgrade and args.command != "restore":
+        parser.error("--upgrade is only valid with restore")
     if args.command == "diff-state":
         from hearth.portable import MAX_EXPORT, compare
 
@@ -84,7 +91,7 @@ def main() -> None:
         else:
             if args.source is None or args.destination is None:
                 parser.error("restore requires --source and --destination")
-            result = restore(args.source, args.destination)
+            result = restore(args.source, args.destination, upgrade=args.upgrade)
         print(json.dumps(result, indent=2))
         return
     db = Database(args.data / "hearth.db")
