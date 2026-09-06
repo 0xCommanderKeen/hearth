@@ -441,7 +441,11 @@ pins fail admission and backup verification.
 
 Verified: 497 backend and 41 frontend tests, lint, formatting, Python/TypeScript
 checks and browser build passed. Installed-wheel verification required network
-access for locked runtime dependencies. Focused coverage includes simultaneous
+access for locked runtime dependencies and passed. Focused coverage includes simultaneous
 admissions/creations, timezone edits, unknown usage/cancellation, restart,
-current-data backup/held restore and conflicting policy drafts. Isolated browser
-verification and two-axis review are pending. No live data or provider calls used.
+current-data backup/held restore and conflicting policy drafts. Both independent
+review axes passed; the suggested day-window helper cleanup passed 10 focused
+tests, including 23/25-hour Ljubljana DST days, lint and typechecking. Playwright
+verified policy edits, a visible blocked admission, allowance restoration, refresh
+persistence and mobile layout; screenshot inspection confirmed theme/contrast.
+No live data or provider calls used. PR/CI/merge remain pending.

@@ -23,14 +23,8 @@ def validate_windows(db) -> None:
         if row["run_id"] is None:
             raise Refused("household_accounting_corrupt")
         try:
-            local = datetime.fromtimestamp(row["created_at"], ZoneInfo(row["timezone"]))
-            start = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
-            end = (start + timedelta(days=1)).replace(fold=0)
-            valid = (
-                row["starts_at"] == int(start.timestamp())
-                and row["ends_at"] == int(end.timestamp())
-                and row["budget_day"] == local.date().isoformat()
-            )
+            window = _day_window(row["created_at"], row["timezone"])
+            valid = all(row[key] == value for key, value in window.items())
         except ZoneInfoNotFoundError, ValueError, TypeError, OverflowError:
             valid = False
         if not valid:
@@ -40,10 +34,14 @@ def validate_windows(db) -> None:
 def _policy_window(db, now: int) -> dict:
     row = db.execute("SELECT * FROM household_policy WHERE id=1").fetchone()
     policy = {key: row[key] for key in DEFAULTS} if row else dict(DEFAULTS)
-    local = datetime.fromtimestamp(now, ZoneInfo(policy["timezone"]))
+    return policy | _day_window(now, policy["timezone"])
+
+
+def _day_window(now: int, timezone: str) -> dict:
+    local = datetime.fromtimestamp(now, ZoneInfo(timezone))
     start = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
     end = (start + timedelta(days=1)).replace(fold=0)
-    return policy | dict(
+    return dict(
         starts_at=int(start.timestamp()),
         ends_at=int(end.timestamp()),
         budget_day=local.date().isoformat(),

@@ -205,3 +205,17 @@ def test_missing_accounting_pin_refuses_admission_and_backup(tmp_path):
         hearth.admit(task.task_id, reserve=1)
     with pytest.raises(Refused, match="household_accounting_corrupt"):
         capture(db.path.parent, tmp_path / "backup")
+
+
+@pytest.mark.parametrize(
+    ("date", "hours"), [("2026-03-29T12:00:00+02:00", 23), ("2026-10-25T12:00:00+01:00", 25)]
+)
+def test_household_days_follow_ljubljana_dst(tmp_path, date, hours):
+    from datetime import datetime
+
+    db = Database(tmp_path / "hearth.db")
+    db.initialize()
+    hearth = Hearth(db, clock=lambda: datetime.fromisoformat(date).timestamp())
+    state = Household(hearth).read()
+    assert state["ends_at"] - state["starts_at"] == hours * 3600
+    assert state["budget_day"] == date[:10]
