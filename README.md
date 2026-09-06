@@ -48,7 +48,9 @@ uv run uvicorn hearth.api:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
 Open `http://127.0.0.1:8766` and enter that token. Set up mock Reader, assign a task,
-and open its summary. The credential stays in browser memory for the session.
+and open its summary. Fresh Reader setup has a $10 daily allowance using
+Europe/Ljubljana budget days. Repeating setup preserves existing settings.
+The credential stays in browser memory for the session.
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
 Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate demo to exercise cancellation.
 Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulations,
