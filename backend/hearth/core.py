@@ -92,6 +92,37 @@ class Hearth:
             _audit(db, "resident.saved", resident_id, now, {"revision": revision})
             return Resident(resident_id, revision, declaration)
 
+    def set_paused(self, resident_id: str, *, paused: bool, expected_revision: int) -> dict:
+        """Operator control affects new admission, never clears safety holds or cancels work."""
+        identifier(resident_id)
+        if type(paused) is not bool or type(expected_revision) is not int or expected_revision < 0:
+            raise Refused("invalid_pause_control")
+        with self.database.transaction(write=True) as db:
+            if not db.execute("SELECT 1 FROM residents WHERE id=?", (resident_id,)).fetchone():
+                raise Refused("resident_not_found")
+            row = db.execute(
+                "SELECT revision FROM operator_controls WHERE resident_id=?", (resident_id,)
+            ).fetchone()
+            revision = row[0] if row else 0
+            if expected_revision != revision:
+                raise Refused("revision_conflict")
+            revision += 1
+            now = int(self.clock())
+            db.execute(
+                "INSERT INTO operator_controls VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(resident_id) DO UPDATE SET revision=excluded.revision, "
+                "paused=excluded.paused, updated_at=excluded.updated_at",
+                (resident_id, revision, paused, now),
+            )
+            _audit(
+                db,
+                "resident.operator_paused" if paused else "resident.operator_resumed",
+                resident_id,
+                now,
+                {"revision": revision},
+            )
+            return {"resident_id": resident_id, "revision": revision, "paused": paused}
+
     def resident(self, resident_id: str, *, revision: int | None = None) -> Resident:
         with self.database.transaction() as db:
             row = db.execute(
@@ -175,7 +206,13 @@ class Hearth:
             if task["status"] != "queued":
                 raise Refused("task_already_admitted")
             resident_id = task["resident_id"]
-            if db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone():
+            if (
+                db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone()
+                or db.execute(
+                    "SELECT 1 FROM operator_controls WHERE resident_id=? AND paused=1",
+                    (resident_id,),
+                ).fetchone()
+            ):
                 raise Refused("resident_paused")
             if db.execute(
                 f"SELECT 1 FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",

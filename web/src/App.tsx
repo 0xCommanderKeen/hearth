@@ -496,6 +496,12 @@ export function App() {
                     <small>Mock usage only. No money is spent.</small>
                   </form>
                 )}
+                {residents.length > 0 && (
+                  <small>
+                    Pausing blocks new runs. Existing work continues until
+                    explicitly cancelled; safety holds remain enforced.
+                  </small>
+                )}
                 {residents.map((r) => (
                   <div className="resident-line" key={r.id}>
                     <span className="resident-avatar">R</span>
@@ -508,6 +514,20 @@ export function App() {
                           : ""}
                       </span>
                     </div>
+                    <button
+                      disabled={busy || snapshot.restore_hold}
+                      onClick={() =>
+                        void act(() =>
+                          client.pauseResident(
+                            r.id,
+                            !r.operator_paused,
+                            r.control_revision ?? 0,
+                          ),
+                        )
+                      }
+                    >
+                      {r.operator_paused ? "Resume new runs" : "Pause new runs"}
+                    </button>
                     <span className="revision">REV {r.revision}</span>
                   </div>
                 ))}

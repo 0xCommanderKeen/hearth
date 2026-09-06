@@ -118,3 +118,11 @@ def notification_schema(db: sqlite3.Connection) -> None:
         delivered_at INTEGER, reason TEXT,
         UNIQUE(kind, resource_id)
     )""")
+
+
+def control_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE operator_controls (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id),
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        paused INTEGER NOT NULL CHECK (paused IN (0,1)), updated_at INTEGER NOT NULL
+    )""")

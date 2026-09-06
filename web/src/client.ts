@@ -32,6 +32,8 @@ export type Resident = {
   daily_limit: number;
   presence: string;
   pause_reason: string | null;
+  operator_paused?: number;
+  control_revision?: number;
 };
 export type Task = {
   id: string;
@@ -176,6 +178,12 @@ export class Client {
   start(id: string) {
     return this.request(`/api/tasks/${encodeURIComponent(id)}/start`, {
       method: "POST",
+    });
+  }
+  pauseResident(id: string, paused: boolean, revision: number) {
+    return this.request(`/api/residents/${encodeURIComponent(id)}/pause`, {
+      method: "POST",
+      body: JSON.stringify({ paused, expected_revision: revision }),
     });
   }
   run(id: string) {

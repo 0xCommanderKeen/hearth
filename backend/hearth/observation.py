@@ -13,9 +13,13 @@ def snapshot(hearth: Hearth) -> dict:
         cursor = db.execute("SELECT COALESCE(MAX(sequence), 0) FROM audit").fetchone()[0]
         residents = []
         for row in db.execute("""SELECT r.id, r.revision, d.name, d.purpose, d.daily_limit,
-                             p.reason AS pause_reason FROM residents r
+                             COALESCE(p.reason, CASE WHEN c.paused=1 THEN 'operator' END)
+                             AS pause_reason,
+                             COALESCE(c.paused,0) AS operator_paused,
+                             COALESCE(c.revision,0) AS control_revision FROM residents r
                              JOIN declarations d ON d.resident_id = r.id AND d.revision = r.revision
-                             LEFT JOIN pauses p ON p.resident_id = r.id ORDER BY r.id"""):
+                             LEFT JOIN pauses p ON p.resident_id = r.id
+                             LEFT JOIN operator_controls c ON c.resident_id=r.id ORDER BY r.id"""):
             resident = dict(row)
             active = db.execute(
                 f"SELECT status FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",

@@ -114,6 +114,12 @@ class RoutinePost(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class PausePost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    paused: bool
+    expected_revision: int = Field(ge=0)
+
+
 def create_app(
     data: Path, token: str, *, scenario: str = "success", supervise: bool = True
 ) -> FastAPI:
@@ -326,6 +332,12 @@ def create_app(
             timezone=body.timezone,
             enabled=body.enabled,
             expected_revision=body.expected_revision,
+        )
+
+    @app.post("/api/residents/{resident_id}/pause")
+    def pause_resident(resident_id: str, body: PausePost):
+        return hearth.set_paused(
+            resident_id, paused=body.paused, expected_revision=body.expected_revision
         )
 
     web = Path(__file__).parent / "web"
