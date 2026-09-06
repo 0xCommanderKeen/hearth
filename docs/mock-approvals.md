@@ -53,3 +53,7 @@ short-lived scoped run authentication, actual-host isolation, and an adapter who
 credentials are inaccessible to residents. Approval notifications, an evidence
 submission workflow for unresolved effects, and live runtime validation remain
 later gates. Native visual QA remains pending browser permissions.
+
+Recovery also verifies the checksum of the actual noticeboard content against the
+approved artifact. A self-reported checksum in the receipt is not proof; missing
+or changed bytes retain uncertainty and the destination claim without resending.

@@ -293,3 +293,40 @@ def test_schema_three_upgrade_preserves_existing_result_and_epoch(system):
         assert db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0] == epoch
         assert db.execute("SELECT id FROM artifacts").fetchone()[0] == artifact
     assert propose(system).status == "pending"
+
+
+@pytest.mark.parametrize("corruption", ["missing_content", "changed_content", "forged_checksum"])
+def test_recovery_checks_published_bytes_before_releasing_destination(system, tmp_path, corruption):
+    import hashlib
+    import json
+
+    broker, proposal = approved_broker(system, tmp_path)
+    with broker.authority.hearth.database.transaction(write=True) as db:
+        db.execute("""CREATE TRIGGER audit_failure BEFORE INSERT ON audit
+            WHEN NEW.kind = 'action.completed'
+            BEGIN SELECT RAISE(ABORT, 'completion disk failure'); END""")
+    with pytest.raises(Exception, match="completion disk failure"):
+        broker.execute(proposal.id)
+    with broker.authority.hearth.database.transaction(write=True) as db:
+        db.execute("DROP TRIGGER audit_failure")
+    path = tmp_path / "noticeboard" / (proposal.id + ".md")
+    original = path.read_bytes()
+    record = json.loads(original)
+    if corruption == "missing_content":
+        record.pop("content")
+    else:
+        record["content"] = "Changed synthetic content"
+        if corruption == "forged_checksum":
+            record["content_sha256"] = hashlib.sha256(record["content"].encode()).hexdigest()
+    path.write_text(json.dumps(record))
+    assert broker.execute(proposal.id)["status"] == "unknown"
+    assert path.read_text() == json.dumps(record)
+    with broker.authority.hearth.database.transaction() as db:
+        assert db.execute("SELECT revision FROM publication_targets").fetchone()[0] == 1
+    authority, artifact, now = system
+    second = authority.request("second-review", artifact, expires_at=now[0] + 300)
+    authority.decide(second.id, reviewed_digest=second.digest, approve=True)
+    with pytest.raises(Refused, match="destination_busy"):
+        broker.execute(second.id)
+    path.write_bytes(original)
+    assert broker.execute(proposal.id)["status"] == "completed"

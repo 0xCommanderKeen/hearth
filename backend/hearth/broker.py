@@ -18,6 +18,7 @@ class EffectReceipt:
     action_id: str
     digest: str
     simulated: bool = True
+    content_sha256: str | None = None
 
 
 class MockEffect(Protocol):
@@ -45,12 +46,24 @@ class MockNoticeboard:
         except FileNotFoundError:
             return None
         record = json.loads(encoded)
-        if record["action_id"] != action_id or record["simulated"] is not True:
+        if (
+            len(encoded) > 512 * 1024
+            or not isinstance(record, dict)
+            or record.get("action_id") != action_id
+            or record.get("simulated") is not True
+            or not isinstance(record.get("content"), str)
+        ):
             raise Refused("mock_receipt_corrupt")
-        return EffectReceipt(record["action_id"], record["digest"])
+        return EffectReceipt(
+            record["action_id"],
+            record["digest"],
+            content_sha256=hashlib.sha256(record["content"].encode()).hexdigest(),
+        )
 
     def publish(self, action_id: str, digest: str, content: str) -> EffectReceipt:
-        receipt = EffectReceipt(action_id, digest)
+        receipt = EffectReceipt(
+            action_id, digest, content_sha256=hashlib.sha256(content.encode()).hexdigest()
+        )
         self.files.publish(
             action_id, json.dumps(asdict(receipt) | {"content": content}, sort_keys=True)
         )
@@ -175,6 +188,7 @@ class Broker:
                     receipt.action_id != approval_id
                     or receipt.digest != approval.digest
                     or receipt.simulated is not True
+                    or receipt.content_sha256 != approval.payload["sha256"]
                 ):
                     return self._record(approval_id, None, "receipt_mismatch")
             except Exception:

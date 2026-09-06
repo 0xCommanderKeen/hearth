@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from hearth.artifacts import MAX_ARTIFACT, sync_directory
-from hearth.models import Refused, identifier
+from hearth.models import Refused, identifier, microdollars
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,16 @@ class MockRuntime:
                 return Evidence("unknown")
             evidence = Evidence(**document["evidence"])
             if evidence.status not in {"running", "succeeded", "failed", "cancelled"}:
+                return Evidence("unknown")
+            if evidence.cost is not None:
+                microdollars(evidence.cost)
+            if evidence.output is not None and (
+                not isinstance(evidence.output, str) or len(evidence.output.encode()) > MAX_ARTIFACT
+            ):
+                return Evidence("unknown")
+            if evidence.status == "succeeded" and (
+                not isinstance(evidence.output, str) or not evidence.output.strip()
+            ):
                 return Evidence("unknown")
             return evidence
         except FileNotFoundError:

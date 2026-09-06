@@ -124,3 +124,12 @@ reports both usage changes and hold removal. Compatibility conversion and transf
 remain separate requirements; comparison does not authorize execution.
 Verification 2026-09-06: full `make check` passes (225 backend, 25 browser tests),
 including CLI equal/different/invalid exit statuses and an equal import round trip.
+
+Issue #31 fixes two integration-review blockers: malformed terminal mock evidence
+now stays unknown without stalling unrelated work, and publication recovery checks
+actual effect bytes against the approved artifact. Both independent follow-up
+reviews are clear. Rendered desktop/mobile Chromium baseline is verified; see
+`integration-review.md`. Live acceptance remains pending.
+Verification 2026-09-06: 236 backend and 25 browser tests pass with full checks.
+Rendered result, pause, routine, approval/publication and lock journeys also pass
+on desktop/mobile Chromium with synthetic data and no page errors.
