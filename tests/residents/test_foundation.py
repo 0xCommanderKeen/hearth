@@ -298,7 +298,7 @@ def test_same_version_foreign_layout_is_refused_without_changes(tmp_path):
 
 
 def test_failed_initialization_rolls_back_all_schema_and_seed_writes(tmp_path, monkeypatch):
-    import hearth.database as module
+    import hearth.storage.database as module
 
     path = tmp_path / "new.db"
     monkeypatch.setattr(module, "SCHEMA", (*module.SCHEMA, "INVALID SQL"))

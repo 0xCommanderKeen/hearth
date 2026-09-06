@@ -19,6 +19,7 @@ from hearth.integrations.codex import container as codex_container
 from hearth.integrations.codex import events as codex_events
 from hearth.integrations.codex import pricing as codex_pricing
 from hearth.integrations.codex import usage as codex_usage
+from hearth.integrations.codex.assets import fixture_source, write_collector
 from hearth.integrations.codex.container import CodexContainer
 from hearth.integrations.codex.events import CodexEvents, TokenUsage
 from hearth.integrations.codex.pricing import estimate_api_equivalent
@@ -292,14 +293,10 @@ def main():
     }
     temporary = Path(tempfile.mkdtemp(prefix="hearth-codex-offline-"))
     try:
-        package = temporary / "app/hearth/integrations/codex"
-        package.mkdir(parents=True)
-        (package / "__init__.py").write_text("")
-        (package.parent / "__init__.py").write_text("")
-        (package.parent.parent / "__init__.py").write_text("")
-        for module in (codex_events, codex_pricing, codex_usage):
-            source = Path(module.__file__)
-            shutil.copyfile(source, package / source.name)
+        write_collector(temporary / "app/hearth")
+        child = temporary / "fixture.py"
+        child.write_bytes(fixture_source())
+        report["fixture_sha256"] = hashlib.sha256(child.read_bytes()).hexdigest()
         # Verify the exact bytes being extracted, not a mutable caller path again.
         pinned = Path(temporary) / "codex.tgz"
         pinned.write_bytes(archive)

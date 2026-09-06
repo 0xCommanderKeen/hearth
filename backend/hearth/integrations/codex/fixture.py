@@ -340,11 +340,7 @@ if COLLECTOR:
 # Test the CLI container directly, independently of the model's tool refusal.
 # These paths must be absent, not merely hidden by a CLI permission setting.
 assert os.getuid() != 0
-for denied in (
-    "/journal/usage/binding.json",
-    "/collector-secret",
-    "/app/hearth/integrations/codex/usage.py",
-):
+for denied in ("/journal/usage/binding.json", "/collector-secret", "/app/hearth/codex_usage.py"):
     try:
         Path(denied).read_bytes()
     except FileNotFoundError, PermissionError:

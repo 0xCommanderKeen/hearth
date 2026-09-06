@@ -40,8 +40,8 @@ client and text editor. Backend tests mirror owning modules; provider fixtures l
 with provider tests. Empty future Skills or Claude packages are deliberately absent.
 
 This refactor changes Python import/worker paths, not schema, receipt JSON, URLs,
-login storage, styling or model configuration. Fixture packaging now recreates the
-nested import namespace. Backup implementation fingerprints cover all nested Python
+login storage, styling or model configuration. The isolated offline collector bundle retains its separately pinned flat namespace
+and exact source bytes; host module moves are translated only while packaging it. Backup implementation fingerprints cover all nested Python
 sources. Auth and data remain outside the checkout. Existing integrity-pinned
 runtime assets continue to be verified against their exact source bytes; changed
 assets are never silently accepted or rewritten.
