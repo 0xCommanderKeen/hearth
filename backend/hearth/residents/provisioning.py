@@ -384,6 +384,8 @@ def validate_provisioning(db) -> None:
             ).fetchone():
                 raise Refused("provisioning_memory_missing")
 
+            if profile["creation_reason"] != payload["creation_reason"]:
+                raise Refused("provisioning_provenance_changed")
             for key in ("creator", "originating_run_id", "created_at"):
                 if profile[key] != row[key]:
                     raise Refused("provisioning_provenance_changed")

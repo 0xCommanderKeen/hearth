@@ -473,8 +473,15 @@ export function App() {
                 readOnly={snapshot.restore_hold === true}
                 commandId={provisionId}
                 onCreated={async (receipt) => {
-                  publish(await client.state());
-                  window.location.hash = `#residents/${receipt.resident_id}`;
+                  const route = window.location.hash;
+                  const next = await client.state();
+                  if (currentSession.current !== client) return;
+                  publish(next);
+                  if (
+                    next.epoch === snapshot.epoch &&
+                    window.location.hash === route
+                  )
+                    window.location.hash = `#residents/${receipt.resident_id}`;
                 }}
               />
             )}

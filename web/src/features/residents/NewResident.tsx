@@ -119,7 +119,10 @@ export function NewResident({
         );
         return;
       }
-      if (e instanceof RequestError && [401, 409, 422].includes(e.status)) {
+      if (
+        e instanceof RequestError &&
+        [401, 409, 413, 422].includes(e.status)
+      ) {
         pending.current = null;
         setError(e.message);
         setUncertain(false);

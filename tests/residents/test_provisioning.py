@@ -196,7 +196,13 @@ def test_backup_refuses_changed_immutable_provenance_or_first_task(tmp_path):
     with pytest.raises(Refused, match="provisioning_provenance_changed"):
         capture(db.path.parent, tmp_path / "bad-creator")
     with sqlite3.connect(db.path) as connection:
-        connection.execute("UPDATE resident_profiles SET creator='operator'")
+        connection.execute(
+            "UPDATE resident_profiles SET creator='operator',creation_reason='forged'"
+        )
+    with pytest.raises(Refused, match="provisioning_provenance_changed"):
+        capture(db.path.parent, tmp_path / "bad-reason")
+    with sqlite3.connect(db.path) as connection:
+        connection.execute("UPDATE resident_profiles SET creation_reason='Daily report'")
         connection.execute(
             "UPDATE resident_provisioning SET task_id=NULL WHERE command_id=?",
             (ready["command_id"],),

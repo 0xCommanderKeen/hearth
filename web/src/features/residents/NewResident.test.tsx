@@ -124,41 +124,44 @@ it("displays a failed saved setup with its original configuration and retry", as
   expect(screen.getByText("Retry same setup")).toBeTruthy();
 });
 
-it("uses a new operation for a corrected draft after a definite rejection", async () => {
-  const client = new Client("synthetic-provision-token");
-  vi.spyOn(client, "request").mockResolvedValue(options);
-  vi.spyOn(client, "skills").mockResolvedValue([]);
-  const provision = vi
-    .spyOn(client, "provision")
-    .mockRejectedValue(new RequestError(422, "invalid setup"));
-  render(
-    <NewResident
-      client={client}
-      readOnly={false}
-      commandId=""
-      onCreated={async () => {}}
-    />,
-  );
-  await screen.findByLabelText("Resident name");
-  fireEvent.change(screen.getByLabelText("Resident name"), {
-    target: { value: "Original" },
-  });
-  fireEvent.change(screen.getByLabelText("Purpose"), {
-    target: { value: "Notes" },
-  });
-  fireEvent.change(screen.getByLabelText("Creation reason"), {
-    target: { value: "Synthetic" },
-  });
-  fireEvent.click(screen.getByText("Create resident", { exact: true }));
-  await screen.findByText("invalid setup");
-  fireEvent.change(screen.getByLabelText("Resident name"), {
-    target: { value: "Corrected" },
-  });
-  fireEvent.click(screen.getByText("Create resident", { exact: true }));
-  await waitFor(() => expect(provision).toHaveBeenCalledTimes(2));
-  expect(provision.mock.calls[0][0]).not.toBe(provision.mock.calls[1][0]);
-  expect(provision.mock.calls[1][1].name).toBe("Corrected");
-});
+it.each([413, 422])(
+  "uses a new operation for a corrected draft after definite rejection %i",
+  async (status) => {
+    const client = new Client("synthetic-provision-token");
+    vi.spyOn(client, "request").mockResolvedValue(options);
+    vi.spyOn(client, "skills").mockResolvedValue([]);
+    const provision = vi
+      .spyOn(client, "provision")
+      .mockRejectedValue(new RequestError(status, "invalid setup"));
+    render(
+      <NewResident
+        client={client}
+        readOnly={false}
+        commandId=""
+        onCreated={async () => {}}
+      />,
+    );
+    await screen.findByLabelText("Resident name");
+    fireEvent.change(screen.getByLabelText("Resident name"), {
+      target: { value: "Original" },
+    });
+    fireEvent.change(screen.getByLabelText("Purpose"), {
+      target: { value: "Notes" },
+    });
+    fireEvent.change(screen.getByLabelText("Creation reason"), {
+      target: { value: "Synthetic" },
+    });
+    fireEvent.click(screen.getByText("Create resident", { exact: true }));
+    await screen.findByText("invalid setup");
+    fireEvent.change(screen.getByLabelText("Resident name"), {
+      target: { value: "Corrected" },
+    });
+    fireEvent.click(screen.getByText("Create resident", { exact: true }));
+    await waitFor(() => expect(provision).toHaveBeenCalledTimes(2));
+    expect(provision.mock.calls[0][0]).not.toBe(provision.mock.calls[1][0]);
+    expect(provision.mock.calls[1][1].name).toBe("Corrected");
+  },
+);
 it("keeps the confirmed ready receipt if opening its profile fails", async () => {
   const client = new Client("synthetic-provision-token");
   vi.spyOn(client, "request").mockResolvedValue(options);
