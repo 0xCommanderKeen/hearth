@@ -4,6 +4,8 @@ import base64
 import datetime
 import hashlib
 import json
+import os
+import signal
 import struct
 import subprocess
 import sys
@@ -12,17 +14,21 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-# This readonly package is copied and pinned by the host probe, never user config.
-sys.path.insert(0, "/app")
-from hearth.codex_events import TokenUsage  # noqa: E402
-from hearth.codex_usage import UsageBinding, UsageJournal  # noqa: E402
-
+COLLECTOR = "--collector" in sys.argv
 PROMPT = sys.argv[sys.argv.index("--prompt") + 1]
 run_id = sys.argv[sys.argv.index("--run-id") + 1]
-binding = UsageBinding(
-    run_id, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
-)
-journal = UsageJournal.create(Path("/journal/usage"), binding)
+if COLLECTOR:
+    # Only the trusted fixture collector has these modules and durable journal.
+    sys.path.insert(0, "/app")
+    from hearth.codex_events import TokenUsage
+    from hearth.codex_usage import UsageBinding, UsageJournal, publish
+
+    binding = UsageBinding(
+        run_id, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
+    )
+    journal = UsageJournal.create(Path("/journal/usage"), binding)
+    upstream_canary = Path("/collector-secret").read_text()
+    assert upstream_canary.startswith("synthetic-upstream-")
 
 state = Path("/scratch/state")
 state.mkdir()
@@ -38,7 +44,7 @@ def jwt(value):
 claims = {
     "sub": "synthetic-reader",
     "email": "reader@example.invalid",
-    "exp": int(time.time()) + 3600,
+    "exp": int(sys.argv[sys.argv.index("--expires") + 1]),
     "https://api.openai.com/auth": {
         "chatgpt_account_id": "synthetic-account",
         "chatgpt_plan_type": "pro",
@@ -299,8 +305,45 @@ class Server(BaseHTTPRequestHandler):
             self.close_connection = True
 
 
-server = ThreadingHTTPServer(("127.0.0.1", 8765), Server)
-threading.Thread(target=server.serve_forever, daemon=True).start()
+if COLLECTOR:
+    server = ThreadingHTTPServer(("127.0.0.1", 8765), Server)
+    server.daemon_threads = False
+    stopping = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    publish(Path("/journal/ready.json"), {"run_id": run_id})
+    # A missing host stop cannot leave the synthetic collector running forever.
+    stopped = stopping.wait(35)
+    server.shutdown()
+    server.server_close()
+    publish(
+        Path("/journal/collector.json"),
+        {
+            "requests": requests,
+            "errors": errors,
+            "stopped_by_host": stopped,
+            "upstream_canary_loaded": True,
+        },
+    )
+    sys.exit(0 if stopped else 1)
+
+# Test the CLI container directly, independently of the model's tool refusal.
+# These paths must be absent, not merely hidden by a CLI permission setting.
+assert os.getuid() != 0
+for denied in ("/journal/usage/binding.json", "/collector-secret", "/app/hearth/codex_usage.py"):
+    try:
+        Path(denied).read_bytes()
+    except FileNotFoundError, PermissionError:
+        pass
+    else:
+        raise AssertionError("collector path readable: " + denied)
+try:
+    Path("/journal/forged.json").write_text("forged")
+except FileNotFoundError, PermissionError, OSError:
+    pass
+else:
+    raise AssertionError("collector journal writable")
+
 config = {
     "model_catalog_json": str(state / "models.json"),
     "forced_login_method": "chatgpt",
@@ -382,26 +425,10 @@ try:
             stderr=stderr,
             timeout=2 if "--interrupt" in sys.argv else 25,
         )
-    estimate = journal.seal(
-        read_output("stdout"),
-        exit_code=result.returncode,
-        final=read_output("final.txt") if Path("/scratch/final.txt").exists() else None,
-    )
-    reopened = UsageJournal(Path("/journal/usage"), binding)
-    if reopened.estimate() != estimate:
-        raise ValueError("reopened usage changed")
     print(
         json.dumps(
             {
-                "journal_estimate": {
-                    "microdollars": estimate.microdollars,
-                    "schedule": estimate.schedule,
-                    "basis": estimate.basis,
-                },
-                "journal": {
-                    path.name: json.loads(path.read_text())
-                    for path in Path("/journal/usage").glob("*.json")
-                },
+                "collector_paths_denied": True,
                 "version": version,
                 "returncode": result.returncode,
                 "stdout": read_output("stdout"),
@@ -425,5 +452,3 @@ except subprocess.TimeoutExpired:
             }
         )
     )
-finally:
-    server.shutdown()

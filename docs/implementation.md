@@ -303,3 +303,23 @@ collector isolation, terminal handoff and operational dispatch/recovery remain.
 Review regressions ensure missing counters cannot mask contradictions in known
 request/CLI totals or cache subsets. The refreshed Mac probe passes all three
 synthetic scenarios with the final journal and pricing source pins.
+
+
+## Separate offline CLI and collector
+
+Issue #77 removes the collector journal from the actual Codex CLI container. The
+network-none collector and CLI share loopback only, with separate filesystem/PID
+namespaces. Only the collector receives the journal and a synthetic secret canary;
+direct CLI-container reads/writes to those paths fail. The host requires stopped
+collector handlers and a durable report before sealed usage handoff. Independent
+owned claims allow cleanup of the collector even after uncertain CLI creation.
+
+The actual Mac probe passed completion, tool injection and interrupted-request
+preservation with this split boundary. This remains an offline synthetic fixture,
+not real credential forwarding or the operational Codex adapter. See
+[reproduction and limits](codex-subscription-probe.md).
+
+Validation: full `make check` passed 450 backend and 35 browser tests, lint/types/
+build and both installed-wheel journeys. Six offline ownership checks cover lost
+create replies, foreign identities, daemon loss and cleanup of the other owned
+container when the second creation fails.

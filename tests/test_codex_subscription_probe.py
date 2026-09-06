@@ -56,3 +56,50 @@ def test_uncertain_create_uses_recorded_claim_and_never_relaunches(tmp_path, mon
         else ["create", "inspect"]
     )
     assert (tmp_path / (name + ".json")).exists()
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_second_container_failure_still_cleans_owned_collector(tmp_path, foreign):
+    calls = []
+    ids = {"collector": "a" * 64, "cli": "b" * 64}
+
+    def docker(*args):
+        calls.append(args)
+        if args[0] == "create":
+            name = args[args.index("--name") + 1]
+            if name == "cli":
+                raise OSError("CLI create acknowledgement lost")
+            return ids[name]
+        if args[0] == "inspect":
+            name = "collector" if args[1] == ids["collector"] else "cli"
+            return json.dumps(
+                [
+                    {
+                        "Id": ids[name],
+                        "Name": "/" + name,
+                        "Config": {
+                            "Labels": {
+                                probe.LABEL: "foreign" if foreign and name == "cli" else name
+                            }
+                        },
+                        "HostConfig": {
+                            "NetworkMode": "none",
+                            "ReadonlyRootfs": True,
+                            "PidMode": "",
+                        },
+                        "Mounts": [],
+                        "State": {"Running": name == "collector"},
+                    }
+                ]
+            )
+        return ""
+
+    with pytest.raises((OSError, AssertionError)):
+        with probe.ExitStack() as stack:
+            stack.enter_context(probe.owned_container(docker, tmp_path, "collector", [], []))
+            stack.enter_context(probe.owned_container(docker, tmp_path, "cli", [], []))
+    assert ("stop", "--time", "12", ids["collector"]) in calls
+    assert ("rm", ids["collector"]) in calls
+    assert (("rm", ids["cli"]) in calls) is not foreign
+    assert len([call for call in calls if call[0] == "create"]) == 2
+    assert (tmp_path / "collector.json").exists() and (tmp_path / "cli.json").exists()

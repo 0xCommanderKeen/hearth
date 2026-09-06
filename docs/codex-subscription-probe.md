@@ -17,10 +17,15 @@ uv run python scripts/probe-codex-subscription.py --archive /tmp/hearth-codex.tg
 The driver verifies SHA-512 before extracting the exact bytes; it runs no package
 installer. It requires the already-cached digest-pinned image from the
 [Mac container probe](mac-isolation.md). There is no implicit image pull, login or
-personal configuration read. The verified CLI bundle, fixture script and copied accounting modules are mounted
-readonly. Fresh synthetic login state lives on bounded scratch; a dedicated
-writable mount preserves only the fixture collector’s synthetic usage journal. The container
-has no external network, root write access, Docker socket or Hearth data mount.
+personal configuration read. The CLI bundle and fixture script are mounted readonly in a dedicated CLI
+container. A separate collector container receives the accounting modules, durable
+journal and synthetic upstream-secret canary. Only their loopback network namespace
+is shared; the collector uses network-none, neither has external routing, and the
+CLI has separate PID and filesystem namespaces with no journal/secret mount.
+Fresh synthetic CLI login state lives on its bounded scratch. Direct Python probes
+inside that container independently require collector reads and journal writes to
+fail, beyond the model's rejected tool calls. Neither container receives the Docker
+socket or Hearth data. The collector has no CLI binary mount.
 A flushed ownership claim precedes create; a lost reply only inspects that exact
 name and label. Exact inspected ownership guards cleanup. Failed probes retain
 the extracted bundle and claims and print their location. A failed observation refuses a passing
@@ -61,3 +66,17 @@ run receipts and real subscription usage remain open before application wiring.
 
 The [usage journal](codex-usage.md) describes durable request capture and the
 remaining production collector isolation and operational settlement requirements.
+
+
+Issue #77 replaces the shared journal/CLI mount with this split boundary. The host
+waits for a durable ready receipt, then starts Codex. After observed CLI termination,
+it stops the collector, joins its bounded handlers and requires a normal exit plus
+a durable collector report before sealing usage. Unfinished requests remain unknown.
+Separate durable claims precede each create; unwinding one failed cleanup still
+attempts cleanup of the other exact owned container. Failed probes retain evidence.
+
+The canary is generated solely for this probe and is never a real credential. The
+local CLI token is also synthetic. This proves mount separation and frozen synthetic
+usage handoff on this Mac, not subscription credential refresh, upstream forwarding,
+production authorization, or operational worker cancellation/recovery. The fixture
+still returns local canned responses and has no provider transport code.
