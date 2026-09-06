@@ -58,10 +58,15 @@ rehearsal completed on synthetic data. Tests preserve active/uncertain state and
 prevent duplicate execution/effects. See `backup-restore.md`; activation, live
 memory/credentials, production restore, and ownership transfer remain unproven.
 
-Issue #15 adds revisioned operator pause/resume without clearing accounting holds
+Issue #15 / draft PR #16 (`c03be25`, CI 34019710002 green) adds revisioned operator pause/resume without clearing accounting holds
 or cancelling owned work. Full checks: 116 backend and 24 browser tests pass.
 `phase-2-mock-review.md` records the architecture review and unproven Phase 2 gates;
 `failure-matrix.md` now distinguishes mock guarantees from live acceptance.
+
+Issue #17 adds process-lifetime supervisor exclusion and drained shutdown. A second
+API supervisor fails startup; in-flight work retains the lock through shutdown.
+Tests include a foreign process, path aliases, blocked work and fatal-worker health.
+See `supervision.md`; real runtime termination and v1/v2 transfer remain separate.
 
 ## Next
 
