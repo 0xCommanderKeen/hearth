@@ -7,8 +7,8 @@
   "archive_url": "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz",
   "archive_integrity": "sha512-8OLcPXaAol/FOrRoDxWhIiHIFa73KRsM41EKocjRZOwiT4TcelzJWn3dHyiuSb7teWF25rrslvSPyvhULYRRCQ==",
   "source_sha256": {
-    "probe-codex-subscription.py": "e9cf22079df0df368305c1d5c7cec7f8aa80544355e14d50df56a6c55ff82df0",
-    "probe-codex-subscription-child.py": "8d70e8c29b50aef1365e390cca027deb8b18f0557d6ee14bab81419d45061692",
+    "probe-codex-subscription.py": "92ee6ddf62972af7c9a392e044b38710de518793a2c4450e65deb7b6005b754b",
+    "probe-codex-subscription-child.py": "be35ce1e1d37200cbfdff3a7bacc323c9ebcd68db897f213f2cab1bb67d3fdf4",
     "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e",
     "codex_pricing.py": "0050248e30f8b9265cafe03a7e2b1acefc94e013bcd4f66841bb2e9aca443a68",
     "codex_usage.py": "1a832247081d240f3935ab649c00c7dac3acc3957d37e78d0dc6c0099d931fc9"
@@ -17,64 +17,21 @@
     {
       "scenario": "success",
       "result": {
-        "journal_estimate": {
-          "microdollars": 623,
-          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
-          "basis": "api_equivalent_estimate"
-        },
-        "journal": {
-          "usage-000.json": {
-            "cache_write_input_tokens": 5,
-            "cached_input_tokens": 10,
-            "input_tokens": 30,
-            "output_tokens": 8,
-            "reasoning_output_tokens": 3
-          },
-          "binding.json": {
-            "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
-            "mode": "standard",
-            "model": "gpt-6-astra",
-            "run_id": "hearth-codex-offline-080aa25a997a433e95ef0181789f7bdb",
-            "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
-          },
-          "request-000.json": {
-            "request": 0
-          },
-          "terminal.json": {
-            "exit_code": 0,
-            "final": "Synthetic summary: the Reader mock is ready. No model was called.",
-            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077d3-9c44-7d31-9ac0-b917b3a3cf08\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n"
-          }
-        },
+        "collector_paths_denied": true,
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077d3-9c44-7d31-9ac0-b917b3a3cf08\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077dc-49ef-7910-ad13-4cd3ad020b43\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n",
         "stderr": "Reading additional input from stdin...\n",
         "requests": [
           {
+            "authorization_synthetic": true,
             "method": "POST",
-            "path": "/codex/analytics-events/events",
-            "authorization_synthetic": true
+            "path": "/codex/analytics-events/events"
           },
           {
-            "method": "WS",
-            "path": "/responses",
-            "model": "gpt-6-astra",
-            "response_usage": null,
-            "tools": [
-              [
-                "function",
-                "update_plan"
-              ],
-              [
-                "function",
-                "request_user_input"
-              ],
-              [
-                "function",
-                "view_image"
-              ]
-            ],
+            "account": "synthetic-account",
+            "authorization_synthetic": true,
+            "generate": false,
             "keys": [
               "type",
               "model",
@@ -92,27 +49,11 @@
               "generate",
               "client_metadata"
             ],
-            "generate": false,
-            "authorization_synthetic": true,
-            "account": "synthetic-account",
-            "tool_outputs": []
-          },
-          {
             "method": "WS",
-            "path": "/responses",
             "model": "gpt-6-astra",
-            "response_usage": {
-              "input_tokens": 30,
-              "output_tokens": 8,
-              "total_tokens": 38,
-              "input_tokens_details": {
-                "cached_tokens": 10,
-                "cache_write_tokens": 5
-              },
-              "output_tokens_details": {
-                "reasoning_tokens": 3
-              }
-            },
+            "path": "/responses",
+            "response_usage": null,
+            "tool_outputs": [],
             "tools": [
               [
                 "function",
@@ -126,7 +67,12 @@
                 "function",
                 "view_image"
               ]
-            ],
+            ]
+          },
+          {
+            "account": "synthetic-account",
+            "authorization_synthetic": true,
+            "generate": null,
             "keys": [
               "type",
               "model",
@@ -143,32 +89,268 @@
               "text",
               "client_metadata"
             ],
-            "generate": null,
-            "authorization_synthetic": true,
-            "account": "synthetic-account",
-            "tool_outputs": []
+            "method": "WS",
+            "model": "gpt-6-astra",
+            "path": "/responses",
+            "response_usage": {
+              "input_tokens": 30,
+              "input_tokens_details": {
+                "cache_write_tokens": 5,
+                "cached_tokens": 10
+              },
+              "output_tokens": 8,
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              },
+              "total_tokens": 38
+            },
+            "tool_outputs": [],
+            "tools": [
+              [
+                "function",
+                "update_plan"
+              ],
+              [
+                "function",
+                "request_user_input"
+              ],
+              [
+                "function",
+                "view_image"
+              ]
+            ]
           },
           {
+            "authorization_synthetic": true,
             "method": "POST",
-            "path": "/codex/analytics-events/events",
-            "authorization_synthetic": true
+            "path": "/codex/analytics-events/events"
           }
         ],
         "errors": [],
         "tool_ran": false,
         "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+        "journal_estimate": {
+          "microdollars": 623,
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "basis": "api_equivalent_estimate"
+        },
+        "journal": {
+          "usage-000.json": {
+            "cache_write_input_tokens": 5,
+            "cached_input_tokens": 10,
+            "input_tokens": 30,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 3
+          },
+          "binding.json": {
+            "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
+            "mode": "standard",
+            "model": "gpt-6-astra",
+            "run_id": "hearth-codex-offline-6b8acefab94840ef9fbc2e5bbcc16b7c",
+            "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
+          },
+          "request-000.json": {
+            "request": 0
+          },
+          "terminal.json": {
+            "exit_code": 0,
+            "final": "Synthetic summary: the Reader mock is ready. No model was called.",
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077dc-49ef-7910-ad13-4cd3ad020b43\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":10,\"cache_write_input_tokens\":5,\"output_tokens\":8,\"reasoning_output_tokens\":3}}\n"
+          }
+        },
         "accounting": {
           "basis": "api_equivalent_estimate",
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
           "microdollars": 623,
           "synthetic": true
         },
-        "held_usage_replay": true
+        "held_usage_replay": true,
+        "collector_isolated": true
       }
     },
     {
       "scenario": "tool_injection",
       "result": {
+        "collector_paths_denied": true,
+        "version": "codex-cli 0.145.0",
+        "returncode": 0,
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077dc-61e5-78d2-8ddc-55ebb572d093\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
+        "stderr": "Reading additional input from stdin...\n2026-09-06T17:55:27.402482Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T17:55:27.403288Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
+        "requests": [
+          {
+            "authorization_synthetic": true,
+            "method": "POST",
+            "path": "/codex/analytics-events/events"
+          },
+          {
+            "account": "synthetic-account",
+            "authorization_synthetic": true,
+            "generate": false,
+            "keys": [
+              "type",
+              "model",
+              "instructions",
+              "input",
+              "tools",
+              "tool_choice",
+              "parallel_tool_calls",
+              "reasoning",
+              "store",
+              "stream",
+              "include",
+              "prompt_cache_key",
+              "text",
+              "generate",
+              "client_metadata"
+            ],
+            "method": "WS",
+            "model": "gpt-6-astra",
+            "path": "/responses",
+            "response_usage": null,
+            "tool_outputs": [],
+            "tools": [
+              [
+                "function",
+                "update_plan"
+              ],
+              [
+                "function",
+                "request_user_input"
+              ],
+              [
+                "function",
+                "view_image"
+              ]
+            ]
+          },
+          {
+            "account": "synthetic-account",
+            "authorization_synthetic": true,
+            "generate": null,
+            "keys": [
+              "type",
+              "model",
+              "instructions",
+              "input",
+              "tools",
+              "tool_choice",
+              "parallel_tool_calls",
+              "reasoning",
+              "store",
+              "stream",
+              "include",
+              "prompt_cache_key",
+              "text",
+              "client_metadata"
+            ],
+            "method": "WS",
+            "model": "gpt-6-astra",
+            "path": "/responses",
+            "response_usage": {
+              "input_tokens": 30,
+              "input_tokens_details": {
+                "cache_write_tokens": 5,
+                "cached_tokens": 10
+              },
+              "output_tokens": 8,
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              },
+              "total_tokens": 38
+            },
+            "tool_outputs": [],
+            "tools": [
+              [
+                "function",
+                "update_plan"
+              ],
+              [
+                "function",
+                "request_user_input"
+              ],
+              [
+                "function",
+                "view_image"
+              ]
+            ]
+          },
+          {
+            "account": "synthetic-account",
+            "authorization_synthetic": true,
+            "generate": null,
+            "keys": [
+              "type",
+              "model",
+              "instructions",
+              "input",
+              "tools",
+              "tool_choice",
+              "parallel_tool_calls",
+              "reasoning",
+              "store",
+              "stream",
+              "include",
+              "prompt_cache_key",
+              "text",
+              "client_metadata"
+            ],
+            "method": "WS",
+            "model": "gpt-6-astra",
+            "path": "/responses",
+            "response_usage": {
+              "input_tokens": 30,
+              "input_tokens_details": {
+                "cache_write_tokens": 5,
+                "cached_tokens": 10
+              },
+              "output_tokens": 8,
+              "output_tokens_details": {
+                "reasoning_tokens": 3
+              },
+              "total_tokens": 38
+            },
+            "tool_outputs": [
+              {
+                "call_id": "call_exec",
+                "internal_chat_message_metadata_passthrough": {
+                  "turn_id": "01a077dc-6303-7a30-8ca6-f24d3b0cdce5"
+                },
+                "output": "unsupported call: exec_command",
+                "type": "function_call_output"
+              },
+              {
+                "call_id": "call_image",
+                "internal_chat_message_metadata_passthrough": {
+                  "turn_id": "01a077dc-6303-7a30-8ca6-f24d3b0cdce5"
+                },
+                "output": "view_image is not allowed because you do not support image inputs",
+                "type": "function_call_output"
+              }
+            ],
+            "tools": [
+              [
+                "function",
+                "update_plan"
+              ],
+              [
+                "function",
+                "request_user_input"
+              ],
+              [
+                "function",
+                "view_image"
+              ]
+            ]
+          },
+          {
+            "authorization_synthetic": true,
+            "method": "POST",
+            "path": "/codex/analytics-events/events"
+          }
+        ],
+        "errors": [],
+        "tool_ran": false,
+        "final": "Synthetic summary: the Reader mock is ready. No model was called.",
         "journal_estimate": {
           "microdollars": 1245,
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
@@ -193,7 +375,7 @@
             "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
             "mode": "standard",
             "model": "gpt-6-astra",
-            "run_id": "hearth-codex-offline-22eb311273c84d3f97aff3b6a89c7af2",
+            "run_id": "hearth-codex-offline-bae8fb53dda048168501bd07a2376526",
             "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
           },
           "request-000.json": {
@@ -205,195 +387,17 @@
           "terminal.json": {
             "exit_code": 0,
             "final": "Synthetic summary: the Reader mock is ready. No model was called.",
-            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077d3-a426-7cb2-9de4-d8ff8d7aa922\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n"
+            "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077dc-61e5-78d2-8ddc-55ebb572d093\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n"
           }
         },
-        "version": "codex-cli 0.145.0",
-        "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a077d3-a426-7cb2-9de4-d8ff8d7aa922\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":20,\"cache_write_input_tokens\":10,\"output_tokens\":16,\"reasoning_output_tokens\":6}}\n",
-        "stderr": "Reading additional input from stdin...\n2026-09-06T17:45:54.351479Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T17:45:54.351988Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
-        "requests": [
-          {
-            "method": "POST",
-            "path": "/codex/analytics-events/events",
-            "authorization_synthetic": true
-          },
-          {
-            "method": "WS",
-            "path": "/responses",
-            "model": "gpt-6-astra",
-            "response_usage": null,
-            "tools": [
-              [
-                "function",
-                "update_plan"
-              ],
-              [
-                "function",
-                "request_user_input"
-              ],
-              [
-                "function",
-                "view_image"
-              ]
-            ],
-            "keys": [
-              "type",
-              "model",
-              "instructions",
-              "input",
-              "tools",
-              "tool_choice",
-              "parallel_tool_calls",
-              "reasoning",
-              "store",
-              "stream",
-              "include",
-              "prompt_cache_key",
-              "text",
-              "generate",
-              "client_metadata"
-            ],
-            "generate": false,
-            "authorization_synthetic": true,
-            "account": "synthetic-account",
-            "tool_outputs": []
-          },
-          {
-            "method": "WS",
-            "path": "/responses",
-            "model": "gpt-6-astra",
-            "response_usage": {
-              "input_tokens": 30,
-              "output_tokens": 8,
-              "total_tokens": 38,
-              "input_tokens_details": {
-                "cached_tokens": 10,
-                "cache_write_tokens": 5
-              },
-              "output_tokens_details": {
-                "reasoning_tokens": 3
-              }
-            },
-            "tools": [
-              [
-                "function",
-                "update_plan"
-              ],
-              [
-                "function",
-                "request_user_input"
-              ],
-              [
-                "function",
-                "view_image"
-              ]
-            ],
-            "keys": [
-              "type",
-              "model",
-              "instructions",
-              "input",
-              "tools",
-              "tool_choice",
-              "parallel_tool_calls",
-              "reasoning",
-              "store",
-              "stream",
-              "include",
-              "prompt_cache_key",
-              "text",
-              "client_metadata"
-            ],
-            "generate": null,
-            "authorization_synthetic": true,
-            "account": "synthetic-account",
-            "tool_outputs": []
-          },
-          {
-            "method": "WS",
-            "path": "/responses",
-            "model": "gpt-6-astra",
-            "response_usage": {
-              "input_tokens": 30,
-              "output_tokens": 8,
-              "total_tokens": 38,
-              "input_tokens_details": {
-                "cached_tokens": 10,
-                "cache_write_tokens": 5
-              },
-              "output_tokens_details": {
-                "reasoning_tokens": 3
-              }
-            },
-            "tools": [
-              [
-                "function",
-                "update_plan"
-              ],
-              [
-                "function",
-                "request_user_input"
-              ],
-              [
-                "function",
-                "view_image"
-              ]
-            ],
-            "keys": [
-              "type",
-              "model",
-              "instructions",
-              "input",
-              "tools",
-              "tool_choice",
-              "parallel_tool_calls",
-              "reasoning",
-              "store",
-              "stream",
-              "include",
-              "prompt_cache_key",
-              "text",
-              "client_metadata"
-            ],
-            "generate": null,
-            "authorization_synthetic": true,
-            "account": "synthetic-account",
-            "tool_outputs": [
-              {
-                "type": "function_call_output",
-                "call_id": "call_exec",
-                "output": "unsupported call: exec_command",
-                "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a077d3-a4cc-75f2-97de-42d31575d832"
-                }
-              },
-              {
-                "type": "function_call_output",
-                "call_id": "call_image",
-                "output": "view_image is not allowed because you do not support image inputs",
-                "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a077d3-a4cc-75f2-97de-42d31575d832"
-                }
-              }
-            ]
-          },
-          {
-            "method": "POST",
-            "path": "/codex/analytics-events/events",
-            "authorization_synthetic": true
-          }
-        ],
-        "errors": [],
-        "tool_ran": false,
-        "final": "Synthetic summary: the Reader mock is ready. No model was called.",
         "accounting": {
           "basis": "api_equivalent_estimate",
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
           "microdollars": 1245,
           "synthetic": true
         },
-        "held_usage_replay": true
+        "held_usage_replay": true,
+        "collector_isolated": true
       }
     },
     {
@@ -401,12 +405,13 @@
       "usage_unknown": true,
       "redispatch_refused": true,
       "journal_survived_exit": true,
+      "collector_isolated": true,
       "journal": {
         "binding.json": {
           "input_digest": "35092a8d74b9314af9c7cd90f8609e9a6f1716f20f0b641fad3b4c21d15ed372",
           "mode": "standard",
           "model": "gpt-6-astra",
-          "run_id": "hearth-codex-offline-72fc8bec3a904771828a1ce8b0fcd5a4",
+          "run_id": "hearth-codex-offline-98d0ee09b7dd46f39150c84bbecd7203",
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06"
         },
         "request-000.json": {

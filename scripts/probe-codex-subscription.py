@@ -11,7 +11,9 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from hearth import codex_events, codex_pricing, codex_usage
@@ -96,17 +98,11 @@ def validate(result, attack):
         assert not outputs
 
 
-def run_case(vendor, child, attack, claims, *, interrupt=False):
-    docker = LocalDocker()
-    name = "hearth-codex-offline-" + uuid.uuid4().hex
+@contextmanager
+def owned_container(docker, claims, name, mounts, command, *, network="none"):
     claim = claims / (name + ".json")
-    with claim.open("x") as stream:
-        json.dump({"name": name, "label": LABEL, "image": IMAGE}, stream)
-        stream.flush()
-        os.fsync(stream.fileno())
+    codex_usage.publish(claim, {"name": name, "label": LABEL, "image": IMAGE})
     print(f"Offline container ownership claim: {claim}", flush=True)
-    journal_root = claims / (name + "-journal")
-    journal_root.mkdir(mode=0o700)
     cid = None
     try:
         cid = docker(
@@ -120,7 +116,7 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
             "--restart",
             "no",
             "--network",
-            "none",
+            network,
             "--read-only",
             "--user",
             f"{os.getuid()}:{os.getgid()}",
@@ -141,51 +137,121 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
             "0.5",
             "--tmpfs",
             "/scratch:rw,noexec,nosuid,nodev,size=32m,mode=1777",
-            "--mount",
-            f"type=bind,source={vendor},target=/runtime,readonly",
-            "--mount",
-            f"type=bind,source={child},target=/probe.py,readonly",
-            "--mount",
-            f"type=bind,source={claims / 'app'},target=/app,readonly",
-            "--mount",
-            f"type=bind,source={journal_root},target=/journal",
+            *[
+                part
+                for source, target, writable in mounts
+                for part in (
+                    "--mount",
+                    f"type=bind,source={source},target={target}"
+                    + ("" if writable else ",readonly"),
+                )
+            ],
             IMAGE,
             "python3",
             "-I",
             "/probe.py",
-            "--run-id",
-            name,
-            "--prompt",
-            PROMPT,
-            *(["--attack"] if attack else []),
-            *(["--interrupt"] if interrupt else []),
+            *command,
         ).strip()
         assert re.fullmatch("[0-9a-f]{64}", cid)
         before = json.loads(docker("inspect", cid))[0]
         assert before["Id"] == cid and before["Config"]["Labels"][LABEL] == name
-        assert before["HostConfig"]["NetworkMode"] == "none"
+        assert before["HostConfig"]["NetworkMode"] == network
         assert before["HostConfig"]["ReadonlyRootfs"] is True
+        assert before["HostConfig"]["PidMode"] == ""
         assert {(mount["Destination"], mount["RW"]) for mount in before["Mounts"]} == {
-            ("/runtime", False),
-            ("/probe.py", False),
-            ("/app", False),
-            ("/journal", True),
+            (target, writable) for _, target, writable in mounts
         }
-        # Capture only this exact owned container. The child is bounded by cgroups,
-        # scratch capacity and a 25-second CLI timeout; the host also has a deadline.
-        command = [
-            "docker",
-            "--host",
-            "unix://" + str(Path.home() / ".docker/run/docker.sock"),
-            "start",
-            "--attach",
-            cid,
-        ]
-        process = subprocess.run(command, capture_output=True, timeout=40, check=True)
+        yield cid
+    finally:
+        # Lost create acknowledgements only inspect the durable exact name/label.
+        state = json.loads(
+            docker("inspect", cid if cid and re.fullmatch("[0-9a-f]{64}", cid) else name)
+        )[0]
+        assert state["Config"]["Labels"][LABEL] == name and state["Name"] == "/" + name
+        assert re.fullmatch("[0-9a-f]{64}", state["Id"])
+        if cid and re.fullmatch("[0-9a-f]{64}", cid):
+            assert state["Id"] == cid
+        cid = state["Id"]
+        if state["State"]["Running"]:
+            docker("stop", "--time", "12", cid)
+        docker("rm", cid)
+
+
+def run_case(vendor, child, attack, claims, *, interrupt=False):
+    docker = LocalDocker()
+    name = "hearth-codex-offline-" + uuid.uuid4().hex
+    journal_root = claims / (name + "-journal")
+    journal_root.mkdir(mode=0o700)
+    secret = claims / (name + "-secret")
+    secret.write_text("synthetic-upstream-" + uuid.uuid4().hex)
+    secret.chmod(0o400)
+    command = [
+        "--run-id",
+        name,
+        "--prompt",
+        PROMPT,
+        "--expires",
+        str(int(time.time()) + 3600),
+        *(["--attack"] if attack else []),
+        *(["--interrupt"] if interrupt else []),
+    ]
+    with ExitStack() as stack:
+        collector = stack.enter_context(
+            owned_container(
+                docker,
+                claims,
+                name + "-collector",
+                [
+                    (child, "/probe.py", False),
+                    (claims / "app", "/app", False),
+                    (journal_root, "/journal", True),
+                    (secret, "/collector-secret", False),
+                ],
+                command + ["--collector"],
+            )
+        )
+        docker("start", collector)
+        deadline = time.monotonic() + 10
+        while not (journal_root / "ready.json").exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("collector readiness unproved")
+            time.sleep(0.05)
+        assert codex_usage.read(journal_root / "ready.json") == {"run_id": name}
+        cli = stack.enter_context(
+            owned_container(
+                docker,
+                claims,
+                name,
+                [(vendor, "/runtime", False), (child, "/probe.py", False)],
+                command,
+                network="container:" + collector,
+            )
+        )
+        process = subprocess.run(
+            [
+                "docker",
+                "--host",
+                "unix://" + str(Path.home() / ".docker/run/docker.sock"),
+                "start",
+                "--attach",
+                cli,
+            ],
+            capture_output=True,
+            timeout=40,
+            check=True,
+        )
         assert len(process.stdout) <= 4 * 1024 * 1024
         result = json.loads(process.stdout)
-        after = json.loads(docker("inspect", cid))[0]
+        after = json.loads(docker("inspect", cli))[0]
         assert not after["State"]["Running"] and after["State"]["ExitCode"] == 0
+        # Stop and join collector handlers before trusting the durable handoff.
+        docker("stop", "--time", "12", collector)
+        after = json.loads(docker("inspect", collector))[0]
+        assert not after["State"]["Running"] and after["State"]["ExitCode"] == 0
+        captured = codex_usage.read(journal_root / "collector.json")
+        assert captured["stopped_by_host"] and captured["upstream_canary_loaded"]
+        result["requests"], result["errors"] = captured["requests"], captured["errors"]
+        assert not result["errors"]
         binding = codex_usage.UsageBinding(
             name, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
         )
@@ -205,42 +271,37 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
                 "usage_unknown": True,
                 "redispatch_refused": True,
                 "journal_survived_exit": True,
+                "collector_isolated": True,
                 "journal": {
                     path.name: json.loads(path.read_text())
                     for path in (journal_root / "usage").glob("*.json")
                 },
             }
+        assert result["collector_paths_denied"]
+        estimate = persisted.seal(
+            result["stdout"], exit_code=result["returncode"], final=result["final"]
+        )
+        result["journal_estimate"] = {
+            "microdollars": estimate.microdollars,
+            "schedule": estimate.schedule,
+            "basis": estimate.basis,
+        }
+        result["journal"] = {
+            path.name: json.loads(path.read_text())
+            for path in (journal_root / "usage").glob("*.json")
+        }
         validate(result, attack)
-        assert persisted.estimate().microdollars == result["accounting"]["microdollars"]
         recovered = claims / (name + "-usage")
         recovered.mkdir(mode=0o700)
         for filename, value in result["journal"].items():
             assert filename in {"binding.json", "terminal.json"} or re.fullmatch(
-                r"(request|usage)-[0-9]{3}\.json", filename
+                r"(request|usage)-[0-9a-f]{3}\.json", filename
             )
             codex_usage.publish(recovered / filename, value)
-        binding = codex_usage.UsageBinding(
-            name, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
-        )
-        replayed = codex_usage.UsageJournal(recovered, binding).estimate()
-        assert replayed.microdollars == result["accounting"]["microdollars"]
+        assert codex_usage.UsageJournal(recovered, binding).estimate() == estimate
         result["held_usage_replay"] = True
+        result["collector_isolated"] = True
         return {"scenario": "tool_injection" if attack else "success", "result": result}
-    finally:
-        # An uncertain create reply permits inspection of this pre-recorded name,
-        # never another create/start. Require the exact label before any mutation.
-        state = json.loads(
-            docker("inspect", cid if cid and re.fullmatch("[0-9a-f]{64}", cid) else name)
-        )[0]
-        assert state["Config"]["Labels"][LABEL] == name
-        assert state["Name"] == "/" + name
-        assert re.fullmatch("[0-9a-f]{64}", state["Id"])
-        if cid and re.fullmatch("[0-9a-f]{64}", cid):
-            assert state["Id"] == cid
-        cid = state["Id"]
-        if state["State"]["Running"]:
-            docker("stop", "--time", "1", cid)
-        docker("rm", cid)
 
 
 def main():
