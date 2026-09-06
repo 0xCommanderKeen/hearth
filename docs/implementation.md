@@ -61,6 +61,15 @@ orders explicit provenance, a durable fake-process worker, bounded event parsing
 staged inputs and actual-host acceptance before real wiring. Model access, billing and
 Mac process/isolation behavior remain unverified. No Codex task was launched.
 
+## Process lifecycle rehearsal
+
+Issue #52 implements a developer-only process mock through the existing Runtime
+contract. [The rehearsal](process-mock.md) uses a detached trusted worker, durable
+launch/started claims, bounded synthetic child output and durable cancellation.
+Real processes and temporary SQLite verify restart recovery and retention of
+ownership after uncertain launch. The application default stays the in-process
+mock; selector/provenance/backup wiring and real Codex isolation remain pending.
+
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
