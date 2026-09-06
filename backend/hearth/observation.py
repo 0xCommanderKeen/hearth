@@ -47,6 +47,9 @@ def snapshot(hearth: Hearth) -> dict:
             )
         ]
         return {
+            "restore_hold": bool(
+                db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
+            ),
             "schema_version": 1,
             "simulated": True,
             "epoch": epoch,

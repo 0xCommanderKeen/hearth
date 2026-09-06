@@ -46,11 +46,17 @@ DST gap/fold rules, latest-only outage catch-up, overlap skipping, ordinary task
 admission, and Townhall controls. See `daily-routines.md`. Mock notification delivery
 remains next; this does not complete the live daily-use gate.
 
-Issue #11 adds transactional mock notifications for terminal runs and approval
+Issue #11 / draft PR #12 (`220eaf0`, CI 34018879882 green) adds transactional mock notifications for terminal runs and approval
 requests, persistent backoff, checksummed receipt recovery, obsolete-request
 suppression, and authenticated browser deep links. See `mock-notifications.md`.
 Verification: 97 backend and 22 browser tests plus full build checks pass. Real
 transport selection and visual QA remain deferred.
+
+Issue #13 adds consistent mock backups, integrity/checksum verification, and isolated
+read-only restore with a new observation epoch. CLI demo → backup → restore
+rehearsal completed on synthetic data. Tests preserve active/uncertain state and
+prevent duplicate execution/effects. See `backup-restore.md`; activation, live
+memory/credentials, production restore, and ownership transfer remain unproven.
 
 ## Next
 
