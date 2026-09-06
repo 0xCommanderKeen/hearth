@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from hearth.accounting import Accounting
 from hearth.artifacts import Artifacts
 from hearth.authority import Authority
 from hearth.broker import Broker, MockNoticeboard
@@ -142,6 +143,12 @@ class PausePost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     paused: bool
     expected_revision: int = Field(ge=0)
+
+
+class UsagePost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    amount: int = Field(ge=0, le=1_000_000_000_000)
+    evidence: str = Field(min_length=1, max_length=2000)
 
 
 def create_app(
@@ -354,6 +361,17 @@ def create_app(
         return hearth.set_paused(
             resident_id, paused=body.paused, expected_revision=body.expected_revision
         )
+
+    @app.post("/api/runs/{run_id}/usage")
+    def reconcile_usage(
+        run_id: str, body: UsagePost, idempotency_key: str = Header(min_length=1, max_length=128)
+    ):
+        result = Accounting(hearth).reconcile(
+            idempotency_key, run_id, amount=body.amount, evidence=body.evidence
+        )
+        return {
+            key: result[key] for key in ("run_id", "command_id", "amount", "source", "recorded_at")
+        }
 
     web = Path(__file__).parent / "web"
     if web.is_dir():

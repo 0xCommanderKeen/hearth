@@ -36,8 +36,9 @@ reason yet to split them into separately deployed processes or generic framework
 - Process-lifetime supervisor ownership and drained shutdown are now implemented
   and tested (issue #17; `supervision.md`). Standalone mock operations retain their
   per-operation locks; this is not a v1/v2 transfer guard.
-- Unknown usage pauses conservatively, but there is not yet a supported evidence-
-  based accounting reconciliation flow. Operator resume cannot clear this hold.
+- Unknown usage now has an explicit immutable operator-reported mock reconciliation
+  flow (issue #21; `mock-usage-reconciliation.md`). It preserves unrelated holds.
+  Real provider evidence ingestion and corrections remain pending.
 - Restore is deliberately read-only. There is no activation/ownership transfer,
   reverse export, compatible cross-version restore rehearsal, or live memory copy.
   Backups currently require the current schema; the package version alone is not a

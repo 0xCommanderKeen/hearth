@@ -50,6 +50,7 @@ export type Run = {
   artifact_id: string | null;
   actual_cost: number | null;
   usage_known: number;
+  usage_source?: string;
   cancellation_requested: number;
 };
 export type Snapshot = {
@@ -178,6 +179,18 @@ export class Client {
   start(id: string) {
     return this.request(`/api/tasks/${encodeURIComponent(id)}/start`, {
       method: "POST",
+    });
+  }
+  reconcileUsage(
+    id: string,
+    command: string,
+    amount: number,
+    evidence: string,
+  ) {
+    return this.request(`/api/runs/${encodeURIComponent(id)}/usage`, {
+      method: "POST",
+      headers: { "Idempotency-Key": command },
+      body: JSON.stringify({ amount, evidence }),
     });
   }
   pauseResident(id: string, paused: boolean, revision: number) {
