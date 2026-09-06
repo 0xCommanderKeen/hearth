@@ -7,6 +7,7 @@ import secrets
 from dataclasses import dataclass, field
 
 from hearth.core import Hearth, _audit
+from hearth.memory import Memory
 from hearth.models import Refused, identifier
 from hearth.run_context import read_context
 
@@ -112,4 +113,4 @@ class RunAccess:
             ).fetchone()
             if declaration["revision"] != row["resident_revision"]:
                 raise Refused("runtime_unauthorized")
-            return read_context(db, run_id)
+            return read_context(db, run_id, Memory(self.hearth).files)

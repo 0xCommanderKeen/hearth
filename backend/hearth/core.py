@@ -271,6 +271,11 @@ class Hearth:
                 tuple(asdict(run).values()),
             )
             db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
+            memory = db.execute(
+                "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
+            ).fetchone()[0]
+            if memory is not None:
+                db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
             _audit(
                 db,
                 "run.admitted",

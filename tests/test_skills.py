@@ -179,17 +179,21 @@ def test_legacy_portable_requires_explicit_lossless_upgrade(system):
     for row in legacy["tables"]["declarations"]:
         del row["skill_text"]
     legacy["version"], legacy["schema"] = 1, 10
+    del legacy["tables"]["memory_revisions"]
+    del legacy["tables"]["run_memory"]
     content = json.dumps(legacy).encode()
     assert validate(content)["schema"] == 10
     with pytest.raises(Refused, match="portable_upgrade_required"):
         import_state(content, root / "denied")
     assert not (root / "denied").exists()
     result = upgrade_state(content, root / "upgraded")
-    assert result["version"] == 2 and result["schema"] == 11
+    assert result["version"] == 3 and result["schema"] == 12
     upgraded = json.loads((root / "upgraded/state.json").read_bytes())
     for row in upgraded["tables"]["declarations"]:
         assert row.pop("skill_text") == ""
     upgraded["version"], upgraded["schema"] = 1, 10
+    assert upgraded["tables"].pop("memory_revisions") == []
+    assert upgraded["tables"].pop("run_memory") == []
     assert upgraded == legacy
     with pytest.raises(Refused, match="portable_comparison_requires_same_format"):
         compare(content, (root / "upgraded/state.json").read_bytes())

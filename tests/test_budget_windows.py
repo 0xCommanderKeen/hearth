@@ -112,6 +112,8 @@ def test_schema_nine_upgrade_pins_existing_records_to_utc(system):
     executor.step()
     with hearth.database.transaction(write=True) as db:
         db.execute("ALTER TABLE runs DROP COLUMN budget_timezone")
+        db.execute("DROP TABLE run_memory")
+        db.execute("DROP TABLE memory_revisions")
         db.execute("ALTER TABLE declarations DROP COLUMN skill_text")
         db.execute("ALTER TABLE declarations DROP COLUMN budget_timezone")
         db.execute("PRAGMA user_version=9")

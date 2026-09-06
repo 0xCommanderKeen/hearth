@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from hearth.artifacts import Artifact, Artifacts
 from hearth.core import ACTIVE_RUNS, Hearth, _audit
+from hearth.memory import Memory
 from hearth.models import Refused, Run, microdollars
 from hearth.notifications import enqueue
 from hearth.ownership import ExecutionGuard
@@ -229,8 +230,19 @@ class Executor:
                             else Evidence("cancelled", cost=0)
                         )
                 elif run.status == "starting" and evidence.status == "absent":
-                    with self.execution.hearth.database.transaction() as db:
-                        context = read_context(db, run.id)
+                    try:
+                        with self.execution.hearth.database.transaction() as db:
+                            context = read_context(db, run.id, Memory(self.execution.hearth).files)
+                    except Refused as error:
+                        if not (
+                            error.code.startswith("memory_")
+                            or error.code.startswith("invalid_memory_")
+                        ):
+                            raise
+                        results.append(
+                            self.execution.observe(run.id, run.owner_token, "interrupted")
+                        )
+                        continue
                     if self.execution.prepare_start(run.id, run.owner_token):
                         self.runtime.start(
                             run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))

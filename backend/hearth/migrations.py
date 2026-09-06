@@ -151,3 +151,17 @@ def budget_zone_schema(db: sqlite3.Connection) -> None:
 
 def skill_schema(db: sqlite3.Connection) -> None:
     db.execute("ALTER TABLE declarations ADD COLUMN skill_text TEXT NOT NULL DEFAULT ''")
+
+
+def memory_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE memory_revisions (
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        revision INTEGER NOT NULL CHECK(revision > 0), sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL CHECK(size >= 0 AND size <= 131072), created_at INTEGER NOT NULL,
+        PRIMARY KEY(resident_id, revision)
+    )""")
+    db.execute("""CREATE TABLE run_memory (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        FOREIGN KEY(resident_id, revision) REFERENCES memory_revisions(resident_id, revision)
+    )""")

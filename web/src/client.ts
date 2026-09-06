@@ -35,6 +35,13 @@ export type Resident = {
   pause_reason: string | null;
   operator_paused?: number;
   control_revision?: number;
+  memory_revision?: number;
+};
+export type ResidentMemory = {
+  resident_id: string;
+  revision: number;
+  sha256: string | null;
+  text: string;
 };
 export type ResidentDeclaration = {
   id: string;
@@ -64,6 +71,7 @@ export type Run = {
   usage_known: number;
   usage_source?: string;
   cancellation_requested: number;
+  memory_revision?: number;
 };
 export type Snapshot = {
   restore_hold?: boolean;
@@ -191,6 +199,20 @@ export class Client {
   resident(id: string) {
     return this.request<ResidentDeclaration>(
       `/api/residents/${encodeURIComponent(id)}`,
+    );
+  }
+  memory(id: string) {
+    return this.request<ResidentMemory>(
+      `/api/residents/${encodeURIComponent(id)}/memory`,
+    );
+  }
+  saveMemory(id: string, text: string, revision: number) {
+    return this.request<ResidentMemory>(
+      `/api/residents/${encodeURIComponent(id)}/memory`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ text, expected_revision: revision }),
+      },
     );
   }
   saveResident(resident: ResidentDeclaration, skillText: string) {

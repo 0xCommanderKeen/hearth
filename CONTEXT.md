@@ -10,6 +10,8 @@ _Avoid_: Bot, worker (when referring to the enduring identity).
 **Skill text:** Instructions describing how a resident should approach work.
 Skill text does not itself grant permission to act.
 
+**Memory:** Knowledge a resident retains across tasks.
+
 **Task:** Requested work with a desired outcome, potentially requiring multiple attempts.
 _Avoid_: Job.
 

@@ -274,6 +274,8 @@ def test_schema_three_upgrade_preserves_existing_result_and_epoch(system):
     database = authority.hearth.database
     with database.transaction(write=True) as db:
         epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0]
+        db.execute("DROP TABLE run_memory")
+        db.execute("DROP TABLE memory_revisions")
         db.execute("ALTER TABLE declarations DROP COLUMN skill_text")
         db.execute("ALTER TABLE declarations DROP COLUMN budget_timezone")
         db.execute("ALTER TABLE runs DROP COLUMN budget_timezone")

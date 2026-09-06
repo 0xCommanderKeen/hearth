@@ -2,10 +2,11 @@
 
 import sqlite3
 
+from hearth.memory import MemoryFiles, read_revision
 from hearth.models import Refused
 
 
-def read_context(db: sqlite3.Connection, run_id: str) -> dict:
+def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> dict:
     """Trusted internal read, not an authorization check or a credential issuer."""
     row = db.execute(
         "SELECT r.id, r.task_id, r.resident_id, r.resident_revision, "
@@ -16,14 +17,22 @@ def read_context(db: sqlite3.Connection, run_id: str) -> dict:
     ).fetchone()
     if row is None:
         raise Refused("run_not_found")
+    pinned = db.execute(
+        "SELECT resident_id,revision FROM run_memory WHERE run_id=?", (run_id,)
+    ).fetchone()
+    if pinned is not None and pinned["resident_id"] != row["resident_id"]:
+        raise Refused("memory_run_mismatch")
     return {
-        "context_version": 2,
+        "context_version": 3,
         "run_id": row["id"],
         "task_id": row["task_id"],
         "resident_id": row["resident_id"],
         "resident_revision": row["resident_revision"],
         "purpose": row["purpose"],
         "skill_text": row["skill_text"],
+        "memory": read_revision(
+            db, memory, row["resident_id"], pinned["revision"] if pinned else 0
+        ),
         "instruction": row["instruction"],
         "simulated": True,
         "notes": [
