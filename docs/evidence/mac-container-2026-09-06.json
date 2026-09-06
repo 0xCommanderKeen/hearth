@@ -4,10 +4,10 @@
   "daemon": "27.3.1",
   "image": "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
   "image_id": "sha256:19fe7a28429c4e92086fe53d7ec56f5801f158ff069faf8283931031249985da",
-  "container_name": "hearth-probe-3de9434de9344f8f897c173abda807c8",
+  "container_name": "hearth-probe-b59e6cb21a2e45ab8630f3b7d763344b",
   "synthetic_fixture": true,
   "real_host_probe": true,
-  "host_probe_sha256": "dd591d6fa72ee20b061c70a1625807fc2a6f2b7c60226669394071f9be24c1d3",
+  "host_probe_sha256": "d2f47d473f935bf450c12c233b8424fbd0df5644c2bd70ca4564ef8fafe18803",
   "child_probe_sha256": "f6f04b1be03050fdfd4078b81d481399ba858510e2250327ba0e65642db72bc3",
   "checks": {
     "checks": "passed",
@@ -30,8 +30,8 @@
     "Pid": 0,
     "ExitCode": 137,
     "Error": "",
-    "StartedAt": "2026-09-06T13:48:16.903625753Z",
-    "FinishedAt": "2026-09-06T13:48:18.66332467Z"
+    "StartedAt": "2026-09-06T13:52:46.147641086Z",
+    "FinishedAt": "2026-09-06T13:52:48.125296836Z"
   },
   "status": "passed",
   "controls": {

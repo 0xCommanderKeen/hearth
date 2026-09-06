@@ -137,7 +137,8 @@ terminal state and unavailable process listing are checked before owned cleanup.
 The daemon default is unconfined; explicit built-in seccomp and an in-container
 Seccomp=2 assertion avoid relying on it. Dormant tunnel interfaces are present;
 the probe checks no active non-loopback interfaces/routes and connection denial.
-Full `make check` remains 289 backend/35 browser plus both installed mock journeys.
+Three offline cleanup checks cover daemon loss and foreign-ownership refusal.
+Full `make check` passes 292 backend/35 browser plus both installed mock journeys.
 This is host evidence for the synthetic image, not a Codex integration or a real
 summary. [Reproduction and remaining gates](mac-isolation.md) cover actual staged
 mount permissions, durable worker identity, model transport/credential separation,

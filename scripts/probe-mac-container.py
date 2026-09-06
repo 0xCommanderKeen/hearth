@@ -30,6 +30,22 @@ def inspect(name):
     return json.loads(docker("container", "inspect", name))[0]
 
 
+def cleanup(name, root):
+    """Retain and locate the ownership claim whenever cleanup cannot be proven."""
+    try:
+        owned = inspect(name)
+        if owned["Config"].get("Labels", {}).get(LABEL) != name:
+            raise RuntimeError(f"Container ownership mismatch; inspect {root}")
+        try:
+            (root / "state.json").write_text(json.dumps(owned["State"], indent=2))
+            (root / "container.log").write_text(docker("logs", "--tail", "50", owned["Id"]))
+        finally:
+            docker("rm", "--force", owned["Id"])
+    except BaseException:
+        print(f"Cleanup unproven; ownership claim and synthetic evidence retained at {root}")
+        raise
+
+
 def main():
     if not __debug__ or sys.flags.optimize:
         raise RuntimeError("Run without Python optimization; acceptance assertions are required")
@@ -191,14 +207,7 @@ def main():
         success = True
     finally:
         # Reconcile by exact random name even if create succeeded but its reply was lost.
-        owned = inspect(name)
-        if owned["Config"].get("Labels", {}).get(LABEL) != name:
-            raise RuntimeError(f"Container ownership mismatch; inspect {root}")
-        try:
-            (root / "state.json").write_text(json.dumps(owned["State"], indent=2))
-            (root / "container.log").write_text(docker("logs", "--tail", "50", owned["Id"]))
-        finally:
-            docker("rm", "--force", owned["Id"])
+        cleanup(name, root)
         if success:
             shutil.rmtree(root)
         else:
