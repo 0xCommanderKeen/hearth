@@ -44,13 +44,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function login() {
+async function login(profile = true) {
   render(<App />);
   fireEvent.change(screen.getByLabelText("Operator token"), {
     target: { value: "synthetic-operator-token-for-tests" },
   });
   fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
   await screen.findByText("Connected to the simulation");
+  if (profile && state.residents.length && !window.location.hash) {
+    fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
+    await screen.findByLabelText("Resident information");
+  }
 }
 
 function addReader() {
@@ -77,17 +81,22 @@ it("opens the gate, seeds the reader, and switches views without separate state"
   await login();
   expect(screen.queryByLabelText("Operator token")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Set up mock Reader/ }));
-  await screen.findByLabelText("The assignment");
+  await screen.findByRole("link", { name: /View resident/ });
   expect(seed).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("img", { name: /Reader's home/ })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Townhall" }));
-  expect(
-    screen
-      .getByRole("button", { name: "Townhall" })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
-  expect(screen.queryByRole("img", { name: /Reader's home/ })).toBeNull();
-  expect(screen.getByLabelText("The assignment")).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: /Residents$/ }));
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Residents",
+    ),
+  );
+  fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
+  await screen.findByLabelText("The assignment");
+  expect(screen.getByLabelText("Resident information").textContent).toContain(
+    "Synthetic notes",
+  );
+  fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
+  await screen.findByRole("img", { name: /Reader's home/ });
+  expect(screen.queryByLabelText("The assignment")).toBeNull();
 });
 
 it("freezes a pending command and retries the same request after a lost response", async () => {
@@ -249,7 +258,7 @@ it("keeps a newer streamed snapshot when an older snapshot arrives later", async
   newer.residents[0].presence = "interrupted";
   await act(async () => publish(newer));
   await act(async () => publish(structuredClone(state)));
-  expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
+  expect(screen.getByLabelText("Resident information").textContent).toContain(
     "Outcome unknown",
   );
 });
@@ -269,7 +278,7 @@ it("shows mock delivery uncertainty and opens Townhall without deciding", async 
     },
   ];
   const decide = vi.spyOn(Client.prototype, "decide");
-  await login();
+  await login(false);
   expect(
     screen.getByText(/Delivery unconfirmed; retry scheduled/),
   ).toBeTruthy();
@@ -305,4 +314,122 @@ it("pauses new runs using the displayed operator revision", async () => {
   fireEvent.click(screen.getByText("Pause new runs"));
   await waitFor(() => expect(pause).toHaveBeenCalledWith("reader", true, 3));
   expect(screen.getByText(/Existing work continues/)).toBeTruthy();
+});
+
+it("lists every resident and scopes profile work to the selected resident", async () => {
+  addReader();
+  state.residents.push({
+    ...state.residents[0],
+    id: "gardener",
+    name: "Gardener",
+    purpose: "Plan a synthetic garden",
+  });
+  state.tasks.push({
+    id: "reader-task",
+    resident_id: "reader",
+    instruction: "Reader-only assignment",
+    status: "queued",
+    created_at: 1,
+  });
+  const submit = vi
+    .spyOn(Client.prototype, "submit")
+    .mockResolvedValue({ command_id: "receipt", task_id: "garden-task" });
+  vi.spyOn(Client.prototype, "start").mockResolvedValue({});
+  await login(false);
+  expect(screen.getAllByRole("link", { name: /View resident/ })).toHaveLength(
+    2,
+  );
+  fireEvent.click(
+    screen.getByRole("link", { name: /Gardener.*View resident/ }),
+  );
+  await screen.findByRole("heading", { level: 1, name: "Gardener" });
+  expect(screen.getByLabelText("Resident information").textContent).toContain(
+    "Plan a synthetic garden",
+  );
+  expect(screen.queryByText("Reader-only assignment")).toBeNull();
+  expect(screen.getByText("A quiet beginning.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Run a mock summary/ }));
+  await waitFor(() => expect(submit).toHaveBeenCalled());
+  expect(submit.mock.calls[0][0].body.resident_id).toBe("gardener");
+});
+
+it("keeps an ambiguous submission attached to its original resident", async () => {
+  addReader();
+  state.residents.push({
+    ...state.residents[0],
+    id: "gardener",
+    name: "Gardener",
+  });
+  const submit = vi
+    .spyOn(Client.prototype, "submit")
+    .mockRejectedValue(new TypeError("lost response"));
+  await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByLabelText("The assignment");
+  fireEvent.click(screen.getByRole("button", { name: /Run a mock summary/ }));
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
+  await screen.findByRole("heading", { level: 1, name: "Residents" });
+  fireEvent.click(
+    screen.getByRole("link", { name: /Gardener.*View resident/ }),
+  );
+  await screen.findByRole("heading", { level: 1, name: "Gardener" });
+  expect(screen.getByText(/Pending submission belongs to reader/)).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: /Retry pending submission/,
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(submit).toHaveBeenCalledTimes(1);
+});
+
+it("does not display another resident's late artifact response on a profile", async () => {
+  addReader();
+  state.residents.push({
+    ...state.residents[0],
+    id: "gardener",
+    name: "Gardener",
+  });
+  state.tasks.push({
+    id: "task",
+    resident_id: "reader",
+    instruction: "Reader summary",
+    status: "succeeded",
+    created_at: 1,
+  });
+  state.runs.push({
+    id: "run",
+    task_id: "task",
+    resident_id: "reader",
+    status: "succeeded",
+    artifact_id: "artifact",
+    actual_cost: 1,
+    usage_known: 1,
+    cancellation_requested: 0,
+  });
+  let complete!: (result: { content: string }) => void;
+  vi.spyOn(Client.prototype, "artifact").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByLabelText("Resident information");
+  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
+  await screen.findByRole("heading", { level: 1, name: "Residents" });
+  fireEvent.click(
+    screen.getByRole("link", { name: /Gardener.*View resident/ }),
+  );
+  await screen.findByRole("heading", { level: 1, name: "Gardener" });
+  await act(async () => complete({ content: "Reader private result" }));
+  expect(screen.queryByLabelText("Summary output")).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
+  await screen.findByRole("heading", { level: 1, name: "Residents" });
+  fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByText("Reader private result");
 });

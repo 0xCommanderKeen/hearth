@@ -12,6 +12,7 @@ import { RoutinePanel } from "./Routines";
 import { UsageReport } from "./UsageReport";
 import { Skills } from "./Skills";
 import { Memory } from "./Memory";
+import { Hamlet } from "./Hamlet";
 
 const statusLabel = (s: string) =>
   ({
@@ -45,140 +46,22 @@ function Emblem() {
   );
 }
 
-function Hamlet({
-  snapshot,
-  connected,
-}: {
-  snapshot: Snapshot;
-  connected: boolean;
-}) {
-  const resident = snapshot.residents[0];
-  const working = connected && resident?.presence === "running";
-  return (
-    <section className="village" aria-label="Hamlet village">
-      <div className="village-heading">
-        <span className="eyebrow">HAMLET / SIMULATED VILLAGE</span>
-        <span className="map-label">One home. Room to grow.</span>
-      </div>
-      <svg
-        viewBox="0 0 860 370"
-        role="img"
-        aria-label={
-          resident
-            ? `${resident.name}'s home. ${connected ? statusLabel(resident.presence) : "Connection lost; last known state shown"}.`
-            : "An empty village awaiting its first resident"
-        }
-      >
-        <defs>
-          <pattern
-            id="ground"
-            width="23"
-            height="23"
-            patternUnits="userSpaceOnUse"
-          >
-            <circle cx="3" cy="3" r=".8" fill="#7e8c71" opacity=".28" />
-          </pattern>
-        </defs>
-        <path d="M60 230 300 85 785 210 545 355Z" fill="#dce0c9" />
-        <path d="M60 230 545 355 785 210v15L545 370 60 245Z" fill="#bec7ab" />
-        <path d="M60 230 300 85 785 210 545 355Z" fill="url(#ground)" />
-        <path
-          d="m230 295 118-96 160 43 146-88"
-          fill="none"
-          stroke="#f7f1df"
-          strokeWidth="25"
-          strokeLinejoin="round"
-        />
-        <path
-          d="m230 295 118-96 160 43 146-88"
-          fill="none"
-          stroke="#d5c9a8"
-          strokeWidth="1"
-          strokeDasharray="3 7"
-        />
-        <g transform="translate(482 96)">
-          <path d="m0 81 77-40 93 29-77 42Z" fill="#a8b495" opacity=".4" />
-          <path d="m12 17 62 20v61L12 77Z" fill="#d5bd96" />
-          <path d="m74 37 57-30v62L74 98Z" fill="#e9d6b2" />
-          <path d="m0 20 55-48 87 33-68 37Z" fill="#586d57" />
-          <path d="m55-28 87 33-10 3-57-24Z" fill="#3c5140" />
-          <path d="m93 56 18-9v32l-18 9Z" fill="#624e37" />
-          <path d="m24 44 18 6v17l-18-6Z" fill="#6f7f73" />
-          <path d="m111 27 12-6v13l-12 6Z" fill="#6f7f73" />
-        </g>
-        <text x="582" y="220" className="svg-label">
-          TOWNHALL
-        </text>
-        <g transform="translate(276 142)" opacity={resident ? 1 : 0.4}>
-          <ellipse
-            cx="14"
-            cy="76"
-            rx="79"
-            ry="24"
-            fill="#8b997d"
-            opacity=".25"
-          />
-          <path d="m-47 4 58 21v70l-58-22Z" fill="#dfc49b" />
-          <path d="m11 25 57-33v70L11 95Z" fill="#f1ddb5" />
-          <path d="m-60 7 49-54 91 30L10 31Z" fill="#aa533b" />
-          <path d="m-11-54 91 30-12 16-57-34Z" fill="#813c2c" />
-          <path d="m-33-35 14 4v-29l-14-4Z" fill="#9d765e" />
-          <path d="m-19-31 9-6v-29l-9 6Z" fill="#bc9471" />
-          <path
-            d="m-32 32 20 7v22l-20-7Z"
-            fill={working ? "#f2b954" : "#788878"}
-          />
-          <path d="m-22 36 0 21m-10-14 20 7" stroke="#b6a480" strokeWidth="2" />
-          <path d="m29 40 20-12v40L29 80Z" fill="#6d7356" />
-          <path
-            d="m57 22 7-4v13l-7 4Z"
-            fill={working ? "#f2b954" : "#788878"}
-          />
-          <circle cx="43" cy="55" r="2" fill="#e8d29b" />
-          {resident && (
-            <g transform="translate(81 79)">
-              <ellipse cy="17" rx="12" ry="5" fill="#8b997d" opacity=".5" />
-              <path d="m-7 0 14 0 3 16h-20Z" fill="#a65337" />
-              <circle cy="-7" r="7" fill="#d4ac81" />
-              <path d="M-8-9q0-12 15-2" fill="#524630" />
-            </g>
-          )}
-        </g>
-        <text x="284" y="282" textAnchor="middle" className="svg-label">
-          {resident?.name.toUpperCase() ?? "YOUR FIRST RESIDENT"}
-        </text>
-        {[
-          [153, 201],
-          [701, 247],
-          [615, 280],
-          [388, 104],
-        ].map(([x, y], i) => (
-          <g key={i} transform={`translate(${x} ${y})`}>
-            <ellipse cy="31" rx="20" ry="7" fill="#8b997d" opacity=".3" />
-            <path d="M-3 5h6v27h-6Z" fill="#8b7955" />
-            <path d="M0-33-23 15h46Z" fill={i % 2 ? "#7d9068" : "#637e60"} />
-            <path d="M0-13-27 27h54Z" fill="#7d9068" />
-          </g>
-        ))}
-      </svg>
-      <div className="village-foot">
-        <span className={`dot ${working ? "working" : ""}`} />
-        <span>
-          {resident
-            ? `${resident.name} · ${connected ? statusLabel(resident.presence) : "Last known state — disconnected"}`
-            : "No residents declared yet"}
-        </span>
-        <span className="legend">Every visible state comes from Hearth.</span>
-      </div>
-    </section>
-  );
-}
+type Page =
+  | "townhall"
+  | "residents"
+  | "resident"
+  | "tasks"
+  | "routines"
+  | "approvals"
+  | "activity"
+  | "hamlet";
 
 export function App() {
   const [client, setClient] = useState<Client | null>(null);
   const [token, setToken] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [view, setView] = useState<"hamlet" | "townhall">("hamlet");
+  const [view, setView] = useState<Page>("townhall");
+  const [residentId, setResidentId] = useState("reader");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -186,7 +69,10 @@ export function App() {
     "Summarize today’s synthetic notes.",
   );
   const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
+  const [output, setOutput] = useState<{
+    content: string;
+    residentId?: string;
+  } | null>(null);
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
 
@@ -280,7 +166,7 @@ export function App() {
       pending.current = {
         id: crypto.randomUUID(),
         body: {
-          resident_id: "reader",
+          resident_id: residentId,
           instruction,
           expires_at: Math.floor(Date.now() / 1000) + 3600,
         },
@@ -309,18 +195,35 @@ export function App() {
         setError("Invalid notification link");
         return;
       }
+      if (hash.startsWith("#residents/")) {
+        setResidentId(hash.slice(11));
+        setView("resident");
+      } else if (
+        [
+          "#townhall",
+          "#hamlet",
+          "#residents",
+          "#tasks",
+          "#routines",
+          "#approvals",
+          "#activity",
+        ].includes(hash)
+      ) {
+        setView(hash.slice(1) as Page);
+      }
       if (hash.startsWith("#approval-")) {
-        setView("townhall");
+        setView("approvals");
         setLinkedApproval(hash.slice(10));
       }
       if (hash.startsWith("#run-") && client) {
+        setView("tasks");
         const id = hash.slice(5);
         void act(async () => {
           const run = await client.run(id);
           const content = run.artifact_id
             ? (await client.artifact(run.artifact_id)).content
             : `Run ${run.status}`;
-          if (currentSession.current === client) setOutput(content);
+          if (currentSession.current === client) setOutput({ content });
         });
       }
     };
@@ -336,6 +239,9 @@ export function App() {
         ?.scrollIntoView?.({ block: "center" });
   }, [view, snapshot]);
   const residents = snapshot?.residents ?? [];
+  const visibleTasks = (snapshot?.tasks ?? []).filter(
+    (task) => view !== "resident" || task.resident_id === residentId,
+  );
   const completed =
     snapshot?.runs.filter((r) => r.status === "succeeded").length ?? 0;
   const active =
@@ -346,27 +252,42 @@ export function App() {
   return (
     <>
       <header className="topbar">
-        <a className="brand" href="#" aria-label="Hearth home">
+        <a className="brand" href="#townhall" aria-label="Hearth home">
           <Emblem />
           <span>
-            hearth<span className="brand-note">A HOME FOR USEFUL WORK</span>
+            hearth<span className="brand-note">RESIDENT CONTROL PANEL</span>
           </span>
         </a>
         <nav aria-label="Main views">
-          <button
-            className={view === "hamlet" ? "selected" : ""}
-            aria-pressed={view === "hamlet"}
-            onClick={() => setView("hamlet")}
-          >
-            Hamlet
-          </button>
-          <button
-            className={view === "townhall" ? "selected" : ""}
-            aria-pressed={view === "townhall"}
-            onClick={() => setView("townhall")}
-          >
-            Townhall
-          </button>
+          {[
+            "townhall",
+            "residents",
+            "tasks",
+            "routines",
+            "approvals",
+            "activity",
+            "hamlet",
+          ].map((page, index) => (
+            <a
+              key={page}
+              href={`#${page}`}
+              className={
+                view === page || (page === "residents" && view === "resident")
+                  ? "selected"
+                  : ""
+              }
+              aria-current={
+                view === page || (page === "residents" && view === "resident")
+                  ? "page"
+                  : undefined
+              }
+            >
+              <span className="nav-number">0{index + 1}</span>
+              {page === "townhall"
+                ? "Townhall"
+                : page[0].toUpperCase() + page.slice(1)}
+            </a>
+          ))}
         </nav>
         <span className="mode">✳ SIMULATION</span>
         {client && (
@@ -378,30 +299,29 @@ export function App() {
       <main>
         <div className="intro">
           <div>
-            <span className="eyebrow">HEARTH / EARLY DAYS</span>
+            <span className="eyebrow">
+              HEARTH / {view === "hamlet" ? "VILLAGE" : "TOWNHALL"}
+            </span>
             <h1>
-              {view === "hamlet" ? (
-                <>
-                  A little village.
-                  <br />
-                  <em>Useful work.</em>
-                </>
-              ) : (
-                <>
-                  Good work starts
-                  <br />
-                  with <em>a clear request.</em>
-                </>
-              )}
+              {view === "resident"
+                ? (residents.find((r) => r.id === residentId)?.name ??
+                  "Resident not found")
+                : view === "townhall"
+                  ? "Townhall"
+                  : view[0].toUpperCase() + view.slice(1)}
             </h1>
+            <p className="muted">
+              {view === "townhall"
+                ? "Residents, their work, and what needs your attention."
+                : view === "residents"
+                  ? "Everyone who lives here. Select a resident to see their purpose and work."
+                  : view === "resident"
+                    ? "Purpose, controls, memory and recent work."
+                    : view === "hamlet"
+                      ? "Your residents at home."
+                      : "Work and activity recorded by Hearth."}
+            </p>
           </div>
-          <p>
-            A home for residents with purpose,
-            <br />
-            memory, and a little work to do.
-            <br />
-            <span>This village is a working simulation.</span>
-          </p>
         </div>
         {error && (
           <div className="notice error" role="alert">
@@ -456,218 +376,374 @@ export function App() {
             {view === "hamlet" && (
               <Hamlet snapshot={snapshot} connected={connected} />
             )}
-            <div className="workspace">
-              <section className="work-panel">
+            {(view === "townhall" ||
+              view === "residents" ||
+              view === "hamlet") && (
+              <section
+                className="resident-directory"
+                aria-label="Resident directory"
+              >
+                {view === "townhall" && (
+                  <div className="overview-stats">
+                    <div>
+                      <strong>{residents.length}</strong>
+                      <span>Residents</span>
+                    </div>
+                    <div>
+                      <strong>{active}</strong>
+                      <span>Active runs</span>
+                    </div>
+                    <div>
+                      <strong>{completed}</strong>
+                      <span>Recent completed runs</span>
+                    </div>
+                  </div>
+                )}
                 <div className="section-title">
-                  <span className="eyebrow">01 / THE DAY’S WORK</span>
-                  <h2>
-                    {residents.length
-                      ? "Something for Reader."
-                      : "Make room for Reader."}
-                  </h2>
+                  <h2>Residents</h2>
                 </div>
-                <p className="muted">
-                  {residents.length
-                    ? "A small, read-only assignment. The mock returns a fixed summary from synthetic notes."
-                    : "Your first resident summarizes synthetic notes. No model calls, real files, or external actions."}
-                </p>
-                {!residents.length ? (
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() => void act(() => client.seed())}
-                  >
-                    Set up mock Reader <span>＋</span>
-                  </button>
-                ) : (
-                  <form onSubmit={submit}>
-                    <label htmlFor="instruction">The assignment</label>
-                    <textarea
-                      id="instruction"
-                      value={instruction}
-                      disabled={busy || !!pending.current}
-                      onChange={(e) => setInstruction(e.target.value)}
-                      required
-                      maxLength={32000}
-                    />
-                    <button className="primary" disabled={busy}>
-                      {pending.current
-                        ? "Retry pending submission"
-                        : "Run a mock summary"}{" "}
-                      <span>↗</span>
+                {!residents.length && (
+                  <div className="empty">
+                    <p>No residents yet. Reader summarizes synthetic notes.</p>
+                    <button
+                      className="primary"
+                      disabled={busy || snapshot.restore_hold}
+                      onClick={() => void act(() => client.seed())}
+                    >
+                      Set up mock Reader
                     </button>
-                    <small>Mock usage only. No money is spent.</small>
-                  </form>
+                  </div>
                 )}
                 {residents.length > 0 && (
-                  <small>
-                    Pausing blocks new runs. Existing work continues until
-                    explicitly cancelled; safety holds remain enforced.
-                  </small>
-                )}
-                {residents.map((r) => (
-                  <div className="resident-line" key={r.id}>
-                    <span className="resident-avatar">R</span>
-                    <div>
-                      <strong>{r.name}</strong>
-                      <span>
-                        {statusLabel(r.presence)}
-                        {r.pause_reason
-                          ? ` · ${r.pause_reason.replaceAll("_", " ")}`
-                          : ""}
-                      </span>
+                  <div className="resident-table">
+                    <div className="resident-table-head">
+                      <span>Resident / purpose</span>
+                      <span>Status</span>
+                      <span>Daily limit</span>
+                      <span>Profile</span>
                     </div>
-                    <button
-                      disabled={busy || snapshot.restore_hold}
-                      onClick={() =>
-                        void act(() =>
-                          client.pauseResident(
-                            r.id,
-                            !r.operator_paused,
-                            r.control_revision ?? 0,
-                          ),
-                        )
-                      }
-                    >
-                      {r.operator_paused ? "Resume new runs" : "Pause new runs"}
-                    </button>
-                    <span className="revision">
-                      REV {r.revision}
-                      <br />
-                      Budget day: {r.budget_timezone ?? "UTC"}
-                    </span>
+                    {residents.map((r) => (
+                      <a
+                        className="resident-row"
+                        key={r.id}
+                        href={`#residents/${encodeURIComponent(r.id)}`}
+                      >
+                        <div>
+                          <strong>{r.name}</strong>
+                          <small>{r.id}</small>
+                          <p>{r.purpose}</p>
+                        </div>
+                        <span className={`state state-${r.presence}`}>
+                          {connected
+                            ? statusLabel(r.presence)
+                            : "Last known: " + statusLabel(r.presence)}
+                        </span>
+                        <div>
+                          ${(r.daily_limit / 1e6).toFixed(2)}
+                          <small>{r.budget_timezone ?? "UTC"}</small>
+                        </div>
+                        <span className="profile-link">View resident →</span>
+                      </a>
+                    ))}
                   </div>
-                ))}
-                {residents.map((r) => (
-                  <Skills
-                    key={`${snapshot.epoch}:${r.id}`}
-                    client={client}
-                    resident={r}
-                    busy={busy}
-                    readOnly={snapshot.restore_hold === true}
-                    act={act}
-                  />
-                ))}
-                {residents.map((r) => (
-                  <Memory
-                    key={`${snapshot.epoch}:${r.id}`}
-                    client={client}
-                    resident={r}
-                    busy={busy}
-                    readOnly={snapshot.restore_hold === true}
-                    act={act}
-                  />
-                ))}
+                )}
               </section>
-              <section className="task-panel">
-                <div className="section-title">
-                  <span className="eyebrow">02 / TASKS & RESULTS</span>
-                  <h2>A record of real steps.</h2>
-                </div>
-                {!snapshot.tasks.length ? (
-                  <div className="empty">
-                    <span>☷</span>
-                    <h3>A quiet beginning.</h3>
-                    <p>
-                      Once you assign something, its progress and result will
-                      appear here.
-                    </p>
-                  </div>
-                ) : (
-                  <ul className="tasks">
-                    {snapshot.tasks.map((task) => {
-                      const run = snapshot.runs.find(
-                        (r) => r.task_id === task.id,
-                      );
-                      return (
-                        <li
-                          key={task.id}
-                          id={run ? `run-${run.id}` : undefined}
+            )}
+            {view === "resident" && (
+              <a className="back-link" href="#residents">
+                ← All residents
+              </a>
+            )}
+            {view === "resident" &&
+              residents
+                .filter((r) => r.id === residentId)
+                .map((r) => (
+                  <section
+                    className="profile-facts"
+                    key={r.id}
+                    aria-label="Resident information"
+                  >
+                    <div>
+                      <span className="eyebrow">PURPOSE</span>
+                      <h2>{r.purpose}</h2>
+                      <span className={`state state-${r.presence}`}>
+                        {connected
+                          ? statusLabel(r.presence)
+                          : `Last known: ${statusLabel(r.presence)}`}
+                      </span>
+                      {r.pause_reason && (
+                        <p>{r.pause_reason.replaceAll("_", " ")}</p>
+                      )}
+                    </div>
+                    <dl>
+                      <dt>Resident ID</dt>
+                      <dd>{r.id}</dd>
+                      <dt>Daily spending limit</dt>
+                      <dd>
+                        ${(r.daily_limit / 1e6).toFixed(2)} · API-equivalent
+                        estimate
+                      </dd>
+                      <dt>Budget timezone</dt>
+                      <dd>{r.budget_timezone ?? "UTC"}</dd>
+                      <dt>Declaration</dt>
+                      <dd>Revision {r.revision}</dd>
+                      <dt>Memory</dt>
+                      <dd>Revision {r.memory_revision ?? 0}</dd>
+                    </dl>
+                  </section>
+                ))}
+            {(view === "resident" || view === "tasks") && (
+              <div
+                className={`workspace ${view === "tasks" ? "tasks-only" : ""}`}
+              >
+                {view === "resident" &&
+                  residents.some((r) => r.id === residentId) && (
+                    <section className="work-panel">
+                      <div className="section-title">
+                        <span className="eyebrow">01 / THE DAY’S WORK</span>
+                        <h2>
+                          {residents.length
+                            ? `Assign work to ${residents.find((r) => r.id === residentId)?.name ?? "resident"}.`
+                            : "Make room for Reader."}
+                        </h2>
+                      </div>
+                      <p className="muted">
+                        {residents.length
+                          ? "A small, read-only assignment. The mock returns a fixed summary from synthetic notes."
+                          : "Your first resident summarizes synthetic notes. No model calls, real files, or external actions."}
+                      </p>
+                      {!residents.length ? (
+                        <button
+                          className="primary"
+                          disabled={busy}
+                          onClick={() => void act(() => client.seed())}
                         >
-                          <div className="task-meta">
-                            <span className={`state state-${task.status}`}>
-                              {statusLabel(task.status)}
-                            </span>
-                            <time>{clock(task.created_at)}</time>
-                          </div>
-                          <h3>{task.instruction}</h3>
-                          {run?.memory_revision !== undefined && (
-                            <small>
-                              {run.memory_revision === 0
-                                ? "Admitted without memory"
-                                : `Memory revision ${run.memory_revision}`}
-                            </small>
-                          )}
-                          <div className="task-actions">
-                            {task.status === "queued" && (
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  void act(() => client.start(task.id))
-                                }
-                              >
-                                Start task ↗
-                              </button>
-                            )}
-                            {run &&
-                              ["starting", "running", "interrupted"].includes(
-                                run.status,
-                              ) && (
-                                <button
-                                  disabled={
-                                    busy || !!run.cancellation_requested
-                                  }
-                                  onClick={() =>
-                                    void act(() => client.cancel(run.id))
-                                  }
+                          Set up mock Reader <span>＋</span>
+                        </button>
+                      ) : (
+                        <form onSubmit={submit}>
+                          {pending.current &&
+                            pending.current.body.resident_id !== residentId && (
+                              <p className="notice" role="status">
+                                Pending submission belongs to{" "}
+                                {pending.current.body.resident_id}.{" "}
+                                <a
+                                  href={`#residents/${encodeURIComponent(pending.current.body.resident_id)}`}
                                 >
-                                  Cancel run
-                                </button>
-                              )}
-                            {run?.artifact_id && (
-                              <button
-                                className="result-link"
-                                onClick={() =>
-                                  void act(async () => {
-                                    const result = await client.artifact(
-                                      run.artifact_id!,
-                                    );
-                                    if (currentSession.current === client)
-                                      setOutput(result.content);
-                                  })
-                                }
-                              >
-                                Read summary ↗
-                              </button>
+                                  Return to that resident to retry.
+                                </a>
+                              </p>
                             )}
-                            {run && (
+                          <label htmlFor="instruction">The assignment</label>
+                          <textarea
+                            id="instruction"
+                            value={instruction}
+                            disabled={busy || !!pending.current}
+                            onChange={(e) => setInstruction(e.target.value)}
+                            required
+                            maxLength={32000}
+                          />
+                          <button
+                            className="primary"
+                            disabled={
+                              busy ||
+                              !!snapshot.restore_hold ||
+                              (!!pending.current &&
+                                pending.current.body.resident_id !== residentId)
+                            }
+                          >
+                            {pending.current
+                              ? "Retry pending submission"
+                              : "Run a mock summary"}{" "}
+                            <span>↗</span>
+                          </button>
+                          <small>Mock usage only. No money is spent.</small>
+                        </form>
+                      )}
+                      {residents.length > 0 && (
+                        <small>
+                          Pausing blocks new runs. Existing work continues until
+                          explicitly cancelled; safety holds remain enforced.
+                        </small>
+                      )}
+                      {residents
+                        .filter((r) => r.id === residentId)
+                        .map((r) => (
+                          <div className="resident-line" key={r.id}>
+                            <span className="resident-avatar">R</span>
+                            <div>
+                              <strong>{r.name}</strong>
+                              <span>
+                                {connected
+                                  ? statusLabel(r.presence)
+                                  : `Last known: ${statusLabel(r.presence)}`}
+                                {r.pause_reason
+                                  ? ` · ${r.pause_reason.replaceAll("_", " ")}`
+                                  : ""}
+                              </span>
+                            </div>
+                            <button
+                              disabled={busy || snapshot.restore_hold}
+                              onClick={() =>
+                                void act(() =>
+                                  client.pauseResident(
+                                    r.id,
+                                    !r.operator_paused,
+                                    r.control_revision ?? 0,
+                                  ),
+                                )
+                              }
+                            >
+                              {r.operator_paused
+                                ? "Resume new runs"
+                                : "Pause new runs"}
+                            </button>
+                            <span className="revision">
+                              REV {r.revision}
+                              <br />
+                              Budget day: {r.budget_timezone ?? "UTC"}
+                            </span>
+                          </div>
+                        ))}
+                      {residents
+                        .filter((r) => r.id === residentId)
+                        .map((r) => (
+                          <Skills
+                            key={`${snapshot.epoch}:${r.id}`}
+                            client={client}
+                            resident={r}
+                            busy={busy}
+                            readOnly={snapshot.restore_hold === true}
+                            act={act}
+                          />
+                        ))}
+                      {residents
+                        .filter((r) => r.id === residentId)
+                        .map((r) => (
+                          <Memory
+                            key={`${snapshot.epoch}:${r.id}`}
+                            client={client}
+                            resident={r}
+                            busy={busy}
+                            readOnly={snapshot.restore_hold === true}
+                            act={act}
+                          />
+                        ))}
+                    </section>
+                  )}
+                <section className="task-panel">
+                  <div className="section-title">
+                    <span className="eyebrow">02 / TASKS & RESULTS</span>
+                    <h2>Tasks & results</h2>
+                  </div>
+                  {!visibleTasks.length ? (
+                    <div className="empty">
+                      <span>☷</span>
+                      <h3>A quiet beginning.</h3>
+                      <p>
+                        Once you assign something, its progress and result will
+                        appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="tasks">
+                      {visibleTasks.map((task) => {
+                        const run = snapshot.runs.find(
+                          (r) => r.task_id === task.id,
+                        );
+                        return (
+                          <li
+                            key={task.id}
+                            id={run ? `run-${run.id}` : undefined}
+                          >
+                            <div className="task-meta">
+                              <span className={`state state-${task.status}`}>
+                                {statusLabel(task.status)}
+                              </span>
+                              <time>{clock(task.created_at)}</time>
+                            </div>
+                            <h3>{task.instruction}</h3>
+                            {run?.memory_revision !== undefined && (
                               <small>
-                                {run.usage_known
-                                  ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated ${run.usage_source === "api_equivalent_mock" ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
-                                  : "Usage not yet known"}
+                                {run.memory_revision === 0
+                                  ? "Admitted without memory"
+                                  : `Memory revision ${run.memory_revision}`}
                               </small>
                             )}
-                          </div>
-                          {run &&
-                            !run.usage_known &&
-                            ["succeeded", "failed", "cancelled"].includes(
-                              run.status,
-                            ) && (
-                              <UsageReport
-                                client={client}
-                                runId={run.id}
-                                busy={busy || !!snapshot.restore_hold}
-                                act={act}
-                              />
-                            )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-            </div>
-            {view === "townhall" && (
+                            <div className="task-actions">
+                              {task.status === "queued" && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void act(() => client.start(task.id))
+                                  }
+                                >
+                                  Start task ↗
+                                </button>
+                              )}
+                              {run &&
+                                ["starting", "running", "interrupted"].includes(
+                                  run.status,
+                                ) && (
+                                  <button
+                                    disabled={
+                                      busy || !!run.cancellation_requested
+                                    }
+                                    onClick={() =>
+                                      void act(() => client.cancel(run.id))
+                                    }
+                                  >
+                                    Cancel run
+                                  </button>
+                                )}
+                              {run?.artifact_id && (
+                                <button
+                                  className="result-link"
+                                  onClick={() =>
+                                    void act(async () => {
+                                      const result = await client.artifact(
+                                        run.artifact_id!,
+                                      );
+                                      if (currentSession.current === client)
+                                        setOutput({
+                                          content: result.content,
+                                          residentId: task.resident_id,
+                                        });
+                                    })
+                                  }
+                                >
+                                  Read summary ↗
+                                </button>
+                              )}
+                              {run && (
+                                <small>
+                                  {run.usage_known
+                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated ${run.usage_source === "api_equivalent_mock" ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
+                                    : "Usage not yet known"}
+                                </small>
+                              )}
+                            </div>
+                            {run &&
+                              !run.usage_known &&
+                              ["succeeded", "failed", "cancelled"].includes(
+                                run.status,
+                              ) && (
+                                <UsageReport
+                                  client={client}
+                                  runId={run.id}
+                                  busy={busy || !!snapshot.restore_hold}
+                                  act={act}
+                                />
+                              )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            )}
+            {view === "routines" && (
               <RoutinePanel
                 client={client}
                 snapshot={snapshot}
@@ -675,7 +751,7 @@ export function App() {
                 act={act}
               />
             )}
-            {view === "townhall" && (
+            {view === "approvals" && (
               <Approvals
                 linkedId={linkedApproval}
                 client={client}
@@ -684,84 +760,90 @@ export function App() {
                 act={act}
               />
             )}
-            {output && (
-              <section className="output" aria-label="Summary output">
-                <div className="section-title">
-                  <span className="eyebrow">SIMULATED ARTIFACT</span>
-                  <button className="quiet" onClick={() => setOutput(null)}>
-                    Close ×
-                  </button>
-                </div>
-                <pre>{output}</pre>
+            {output &&
+              (view === "tasks" ||
+                (view === "resident" && output.residentId === residentId)) && (
+                <section className="output" aria-label="Summary output">
+                  <div className="section-title">
+                    <span className="eyebrow">SIMULATED ARTIFACT</span>
+                    <button className="quiet" onClick={() => setOutput(null)}>
+                      Close ×
+                    </button>
+                  </div>
+                  <pre>{output.content}</pre>
+                </section>
+              )}
+            {(view === "activity" || view === "townhall") && (
+              <section className="output" aria-label="Mock notifications">
+                <span className="eyebrow">LOCAL MOCK INBOX</span>
+                <h2>News from Hearth.</h2>
+                <p>
+                  Delivery status is separate from work status. These
+                  notifications stay local and never approve an action.
+                </p>
+                {!snapshot.notifications?.length && (
+                  <p className="muted">
+                    Results and approval requests will appear here.
+                  </p>
+                )}
+                <ul className="tasks">
+                  {snapshot.notifications?.map((n) => (
+                    <li key={n.id}>
+                      <h3>
+                        {n.kind === "approval.requested"
+                          ? "A mock action needs review"
+                          : n.kind.replace("run.", "Run ")}
+                      </h3>
+                      <p>
+                        {n.status === "retry"
+                          ? "Delivery unconfirmed; retry scheduled"
+                          : n.status === "pending"
+                            ? "Waiting for delivery confirmation"
+                            : n.status === "obsolete"
+                              ? "No longer current"
+                              : "Delivered to the local mock inbox"}{" "}
+                        · {n.attempts} attempts
+                      </p>
+                      {n.status !== "obsolete" && (
+                        <a
+                          href={`/#${n.kind === "approval.requested" ? "approval" : "run"}-${encodeURIComponent(n.resource_id)}`}
+                          onClick={() => {
+                            if (n.kind === "approval.requested")
+                              setView("approvals");
+                          }}
+                        >
+                          {n.kind === "approval.requested"
+                            ? "Open approval review"
+                            : "Open run and result"}
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
-            <section className="output" aria-label="Mock notifications">
-              <span className="eyebrow">LOCAL MOCK INBOX</span>
-              <h2>News from Hearth.</h2>
-              <p>
-                Delivery status is separate from work status. These
-                notifications stay local and never approve an action.
-              </p>
-              {!snapshot.notifications?.length && (
-                <p className="muted">
-                  Results and approval requests will appear here.
-                </p>
-              )}
-              <ul className="tasks">
-                {snapshot.notifications?.map((n) => (
-                  <li key={n.id}>
-                    <h3>
-                      {n.kind === "approval.requested"
-                        ? "A mock action needs review"
-                        : n.kind.replace("run.", "Run ")}
-                    </h3>
-                    <p>
-                      {n.status === "retry"
-                        ? "Delivery unconfirmed; retry scheduled"
-                        : n.status === "pending"
-                          ? "Waiting for delivery confirmation"
-                          : n.status === "obsolete"
-                            ? "No longer current"
-                            : "Delivered to the local mock inbox"}{" "}
-                      · {n.attempts} attempts
-                    </p>
-                    {n.status !== "obsolete" && (
-                      <a
-                        href={`/#${n.kind === "approval.requested" ? "approval" : "run"}-${encodeURIComponent(n.resource_id)}`}
-                        onClick={() => {
-                          if (n.kind === "approval.requested")
-                            setView("townhall");
-                        }}
-                      >
-                        {n.kind === "approval.requested"
-                          ? "Open approval review"
-                          : "Open run and result"}
-                      </a>
-                    )}
-                  </li>
+            {(view === "activity" || view === "townhall") && (
+              <section className="activity">
+                <span className="eyebrow">RECENT ACTIVITY</span>
+                {snapshot.activity.slice(0, 5).map((item) => (
+                  <div key={item.sequence}>
+                    <time>{clock(item.at)}</time>
+                    <span>
+                      {item.kind.replaceAll(".", " · ").replaceAll("_", " ")}
+                    </span>
+                    <span className="audit-sequence">#{item.sequence}</span>
+                  </div>
                 ))}
-              </ul>
-            </section>
-            <section className="activity">
-              <span className="eyebrow">RECENT ACTIVITY</span>
-              {snapshot.activity.slice(0, 5).map((item) => (
-                <div key={item.sequence}>
-                  <time>{clock(item.at)}</time>
-                  <span>
-                    {item.kind.replaceAll(".", " · ").replaceAll("_", " ")}
-                  </span>
-                  <span className="audit-sequence">#{item.sequence}</span>
-                </div>
-              ))}
-              {!snapshot.activity.length && (
-                <p className="muted">Nothing has happened yet.</p>
-              )}
-            </section>
+                {!snapshot.activity.length && (
+                  <p className="muted">Nothing has happened yet.</p>
+                )}
+              </section>
+            )}
           </>
         )}
         <footer>
           <span>
-            Hearth <span className="muted">/</span> Early days, carefully built.
+            Hearth <span className="muted">/</span> Local development
           </span>
           <span>Synthetic notes. Simulated residents. Honest state.</span>
         </footer>
