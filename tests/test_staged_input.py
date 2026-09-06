@@ -136,9 +136,9 @@ def test_size_limit_refuses_before_publication(system, monkeypatch):
     assert not root.exists()
 
 
-@pytest.mark.parametrize("after_publish", [False, True])
+@pytest.mark.parametrize("sync_call", [1, 2, 4])
 def test_sync_failure_never_exposes_partial_input_and_retry_reconciles(
-    system, monkeypatch, after_publish
+    system, monkeypatch, sync_call
 ):
     hearth, _, run, root = system
     original = os.fsync
@@ -147,15 +147,22 @@ def test_sync_failure_never_exposes_partial_input_and_retry_reconciles(
     def fail_once(fd):
         nonlocal count
         count += 1
-        if count == (3 if after_publish else 1):
+        if count == sync_call:
             raise OSError("injected sync failure")
         original(fd)
 
     monkeypatch.setattr("hearth.staged_input.os.fsync", fail_once)
     with pytest.raises(Refused, match="staged_input_unsafe"):
         stage_run(hearth.database, run.id, root)
-    assert (root / run.id).exists() is after_publish
+    assert (root / run.id).exists() is (sync_call == 4)
     assert not list(root.glob(".stage-*"))
     monkeypatch.setattr("hearth.staged_input.os.fsync", original)
     path = stage_run(hearth.database, run.id, root)
     assert hashlib.sha256(path.read_bytes()).hexdigest() == run.input_digest
+
+
+def test_staging_does_not_create_unprepared_parent_tree(system):
+    hearth, _, run, root = system
+    with pytest.raises(Refused, match="staged_input_unsafe"):
+        stage_run(hearth.database, run.id, root / "unprepared")
+    assert not root.exists()

@@ -8,6 +8,7 @@ import stat
 import uuid
 from pathlib import Path
 
+from hearth.artifacts import sync_directory
 from hearth.database import Database
 from hearth.memory import MemoryFiles
 from hearth.models import Refused, identifier
@@ -35,8 +36,9 @@ def stage_run(database: Database, run_id: str, root: Path) -> Path:
         if hashlib.sha256(data).hexdigest() != row["input_digest"]:
             raise Refused("staged_input_digest_mismatch")
     # Root is caller-selected, not derived from any model-controlled input.
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
+        root.mkdir(mode=0o700, exist_ok=True)
+        sync_directory(root.parent)
         directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             info = os.fstat(directory)

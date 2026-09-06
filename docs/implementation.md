@@ -115,11 +115,11 @@ preserve exact bytes and refuse partial, changed or linked destinations. The onl
 published input is `context.json`; no worker activation or launch authority is added.
 See [the boundary and remaining work](staged-input.md).
 
-Fourteen fresh-SQLite checks cover pinned edits, other-resident/authority exclusion,
+Sixteen fresh-SQLite checks cover pinned edits, other-resident/authority exclusion,
 concurrency, digest and size limits, unsafe paths and sync failures before/after
 publication. Fifty repeated concurrent staging checks pass after switching lock
 creation to exclusive create followed by existing-file open on contention; the
 original combined create/open intermittently failed with ENOENT on this Mac.
-Full `make check` passes 287 backend and 35 browser tests plus both installed mock
+Full `make check` passes 289 backend and 35 browser tests plus both installed mock
 journeys. Actual worker wiring and Mac filesystem/network isolation remain pending;
 read-only file permissions are not evidence of confinement. No Codex call was made.

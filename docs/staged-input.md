@@ -11,7 +11,8 @@ bytes matching the run digest. It contains no database, owner token, operator
 credential or other resident's memory. Purpose, skill, task, memory and notes stay
 separate JSON fields; source text cannot grant additional permissions.
 
-The staging root and run directories are private (0700); the file is read-only
+The caller prepares the root's parent. Staging creates only the root itself and
+syncs its parent entry before publication. The root and run directories are private (0700); the file is read-only
 (0400). A no-follow, regular, singly linked lock serializes publication. Lock
 creation is exclusive, with an existing-file open on contention. Data and the
 private temporary directory are synced before rename, then the root is synced.
