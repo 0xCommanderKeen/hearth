@@ -15,6 +15,7 @@ from contextlib import ExitStack, contextmanager
 from importlib.metadata import version
 from pathlib import Path
 
+from hearth import codex_accounting
 from hearth.artifacts import Artifact, Artifacts, sync_directory
 from hearth.database import SCHEMA_VERSION, Database, schema_matches
 from hearth.memory import MemoryFiles, memory_path
@@ -241,6 +242,9 @@ def _check_database(root: Path) -> dict:
                 or not re.fullmatch(r"[0-9a-f]{64}", run["input_digest"])
             ):
                 raise Refused("backup_runtime_invalid")
+            if codex_accounting.pricing(db, run["id"]) is not None:
+                codex_accounting.verify_stored(db, run)
+                continue
             if run["runtime_kind"] == "process_mock":
                 if run["finished_at"] is None:
                     raise Refused("backup_process_unsettled")
@@ -394,6 +398,11 @@ def capture(data: Path, destination: Path) -> dict:
                 "SELECT 1 FROM runs WHERE runtime_kind='process_mock' AND finished_at IS NULL"
             ).fetchone():
                 raise Refused("backup_process_unsettled")
+            if frozen.execute(
+                "SELECT 1 FROM runs JOIN run_pricing ON run_pricing.run_id=runs.id "
+                "WHERE finished_at IS NULL"
+            ).fetchone():
+                raise Refused("backup_priced_run_unsettled")
             process_root = data / "process-mock"
             if process_root.exists():
                 if process_root.is_symlink() or not process_root.is_dir():

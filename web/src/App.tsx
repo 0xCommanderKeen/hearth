@@ -643,7 +643,7 @@ export function App() {
                             {run && (
                               <small>
                                 {run.usage_known
-                                  ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
+                                  ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} simulated ${run.usage_source === "api_equivalent_mock" ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
                                   : "Usage not yet known"}
                               </small>
                             )}

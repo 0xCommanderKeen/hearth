@@ -196,7 +196,14 @@ class Hearth:
                 raise Refused("task_not_found")
             return Task(**dict(row))
 
-    def admit(self, task_id: str, *, reserve: int, concurrency_limit: int = 2) -> Run:
+    def admit(
+        self,
+        task_id: str,
+        *,
+        reserve: int,
+        concurrency_limit: int = 2,
+        pricing_mode: str | None = None,
+    ) -> Run:
         """Reserve exposure and resident ownership before any runtime can launch.
 
         Terminal transitions belong to Execution, which requires runtime evidence.
@@ -204,6 +211,8 @@ class Hearth:
         from hearth.memory import MemoryFiles
         from hearth.run_context import read_context
 
+        if pricing_mode not in {None, "standard", "fast"}:
+            raise Refused("pricing_mode_invalid")
         microdollars(reserve)
         if reserve == 0:
             raise Refused("reservation_required")
@@ -288,6 +297,20 @@ class Hearth:
             ).hexdigest()
             run = replace(run, input_digest=digest)
             db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
+            pricing = None
+            if pricing_mode is not None:
+                from hearth.codex_pricing import MODEL, PRICE_SCHEDULE
+
+                db.execute(
+                    "INSERT INTO run_pricing VALUES (?,?,?,?)",
+                    (run.id, MODEL, pricing_mode, PRICE_SCHEDULE),
+                )
+                pricing = {
+                    "model": MODEL,
+                    "mode": pricing_mode,
+                    "schedule": PRICE_SCHEDULE,
+                    "basis": "api_equivalent_estimate",
+                }
             _audit(
                 db,
                 "run.admitted",
@@ -303,7 +326,8 @@ class Hearth:
                     "runtime_kind": run.runtime_kind,
                     "runtime_version": run.runtime_version,
                     "input_digest": run.input_digest,
-                },
+                }
+                | ({"accounting": pricing} if pricing else {}),
             )
             return run
 

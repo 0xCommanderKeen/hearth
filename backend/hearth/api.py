@@ -358,7 +358,12 @@ def create_app(
     @app.get("/api/runs/{run_id}")
     def inspect_run(run_id: str):
         run = hearth.run(run_id)
+        from hearth.codex_accounting import details
+
+        with database.transaction() as db:
+            accounting = details(db, run_id)
         return {
+            "accounting": accounting,
             "id": run.id,
             "status": run.status,
             "artifact_id": run.artifact_id,

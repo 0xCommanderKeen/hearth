@@ -190,6 +190,17 @@ class UsageJournal:
                 publish(path, terminal)
             return interpret(requests, terminal, self.binding)
 
+    @contextmanager
+    def snapshot(self):
+        """Freeze a verified receipt while the caller commits its authoritative copy."""
+        with self.locked():
+            requests = [
+                read(self.root / name.replace("request-", "usage-")) for name in self._requests()
+            ]
+            terminal = read(self.root / "terminal.json")
+            interpret(requests, terminal, self.binding)
+            yield {"binding": asdict(self.binding), "requests": requests, "terminal": terminal}
+
     def estimate(self) -> Estimate:
         """Reopen sealed evidence without execution or trusting a saved scalar cost."""
         with self.locked():
@@ -200,6 +211,10 @@ class UsageJournal:
 
 
 def interpret(requests: list[dict], terminal: dict, binding: UsageBinding) -> Estimate:
+    return interpret_details(requests, terminal, binding)[1]
+
+
+def interpret_details(requests: list[dict], terminal: dict, binding: UsageBinding):
     if (
         set(terminal) != {"stdout", "exit_code", "final"}
         or type(terminal["exit_code"]) is not int
@@ -218,12 +233,16 @@ def interpret(requests: list[dict], terminal: dict, binding: UsageBinding) -> Es
         raise ValueError("final output unproved")
     usage = tuple(TokenUsage(**value) for value in requests)
     estimate = estimate_api_equivalent(usage, model=binding.model, mode=binding.mode)
-    if estimate.microdollars is not None:
-        if transcript.usage is None:
-            raise ValueError("CLI usage absent")
+    if estimate.microdollars is not None and transcript.usage is None:
+        raise ValueError("CLI usage absent")
+    if transcript.usage is not None and usage:
         for field in TokenUsage.__dataclass_fields__:
             values = [getattr(value, field) for value in usage]
-            if all(value is not None for value in values):
-                if getattr(transcript.usage, field) != sum(values):
+            known = [value for value in values if type(value) is int and value >= 0]
+            reported = getattr(transcript.usage, field)
+            if reported is not None:
+                if sum(known) > reported or (len(known) == len(values) and sum(known) != reported):
                     raise ValueError("CLI/request usage contradiction")
-    return estimate
+            elif estimate.microdollars is not None and len(known) == len(values):
+                raise ValueError("CLI/request usage contradiction")
+    return transcript, estimate

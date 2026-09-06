@@ -50,7 +50,9 @@ def snapshot(hearth: Hearth) -> dict:
                    AS memory_revision,
                    usage_known, finished_at, artifact_id, cancellation_requested,
                    CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
-                   THEN 'operator_reported_mock' WHEN usage_known=1 THEN 'mock_runtime'
+                   THEN 'operator_reported_mock' WHEN usage_known=1 AND EXISTS
+                   (SELECT 1 FROM run_pricing p WHERE p.run_id=runs.id)
+                   THEN 'api_equivalent_mock' WHEN usage_known=1 THEN 'mock_runtime'
                    ELSE 'unknown' END AS usage_source
                    FROM runs ORDER BY status IN {ACTIVE_RUNS} DESC,
                    (usage_known=0 AND finished_at IS NOT NULL) DESC,

@@ -38,6 +38,7 @@ def estimate_api_equivalent(
     if not requests or len(requests) > MAX_REQUESTS:
         return Estimate(None, "missing_or_excessive_requests")
     half_microdollars = 0
+    missing = False
     for usage in requests:
         counts = (
             usage.input_tokens,
@@ -45,19 +46,24 @@ def estimate_api_equivalent(
             usage.cache_write_input_tokens,
             usage.output_tokens,
         )
-        if any(value is None for value in counts):
-            return Estimate(None, "missing_usage")
-        if any(type(value) is not int or not 0 <= value <= MAX_TOKENS for value in counts):
+        all_counts = counts + (usage.reasoning_output_tokens,)
+        if any(
+            value is not None and (type(value) is not int or not 0 <= value <= MAX_TOKENS)
+            for value in all_counts
+        ):
             return Estimate(None, "invalid_usage")
         total, cached, written, output = counts
+        if total is not None and (cached or 0) + (written or 0) > total:
+            return Estimate(None, "contradictory_input_usage")
+        reasoning = usage.reasoning_output_tokens
+        if reasoning is not None and output is not None and reasoning > output:
+            return Estimate(None, "contradictory_output_usage")
+        if any(value is None for value in counts):
+            missing = True
+            continue
         assert (
             total is not None and cached is not None and written is not None and output is not None
         )
-        if cached + written > total:
-            return Estimate(None, "contradictory_input_usage")
-        reasoning = usage.reasoning_output_tokens
-        if reasoning is not None and (type(reasoning) is not int or not 0 <= reasoning <= output):
-            return Estimate(None, "contradictory_output_usage")
         # Prices in half-microdollars/token: $10/$1/$12.50/$50 per million.
         input_cost = (total - cached - written) * 20 + cached * 2 + written * 25
         output_cost = output * 100
@@ -65,4 +71,4 @@ def estimate_api_equivalent(
             input_cost *= 2
             output_cost = output * 150
         half_microdollars += (input_cost + output_cost) * (2 if mode == "fast" else 1)
-    return Estimate((half_microdollars + 1) // 2)
+    return Estimate(None, "missing_usage") if missing else Estimate((half_microdollars + 1) // 2)

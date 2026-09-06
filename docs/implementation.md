@@ -282,3 +282,24 @@ interrupted-request persistence with owned container cleanup.
 Review regressions verify type-sensitive duplicate receipts, sticky late conflicts
 after sealing and successful file/directory resynchronization before trusting
 recovered evidence left by failed writes.
+
+## Atomic API-equivalent settlement
+
+Issue #75 binds model, pricing mode and schedule at synthetic run admission, then
+settles a matching sealed journal into the existing budget. Receipt, calculated
+cost, artifact reference and audit commit together. Missing usage retains the
+admission hold; scalar or contradictory evidence cannot settle a priced run.
+Current-data backup/held restore independently revalidates the SQLite receipt and
+preserves explicit operator reconciliation. Run inspection and the browser identify
+API-equivalent simulated amounts. See [the accounting seam](codex-accounting.md).
+
+Full `make check` passed 448 backend and 35 browser tests, lint/types/build and both
+installed-wheel journeys. Sixteen accounting tests cover ownership/binding,
+standard/Fast pricing, $10/day exposure, atomic rollback, unknown usage and held
+recovery. An unsupported priced run stays interrupted while unrelated mock work
+continues. This does not enable a Codex worker or complete issue #69; production
+collector isolation, terminal handoff and operational dispatch/recovery remain.
+
+Review regressions ensure missing counters cannot mask contradictions in known
+request/CLI totals or cache subsets. The refreshed Mac probe passes all three
+synthetic scenarios with the final journal and pricing source pins.
