@@ -176,3 +176,19 @@ repetitions pass. The updated actual Mac rehearsal verifies success and cancella
 receipts survive container removal; its report records the final module hash.
 [Receipt behavior and remaining gates](container-rehearsal.md) still defer operational
 worker/backup integration, actual Codex/model-channel execution and real acceptance.
+
+## Operational container dispatch prerequisite
+
+Issue #66 remains in progress. `Execution.dispatch_guard` now serializes the final
+container start against SQLite cancellation and declaration changes, checking owner,
+epoch, pinned input, runtime contract and launch intent. A held restore refuses.
+Refused or uncertain starts retain their inspect-only container claims. The Mac
+rehearsal now supplies this guard using a fresh process-mock database.
+
+Validation: 343 backend and 35 browser tests, lint/types/build and both installed
+mock journeys passed. Thirteen additional checks cover active observations, changes
+during container creation, concurrent writer exclusion and lost start replies.
+The actual Mac synthetic success/cancellation rehearsal passed with guarded dispatch
+and terminal receipts surviving cleanup. This does not enable a container selector
+or complete issue #66: detached worker wiring, reconciliation and quiescent backup/
+held restore for container evidence remain next. Real Codex execution stays deferred.

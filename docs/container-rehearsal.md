@@ -3,7 +3,8 @@
 `ContainerRehearsal` connects Hearth's actual staged context to the previously
 [probed Mac container boundary](mac-isolation.md). It is an internal, offline
 integration rehearsal with a fixed synthetic executable. It is not a Runtime
-adapter, application runtime selector or operational launch-authority check.
+adapter or application runtime selector. It accepts an operational dispatch guard;
+the actual-host script supplies it, while standalone fault rehearsals may omit it.
 Use only a dedicated synthetic database and worker root, with no app executor.
 
 ## Ownership and uncertain dispatch
@@ -30,6 +31,25 @@ into the container. Claimed input paths must belong to that root; linked claim
 folders refuse. File evidence is bounded and must be regular, singly linked files.
 Do not copy a live claim to another root and treat that as execution ownership.
 This rehearsal is not included in operational backup/restore or admission accounting.
+
+## Operational dispatch guard
+
+`Execution.dispatch_guard` checks the pinned run owner, database epoch, input digest,
+process runtime/version and durable launch intent immediately before Docker start.
+It refuses cancelled or finished runs, a held restore and changed resident declarations.
+An active run may already be observed as running or interrupted by the supervisor
+while its detached worker prepares the container.
+
+The guard holds a SQLite write transaction across the bounded start call, so an
+operator mutation cannot commit between validation and dispatch. Staging, Docker
+create and configuration inspection happen before this transaction. A cancellation
+or policy change during that preparation therefore prevents start. A refusal leaves
+the created claim inspect-only; it does not grant a retry. A lost start reply releases
+the database transaction, preserves the launch claim and requires observation.
+The existing launch-intent audit remains durable even when dispatch raises.
+
+This is a prerequisite for issue #66, not activation of the asynchronous container
+worker. The application still selects only its existing inline/POSIX mock paths.
 
 ## Actual input and output boundary
 
@@ -86,7 +106,7 @@ recover the same claim before cleanup. It never pulls images or changes Docker.
 module hash and image digest in that report. Default CI uses fault-injected Docker
 responses and actual temporary SQLite; the host rehearsal is opt-in.
 
-Remaining: trusted asynchronous worker integration, admission/launch authority,
+Remaining: trusted asynchronous worker integration and passing its pinned authority,
 quiescent backup/restore, actual Codex image/version,
 final-file ownership and real provenance/accounting. The model transport must keep
 credentials outside generated tools and constrain allowed requests. A real test

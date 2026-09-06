@@ -9,7 +9,7 @@ import stat
 import subprocess
 import tempfile
 import uuid
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -196,7 +196,13 @@ class ContainerRehearsal:
             raise Refused("container_ownership_mismatch")
         return value
 
-    def start(self, run_id: str, *, scenario: str = "success") -> Observation:
+    def start(
+        self,
+        run_id: str,
+        *,
+        scenario: str = "success",
+        dispatch_guard: AbstractContextManager | None = None,
+    ) -> Observation:
         if scenario not in {"success", "hold"} or os.getuid() == 0:
             raise Refused("container_configuration_invalid")
         folder = self._folder(run_id)
@@ -305,7 +311,11 @@ class ContainerRehearsal:
             ):
                 raise Refused("container_configuration_mismatch")
             write_json(folder / "identity.json", {"id": owned["Id"], "binding": binding})
-            self.docker("start", owned["Id"])
+            # Operational callers supply a fresh database guard. Enter it after
+            # creation so cancellation/policy changes during Docker setup win.
+            # Existing claims above remain inspect-only, including refused starts.
+            with dispatch_guard if dispatch_guard is not None else nullcontext():
+                self.docker("start", owned["Id"])
         return self.inspect(run_id)
 
     def _receipt(self, claim) -> Observation | None:

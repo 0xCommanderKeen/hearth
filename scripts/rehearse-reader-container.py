@@ -13,9 +13,11 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.artifacts import Artifacts
 from hearth.container_rehearsal import IMAGE, ContainerRehearsal, LocalDocker
 from hearth.core import Hearth
 from hearth.database import Database
+from hearth.execution import Execution
 from hearth.memory import Memory
 from hearth.models import Declaration
 
@@ -52,7 +54,7 @@ def main():
             root = Path(temporary) / scenario
             root.mkdir()
             database = Database(root / "hearth.db")
-            database.initialize()
+            database.initialize(runtime_kind="process_mock")
             hearth = Hearth(database, clock=lambda: 1000)
             hearth.save_resident(
                 "reader", Declaration("Reader", "Synthetic purpose", 10000), expected_revision=0
@@ -60,6 +62,10 @@ def main():
             Memory(hearth).save("reader", "Pinned synthetic memory", expected_revision=0)
             task = hearth.submit("task", "reader", "Summarize synthetic notes", expires_at=1500)
             run = hearth.admit(task.task_id, reserve=3000)
+            execution = Execution(hearth, Artifacts(root / "artifacts"))
+            assert execution.prepare_start(run.id, run.owner_token)
+            with database.transaction() as db:
+                epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0]
             calls = []
 
             def lose_start_reply(*command, calls=calls):
@@ -73,7 +79,13 @@ def main():
             worker = ContainerRehearsal(database, worker_root, docker=lose_start_reply)
             try:
                 try:
-                    worker.start(run.id, scenario=scenario)
+                    worker.start(
+                        run.id,
+                        scenario=scenario,
+                        dispatch_guard=execution.dispatch_guard(
+                            run.id, run.owner_token, epoch=epoch, input_digest=run.input_digest
+                        ),
+                    )
                 except OSError as error:
                     assert str(error) == "synthetic lost start acknowledgement"
                 else:
@@ -103,6 +115,7 @@ def main():
                 assert observed["status"] in {"running", "exited"}
                 if scenario == "hold":
                     assert observed["status"] == "running"
+                    assert execution.cancel(run.id).cancellation_requested
                     result = reopened.stop(run.id)
                     assert result.status == "exited"
                 else:
@@ -122,6 +135,7 @@ def main():
                         "input_mode": "0400",
                         "directory_mode": "0700",
                         "lost_start_reply": True,
+                        "operational_dispatch_guard": True,
                         "fresh_process_observed": observed["status"],
                     }
                 )
