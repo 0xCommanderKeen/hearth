@@ -13,6 +13,12 @@ Start with a new read-only daily-summary Reader, one operator and one execution
 machine. Current development uses mocks and synthetic notes only; real testing
 will be selected after the workflow is proven.
 
+Miha selected Codex Astra for the eventual runtime/model, synthetic example notes,
+and a $10 spending limit on 2026-09-06. The proposed budget window is daily; confirm
+that interpretation before enabling spending. The execution host, exact runtime
+configuration and pricing provenance remain undecided. This selection does not
+enable real calls; mock-only execution remains in force.
+
 The operator should be able to define a resident's purpose, instructions, memory,
 limits and permitted sources; assign a task; inspect truthful progress and results;
 run a daily routine; pause or cancel work; decide exact approval requests; and

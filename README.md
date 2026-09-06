@@ -24,7 +24,9 @@ uv run python -m hearth demo
 
 Python 3.14, uv, Node 22.22+, and pnpm 11.22 are required. The backend uses FastAPI;
 the browser uses React and TypeScript. `make check` builds one Python wheel that
-contains the compiled browser, and verifies its referenced assets are present.
+contains the compiled browser, then installs it with locked runtime dependencies
+in a temporary environment and exercises its CLI and loopback HTTP application.
+See the [standalone installation steps](docs/release.md).
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 
