@@ -36,12 +36,26 @@ and mobile journeys verify setup, memory save/conflict/reload and a pinned summa
 result. Independent Standards and Spec reviews found no blocking issue; they also
 ran 77 and 108 focused checks respectively.
 
+## Standalone release verification
+
+Issue #46 adds an isolated installation check to `make check`. It exports hashed
+runtime dependencies from the lockfile, installs the wheel without the editable
+checkout, and runs from an unrelated temporary directory with Python isolated mode.
+The installed CLI passes twice against the same fresh data. Loopback HTTP verifies
+packaged assets, authentication, Reader setup, duplicate command receipts, a
+simulated result, restart persistence and a held current-data restore. Temporary
+files and servers are cleaned up. See [the installation recipe](release.md).
+
+Miha selected Codex Astra, synthetic notes and a $10 allowance. A daily budget
+window is proposed but needs confirmation before spending; the host and exact
+runtime/pricing configuration remain open. Real execution is still deferred.
+
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
 | --- | --- | --- |
 | Fresh mock workflow | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
-| Bounded real Reader | Deferred by mock-only direction | Source/runtime/model/host/allowance decisions; useful output and actual read-only isolation |
+| Bounded real Reader | Deferred by mock-only direction | Host, exact runtime/pricing and budget-window decisions; useful output and actual read-only isolation |
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
 | Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
 
