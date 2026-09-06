@@ -96,3 +96,13 @@ and cannot complete the real-host, live canary, or retirement gates.
 Record each acceptance result with the test or live evidence that establishes it.
 The end-of-Phase-2 review decides whether the redesign has actually removed
 coordination machinery. Time-based gates remain pending until elapsed and observed.
+
+Issue #25 adds a versioned readable export of verified mock backups, strict
+structural/relational/checksum validation and a stable semantic fingerprint.
+Runtime credentials and execution-owner tokens are excluded explicitly; unknown
+schema/fields are refused. See `portable-state.md`. Import and activation remain
+unimplemented; this is the first portable-evidence slice, not Phase 4 acceptance.
+Verification 2026-09-06: 199 backend and 25 browser tests pass with full
+`make check`. CLI demo → backup → export-state → verify-state produced matching
+semantic fingerprints from synthetic state; no execution or import was performed
+by export/verification.
