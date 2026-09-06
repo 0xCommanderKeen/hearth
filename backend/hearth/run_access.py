@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from hearth.core import Hearth, _audit
 from hearth.models import Refused, identifier
+from hearth.run_context import read_context
 
 MAX_LIFETIME = 15 * 60
 
@@ -111,20 +112,4 @@ class RunAccess:
             ).fetchone()
             if declaration["revision"] != row["resident_revision"]:
                 raise Refused("runtime_unauthorized")
-            instruction = db.execute(
-                "SELECT instruction FROM tasks WHERE id=?", (row["task_id"],)
-            ).fetchone()[0]
-            return {
-                "run_id": run_id,
-                "task_id": row["task_id"],
-                "resident_id": row["resident_id"],
-                "resident_revision": row["resident_revision"],
-                "purpose": declaration["purpose"],
-                "instruction": instruction,
-                "simulated": True,
-                "notes": [
-                    "Synthetic note: drafted the Hearth foundation.",
-                    "Synthetic note: task submission survives retries.",
-                    "Synthetic note: exercise cancellation and recovery next.",
-                ],
-            }
+            return read_context(db, run_id)
