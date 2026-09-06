@@ -297,6 +297,8 @@ class Hearth:
             ).hexdigest()
             run = replace(run, input_digest=digest)
             db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
+            if run.runtime_kind == "codex_mock":
+                pricing_mode = "standard"
             pricing = None
             if pricing_mode is not None:
                 from hearth.codex_pricing import MODEL, PRICE_SCHEDULE

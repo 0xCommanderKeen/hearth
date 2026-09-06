@@ -210,7 +210,7 @@ def _check_database(root: Path) -> dict:
         if not schema_matches(db):
             raise Refused("backup_schema_unexpected")
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-        if selected is None or selected[0] not in {"inline_mock", "process_mock"}:
+        if selected is None or selected[0] not in {"inline_mock", "process_mock", "codex_mock"}:
             raise Refused("backup_runtime_invalid")
         boundary = db.execute(
             "SELECT value FROM system_meta WHERE key='process_boundary'"

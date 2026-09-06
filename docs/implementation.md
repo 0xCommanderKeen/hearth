@@ -344,3 +344,24 @@ a pending retry's original resident. Hamlet reserves Townhall's plot and sizes
 the ground/camera for additional rows. Full `make check` passed: 463 backend,
 37 frontend, type/format/build and both installed-wheel journeys. Log:
 `/private/tmp/hearth-demo-full-check.log` (local evidence, not a repository artifact).
+
+## Operational offline Codex demo — issue #79, working branch
+
+The optional `codex_mock` adapter now accepts normal browser/API tasks and runs
+pinned Codex CLI 0.145.0 with synthetic authentication against the local fixture.
+The CLI and collector use separate filesystem/PID namespaces and shared offline
+loopback. Runtime assets, launch identity, input, terminal logs and usage bind to
+the admitted run; reopening never retries creation or start.
+
+Terminal settlement also retries unfinished owned cleanup. A lost removal reply
+requires a successful exact-ID daemon listing to prove absence; daemon errors
+remain unknown. A created container with uncertain start intent cannot be sealed
+as never started. SQLite receipts retain terminal proof after cleanup and backup.
+
+Verified 2026-09-06: full `make check` passed 466 backend / 38 frontend tests plus
+both installed-wheel journeys. Fresh actual-container API success saved an
+artifact with 623 microdollars API-equivalent mock usage and passed held restore.
+Cancellation during an incomplete request preserved unknown usage and passed held
+restore. These checks used only synthetic inputs, auth and local responses.
+They do not establish real account/model access, upstream credentials, production
+isolation or observation gates.
