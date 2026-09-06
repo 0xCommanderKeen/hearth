@@ -22,7 +22,9 @@ INSTRUCTIONS = (
 
 
 def canonical(value) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False
+    ).encode()
 
 
 def digest(value) -> str:

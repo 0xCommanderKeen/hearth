@@ -11,6 +11,7 @@ from hearth.management.bridge import authorize_managed_resident
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import Provisioning, ProvisionRequest, profile_summary
 from hearth.skills.catalog import checked_revision
+from hearth.work.routines import ROUTINE_RESERVATION
 from hearth.work.service import _audit, _queue_task
 
 
@@ -119,7 +120,7 @@ def _catalog(db, authority, query: str, now: int) -> dict:
                     "managed": row["manager"] == authority["actor"],
                 }
             )
-        if len(residents) == 50:
+        if len(residents) == 25:
             break
     skills = []
     for row in db.execute(
@@ -132,7 +133,7 @@ def _catalog(db, authority, query: str, now: int) -> dict:
                 {key: checked[key] for key in ("skill_id", "revision", "name")}
                 | {"description": checked["description"][:500]}
             )
-        if len(skills) == 50:
+        if len(skills) == 25:
             break
     inputs = [read_input(db, item) for item in authority["grant"]["input_set_ids"]]
     return dict(
@@ -145,7 +146,7 @@ def _catalog(db, authority, query: str, now: int) -> dict:
         ],
         policy=authority["grant"],
         household=household_state(db, now),
-        catalog_limit=50,
+        catalog_limit=25,
     )
 
 
@@ -202,6 +203,12 @@ def _provision(db, hearth, authority, body: Provision, payload: str) -> dict:
         raise Refused("management_reservation_limit")
     if resident.routine is not None and "routines" not in grant["capabilities"]:
         raise Refused("management_routine_not_permitted")
+    if (
+        resident.routine is not None
+        and resident.routine.enabled
+        and ROUTINE_RESERVATION > grant["max_reserve"]
+    ):
+        raise Refused("management_reservation_limit")
     if (
         resident.first_assignment is not None or body.start_first_assignment
     ) and "assign_work" not in grant["capabilities"]:
@@ -306,7 +313,9 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
                 "tasks": [
                     dict(row)
                     for row in db.execute(
-                        "SELECT t.id,t.instruction,t.status,r.id AS run_id,"
+                        "SELECT t.id,substr(t.instruction,1,500) AS instruction,"
+                        "length(t.instruction)>500 AS instruction_truncated,"
+                        "t.status,r.id AS run_id,"
                         "r.status AS run_status,r.artifact_id "
                         "FROM tasks t LEFT JOIN runs r ON r.task_id=t.id WHERE t.resident_id=? "
                         "ORDER BY t.created_at DESC,t.id DESC LIMIT 10",

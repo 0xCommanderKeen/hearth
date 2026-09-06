@@ -41,6 +41,15 @@ child management access. Reuse can assign work to an existing resident managed b
 the caller with a permitted profile/input selection. Foreign residents' catalog
 summaries support duplicate avoidance but grant no work access.
 
+Enabled routine creation must fit the ordinary scheduler's 10,000-microdollar
+reservation as well as the requested immediate-work reservation. Resident status
+inspection includes at most ten tasks with 500-character instruction excerpts and
+explicit truncation flags. Catalog queries return at most 25 residents and 25 skills;
+search narrows the result. Native UTF-8 serialization preserves complete legal
+Unicode skill text. The bridge bounds the fully serialized native response
+before committing effects; an oversized result returns a specific refusal and
+rolls back the operation instead of interrupting the native turn.
+
 Native call IDs replay exact results within a run. Mutations additionally require
 an operation ID scoped to the managing resident, so a different call can recover
 the same effect. Changed payloads conflict. Creation, first assignment/admission,

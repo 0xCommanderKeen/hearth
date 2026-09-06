@@ -178,7 +178,7 @@ def test_catalog_reuse_is_scoped_and_unrelated_work_is_refused(tmp_path):
     assert len(snapshot(hearth)["tasks"]) == 1
 
 
-def manager_runtime(tmp_path, *, max_residents=5):
+def manager_runtime(tmp_path, *, max_residents=5, max_reserve=500000):
     from hearth.management.authority import Management
     from hearth.management.bootstrap import bootstrap
     from hearth.management.bridge import BoundRun, Bridge
@@ -191,7 +191,13 @@ def manager_runtime(tmp_path, *, max_residents=5):
     policy = Management(hearth).read(karen["resident_id"])
     policy = {key: value for key, value in policy.items() if key not in {"resident_id", "revision"}}
     Management(hearth).save(
-        karen["resident_id"], {**policy, "max_residents": max_residents, "expected_revision": 1}
+        karen["resident_id"],
+        {
+            **policy,
+            "max_residents": max_residents,
+            "max_reserve": max_reserve,
+            "expected_revision": 1,
+        },
     )
     task = hearth.submit(
         "manager", karen["resident_id"], "Create", expires_at=int(hearth.clock()) + 600
@@ -376,3 +382,135 @@ def test_escalating_provision_arguments_are_specific_refusals(tmp_path, change, 
     result = bridge.call(params)
     assert not result["success"] and reason in str(result)
     assert len(snapshot(app.state.hearth)["residents"]) == 1
+
+
+def test_management_routine_must_fit_ordinary_scheduled_reservation(tmp_path):
+    from hearth.observation.snapshot import snapshot
+
+    app, _, _, _, bridge = manager_runtime(tmp_path, max_reserve=1000)
+    params = provision_call(reserve=1000)
+    params["arguments"]["resident"]["routine"] = dict(
+        instruction="Report fictional notes",
+        local_time="09:00",
+        timezone="Europe/Ljubljana",
+        enabled=True,
+    )
+    result = bridge.call(params)
+    assert not result["success"] and "management_reservation_limit" in str(result)
+    assert len(snapshot(app.state.hearth)["residents"]) == 1
+    with app.state.hearth.database.transaction() as db:
+        assert db.execute("SELECT COUNT(*) FROM routines").fetchone()[0] == 0
+
+
+def test_permitted_management_routine_uses_the_advertised_reservation(tmp_path):
+    import json
+
+    from hearth.work.routines import Routines
+
+    app, _, _, _, bridge = manager_runtime(tmp_path, max_reserve=10000)
+    params = provision_call(reserve=10000)
+    params["arguments"]["resident"]["routine"] = dict(
+        instruction="Report fictional notes",
+        local_time="09:00",
+        timezone="Europe/Ljubljana",
+        enabled=True,
+    )
+    result = bridge.call(params)
+    assert result["success"]
+    created = json.loads(result["contentItems"][0]["text"])
+    with app.state.hearth.database.transaction() as db:
+        next_at = db.execute(
+            "SELECT next_at FROM routines WHERE id=?", (created["routine_id"],)
+        ).fetchone()[0]
+    app.state.hearth.clock = lambda: next_at
+    routines = Routines(app.state.hearth)
+    tasks = routines.tick()
+    routines.admit_queued()
+    with app.state.hearth.database.transaction() as db:
+        run = db.execute("SELECT reserved FROM runs WHERE task_id=?", (tasks[0],)).fetchone()
+    assert run["reserved"] == 10000
+
+
+def test_long_task_status_inspection_fits_native_response_boundary(tmp_path):
+    import json
+
+    from hearth.integrations.codex.app_server_transport import _tool_response
+
+    app, _, _, _, bridge = manager_runtime(tmp_path)
+    created = bridge.call(provision_call())
+    resident_id = json.loads(created["contentItems"][0]["text"])["resident_id"]
+    for number in range(10):
+        app.state.hearth.submit(
+            str(number), resident_id, "x" * 32000, expires_at=int(app.state.hearth.clock()) + 600
+        )
+    inspected = bridge.call(
+        dict(
+            threadId="thread",
+            turnId="turn",
+            callId="inspect",
+            tool="hearth_residents_read",
+            arguments={"resident_id": resident_id},
+        )
+    )
+    assert inspected["success"]
+    assert _tool_response(inspected) == inspected
+    tasks = json.loads(inspected["contentItems"][0]["text"])["tasks"]
+    assert len(tasks) == 10 and all(task["id"] and task["status"] == "queued" for task in tasks)
+    assert all(task["instruction_truncated"] for task in tasks)
+
+
+def test_oversized_native_result_refuses_and_rolls_back_creation(tmp_path):
+    from hearth.integrations.codex.app_server_transport import _tool_response
+    from hearth.observation.snapshot import snapshot
+
+    app, _, _, _, bridge = manager_runtime(tmp_path)
+    params = provision_call()
+    params["arguments"]["resident"]["initial_memory"] = "\x01" * 40000
+    result = bridge.call(params)
+    assert not result["success"] and "management_result_too_large" in str(result)
+    assert _tool_response(result) == result
+    assert len(snapshot(app.state.hearth)["residents"]) == 1
+
+
+def test_maximum_unicode_skill_is_read_completely_and_catalog_stays_bounded(tmp_path):
+    import json
+
+    from hearth.integrations.codex.app_server_transport import _tool_response
+    from hearth.skills.catalog import Skills
+
+    app, _, _, _, bridge = manager_runtime(tmp_path)
+    skills = Skills(app.state.hearth)
+    instructions = "🌳" * 32000
+    skill = skills.save(
+        "unicode",
+        name="🌳" * 120,
+        description="🌳" * 2000,
+        instructions=instructions,
+        actor="operator",
+    )
+    read = bridge.call(
+        dict(
+            threadId="thread",
+            turnId="turn",
+            callId="skill",
+            tool="hearth_skills_read",
+            arguments={"skill_id": skill["skill_id"], "revision": 1},
+        )
+    )
+    assert read["success"] and _tool_response(read) == read
+    assert json.loads(read["contentItems"][0]["text"])["instructions"] == instructions
+    for number in range(49):
+        skills.save(
+            f"catalog-{number}",
+            name=f"{number:02d}" + "🌳" * 118,
+            description="🌳" * 2000,
+            instructions="Catalog fixture",
+            actor="operator",
+        )
+    catalog = bridge.call(
+        dict(
+            threadId="thread", turnId="turn", callId="catalog", tool="hearth_catalog", arguments={}
+        )
+    )
+    assert catalog["success"] and _tool_response(catalog) == catalog
+    assert len(json.loads(catalog["contentItems"][0]["text"])["skills"]) == 25

@@ -584,10 +584,9 @@ operation IDs replay durable receipts; authority, effects and audit share the
 application writer. Created residents inherit no management grant. Reader retains
 its read-only exec route. See [the permission contract](management.md).
 
-Validation passed 615 backend and 61 browser tests, lint/format/types and release
-builds. The installed-wheel check passed both isolated mock HTTP/restart/held-restore
-journeys using cached dependencies after the default dependency fetch encountered
-the environment's network restriction. Thirty management checks cover scoped
+Final `make check` passed 620 backend and 61 browser tests, lint/format/types and release
+builds, including both isolated mock HTTP/restart/held-restore journeys with cached
+dependencies. Thirty-five management checks cover scoped
 creation/reuse/start, concurrency, revocation, stale ownership, changed pins,
 unknown usage holds, current-data backup and transactional failure. A fresh rendered
 desktop/mobile journey verified explicit setup, grant edits preserved across setup
@@ -610,3 +609,13 @@ rejected live execution despite the existing epic acceptance and login authoriza
 requiring explicit approval for this particular provider run. No real call or cost
 occurred in issue #91. Real creation-tool acceptance, independent reviews and merge
 remain pending.
+
+Independent review found and corrected two management boundary gaps: enabled
+routine creation now checks the scheduler's actual reservation against the grant;
+status inspection bounds long instruction excerpts. The bridge also bounds the
+serialized native response before committing effects. Regressions first reproduced
+both findings and an oversized creation receipt, then verified refusal/rollback,
+native response acceptance and a permitted routine's actual reservation. A maximum
+Unicode skill remains complete; a populated Unicode catalog stays bounded. The
+actual pinned-CLI local probe passed again after UTF-8 serialization changed the
+configuration digest, with the same restricted tools and absent canaries.

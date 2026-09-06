@@ -80,10 +80,24 @@ def authorize_managed_resident(db, authority: dict, resident_id: str, action: st
 
 
 def response(value: dict, *, success: bool = True) -> dict:
-    return {
+    if not success and value.get("error") == "management_result_too_large":
+        value = value | {
+            "hint": "The result exceeds the native response budget. Narrow the catalog query "
+            "or reduce setup text; no operation was committed. Exact skill text is never truncated."
+        }
+    result = {
         "success": success,
-        "contentItems": [{"type": "inputText", "text": json.dumps(value, sort_keys=True)}],
+        "contentItems": [
+            {"type": "inputText", "text": json.dumps(value, sort_keys=True, ensure_ascii=False)}
+        ],
     }
+    # Measure the actual nested native envelope before committing an operation.
+    if (
+        len(json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+        > 256 * 1024
+    ):
+        raise Refused("management_result_too_large")
+    return result
 
 
 class Bridge:
