@@ -109,7 +109,7 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         return
     db = Database(args.data / "hearth.db")
-    db.initialize()
+    db.initialize(runtime_kind="inline_mock")
     hearth = Hearth(db)
     try:
         hearth.resident("reader")

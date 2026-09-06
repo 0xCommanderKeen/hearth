@@ -7,7 +7,7 @@ import sqlite3
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -201,6 +201,9 @@ class Hearth:
 
         Terminal transitions belong to Execution, which requires runtime evidence.
         """
+        from hearth.memory import MemoryFiles
+        from hearth.run_context import read_context
+
         microdollars(reserve)
         if reserve == 0:
             raise Refused("reservation_required")
@@ -265,9 +268,12 @@ class Hearth:
                 day,
                 now,
                 budget_timezone=declaration["budget_timezone"],
+                runtime_kind=db.execute(
+                    "SELECT value FROM system_meta WHERE key='runtime_kind'"
+                ).fetchone()[0],
             )
             db.execute(
-                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 tuple(asdict(run).values()),
             )
             db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
@@ -276,6 +282,12 @@ class Hearth:
             ).fetchone()[0]
             if memory is not None:
                 db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
+            context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
+            digest = hashlib.sha256(
+                json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            run = replace(run, input_digest=digest)
+            db.execute("UPDATE runs SET input_digest=? WHERE id=?", (digest, run.id))
             _audit(
                 db,
                 "run.admitted",
@@ -288,6 +300,9 @@ class Hearth:
                     "reserved": reserve,
                     "budget_day": day,
                     "budget_timezone": run.budget_timezone,
+                    "runtime_kind": run.runtime_kind,
+                    "runtime_version": run.runtime_version,
+                    "input_digest": run.input_digest,
                 },
             )
             return run

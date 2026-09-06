@@ -19,6 +19,8 @@ from hearth.artifacts import Artifact, Artifacts, sync_directory
 from hearth.database import SCHEMA_VERSION, Database, schema_matches
 from hearth.memory import MemoryFiles, memory_path
 from hearth.models import Refused, identifier
+from hearth.process_mock import read_request
+from hearth.runtime import decode_evidence
 
 FORMAT = 1
 STORES = {
@@ -27,7 +29,10 @@ STORES = {
     "mock-inbox": ".md",
     "mock-noticeboard": ".md",
     "memory": ".md",
+    "process-mock": "",
 }
+PROCESS_FILES = {"request.json", "result.json", "started", "cancel.json"}
+PROCESS_TRANSIENT = {"worker.lock", "heartbeat", "child-started", "child-result.json", "fixture"}
 MAX_FILE = 128 * 1024 * 1024
 
 
@@ -35,7 +40,7 @@ def _read(path: Path) -> bytes:
     if path.parent.is_symlink():
         raise Refused("backup_file_missing_or_unsafe")
     try:
-        if path.parent.parent.name == "memory":
+        if path.parent.parent.name in {"memory", "process-mock"}:
             root = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
                 directory = os.open(
@@ -74,6 +79,14 @@ def _allowed(name: str) -> bool:
     if name == "hearth.db":
         return True
     pieces = name.split("/")
+    if len(pieces) == 3 and pieces[0] == "process-mock":
+        try:
+            identifier(pieces[1])
+            return pieces[2] in PROCESS_FILES
+        except Refused:
+            return False
+    if pieces[0] == "process-mock":
+        return False
     if len(pieces) == 3 and pieces[0] == "memory":
         try:
             return name == "memory/" + memory_path(pieces[1], Path(pieces[2]).stem)
@@ -94,7 +107,7 @@ def _allowed(name: str) -> bool:
 
 
 def _store_files(folder: Path, *, skip_hidden: bool = False):
-    """Only memory has one resident directory level; no symlink traversal."""
+    """Memory and process evidence have one identity level; no symlink traversal."""
     if folder.is_symlink() or not folder.is_dir():
         raise Refused("backup_source_unsafe")
     for child in folder.iterdir():
@@ -102,7 +115,7 @@ def _store_files(folder: Path, *, skip_hidden: bool = False):
             continue
         if child.is_symlink():
             raise Refused("backup_source_unsafe")
-        if folder.name == "memory":
+        if folder.name in {"memory", "process-mock"}:
             identifier(child.name)
             if not child.is_dir():
                 raise Refused("backup_path_invalid")
@@ -110,6 +123,8 @@ def _store_files(folder: Path, *, skip_hidden: bool = False):
         else:
             candidates = (child,)
         for path in candidates:
+            if skip_hidden and folder.name == "process-mock" and path.name in PROCESS_TRANSIENT:
+                continue
             if skip_hidden and path.name.startswith("."):
                 continue
             relative = str(path.relative_to(folder.parent))
@@ -159,6 +174,61 @@ def _check_database(root: Path) -> dict:
             raise Refused("backup_references_invalid")
         if not schema_matches(db):
             raise Refused("backup_schema_unexpected")
+        selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
+        if selected is None or selected[0] not in {"inline_mock", "process_mock"}:
+            raise Refused("backup_runtime_invalid")
+        for run in db.execute("SELECT * FROM runs"):
+            if (
+                run["runtime_kind"] != selected[0]
+                or run["runtime_version"] != 1
+                or not re.fullmatch(r"[0-9a-f]{64}", run["input_digest"])
+            ):
+                raise Refused("backup_runtime_invalid")
+            if run["runtime_kind"] == "process_mock":
+                if run["finished_at"] is None:
+                    raise Refused("backup_process_unsettled")
+                if not run["launch_attempted"] and (
+                    run["status"] != "cancelled"
+                    or run["actual_cost"] != 0
+                    or not run["usage_known"]
+                ):
+                    raise Refused("backup_runtime_invalid")
+                if run["launch_attempted"]:
+                    folder = root / "process-mock" / run["id"]
+                    _read(folder / "request.json")
+                    try:
+                        request = read_request(folder)
+                    except ValueError, OSError:
+                        raise Refused("backup_runtime_invalid") from None
+                    evidence = decode_evidence(
+                        _read(folder / "result.json"), expected_digest=run["input_digest"]
+                    )
+                    if (
+                        request["instruction_digest"] != run["input_digest"]
+                        or evidence.status != run["status"]
+                        or evidence.status not in {"succeeded", "failed", "cancelled"}
+                        or not (folder / "started").is_file()
+                    ):
+                        raise Refused("backup_runtime_invalid")
+                    if (
+                        run["usage_known"]
+                        and not db.execute(
+                            "SELECT 1 FROM usage_reconciliations WHERE run_id=?", (run["id"],)
+                        ).fetchone()
+                        and evidence.cost != run["actual_cost"]
+                    ):
+                        raise Refused("backup_runtime_invalid")
+                    if run["artifact_id"]:
+                        artifact = db.execute(
+                            "SELECT * FROM artifacts WHERE id=?", (run["artifact_id"],)
+                        ).fetchone()
+                        if (
+                            artifact is None
+                            or evidence.output is None
+                            or hashlib.sha256(evidence.output.encode()).hexdigest()
+                            != artifact["sha256"]
+                        ):
+                            raise Refused("backup_runtime_invalid")
         rows = db.execute("SELECT * FROM artifacts").fetchall()
         for row in rows:
             # Do not instantiate the store on verification: verification never repairs missing dirs.
@@ -223,6 +293,20 @@ def verify(source: Path) -> dict:
     return manifest | {"verified": checked}
 
 
+def _process_lock(stack: ExitStack, path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        lock = stack.enter_context(os.fdopen(descriptor, "a"))
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            raise Refused("backup_source_unsafe")
+    except OSError:
+        raise Refused("backup_source_unsafe") from None
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise Refused("backup_workers_busy") from None
+
+
 def capture(data: Path, destination: Path) -> dict:
     data = data.resolve()
     destination = destination.parent.resolve() / destination.name
@@ -244,6 +328,23 @@ def capture(data: Path, destination: Path) -> dict:
         # writer slot directly without using the operational mutation interface.
         with sqlite3.connect(database.path) as frozen:
             frozen.execute("BEGIN IMMEDIATE")
+            if frozen.execute(
+                "SELECT 1 FROM runs WHERE runtime_kind='process_mock' AND finished_at IS NULL"
+            ).fetchone():
+                raise Refused("backup_process_unsettled")
+            process_root = data / "process-mock"
+            if process_root.exists():
+                if process_root.is_symlink() or not process_root.is_dir():
+                    raise Refused("backup_source_unsafe")
+                _process_lock(stack, process_root / ".launch.lock")
+                for folder in process_root.iterdir():
+                    if folder.name.startswith("."):
+                        continue
+                    if folder.is_symlink() or not folder.is_dir():
+                        raise Refused("backup_source_unsafe")
+                    if not (folder / "result.json").is_file():
+                        raise Refused("backup_process_unsettled")
+                    _process_lock(stack, folder / "worker.lock")
             with sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True) as source:
                 with sqlite3.connect(temporary / "hearth.db") as target:
                     source.backup(target)

@@ -23,8 +23,8 @@ TOKEN = "synthetic-installed-release-token"
 
 
 @contextmanager
-def serve(data):
-    app = create_app(data, TOKEN)
+def serve(data, runtime_kind=None):
+    app = create_app(data, TOKEN, runtime_kind=runtime_kind)
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
@@ -56,11 +56,11 @@ def request(base, path, *, body=None, authenticated=True, key=None):
         return json.loads(content) if path.startswith("/api/") else content
 
 
-def main():
+def check_application(runtime_kind):
     assert hearth.__file__ is not None
     assert Path(hearth.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
-    data = Path.cwd() / "http-data"
-    with serve(data) as base:
+    data = Path.cwd() / ("http-data-" + runtime_kind)
+    with serve(data, runtime_kind=runtime_kind) as base:
         html = request(base, "/", authenticated=False).decode()
         assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
         assert assets and all(request(base, asset, authenticated=False) for asset in assets)
@@ -92,13 +92,15 @@ def main():
             time.sleep(0.05)
         artifact = request(base, f"/api/artifacts/{result['artifact_id']}")
         assert artifact["artifact"]["simulated"] and "simulation" in artifact["content"]
+        assert result["runtime_kind"] == runtime_kind and result["runtime_version"] == 1
+        assert len(result["input_digest"]) == 64
     with serve(data) as base:
         assert request(base, f"/api/commands/{receipt['command_id']}") == receipt
         assert request(base, f"/api/runs/{run['run_id']}") == result
         assert request(base, "/api/residents/reader/memory") == saved
-    capture(data, Path.cwd() / "backup")
-    restore(Path.cwd() / "backup", Path.cwd() / "restored")
-    with serve(Path.cwd() / "restored") as base:
+    capture(data, Path.cwd() / ("backup-" + runtime_kind))
+    restore(Path.cwd() / ("backup-" + runtime_kind), Path.cwd() / ("restored-" + runtime_kind))
+    with serve(Path.cwd() / ("restored-" + runtime_kind)) as base:
         assert request(base, "/api/state")["restore_hold"] is True
         assert request(base, f"/api/artifacts/{result['artifact_id']}") == artifact
         try:
@@ -111,4 +113,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    for kind in ("inline_mock", "process_mock"):
+        check_application(kind)

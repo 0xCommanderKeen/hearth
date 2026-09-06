@@ -20,9 +20,39 @@ class Evidence:
     cost: int | None = None
 
 
+def decode_evidence(raw: bytes, *, expected_digest: str | None = None) -> Evidence:
+    try:
+        if len(raw) > MAX_ARTIFACT:
+            return Evidence("unknown")
+        document = json.loads(raw)
+        if not isinstance(document, dict) or document.get("simulated") is not True:
+            return Evidence("unknown")
+        if expected_digest is not None and document.get("instruction_digest") != expected_digest:
+            return Evidence("unknown")
+        evidence = Evidence(**document["evidence"])
+        if evidence.status not in {"running", "succeeded", "failed", "cancelled"}:
+            return Evidence("unknown")
+        if evidence.cost is not None:
+            microdollars(evidence.cost)
+        if evidence.output is not None and (
+            not isinstance(evidence.output, str) or len(evidence.output.encode()) > MAX_ARTIFACT
+        ):
+            return Evidence("unknown")
+        if evidence.status == "succeeded" and (
+            not isinstance(evidence.output, str) or not evidence.output.strip()
+        ):
+            return Evidence("unknown")
+        return evidence
+    except ValueError, KeyError, TypeError:
+        return Evidence("unknown")
+
+
 class Runtime(Protocol):
+    kind: str
+    version: int
+
     def start(self, run_id: str, instruction: str) -> None: ...
-    def inspect(self, run_id: str) -> Evidence: ...
+    def inspect(self, run_id: str, *, expected_digest: str | None = None) -> Evidence: ...
     def stop(self, run_id: str) -> None: ...
 
 
@@ -32,6 +62,9 @@ class MockRuntime:
     A held run stays running until stop is requested. Other scenarios finish during
     start. Instructions are recorded by digest only; summaries use synthetic notes.
     """
+
+    kind = "inline_mock"
+    version = 1
 
     def __init__(self, root: Path, *, scenario: str = "success"):
         if scenario not in {"success", "hold", "failure", "unknown_usage"}:
@@ -94,30 +127,14 @@ class MockRuntime:
                 {"instruction_digest": digest, "evidence": asdict(evidence), "simulated": True},
             )
 
-    def inspect(self, run_id: str) -> Evidence:
+    def inspect(self, run_id: str, *, expected_digest: str | None = None) -> Evidence:
         path = self._path(run_id)
         try:
             with path.open("rb") as file:
                 raw = file.read(MAX_ARTIFACT + 1)
             if len(raw) > MAX_ARTIFACT:
                 return Evidence("unknown")
-            document = json.loads(raw)
-            if not isinstance(document, dict) or document.get("simulated") is not True:
-                return Evidence("unknown")
-            evidence = Evidence(**document["evidence"])
-            if evidence.status not in {"running", "succeeded", "failed", "cancelled"}:
-                return Evidence("unknown")
-            if evidence.cost is not None:
-                microdollars(evidence.cost)
-            if evidence.output is not None and (
-                not isinstance(evidence.output, str) or len(evidence.output.encode()) > MAX_ARTIFACT
-            ):
-                return Evidence("unknown")
-            if evidence.status == "succeeded" and (
-                not isinstance(evidence.output, str) or not evidence.output.strip()
-            ):
-                return Evidence("unknown")
-            return evidence
+            return decode_evidence(raw, expected_digest=expected_digest)
         except FileNotFoundError:
             return Evidence("absent")
         except OSError, ValueError, KeyError, TypeError:

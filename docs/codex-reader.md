@@ -2,6 +2,11 @@
 
 Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred.
 
+Mock integration now pins adapter kind, contract version and exact input digest
+at admission. Fresh stores can select the process mock, which participates in
+quiescent backup and held restore. These pins do not yet describe a real model or
+pricing. The remaining sequence below is the design for actual Codex execution.
+
 ## Established interface
 
 The selected model identifier is `gpt-6-astra`. Official model documentation lists reasoning efforts low, medium, high, xhigh and max. Its API model page establishes the identifier and advertised capabilities, but does not prove access through the eventual CLI account. Preserve the selection and fail visibly if unavailable; do not silently substitute a model. [Model guidance](https://developers.openai.com/api/docs/guides/latest-model), [Astra model](https://developers.openai.com/api/docs/models/gpt-6-astra).
@@ -99,5 +104,6 @@ cannot establish model quality or the host isolation boundary.
   verified without exposing existing personal credentials. No fallback model.
 - Explicit selection of a real test after mock worker checks and host evidence.
 
-The current application stays wired exclusively to `MockRuntime`. This document
-is an implementation design, not proof that a Codex adapter or isolation exists.
+The application supports inline and process-backed mocks. This document is an
+implementation design for real execution, not proof that a Codex adapter or
+isolation exists.
