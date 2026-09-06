@@ -28,7 +28,7 @@ share authenticated snapshots/SSE and preserve editing drafts across conflicts.
 Memory is immutable, checksummed and pinned at admission; skills belong to the
 pinned declaration revision. Reader can only read its context.
 
-Full `make check` passes: 204 backend and 35 browser tests, lint, types, builds and
+The fresh-start baseline passed 204 backend and 35 browser tests, lint, types, builds and
 wheel checks. Fresh CLI summary/restart and current-schema backup/restore preserve
 memory and audit with the copied store held and the backup unchanged. The release
 wheel contains the direct schema and none of the removed modules. Rendered desktop
@@ -69,6 +69,9 @@ launch/started claims, bounded synthetic child output and durable cancellation.
 Real processes and temporary SQLite verify restart recovery and retention of
 ownership after uncertain launch. The application default stays the in-process
 mock; selector/provenance/backup wiring and real Codex isolation remain pending.
+Full `make check` now passes 216 backend and 35 browser tests plus isolated release
+verification. Independent Standards and Spec reviews found no blocking issues;
+each also ran all 12 process checks successfully.
 
 ## Remaining acceptance
 
