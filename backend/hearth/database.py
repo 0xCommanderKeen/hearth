@@ -5,7 +5,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+from hearth.migrations import execution_schema
+
+SCHEMA_VERSION = 2
 
 SCHEMA = (
     """CREATE TABLE residents (
@@ -77,6 +79,9 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = self._connect()
         try:
+            # SQLite's table rebuild recipe requires disabling FK enforcement before BEGIN.
+            # Every migration is checked before commit, and ordinary connections enforce FKs.
+            connection.execute("PRAGMA foreign_keys = OFF")
             connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
@@ -84,7 +89,12 @@ class Database:
             if version == 0:
                 for statement in SCHEMA:
                     connection.execute(statement)
-                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                version = 1
+            if version == 1:
+                execution_schema(connection)
+            if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise RuntimeError("Migration would leave invalid references")
+            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             connection.commit()
         except BaseException:
             connection.rollback()

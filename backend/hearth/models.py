@@ -76,3 +76,9 @@ class Run:
     reserved: int
     budget_day: str
     created_at: int
+    actual_cost: int | None = None
+    usage_known: bool = False
+    finished_at: int | None = None
+    artifact_id: str | None = None
+    cancellation_requested: bool = False
+    launch_attempted: bool = False

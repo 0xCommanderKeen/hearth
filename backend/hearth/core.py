@@ -24,6 +24,7 @@ from hearth.models import (
 )
 
 COMMAND_LIFETIME = 30 * 24 * 60 * 60
+ACTIVE_RUNS = "('starting', 'running', 'stopping', 'interrupted')"
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
@@ -159,8 +160,7 @@ class Hearth:
     def admit(self, task_id: str, *, reserve: int, concurrency_limit: int = 2) -> Run:
         """Reserve exposure and resident ownership before any runtime can launch.
 
-        This foundation has no terminal transition: admitted runs remain starting.
-        Runtime evidence and settlement are introduced together in the next slice.
+        Terminal transitions belong to Execution, which requires runtime evidence.
         """
         microdollars(reserve)
         if reserve == 0:
@@ -176,9 +176,17 @@ class Hearth:
             if task["status"] != "queued":
                 raise Refused("task_already_admitted")
             resident_id = task["resident_id"]
-            if db.execute("SELECT 1 FROM runs WHERE resident_id = ?", (resident_id,)).fetchone():
+            if db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone():
+                raise Refused("resident_paused")
+            if db.execute(
+                f"SELECT 1 FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
+                (resident_id,),
+            ).fetchone():
                 raise Refused("resident_busy")
-            if db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] >= concurrency_limit:
+            if (
+                db.execute(f"SELECT COUNT(*) FROM runs WHERE status IN {ACTIVE_RUNS}").fetchone()[0]
+                >= concurrency_limit
+            ):
                 raise Refused("capacity_exhausted")
             declaration = db.execute(
                 """SELECT d.* FROM declarations d JOIN residents r
@@ -187,9 +195,16 @@ class Hearth:
             ).fetchone()
             # Outstanding exposure carries across midnight; settlement must explicitly release it.
             outstanding = db.execute(
-                "SELECT COALESCE(SUM(reserved), 0) FROM runs WHERE resident_id = ?", (resident_id,)
+                "SELECT COALESCE(SUM(reserved), 0) FROM runs "
+                f"WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
+                (resident_id,),
             ).fetchone()[0]
-            if outstanding + reserve > declaration["daily_limit"]:
+            spent = db.execute(
+                "SELECT COALESCE(SUM(actual_cost), 0) FROM runs "
+                "WHERE resident_id = ? AND budget_day = ? AND usage_known = 1",
+                (resident_id, day),
+            ).fetchone()[0]
+            if outstanding + spent + reserve > declaration["daily_limit"]:
                 raise Refused("budget_exhausted")
             run = Run(
                 str(uuid.uuid4()),
@@ -203,7 +218,8 @@ class Hearth:
                 now,
             )
             db.execute(
-                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", tuple(asdict(run).values())
+                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(asdict(run).values()),
             )
             db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
             _audit(
