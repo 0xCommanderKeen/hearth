@@ -31,8 +31,9 @@ reason yet to split them into separately deployed processes or generic framework
 - Runtime-origin tools have no short-lived scoped authentication path yet. Current
   mock approval requests are operator-driven. A real resident must never receive
   the operator token, database, engine socket or effect credentials.
-- Executor locking excludes simultaneous steps, not a second long-lived supervisor
-  process. The planned single-supervisor startup exclusion still needs implementation.
+- Process-lifetime supervisor ownership and drained shutdown are now implemented
+  and tested (issue #17; `supervision.md`). Standalone mock operations retain their
+  per-operation locks; this is not a v1/v2 transfer guard.
 - Unknown usage pauses conservatively, but there is not yet a supported evidence-
   based accounting reconciliation flow. Operator resume cannot clear this hold.
 - Restore is deliberately read-only. There is no activation/ownership transfer,

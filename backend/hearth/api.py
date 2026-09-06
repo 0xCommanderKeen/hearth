@@ -1,7 +1,6 @@
 """Authenticated local mock API and the browser assets served from the same origin."""
 
 import asyncio
-import contextlib
 import hmac
 import json
 import os
@@ -26,6 +25,7 @@ from hearth.notifications import MockInbox, Notifications
 from hearth.observation import snapshot
 from hearth.routines import Routines
 from hearth.runtime import MockRuntime
+from hearth.supervisor import Supervisor
 
 MAX_BODY = 65_536
 
@@ -136,35 +136,19 @@ def create_app(
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
     routines = Routines(hearth)
     notifications = Notifications(hearth, MockInbox(data / "mock-inbox"))
-    health = {"executor_error": None, "notification_error": None}
-
-    async def supervise_runs():
-        while True:
-            try:
-                await asyncio.to_thread(routines.tick)
-                await asyncio.to_thread(routines.admit_queued)
-                await asyncio.to_thread(executor.step)
-                health["executor_error"] = None
-            except Exception as error:
-                # Expose only error class; private paths/output must not enter shared health.
-                health["executor_error"] = type(error).__name__
-            try:
-                await asyncio.to_thread(notifications.step)
-                health["notification_error"] = None
-            except Exception as error:
-                health["notification_error"] = type(error).__name__
-            await asyncio.sleep(0.5)
+    supervisor = Supervisor(executor, routines, notifications)
 
     @asynccontextmanager
     async def lifespan(app):
-        worker = asyncio.create_task(supervise_runs()) if supervise else None
+        if supervise:
+            supervisor.start()
         try:
             yield
         finally:
-            if worker:
-                worker.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await worker
+            if supervise:
+                # The dedicated worker owns its lock until all in-flight work ends.
+                # Even cancellation of this await cannot release that ownership.
+                await asyncio.to_thread(supervisor.stop)
 
     app = FastAPI(
         title="Hearth mock interface",
@@ -175,6 +159,7 @@ def create_app(
     )
     app.add_middleware(OperatorAuth, token=token)
     app.state.hearth, app.state.execution, app.state.executor = hearth, execution, executor
+    app.state.supervisor = supervisor
 
     @app.exception_handler(Refused)
     async def refused(request: Request, error: Refused):
@@ -194,7 +179,7 @@ def create_app(
 
     @app.get("/api/health")
     def operator_health():
-        return {"simulated": True, **health}
+        return {"simulated": True, **supervisor.health()}
 
     @app.get("/api/events")
     async def events(request: Request, cursor: int = -1, epoch: str = ""):
