@@ -1,0 +1,1 @@
+"""Hearth's operational core."""
