@@ -75,7 +75,9 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    existing hold. A process exit alone does not prove a successful summary or zero
    cost. Test this parser with documented synthetic event fixtures, including
    interrupted and malformed streams; fixture success is not real compatibility.
-4. **Stage only Reader's pinned inputs.** Materialize purpose, skill, task, memory
+4. **Stage only Reader's pinned inputs.** The internal [staging helper](staged-input.md)
+   now publishes digest-checked synthetic context; worker exposure and isolation
+   remain pending. Materialize purpose, skill, task, memory
    and synthetic notes from the admitted context into an isolated per-run directory.
    Do not mount Hearth's database, host home, other residents, operator token,
    approval credentials or engine socket. Treat notes as data, not permission.
