@@ -209,11 +209,14 @@ uses no Docker access. Held restores cannot execute, and repeated held generatio
 retain original execution provenance. Current required configuration/request fields
 are defined directly; incompatible prototype data is refused without conversion.
 
-Validation: full `make check` passed 359 backend and 35 browser tests, lint/types/build
-and both installed inline/POSIX mock journeys. Sixteen new integration checks cover
+Validation: full `make check` passed 362 backend and 35 browser tests, lint/types/build
+and both installed inline/POSIX mock journeys. Nineteen new integration checks cover
 normal execution, restart, worker loss, cancellation before/during dispatch, timeout,
 input contradiction, active-worker capture refusal, receipt corruption and repeated
-held recovery. The actual Mac worker rehearsal verifies synthetic success, cancellation,
-app restart and loss of the trusted worker, plus container cleanup and held restore.
+held recovery. Review regressions cover persisted timeouts after worker loss and
+receipt conflicts during cleanup/cached-result observation. The actual Mac worker
+rehearsal verifies synthetic success, cancellation,
+app restart, loss of the trusted worker and its retained timeout, plus container
+cleanup and held restore.
 See [configuration and evidence](container-worker.md). This completes the contained
 mock integration, not actual Codex/model-channel execution or daily-use acceptance.

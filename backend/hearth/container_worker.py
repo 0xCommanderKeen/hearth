@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from hearth.artifacts import Artifacts
-from hearth.container_rehearsal import ContainerRehearsal, Observation
+from hearth.container_rehearsal import ContainerRehearsal, Observation, container_lock
 from hearth.core import Hearth
 from hearth.database import Database
 from hearth.execution import Execution
@@ -53,7 +53,7 @@ def reconcile(folder: Path, request: dict, *, docker=None) -> Evidence:
         raise Refused("container_identity_conflict")
     cancelled = (folder / "cancel.json").exists()
     observation = runtime.inspect(folder.name)
-    if cancelled and observation.status == "running":
+    if (cancelled or time.time() >= request["deadline"]) and observation.status == "running":
         observation = runtime.stop(folder.name)
     result = container_evidence(observation, cancelled=cancelled)
     if result.status in {"succeeded", "failed", "cancelled"}:
@@ -61,9 +61,15 @@ def reconcile(folder: Path, request: dict, *, docker=None) -> Evidence:
         # Cleanup failure must not erase that evidence or authorize another launch.
         try:
             runtime.remove(folder.name)
-        except OSError, Refused, subprocess.TimeoutExpired:
+        except Refused:
+            return Evidence("unknown")
+        except OSError, subprocess.TimeoutExpired:
             pass
-        _publish_result(folder, request, result)
+        with container_lock(runtime.root / folder.name / ".terminal.lock"):
+            confirmed = runtime._receipt(runtime._claim(folder.name))
+            if confirmed != observation:
+                return Evidence("unknown")
+            _publish_result(folder, request, result)
     return result
 
 
@@ -111,15 +117,20 @@ def run_container(folder: Path, request: dict, *, docker=None) -> Evidence:
             input_digest=request["instruction_digest"],
         ),
     )
-    deadline = time.monotonic() + request["timeout"]
     while True:
         result = reconcile(folder, request, docker=docker)
         if result.status != "running":
             return result
-        if time.monotonic() >= deadline:
-            runtime.stop(folder.name)
-            return reconcile(folder, request, docker=docker)
         time.sleep(0.05)
+
+
+def validate_result(folder: Path, request: dict, result: Evidence) -> None:
+    database = Database(folder.parent.parent / "hearth.db")
+    with database.transaction() as db:
+        run = db.execute("SELECT * FROM runs WHERE id=?", (folder.name,)).fetchone()
+        if run is None:
+            raise Refused("run_not_found")
+        verify_backup_run(folder.parent.parent, db, run, request, result)
 
 
 def verify_backup_run(root: Path, db, run, request: dict, evidence: Evidence) -> None:

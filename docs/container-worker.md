@@ -22,7 +22,9 @@ the current required fields are refused without conversion; start with fresh dat
 ## Execution and recovery
 
 Admission and the executor retain their existing process runtime contract. The durable
-request pins the container choice, input digest, scenario, epoch and owner token. The
+request pins the container choice, input digest, scenario, epoch, owner token and
+a finite wall-clock deadline before spawning. Reconciliation enforces that same
+deadline after worker loss; reopening never resets it. The
 owner and epoch stay in private host evidence outside the mounted input. The detached
 worker inherits a minimal environment and mounts only the staged synthetic context.
 It obtains the database dispatch guard immediately before starting the inspected
@@ -36,7 +38,9 @@ simulation; the fixed fixture costs 2,000 synthetic microdollars, confirmed canc
 costs 1,000, and cancellation before worker dispatch costs zero. Other terminal failures
 retain unknown usage. These values do not describe model usage or provider charges.
 
-Receipt publication precedes cleanup. The worker attempts removal of the exact exited
+Receipt publication precedes cleanup. Conflicts or unproven termination found
+during cleanup prevent result publication. Cached process results are also checked
+against current container evidence before the executor accepts them. The worker attempts removal of the exact exited
 container and retains its immutable claim/receipt. If removal cannot be verified, the
 receipt still proves the original execution terminated; the stopped container may need
 later cleanup through the same owned claim. Missing, corrupt or conflicting execution

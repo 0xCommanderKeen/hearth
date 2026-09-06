@@ -281,3 +281,48 @@ def test_container_timeout_is_failed_with_unknown_usage(system, monkeypatch):
     assert result.status == "failed" and not result.usage_known
     assert result.actual_cost is None
     assert [call[0] for call in docker.calls].count("stop") == 1
+
+
+def test_worker_loss_does_not_reset_durable_timeout(system, monkeypatch):
+    import time
+
+    app, run, docker, data = system
+    app.state.executor.step()
+    folder = data / "process-mock" / run.id
+    (folder / "started").touch()
+    monkeypatch.setattr("hearth.container_rehearsal.LocalDocker", lambda: docker)
+    ContainerRehearsal(app.state.hearth.database, data / "container-runs").start(run.id)
+    deadline = read_request(folder)["deadline"]
+    monkeypatch.setattr(time, "time", lambda: deadline + 1)
+    app.state.executor.step()
+    result = app.state.hearth.run(run.id)
+    assert result.status == "failed" and not result.usage_known
+    assert [call[0] for call in docker.calls].count("stop") == 1
+    assert [call[0] for call in docker.calls].count("start") == 1
+
+
+def test_cleanup_receipt_conflict_cannot_publish_success(system, monkeypatch):
+    app, run, _, data = system
+    original = ContainerRehearsal.remove
+
+    def conflict(runtime, run_id):
+        (runtime.root / run_id / "terminal.conflict").touch()
+        return original(runtime, run_id)
+
+    monkeypatch.setattr(ContainerRehearsal, "remove", conflict)
+    folder = dispatch(system)
+    assert app.state.hearth.run(run.id).finished_at is None
+    assert app.state.executor.runtime.inspect(run.id).status == "unknown"
+    assert not (folder / "result.json").exists()
+
+
+def test_cached_process_result_cannot_hide_invalid_container_receipt(system):
+    app, run, _, data = system
+    app.state.executor.step()
+    folder = data / "process-mock" / run.id
+    worker(folder)
+    assert (folder / "result.json").is_file()
+    (data / "container-runs" / run.id / "terminal.conflict").touch()
+    app.state.executor.step()
+    assert app.state.hearth.run(run.id).finished_at is None
+    assert app.state.executor.runtime.inspect(run.id).status == "unknown"

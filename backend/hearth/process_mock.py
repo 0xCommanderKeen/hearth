@@ -3,6 +3,7 @@
 import fcntl
 import hashlib
 import json
+import math
 import os
 import selectors
 import signal
@@ -51,6 +52,9 @@ def read_request(folder: Path) -> dict:
         raise ValueError("invalid request")
     if value["boundary"] == "container" and (
         value["scenario"] not in {"success", "hold"}
+        or type(value.get("deadline")) not in {int, float}
+        or not math.isfinite(value["deadline"])
+        or value["deadline"] <= 0
         or not isinstance(value.get("authority"), dict)
         or set(value["authority"]) != {"epoch", "owner_token"}
         or any(not isinstance(v, str) or not v for v in value["authority"].values())
@@ -141,6 +145,7 @@ class ProcessMockRuntime:
                     "authority": authority,
                     "scenario": self.scenario,
                     "timeout": self.timeout,
+                    "deadline": time.time() + self.timeout,
                 },
             )
             # No retry after this durable claim, even when spawning raises or the
@@ -170,6 +175,10 @@ class ProcessMockRuntime:
                     document = json.loads(file.read(MAX_ARTIFACT + 1))
                 if document.get("instruction_digest") != request["instruction_digest"]:
                     return Evidence("unknown")
+                if request["boundary"] == "container":
+                    from hearth.container_worker import validate_result
+
+                    validate_result(folder, request, result)
                 return result
             if (folder / "result.json").exists():
                 return Evidence("unknown")

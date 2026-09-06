@@ -60,7 +60,7 @@ def main():
     report["script_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     report["macos"] = platform.mac_ver()[0]
     try:
-        for scenario in ("success", "hold", "worker_loss"):
+        for scenario in ("success", "hold", "worker_loss", "worker_loss_timeout"):
             data = temporary / scenario
             app = create_app(
                 data,
@@ -78,6 +78,8 @@ def main():
                 "summary", "reader", "Summarize synthetic notes", expires_at=int(time.time()) + 300
             )
             run = hearth.admit(task.task_id, reserve=3000)
+            if scenario == "worker_loss_timeout":
+                app.state.executor.runtime.timeout = 3
             owned_workers = []
             spawn = subprocess.Popen
 
@@ -100,12 +102,13 @@ def main():
                         return "pending"
 
                 wait_for(running, lambda value: value == "running")
-                if scenario == "worker_loss":
+                if scenario in {"worker_loss", "worker_loss_timeout"}:
                     # This handle belongs to the child spawned by this script;
                     # never read or signal a persisted host PID.
                     owned_workers[0].kill()
                     owned_workers[0].wait(timeout=5)
-                app.state.executor.execution.cancel(run.id)
+                if scenario != "worker_loss_timeout":
+                    app.state.executor.execution.cancel(run.id)
             # Reopen the application while the detached trusted worker owns the run.
             reopened = create_app(data, TOKEN, supervise=False)
 
@@ -114,8 +117,20 @@ def main():
                 return reopened.state.hearth.run(run.id)
 
             result = wait_for(step, lambda value: value.finished_at is not None)
-            assert result.status == ("succeeded" if scenario == "success" else "cancelled")
-            assert result.actual_cost == (2000 if scenario == "success" else 1000)
+            expected_status = {
+                "success": "succeeded",
+                "hold": "cancelled",
+                "worker_loss": "cancelled",
+                "worker_loss_timeout": "failed",
+            }[scenario]
+            expected_cost = {
+                "success": 2000,
+                "hold": 1000,
+                "worker_loss": 1000,
+                "worker_loss_timeout": None,
+            }[scenario]
+            assert result.status == expected_status
+            assert result.actual_cost == expected_cost
             if scenario == "success":
                 _, output = reopened.state.executor.execution.artifact(result.artifact_id)
                 assert "Synthetic note" in output and "no model was called" in output
@@ -157,7 +172,8 @@ def main():
                     "status": result.status,
                     "synthetic_cost": result.actual_cost,
                     "restart": True,
-                    "worker_loss": scenario == "worker_loss",
+                    "worker_loss": scenario in {"worker_loss", "worker_loss_timeout"},
+                    "timeout_survived_worker_loss": scenario == "worker_loss_timeout",
                     "held_restore": True,
                     "owned_container_removed": True,
                 }
