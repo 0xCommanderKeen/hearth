@@ -258,3 +258,35 @@ def test_mock_api_strict_policy_and_decision_payload(client):
         ).status_code
         == 409
     )
+
+
+def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
+    app = create_app(tmp_path, TOKEN)
+    now = [1_788_652_800]
+    app.state.hearth.clock = lambda: now[0]
+    with TestClient(app) as client:
+        client.post("/api/demo/reader", headers=AUTH)
+        body = {
+            "resident_id": "reader",
+            "instruction": "Scheduled synthetic summary",
+            "local_time": "09:00",
+            "timezone": "UTC",
+            "enabled": True,
+            "expected_revision": 0,
+        }
+        assert client.post("/api/routines/daily", json=body).status_code == 401
+        response = client.post("/api/routines/daily", headers=AUTH, json=body)
+        assert response.status_code == 200
+        now[0] = response.json()["next_at"]
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            state = client.get("/api/state", headers=AUTH).json()
+            if state["runs"] and state["runs"][0]["status"] == "succeeded":
+                break
+            time.sleep(0.02)
+        assert len(state["occurrences"]) == 1
+        assert state["runs"][0]["status"] == "succeeded"
+        assert state["routines"][0]["next_at"] > now[0]
+        body.update(enabled=False, expected_revision=1)
+        assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 200
+        assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 409

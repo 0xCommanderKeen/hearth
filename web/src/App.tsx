@@ -8,6 +8,7 @@ import {
 } from "./client";
 import "./style.css";
 import { Approvals } from "./Approvals";
+import { RoutinePanel } from "./Routines";
 
 const statusLabel = (s: string) =>
   ({
@@ -555,6 +556,14 @@ export function App() {
                 )}
               </section>
             </div>
+            {view === "townhall" && (
+              <RoutinePanel
+                client={client}
+                snapshot={snapshot}
+                busy={busy}
+                act={act}
+              />
+            )}
             {view === "townhall" && (
               <Approvals
                 client={client}

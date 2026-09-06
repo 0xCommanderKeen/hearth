@@ -23,6 +23,7 @@ from hearth.database import Database
 from hearth.execution import Execution, Executor
 from hearth.models import Declaration, Refused
 from hearth.observation import snapshot
+from hearth.routines import Routines
 from hearth.runtime import MockRuntime
 
 MAX_BODY = 65_536
@@ -102,6 +103,16 @@ class DecisionPost(BaseModel):
     approve: bool
 
 
+class RoutinePost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    resident_id: str = Field(min_length=1, max_length=128)
+    instruction: str = Field(min_length=1, max_length=32_000)
+    local_time: str = Field(min_length=5, max_length=5)
+    timezone: str = Field(min_length=1, max_length=100)
+    enabled: bool
+    expected_revision: int = Field(ge=0)
+
+
 def create_app(
     data: Path, token: str, *, scenario: str = "success", supervise: bool = True
 ) -> FastAPI:
@@ -114,11 +125,14 @@ def create_app(
     executor = Executor(execution, MockRuntime(data / "mock-runtime", scenario=scenario))
     authority = Authority(hearth, execution.artifacts)
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
+    routines = Routines(hearth)
     health = {"executor_error": None}
 
     async def supervise_runs():
         while True:
             try:
+                await asyncio.to_thread(routines.tick)
+                await asyncio.to_thread(routines.admit_queued)
                 await asyncio.to_thread(executor.step)
                 health["executor_error"] = None
             except Exception as error:
@@ -287,6 +301,18 @@ def create_app(
     @app.post("/api/approvals/{approval_id}/execute")
     def execute_action(approval_id: str):
         return broker.execute(approval_id)
+
+    @app.post("/api/routines/{routine_id}")
+    def save_routine(routine_id: str, body: RoutinePost):
+        return routines.save(
+            routine_id,
+            body.resident_id,
+            body.instruction,
+            local_time=body.local_time,
+            timezone=body.timezone,
+            enabled=body.enabled,
+            expected_revision=body.expected_revision,
+        )
 
     web = Path(__file__).parent / "web"
     if web.is_dir():
