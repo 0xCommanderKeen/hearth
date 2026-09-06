@@ -1,9 +1,12 @@
 """Readable mock-state exports. Validation confers neither trust nor execution authority."""
 
+import fcntl
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
+import uuid
 from pathlib import Path
 
 from hearth import backup
@@ -161,7 +164,6 @@ def _check(payload: dict, reference: sqlite3.Connection) -> dict:
             or len(file["text"].encode()) != artifact["size"]
         ):
             raise Refused("portable_artifact_invalid")
-    reference.rollback()
     return payload | {"tables": _canonical_tables(tables)}
 
 
@@ -256,3 +258,80 @@ def export(source: Path, destination: Path) -> dict:
         with backup._destination(destination) as pending:
             backup._write(pending / "state.json", content)
     return result
+
+
+def import_state(content: bytes, destination: Path) -> dict:
+    """Publish a held reconstruction; identical retries verify the existing copy."""
+    report = validate(content)
+    payload = json.loads(content)
+    destination = destination.parent.resolve() / destination.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = destination.with_name("." + destination.name + ".import.lock")
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if destination.exists() or destination.is_symlink():
+            return _existing_import(destination, report["semantic_sha256"])
+        with backup._destination(destination) as pending:
+            database = Database(pending / "hearth.db")
+            database.initialize()
+            epoch = str(uuid.uuid4())
+            hold = {
+                "kind": "portable_import",
+                "semantic_sha256": report["semantic_sha256"],
+                "source_epoch": payload["source_epoch"],
+            }
+            with sqlite3.connect(database.path) as db:
+                db.execute("PRAGMA synchronous=FULL")
+                _check(payload, db)
+                for row in payload["tables"]["runs"]:
+                    db.execute(
+                        "UPDATE runs SET owner_token=? WHERE id=?", (str(uuid.uuid4()), row["id"])
+                    )
+                db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (epoch,))
+                db.execute(
+                    "INSERT INTO system_meta VALUES ('restore_hold', ?)", (json.dumps(hold),)
+                )
+            os.chmod(database.path, 0o600)
+            for name, file in payload["files"].items():
+                backup._write(pending / name, file["text"].encode())
+            backup._check_database(pending)
+            with database.path.open("rb") as file:
+                os.fsync(file.fileno())
+        return _import_report(epoch, hold)
+
+
+def _import_report(epoch: str, hold: dict) -> dict:
+    return {
+        "read_only": True,
+        "epoch": epoch,
+        "source_epoch": hold["source_epoch"],
+        "semantic_sha256": hold["semantic_sha256"],
+    }
+
+
+def _existing_import(destination: Path, digest: str) -> dict:
+    if destination.is_symlink() or not destination.is_dir():
+        raise Refused("portable_destination_conflict")
+    with tempfile.TemporaryDirectory(prefix="hearth-import-check-") as temporary:
+        root = Path(temporary)
+        backup.capture(destination, root / "backup")
+        with sqlite3.connect(root / "backup/hearth.db") as db:
+            meta = dict(db.execute("SELECT key, value FROM system_meta"))
+        try:
+            hold = json.loads(meta["restore_hold"])
+            if (
+                not isinstance(hold, dict)
+                or set(hold) != {"kind", "semantic_sha256", "source_epoch"}
+                or hold["kind"] != "portable_import"
+                or hold["semantic_sha256"] != digest
+                or not isinstance(hold["source_epoch"], str)
+            ):
+                raise Refused("portable_destination_conflict")
+        except KeyError, TypeError, ValueError:
+            raise Refused("portable_destination_conflict") from None
+        # The marker alone is insufficient: compare the actual rows and file bytes.
+        actual = export(root / "backup", root / "export")
+        if actual["semantic_sha256"] != digest:
+            raise Refused("portable_destination_changed")
+        return _import_report(meta["epoch"], hold)

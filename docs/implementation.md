@@ -106,3 +106,13 @@ Verification 2026-09-06: 199 backend and 25 browser tests pass with full
 `make check`. CLI demo → backup → export-state → verify-state produced matching
 semantic fingerprints from synthetic state; no execution or import was performed
 by export/verification.
+
+Issue #27 adds a held portable importer, verified repeat import, concurrency
+exclusion and backup/reverse-export of held copies. Rows and files survive mock
+round trips with matching semantic digests; source runtime credentials are denied
+and API/executor/broker mutations remain blocked. See `portable-state.md`.
+Cross-system conversion, detailed semantic diff, ownership transfer, and real
+migration/rollback acceptance remain pending.
+Verification 2026-09-06: full `make check` passes (210 backend, 25 browser tests).
+CLI import/retry/reverse-export rehearsal produced one stable imported epoch on
+retry and matching semantic fingerprints throughout. No live data or activation.

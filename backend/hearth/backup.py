@@ -178,7 +178,10 @@ def capture(data: Path, destination: Path) -> dict:
                 raise Refused("backup_workers_busy") from None
         # The reserved write transaction freezes scheduler/API mutations too. A
         # separate read connection backs up the same stable state via SQLite's API.
-        with database.transaction(write=True):
+        # A backup is a read operation even for quarantined copies. Reserve a
+        # writer slot directly without using the operational mutation interface.
+        with sqlite3.connect(database.path) as frozen:
+            frozen.execute("BEGIN IMMEDIATE")
             with sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True) as source:
                 with sqlite3.connect(temporary / "hearth.db") as target:
                     source.backup(target)
