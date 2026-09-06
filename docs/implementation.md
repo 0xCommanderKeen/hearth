@@ -143,3 +143,20 @@ This is host evidence for the synthetic image, not a Codex integration or a real
 summary. [Reproduction and remaining gates](mac-isolation.md) cover actual staged
 mount permissions, durable worker identity, model transport/credential separation,
 pricing, real-test selection and the remaining observation/operation gates.
+
+## Pinned-input container ownership rehearsal
+
+Issue #62 connects actual `stage_run` 0400/0700 files to a non-root network-disabled
+container without broadening permissions. A durable claim precedes create and the
+exact inspected ID is persisted before start. Replay only inspects; missing, changed
+or uncertain evidence never authorizes another create/start. Ownership guards stop
+and removal. Terminal logs use the offline Codex parser with run-ID matching and
+observed container exit; no token/dollar usage is invented.
+
+The actual Mac rehearsal passed success and held-cancellation cases, including a
+lost start acknowledgement and observation from a fresh trusted process. It uses
+fresh SQLite, synthetic memory and the fixed Python image; no Codex or credentials.
+[Evidence and remaining integration](container-rehearsal.md) distinguish this from
+an application runtime and describe unavailable terminal logs after explicit cleanup.
+Full `make check` passes 306 backend/35 browser plus both installed mock journeys;
+14 fault-boundary tests use real SQLite, and the Mac rehearsal is separately opt-in.

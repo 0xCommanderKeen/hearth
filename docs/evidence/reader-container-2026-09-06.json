@@ -1,0 +1,54 @@
+{
+  "macos": "26.5.2",
+  "daemon": "27.3.1",
+  "image": "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
+  "synthetic_fixture": true,
+  "real_host_probe": true,
+  "module_sha256": "06f18b7fb9640a21bb4643f15aced9c7735eafca4428c5577871d43669f4abba",
+  "cases": [
+    {
+      "scenario": "success",
+      "observation": {
+        "status": "exited",
+        "transcript": {
+          "status": "completed",
+          "thread_id": "10fee300-d6ea-4c22-aa93-52fc53033fe6",
+          "messages": [
+            {
+              "id": "answer",
+              "text": "# Synthetic container summary\nSynthetic note: drafted the Hearth foundation.\nSynthetic note: task submission survives retries.\nSynthetic note: exercise cancellation and recovery next."
+            }
+          ],
+          "output": "# Synthetic container summary\nSynthetic note: drafted the Hearth foundation.\nSynthetic note: task submission survives retries.\nSynthetic note: exercise cancellation and recovery next.",
+          "usage": null,
+          "reason": null,
+          "contract": "codex-exec-jsonl-2026-09-06"
+        }
+      },
+      "input_mode": "0400",
+      "directory_mode": "0700",
+      "lost_start_reply": true,
+      "fresh_process_observed": "running"
+    },
+    {
+      "scenario": "hold",
+      "observation": {
+        "status": "exited",
+        "transcript": {
+          "status": "incomplete",
+          "thread_id": null,
+          "messages": [],
+          "output": null,
+          "usage": null,
+          "reason": "termination_unproven",
+          "contract": "codex-exec-jsonl-2026-09-06"
+        }
+      },
+      "input_mode": "0400",
+      "directory_mode": "0700",
+      "lost_start_reply": true,
+      "fresh_process_observed": "running"
+    }
+  ],
+  "status": "passed"
+}
