@@ -7,6 +7,7 @@ import {
   type Snapshot,
 } from "./client";
 import "./style.css";
+import { Approvals } from "./Approvals";
 
 const statusLabel = (s: string) =>
   ({
@@ -554,6 +555,14 @@ export function App() {
                 )}
               </section>
             </div>
+            {view === "townhall" && (
+              <Approvals
+                client={client}
+                snapshot={snapshot}
+                busy={busy}
+                act={act}
+              />
+            )}
             {output && (
               <section className="output" aria-label="Summary output">
                 <div className="section-title">

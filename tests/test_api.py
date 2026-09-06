@@ -180,3 +180,81 @@ def test_active_work_remains_visible_when_recent_history_is_full(client):
     assert len(state["runs"]) == len(state["tasks"]) == 100
     assert any(run["id"] == active.id for run in state["runs"])
     assert any(task["id"] == old.task_id for task in state["tasks"])
+
+
+def proposal(client):
+    client.post("/api/demo/reader", headers=AUTH)
+    receipt = task(client).json()
+    client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
+    run = client.app.state.executor.step()[0]
+    assert (
+        client.post(
+            "/api/residents/reader/publication-policy",
+            headers=AUTH,
+            json={"enabled": True, "expected_revision": 0},
+        ).status_code
+        == 200
+    )
+    body = {"artifact_id": run.artifact_id, "expires_at": int(time.time()) + 600}
+    headers = {**AUTH, "Idempotency-Key": "approval-request"}
+    response = client.post("/api/approvals", headers=headers, json=body)
+    assert response.status_code == 201
+    assert client.post("/api/approvals", headers=headers, json=body).json() == response.json()
+    return response.json()
+
+
+def test_mock_approval_operator_journey(client):
+    request = proposal(client)
+    route = "/api/approvals/" + request["id"]
+    assert client.get(route).status_code == 401
+    assert client.post(route + "/decision", json={}).status_code == 401
+    assert client.post(route + "/execute").status_code == 401
+    preview = client.get(route, headers=AUTH).json()
+    assert preview["approval"] == request
+    assert "No model was called" in preview["content"]
+    assert client.post(route + "/execute", headers=AUTH).status_code == 409
+    decision = {"reviewed_digest": request["digest"], "approve": True}
+    assert (
+        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "approved"
+    )
+    action = client.post(route + "/execute", headers=AUTH).json()
+    assert action["status"] == "completed"
+    assert client.post(route + "/execute", headers=AUTH).json() == action
+    state = client.get("/api/state", headers=AUTH).json()
+    assert state["approvals"][0]["status"] == "approved"
+    assert state["actions"][0]["status"] == "completed"
+    assert state["publication_policies"][0]["enabled"] == 1
+
+
+def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
+    request = proposal(client)
+    route = "/api/approvals/" + request["id"]
+    decision = {"reviewed_digest": request["digest"], "approve": False}
+    assert (
+        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
+    )
+    decision["approve"] = True
+    assert (
+        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
+    )
+    assert client.post(route + "/execute", headers=AUTH).status_code == 409
+
+
+def test_mock_api_strict_policy_and_decision_payload(client):
+    request = proposal(client)
+    assert (
+        client.post(
+            "/api/residents/reader/publication-policy",
+            headers=AUTH,
+            json={"enabled": "false", "expected_revision": 1},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/approvals/" + request["id"] + "/decision",
+            headers=AUTH,
+            json={"reviewed_digest": "a" * 64, "approve": True},
+        ).status_code
+        == 409
+    )

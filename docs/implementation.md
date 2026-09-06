@@ -29,11 +29,17 @@ resident (Miha's selection, 2026-09-05).
   14 client/component tests, types/lint/build pass; actual localhost SSE reset and
   wheel asset references verified. Visual inspection remains pending OS permissions.
 
-GitHub CI is blocked at job creation: the account's recent payments failed or its
-spending limit prevents Actions execution (run 33993194801, job 101378980825).
-There were no runner steps or logs. PR #2 remains open; local checks are not claimed
-as GitHub CI. Keep implementation moving on stacked branches while this external
-account condition is unresolved.
+GitHub CI reruns pass on 2026-09-06 after Miha made Hearth public: foundation
+33993194801, mock execution 33993818685, operator workflow 34017217477.
+PRs #2/#4/#6 remain open; the browser PR is still draft pending visual QA.
+
+Issue #7 is in progress on `feat/mock-approvals`: exact artifact/revision-bound
+requests, first-decision-wins, expiry, versioned grants, and a local mock-effect
+broker. The broker records dispatch intent transactionally, holds the destination
+while uncertain, and recovers a matching receipt without resending. Authenticated API and Townhall controls now support the review and reconciliation
+journey. Verification: 80 backend and 17 browser tests pass, including concurrency,
+schema upgrade, and action audit rollback. See `mock-approvals.md` for guarantees
+and remaining runtime-origin, notification, and visual acceptance gates.
 
 ## Next
 
