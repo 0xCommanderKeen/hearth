@@ -290,3 +290,17 @@ def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
         body.update(enabled=False, expected_revision=1)
         assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 200
         assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 409
+
+
+def test_notification_payload_and_delivery_are_authenticated_observation(client):
+    client.post("/api/demo/reader", headers=AUTH)
+    receipt = task(client).json()
+    client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
+    client.app.state.executor.step()
+    state = client.get("/api/state", headers=AUTH).json()
+    delivery = state["notifications"][0]
+    assert delivery["status"] == "pending"
+    assert delivery["payload"]["simulated"] is True
+    assert set(delivery["payload"]) == {"kind", "resource_id", "link", "simulated"}
+    assert delivery["payload"]["link"].startswith("/#run-")
+    assert client.get("/api/state").status_code == 401

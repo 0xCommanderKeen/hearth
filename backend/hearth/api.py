@@ -22,6 +22,7 @@ from hearth.core import Hearth
 from hearth.database import Database
 from hearth.execution import Execution, Executor
 from hearth.models import Declaration, Refused
+from hearth.notifications import MockInbox, Notifications
 from hearth.observation import snapshot
 from hearth.routines import Routines
 from hearth.runtime import MockRuntime
@@ -126,7 +127,8 @@ def create_app(
     authority = Authority(hearth, execution.artifacts)
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
     routines = Routines(hearth)
-    health = {"executor_error": None}
+    notifications = Notifications(hearth, MockInbox(data / "mock-inbox"))
+    health = {"executor_error": None, "notification_error": None}
 
     async def supervise_runs():
         while True:
@@ -138,6 +140,11 @@ def create_app(
             except Exception as error:
                 # Expose only error class; private paths/output must not enter shared health.
                 health["executor_error"] = type(error).__name__
+            try:
+                await asyncio.to_thread(notifications.step)
+                health["notification_error"] = None
+            except Exception as error:
+                health["notification_error"] = type(error).__name__
             await asyncio.sleep(0.5)
 
     @asynccontextmanager
@@ -258,6 +265,11 @@ def create_app(
                 raise Refused("run_not_found") from None
             run = hearth.run(row["id"])
         return {"run_id": run.id, "task_id": run.task_id, "status": run.status, "simulated": True}
+
+    @app.get("/api/runs/{run_id}")
+    def inspect_run(run_id: str):
+        run = hearth.run(run_id)
+        return {"id": run.id, "status": run.status, "artifact_id": run.artifact_id}
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel(run_id: str):

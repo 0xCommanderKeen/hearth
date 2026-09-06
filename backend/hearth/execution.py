@@ -6,6 +6,7 @@ from dataclasses import asdict
 from hearth.artifacts import Artifact, Artifacts
 from hearth.core import ACTIVE_RUNS, Hearth, _audit
 from hearth.models import Refused, Run, microdollars
+from hearth.notifications import enqueue
 from hearth.runtime import Evidence, Runtime
 
 
@@ -151,6 +152,7 @@ class Execution:
                     "simulated": True,
                 },
             )
+            enqueue(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
 
     def artifact(self, artifact_id: str) -> tuple[Artifact, str]:

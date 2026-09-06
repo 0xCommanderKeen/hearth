@@ -1,5 +1,6 @@
 """One consistent operator snapshot. Credentials and ownership tokens never leave it."""
 
+import json
 from dataclasses import asdict
 
 from hearth.authority import _approval
@@ -54,6 +55,13 @@ def snapshot(hearth: Hearth) -> dict:
             "tasks": tasks,
             "runs": runs,
             "activity": audit,
+            "notifications": [
+                dict(row) | {"payload": json.loads(row["payload"])}
+                for row in db.execute(
+                    "SELECT * FROM deliveries ORDER BY "
+                    "status IN ('pending','retry') DESC, created_at DESC, id DESC LIMIT 100"
+                )
+            ],
             "routines": [
                 dict(row)
                 for row in db.execute(

@@ -41,10 +41,16 @@ journey. Verification: 80 backend and 17 browser tests pass, including concurren
 schema upgrade, and action audit rollback. See `mock-approvals.md` for guarantees
 and remaining runtime-origin, notification, and visual acceptance gates.
 
-Issue #9 adds daily routines: revisioned wall-clock schedules, durable occurrences,
+Issue #9 / draft PR #10 (`2134a36`, CI 34018449896 green) adds daily routines: revisioned wall-clock schedules, durable occurrences,
 DST gap/fold rules, latest-only outage catch-up, overlap skipping, ordinary task
 admission, and Townhall controls. See `daily-routines.md`. Mock notification delivery
 remains next; this does not complete the live daily-use gate.
+
+Issue #11 adds transactional mock notifications for terminal runs and approval
+requests, persistent backoff, checksummed receipt recovery, obsolete-request
+suppression, and authenticated browser deep links. See `mock-notifications.md`.
+Verification: 97 backend and 22 browser tests plus full build checks pass. Real
+transport selection and visual QA remain deferred.
 
 ## Next
 

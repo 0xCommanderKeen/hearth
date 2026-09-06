@@ -131,3 +131,31 @@ it("retains request identity and deadline across a lost acknowledgement", async 
   await waitFor(() => expect(propose).toHaveBeenCalledTimes(2));
   expect(propose.mock.calls[0]).toEqual(propose.mock.calls[1]);
 });
+
+it("opens an approval link even when it is outside recent history", async () => {
+  const client = new Client("synthetic-test-token");
+  vi.spyOn(client, "review").mockResolvedValue({
+    approval: proposal,
+    content: "Older exact summary",
+  });
+  const decide = vi
+    .spyOn(client, "decide")
+    .mockResolvedValue({ ...proposal, status: "denied" });
+  render(
+    <Approvals
+      client={client}
+      snapshot={{ ...state, approvals: [] }}
+      busy={false}
+      act={run}
+      linkedId="review"
+    />,
+  );
+  await screen.findByText("Older exact summary");
+  fireEvent.click(screen.getByText("Deny this mock action"));
+  await waitFor(() => expect(decide).toHaveBeenCalledWith(proposal, false));
+  await waitFor(() =>
+    expect(
+      (screen.getByText("Deny this mock action") as HTMLButtonElement).disabled,
+    ).toBe(true),
+  );
+});

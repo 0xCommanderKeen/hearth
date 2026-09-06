@@ -6,7 +6,9 @@ export function Approvals({
   snapshot,
   busy,
   act,
+  linkedId,
 }: {
+  linkedId?: string | null;
   client: Client;
   snapshot: Snapshot;
   busy: boolean;
@@ -28,6 +30,17 @@ export function Approvals({
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!linkedId) return;
+    let active = true;
+    void act(async () => {
+      const next = await client.review(linkedId);
+      if (mounted.current && active) setReview(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [linkedId, client]);
   const policy = snapshot.publication_policies?.find(
     (p) => p.resident_id === "reader",
   );
@@ -35,7 +48,12 @@ export function Approvals({
     (r) => r.status === "succeeded" && r.artifact_id,
   )?.artifact_id;
   const proposals = snapshot.approvals ?? [];
-  const reviewed = review && proposals.find((p) => p.id === review.approval.id);
+  const reviewed =
+    review &&
+    (review.approval.status !== "pending"
+      ? review.approval
+      : (proposals.find((p) => p.id === review.approval.id) ??
+        review.approval));
   async function propose() {
     if (!artifact) return;
     pending.current ??= {
@@ -90,7 +108,7 @@ export function Approvals({
         {proposals.map((p) => {
           const action = snapshot.actions?.find((a) => a.id === p.id);
           return (
-            <li key={p.id}>
+            <li key={p.id} id={`approval-${p.id}`}>
               <h3>Summary for the mock noticeboard</h3>
               <p>
                 {action
@@ -162,7 +180,11 @@ export function Approvals({
             <button
               disabled={busy || reviewed?.status !== "pending"}
               onClick={() =>
-                void act(() => client.decide(review.approval, true))
+                void act(() =>
+                  client.decide(review.approval, true).then((approval) => {
+                    if (mounted.current) setReview({ ...review, approval });
+                  }),
+                )
               }
             >
               Approve this exact mock action
@@ -170,7 +192,11 @@ export function Approvals({
             <button
               disabled={busy || reviewed?.status !== "pending"}
               onClick={() =>
-                void act(() => client.decide(review.approval, false))
+                void act(() =>
+                  client.decide(review.approval, false).then((approval) => {
+                    if (mounted.current) setReview({ ...review, approval });
+                  }),
+                )
               }
             >
               Deny this mock action
