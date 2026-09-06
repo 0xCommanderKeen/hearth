@@ -17,7 +17,9 @@ Miha selected Codex Astra for the eventual runtime/model, synthetic example note
 and a $10 spending limit on 2026-09-06. The proposed budget window is daily; confirm
 that interpretation before enabling spending. The execution host, exact runtime
 configuration and pricing provenance remain undecided. This selection does not
-enable real calls; mock-only execution remains in force.
+enable real calls; mock-only execution remains in force. The
+[Codex Reader design](codex-reader.md) records verified interface facts and the
+ordered implementation steps before enabling that runtime.
 
 The operator should be able to define a resident's purpose, instructions, memory,
 limits and permitted sources; assign a task; inspect truthful progress and results;

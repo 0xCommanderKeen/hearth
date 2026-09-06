@@ -50,6 +50,16 @@ Miha selected Codex Astra, synthetic notes and a $10 allowance. A daily budget
 window is proposed but needs confirmation before spending; the host and exact
 runtime/pricing configuration remain open. Real execution is still deferred.
 
+## Selected runtime design
+
+Issue #48 records the [Codex Astra integration design](codex-reader.md), grounded in
+current official documentation, local CLI 0.145.0 help and the current Hearth code.
+The CLI has a JSONL interface, but launch idempotency, process ownership, complete
+host isolation and a hard dollar cap are not established by those flags. The design
+orders explicit provenance, a durable fake-process worker, bounded event parsing,
+staged inputs and actual-host acceptance before real wiring. Model access, billing,
+the execution host and budget window remain unverified. No Codex task was launched.
+
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
