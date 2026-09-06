@@ -7,6 +7,9 @@ at admission. Fresh stores can select the process mock, which participates in
 quiescent backup and held restore. These pins do not yet describe a real model or
 pricing. The remaining sequence below is the design for actual Codex execution.
 
+The [offline event parser](codex-events.md) now records the explicit supported
+profile and its remaining real-CLI verification gates.
+
 ## Established interface
 
 The selected model identifier is `gpt-6-astra`. Official model documentation lists reasoning efforts low, medium, high, xhigh and max. Its API model page establishes the identifier and advertised capabilities, but does not prove access through the eventual CLI account. Preserve the selection and fail visibly if unavailable; do not silently substitute a model. [Model guidance](https://developers.openai.com/api/docs/guides/latest-model), [Astra model](https://developers.openai.com/api/docs/models/gpt-6-astra).
@@ -62,7 +65,9 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    fake process before connecting Codex. Do not treat resume as an exactly-once
    launch primitive. Resolve the process/container ownership mechanism for the
    selected host before implementation.
-3. **Parse a pinned Codex event contract.** Bound individual events, total output,
+3. **Parse a pinned Codex event contract.** The offline `CodexEvents` profile now
+   handles synthetic fixtures; real worker wiring and CLI compatibility remain.
+   Bound individual events, total output,
    elapsed time and retained files. Accept a successful result only with the expected
    completion evidence and observed worker termination. Preserve raw token counts
    and the exact pricing/accounting basis separately from estimated microdollars.
