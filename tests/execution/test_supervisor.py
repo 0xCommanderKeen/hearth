@@ -152,3 +152,75 @@ def test_worker_failure_is_visible_and_releases_ownership(app, monkeypatch):
     assert state["supervisor"] == "failed"
     assert state["executor_error"] == "SystemExit"
     assert "private" not in str(state)
+
+
+@pytest.mark.parametrize(
+    ("allowance", "capacity", "refusal"),
+    [(100_000, 1, "household_concurrency_limit"), (10_000, 2, "household_budget_exhausted")],
+)
+def test_blocked_routine_does_not_stall_an_admitted_run(tmp_path, allowance, capacity, refusal):
+    import time
+    from datetime import datetime
+
+    from hearth.authority.household import Household
+    from hearth.execution.lifecycle import Execution, Executor
+    from hearth.execution.supervisor import Supervisor
+    from hearth.integrations.mock.inline import MockRuntime
+    from hearth.observation.notifications import MockInbox, Notifications
+    from hearth.residents.models import Declaration
+    from hearth.storage.artifacts import Artifacts
+    from hearth.storage.database import Database
+    from hearth.work.routines import Routines
+    from hearth.work.service import Hearth
+
+    database = Database(tmp_path / "hearth.db")
+    database.initialize()
+    now = [int(datetime.fromisoformat("2026-09-06T09:00:00+00:00").timestamp())]
+    hearth = Hearth(database, clock=lambda: now[0])
+    Household(hearth).save(
+        daily_limit=allowance,
+        timezone="UTC",
+        resident_limit=2,
+        concurrency_limit=capacity,
+        expected_revision=0,
+    )
+    for name in ("active", "scheduled"):
+        hearth.save_resident(name, Declaration(name, "Synthetic", 100_000), expected_revision=0)
+    task = hearth.submit("first", "active", "Summarize", expires_at=now[0] + 600)
+    active = hearth.admit(task.task_id, reserve=10_000)
+    routines = Routines(hearth)
+    routines.save(
+        "daily",
+        "scheduled",
+        "Summarize",
+        local_time="09:01",
+        timezone="UTC",
+        enabled=True,
+        expected_revision=0,
+    )
+    now[0] += 60
+    queued = routines.tick()[0]
+    with pytest.raises(Refused, match=refusal):
+        hearth.admit(queued, reserve=10_000)
+    worker = Supervisor(
+        Executor(
+            Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
+        ),
+        routines,
+        Notifications(hearth, MockInbox(tmp_path / "inbox")),
+    )
+    worker.start()
+    try:
+        deadline = time.monotonic() + 3
+        while hearth.run(active.id).status != "succeeded" and time.monotonic() < deadline:
+            threading.Event().wait(0.02)
+        assert hearth.run(active.id).status == "succeeded"
+        if capacity == 1:
+            while hearth.task(queued).status != "succeeded" and time.monotonic() < deadline:
+                threading.Event().wait(0.02)
+            assert hearth.task(queued).status == "succeeded"
+        else:
+            assert hearth.task(queued).status == "queued"
+        assert worker.health()["executor_error"] is None
+    finally:
+        worker.stop()

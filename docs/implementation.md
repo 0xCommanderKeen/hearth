@@ -478,3 +478,11 @@ journeys. The rendered browser also passed Townhall policy edit → Skills creat
 refresh, revise, history, two-editor stale-draft conflict, archive and archived
 search, with mobile overflow and inert Markdown checks. Independent Standards and
 Spec reviews of the catalog reported no findings before this additive integration.
+
+An integration review found that household admission refusals escaped the routine
+queue and prevented the supervisor from progressing active runs. Routine admission
+now treats shared budget/concurrency refusals as normal queued holds. Two regression
+cases failed with runs stuck in `starting` before the fix and pass afterward: an
+active run settles despite either household hold, and the capacity-blocked routine
+then completes when the slot is released. All 25 supervisor/routine/household checks,
+lint/format and backend types pass. Integrity failures remain visible refusals.
