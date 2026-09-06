@@ -344,6 +344,13 @@ export function NewResident({
                 <label className="provision-check" key={input.input_set_id}>
                   <input
                     type="checkbox"
+                    disabled={
+                      locked ||
+                      (draft.input_sets.length >= 4 &&
+                        !draft.input_sets.some(
+                          (ref) => ref.input_set_id === input.input_set_id,
+                        ))
+                    }
                     checked={draft.input_sets.some(
                       (ref) => ref.input_set_id === input.input_set_id,
                     )}
@@ -351,14 +358,22 @@ export function NewResident({
                       update(
                         "input_sets",
                         e.target.checked
-                          ? [{ input_set_id: input.input_set_id }]
-                          : [],
+                          ? [
+                              ...draft.input_sets,
+                              { input_set_id: input.input_set_id },
+                            ]
+                          : draft.input_sets.filter(
+                              (ref) => ref.input_set_id !== input.input_set_id,
+                            ),
                       )
                     }
                   />
                   {input.name}
                 </label>
               ))}
+              <p>
+                <a href="#inputs">Manage named synthetic input sets →</a>
+              </p>
               {!draft.input_sets.length && (
                 <p>
                   No inputs selected. This resident receives no synthetic notes.
@@ -546,9 +561,13 @@ export function ProfileProvenance({ profile }: { profile: ResidentProfile }) {
         <div>
           <dt>Inputs</dt>
           <dd>
-            {profile.input_sets.length
-              ? profile.input_sets.map((ref) => ref.input_set_id).join(", ")
-              : "No inputs selected"}
+            {profile.inputs_error
+              ? `Input provenance unavailable: ${profile.inputs_error.replaceAll("_", " ")}`
+              : profile.input_sets.length
+                ? profile.input_sets
+                    .map((ref) => ref.name ?? ref.input_set_id)
+                    .join(", ")
+                : "No inputs selected"}
           </dd>
         </div>
       </dl>

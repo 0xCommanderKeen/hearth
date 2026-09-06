@@ -103,7 +103,7 @@ for both mock runtimes.
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
 | Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
 
-The mock runtime emits a fixed fixture. Its output does not establish real summary
+The mock runtime deterministically formats supplied synthetic notes. Its output does not establish real summary
 quality or model behavior. No migration, source mapping, ownership transfer or
 retirement work remains in the project scope.
 
@@ -545,3 +545,30 @@ and read the first saved result, refreshed provenance and verified Hamlet plus m
 creation/form layout. Desktop/mobile screenshots were inspected; a mobile creation
 link hidden by older table styles was fixed and reverified. PR/CI/merge are pending.
 No provider calls, credential changes or live-data changes were performed.
+
+## Named synthetic inputs — issue #89
+
+Townhall now edits bounded named fictional note sets and selects them per resident,
+including an explicit empty selection. Context version 5 pins ordered exact
+revisions and checksums in the admission transaction. Later content or selection
+edits affect future admissions; result history links to the original source.
+Reader setup explicitly seeds its example once and preserves operator edits.
+The deterministic mock formats the supplied notes, enabling distinct resident
+results. See [the API and data boundary](synthetic-inputs.md).
+
+Verification passed 543 backend and 59 browser tests, lint/format/types, frontend
+and wheel builds, and both installed-wheel mock journeys. New checks cover exact
+retry/conflicts, three distinct/empty contexts and summaries, concurrent content
+edit/admission, future selection, source/pin corruption with healthy progress,
+scoped and revoked run access, inert malicious source text, serialized size limits
+and held backup/restore with original historical text. Browser component tests
+retain unconfirmed requests, preserve conflict drafts and lock historical source
+editing. Module ownership and provisioning documentation now describe inputs.
+A fresh rendered browser created two named sets and three residents, started and
+read distinct orchard/harbor summaries plus an explicit empty result, edited the
+orchard set and verified a subsequent revision-2 summary alongside read-only
+revision-1 source history. Desktop/mobile screenshots were inspected and mobile
+overflow checks passed. Both independent review axes found no blocking issue.
+Standards recorded one optional P3 cleanup for repeated HTTP failure classification;
+the small feature-local draft recovery branches remain explicit. PR/CI/merge are
+next. No provider calls, credential changes or live-data changes were performed.

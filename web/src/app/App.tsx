@@ -17,6 +17,8 @@ import {
   ProfileProvenance,
 } from "../features/residents/NewResident";
 import { Assignments } from "../features/skills/Assignments";
+import { InputLibrary } from "../features/inputs/Inputs";
+import { InputSelection, RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { Hamlet } from "../features/hamlet/Hamlet";
@@ -110,6 +112,7 @@ type Page =
   | "resident"
   | "new-resident"
   | "skills"
+  | "inputs"
   | "tasks"
   | "routines"
   | "approvals"
@@ -272,6 +275,8 @@ export function App() {
       if (hash === "#new-resident" || hash.startsWith("#new-resident/")) {
         setProvisionId(hash === "#new-resident" ? "" : hash.slice(14));
         setView("new-resident");
+      } else if (hash.startsWith("#inputs/")) {
+        setView("inputs");
       } else if (hash.startsWith("#skills/")) {
         setView("skills");
       } else if (hash.startsWith("#residents/")) {
@@ -283,6 +288,7 @@ export function App() {
           "#hamlet",
           "#residents",
           "#skills",
+          "#inputs",
           "#tasks",
           "#routines",
           "#approvals",
@@ -343,6 +349,7 @@ export function App() {
             "townhall",
             "residents",
             "skills",
+            "inputs",
             "tasks",
             "routines",
             "approvals",
@@ -506,6 +513,13 @@ export function App() {
                     </a>
                   </section>
                 ))}
+            {view === "inputs" && (
+              <InputLibrary
+                key={snapshot.epoch}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
+              />
+            )}
             {view === "skills" && (
               <SkillCatalog
                 key={snapshot.epoch}
@@ -786,6 +800,12 @@ export function App() {
                         .filter((r) => r.id === residentId)
                         .map((r) => (
                           <div key={`profile:${r.id}`}>
+                            <InputSelection
+                              key={`inputs:${snapshot.epoch}:${r.id}`}
+                              client={client}
+                              residentId={r.id}
+                              readOnly={snapshot.restore_hold === true}
+                            />
                             {r.profile && (
                               <ProfileProvenance profile={r.profile} />
                             )}
@@ -862,6 +882,7 @@ export function App() {
                                   : `Memory revision ${run.memory_revision}`}
                               </small>
                             )}
+                            {run && <RunInputs run={run} />}
                             {run?.skills_error && (
                               <p className="notice error">
                                 Skill provenance unavailable:{" "}

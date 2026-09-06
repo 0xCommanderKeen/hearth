@@ -17,6 +17,8 @@ from pathlib import Path
 
 from hearth.authority.household import validate_windows
 from hearth.execution import usage as codex_accounting
+from hearth.inputs.catalog import checked_input
+from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.residents.memory import MemoryFiles, memory_path
@@ -215,8 +217,12 @@ def _check_database(root: Path) -> dict:
             raise Refused("backup_schema_unexpected")
         for resident in db.execute("SELECT id FROM residents"):
             read_assignments(db, resident["id"])
+            read_selection(db, resident["id"])
         for run in db.execute("SELECT id FROM runs"):
             run_skills(db, run["id"])
+            run_inputs(db, run["id"])
+        for revision in db.execute("SELECT * FROM input_revisions"):
+            checked_input(revision)
         for revision in db.execute("SELECT * FROM skill_revisions"):
             checked_revision(revision)
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()

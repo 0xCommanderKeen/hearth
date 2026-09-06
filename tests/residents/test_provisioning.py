@@ -13,7 +13,7 @@ def request():
         initial_memory="Remember: use bullets",
         skills=[],
         execution_profile="inline_mock",
-        input_sets=[{"input_set_id": "synthetic-reader-notes"}],
+        input_sets=[],
         daily_limit=100000,
         budget_timezone="Europe/Ljubljana",
         creation_reason="Daily report",
@@ -94,7 +94,7 @@ def test_provisioning_api_replay_profile_and_input_choices(tmp_path):
         )
 
 
-def test_provisioned_resident_has_only_explicit_builtin_inputs(tmp_path):
+def test_provisioned_resident_has_explicit_empty_inputs(tmp_path):
     from hearth.authority.run_access import RunAccess
 
     db = Database(tmp_path / "hearth.db")
@@ -219,7 +219,7 @@ def test_invalid_references_never_leave_active_partial_resident(tmp_path):
     service = Provisioning(Hearth(db))
     for key, change, reason in [
         ("profile", {"execution_profile": "arbitrary-provider"}, "execution_profile_unavailable"),
-        ("input", {"input_sets": [{"input_set_id": "personal-notes"}]}, "input_set_unavailable"),
+        ("input", {"input_sets": [{"input_set_id": "personal-notes"}]}, "input_revision_missing"),
         ("manager", {"manager": "unknown"}, "manager_not_found"),
         ("skill", {"skills": [{"skill_id": "missing", "revision": 1}]}, "skill_revision_missing"),
         ("utf8", {"initial_memory": "é" * 131072}, "memory_too_large"),

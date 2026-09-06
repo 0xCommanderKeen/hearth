@@ -31,6 +31,7 @@ from hearth.authority.run_access import RunAccess
 from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.execution.supervisor import Supervisor
+from hearth.inputs.api import mount_inputs
 from hearth.integrations.mock.inline import MockRuntime
 from hearth.integrations.mock.process import ProcessMockRuntime
 from hearth.observation.notifications import MockInbox, Notifications
@@ -216,28 +217,9 @@ def create_app(
 
     @app.post("/api/demo/reader")
     def seed():
-        try:
-            return asdict(hearth.resident("reader"))
-        except Refused as error:
-            if error.code != "resident_not_found":
-                raise
-        try:
-            return asdict(
-                hearth.save_resident(
-                    "reader",
-                    Declaration(
-                        "Reader",
-                        "A daily summary of synthetic notes. Read-only; no external actions.",
-                        10_000_000,
-                        budget_timezone="Europe/Ljubljana",
-                    ),
-                    expected_revision=0,
-                )
-            )
-        except Refused as error:
-            if error.code != "revision_conflict":
-                raise
-            return asdict(hearth.resident("reader"))
+        from hearth.inputs.demo import seed_reader
+
+        return asdict(seed_reader(hearth))
 
     @app.post("/api/tasks", status_code=201)
     def submit(body: TaskPost, idempotency_key: str = Header(min_length=1, max_length=128)):
@@ -284,8 +266,12 @@ def create_app(
             from hearth.skills.assignments import skill_summary
 
             used_skills = skill_summary(db, run_id, run=True)
+            from hearth.inputs.selection import input_summary
+
+            used_inputs = input_summary(db, run_id, run=True)
         return {
             **used_skills,
+            **used_inputs,
             "accounting": accounting,
             "id": run.id,
             "status": run.status,
@@ -375,6 +361,7 @@ def create_app(
             key: result[key] for key in ("run_id", "command_id", "amount", "source", "recorded_at")
         }
 
+    mount_inputs(app, hearth)
     mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"

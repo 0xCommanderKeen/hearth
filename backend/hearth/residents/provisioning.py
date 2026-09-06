@@ -6,13 +6,13 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from hearth.inputs.catalog import list_inputs
+from hearth.inputs.selection import input_summary, save_selection
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused, bounded_text, identifier
 from hearth.skills.assignments import save_assignments
 from hearth.work.routines import Routines
 from hearth.work.service import Hearth, _audit, _queue_task
-
-BUILTIN_INPUT = "synthetic-reader-notes"
 
 
 class Strict(BaseModel):
@@ -46,7 +46,7 @@ class ProvisionRequest(Strict):
     initial_memory: str = Field(default="", max_length=131072)
     skills: list[SkillRef] = Field(default_factory=list, max_length=8)
     execution_profile: str = Field(min_length=1, max_length=100)
-    input_sets: list[InputRef] = Field(default_factory=list, max_length=1)
+    input_sets: list[InputRef] = Field(default_factory=list, max_length=4)
     daily_limit: int = Field(ge=0)
     budget_timezone: str = "Europe/Ljubljana"
     creation_reason: str = Field(min_length=1, max_length=2000)
@@ -61,16 +61,6 @@ def profile_summary(db, resident_id: str) -> dict | None:
     ).fetchone()
     if row is None:
         return None
-    try:
-        inputs = json.loads(row["input_sets"])
-        if (
-            not isinstance(inputs, list)
-            or len(inputs) > 1
-            or any(entry != {"input_set_id": BUILTIN_INPUT} for entry in inputs)
-        ):
-            raise Refused("input_selection_invalid")
-    except ValueError, TypeError:
-        raise Refused("input_selection_invalid") from None
     labels = {}
     for role in ("creator", "manager"):
         named = db.execute(
@@ -81,13 +71,7 @@ def profile_summary(db, resident_id: str) -> dict | None:
         labels[role + "_name"] = (
             "Operator" if row[role] == "operator" else named[0] if named else row[role]
         )
-    return dict(row) | {"input_sets": inputs, "setup_status": "ready", **labels}
-
-
-def provisioned_inputs(db, resident_id: str) -> list[dict] | None:
-    """Temporary explicit built-in selection; named mutable sets belong to Inputs (#89)."""
-    profile = profile_summary(db, resident_id)
-    return profile["input_sets"] if profile else None
+    return dict(row) | input_summary(db, resident_id) | {"setup_status": "ready", **labels}
 
 
 def _receipt(row) -> dict:
@@ -127,13 +111,7 @@ class Provisioning:
                         "simulated": runtime != "codex_subscription",
                     }
                 ],
-                "input_sets": [
-                    {
-                        "input_set_id": BUILTIN_INPUT,
-                        "name": "Synthetic Reader example notes",
-                        "synthetic": True,
-                    }
-                ],
+                "input_sets": list_inputs(db),
                 "managers": [{"id": "operator", "name": "Operator"}]
                 + [
                     dict(row)
@@ -257,8 +235,6 @@ class Provisioning:
                 and not db.execute("SELECT 1 FROM residents WHERE id=?", (body.manager,)).fetchone()
             ):
                 raise Refused("manager_not_found")
-            if any(entry.input_set_id != BUILTIN_INPUT for entry in body.input_sets):
-                raise Refused("input_set_unavailable")
             bounded_text(body.creation_reason, 2000, "creation_reason_required")
             self.hearth.save_resident_in_transaction(
                 db,
@@ -285,7 +261,7 @@ class Provisioning:
                 now=now,
             )
             db.execute(
-                "INSERT INTO resident_profiles VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO resident_profiles VALUES (?,?,?,?,?,?,?,?)",
                 (
                     resident_id,
                     command_id,
@@ -298,8 +274,16 @@ class Provisioning:
                     ).fetchone()[0],
                     body.creation_reason,
                     body.execution_profile,
-                    json.dumps([entry.model_dump() for entry in body.input_sets]),
                 ),
+            )
+            save_selection(
+                db,
+                resident_id,
+                [entry.model_dump() for entry in body.input_sets],
+                expected_revision=0,
+                actor=actor,
+                command_id="provision-inputs:" + resident_id,
+                now=now,
             )
             routine_id = None
             if body.routine is not None:
