@@ -3,7 +3,8 @@
 `CodexEvents` is a bounded incremental parser tested with synthetic JSONL. It starts
 no process, reads no credentials or files, computes no dollar amounts, and does not
 produce Hearth runtime evidence. It is preparation for the selected Codex Astra
-adapter, not proof of real CLI compatibility or model behavior.
+adapter. The opt-in [subscription probe](codex-subscription-probe.md) checks the
+pinned CLI against a local fixture; real model behavior remains unverified.
 
 ## Source boundary
 
@@ -38,7 +39,8 @@ stream follows them. The profile is `codex-exec-jsonl-2026-09-06`.
 - A failed turn can be reported after observed process exit, but its partial text
   cannot become successful output. Unknown termination, abnormal completion exit,
   missing messages and unfinished turns have no publishable output.
-- Usage retains input, cached-input, output and reasoning-output counts separately.
+- Usage retains input, cached-input, cache-write-input, output and reasoning-output
+  counts separately. The fifth counter was observed in CLI 0.145.0 offline output.
   Missing fields stay `None`; explicit zero remains zero. Provided values must be
   nonnegative integers within the local limit. No subset relationships, summation,
   pricing, completeness of billing or provider spending ceiling are inferred.
@@ -66,5 +68,5 @@ Fixture tests cover byte-wise Unicode, completed/failed/incomplete streams,
 contradictory events, opaque updates, final-message ambiguity and matching,
 partial/invalid usage, adversarial framing and all resource limits. The installed
 application remains limited to inline/process mocks. Real wiring still needs a
-pinned CLI version, actual event/final-file verification, Mac isolation, verified
-usage/pricing and explicit selection of a real test.
+production event/final-file ownership, credential isolation, verified subscription
+usage and explicit selection of a real test.

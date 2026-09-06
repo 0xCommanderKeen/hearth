@@ -271,3 +271,27 @@ def test_valid_prefix_cannot_hide_a_truncated_final_record():
     parser.feed(wire([THREAD, START, message()]) + b'\n{"type":"turn.completed"')
     result = parser.finish(exit_code=0)
     assert result.status == "invalid" and result.output is None and result.usage is None
+
+
+def test_pinned_cli_cache_write_counter_is_preserved_without_dollar_conversion():
+    usage = USAGE | {"cache_write_input_tokens": 3}
+    result = parse([THREAD, START, message(), {"type": "turn.completed", "usage": usage}])
+    assert result.status == "completed"
+    assert result.usage.cache_write_input_tokens == 3
+    assert result.usage.input_tokens == 20
+    assert result.usage.cached_input_tokens == 7
+    assert not hasattr(result, "cost")
+    assert parse([THREAD, START, message(), DONE]).usage.cache_write_input_tokens is None
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "3", MAX_TOKENS + 1])
+def test_invalid_cache_write_counter_refuses(value):
+    result = parse(
+        [
+            THREAD,
+            START,
+            message(),
+            {"type": "turn.completed", "usage": USAGE | {"cache_write_input_tokens": value}},
+        ]
+    )
+    assert result.status == "invalid" and result.output is None
