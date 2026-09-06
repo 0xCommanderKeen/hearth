@@ -59,7 +59,7 @@ operator holds, uncertain publication with a receipt, routines, reconciled usage
 notification receipts, credential exclusion, source immutability, empty state,
 pruned audit sequence preservation, stable comparison and malformed input refusal.
 
-Still required: a detailed semantic diff, explicit compatibility mappings, memory/capability
+Still required: explicit compatibility mappings, memory/capability
 models, ownership contention and rollback rehearsals. Cross-version conversion and
 live migration acceptance are not established by these rehearsals. No HTTP export or
 import endpoint is exposed, and no real data is used by the tests.
@@ -99,3 +99,31 @@ remove the hold or enable any operational mutation. Reverse export through that
 backup preserves the semantic digest; importing it elsewhere creates another held
 copy with a distinct epoch. These tests establish Hearth mock round trips only,
 not compatibility with another system or a rollback after live work.
+
+## Detailed comparison
+
+```sh
+python -m hearth diff-state --source /tmp/synthetic-export/state.json --against /tmp/reverse-export/state.json
+```
+
+Issue #29 adds `compare(before, after, limit=1000)` and this CLI command. Both inputs
+must pass complete portable validation. Table rows are matched by their primary
+keys, including composite revision/occurrence keys; row order does not matter.
+Reports identify added, removed and modified records and show exact before/after
+values for changed fields. File entries show their path, checksum and byte length,
+without repeating file content. Source epochs remain visible as provenance but do
+not affect equality. Embedded JSON strings compare as preserved text; the tool
+does not infer equivalence between different action protocols or rewrite them.
+
+The default output contains at most 1,000 changed records/files. `--limit` accepts
+0 through 10,000. Totals and `change_count` always include all changes, and
+`omitted_changes` makes truncation explicit. Limiting output never changes equality.
+Ordering is deterministic: tables and identities, then file paths. Reports can
+include private task/configuration/accounting text from changed database fields;
+treat them with the same access controls as the input archives.
+
+CLI exit status is 0 for equal state, 1 for valid but different state, and 2 for
+invalid input or arguments. Validation occurs even with `--limit 0`. Comparison is
+read-only and does not apply changes or authorize a transfer. Equal current-schema
+Hearth exports do not establish compatibility with another system or prove that
+source data excluded by this format has been migrated.
