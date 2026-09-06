@@ -63,10 +63,15 @@ or cancelling owned work. Full checks: 116 backend and 24 browser tests pass.
 `phase-2-mock-review.md` records the architecture review and unproven Phase 2 gates;
 `failure-matrix.md` now distinguishes mock guarantees from live acceptance.
 
-Issue #17 adds process-lifetime supervisor exclusion and drained shutdown. A second
+Issue #17 / PR #18 (`a6e6bef`, CI 34020058059 green) adds process-lifetime supervisor exclusion and drained shutdown. A second
 API supervisor fails startup; in-flight work retains the lock through shutdown.
 Tests include a foreign process, path aliases, blocked work and fatal-worker health.
 See `supervision.md`; real runtime termination and v1/v2 transfer remain separate.
+
+Issue #19 adds exact-run read-only runtime credentials and a separate authenticated
+context route, exercised with mock HTTP clients. Rotation, revocation, expiry,
+state/configuration changes and restored-copy denial are enforced. Actual runtime
+injection and host isolation remain pending; see `run-context-access.md`.
 
 ## Next
 

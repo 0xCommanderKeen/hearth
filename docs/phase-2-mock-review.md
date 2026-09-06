@@ -28,9 +28,11 @@ reason yet to split them into separately deployed processes or generic framework
 
 ## What remains incomplete
 
-- Runtime-origin tools have no short-lived scoped authentication path yet. Current
-  mock approval requests are operator-driven. A real resident must never receive
-  the operator token, database, engine socket or effect credentials.
+- A short-lived exact-run read-only context credential is now tested through mock
+  HTTP clients (issue #19; `run-context-access.md`). Actual runtime injection and
+  host isolation remain pending; current mock approval requests are operator-driven.
+  A real resident must never receive the operator token, database, engine socket
+  or effect credentials.
 - Process-lifetime supervisor ownership and drained shutdown are now implemented
   and tested (issue #17; `supervision.md`). Standalone mock operations retain their
   per-operation locks; this is not a v1/v2 transfer guard.

@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -24,6 +25,7 @@ from hearth.models import Declaration, Refused
 from hearth.notifications import MockInbox, Notifications
 from hearth.observation import snapshot
 from hearth.routines import Routines
+from hearth.run_access import RunAccess
 from hearth.runtime import MockRuntime
 from hearth.supervisor import Supervisor
 
@@ -33,16 +35,38 @@ MAX_BODY = 65_536
 class OperatorAuth:
     """Authenticate before reading a bounded request body; credentials stay in headers."""
 
-    def __init__(self, app: ASGIApp, token: str):
+    def __init__(self, app: ASGIApp, token: str, run_access: RunAccess):
         self.app = app
         self.token = token.encode()
+        self.run_access = run_access
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or not scope["path"].startswith("/api/"):
             await self.app(scope, receive, send)
             return
         headers = dict(scope["headers"])
-        if not hmac.compare_digest(headers.get(b"authorization", b""), b"Bearer " + self.token):
+        runtime_route = re.fullmatch(
+            r"/api/runtime/runs/([a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})/context", scope["path"]
+        )
+        if runtime_route:
+            bearer = headers.get(b"authorization", b"")
+            try:
+                if (
+                    scope["method"] != "GET"
+                    or not bearer.startswith(b"Bearer ")
+                    or len(bearer) > 128
+                ):
+                    raise Refused("runtime_unauthorized")
+                scope["hearth.runtime_context"] = await asyncio.to_thread(
+                    self.run_access.context, bearer[7:].decode("ascii"), runtime_route.group(1)
+                )
+            except Refused, UnicodeDecodeError:
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+                return
+        elif scope["path"].startswith("/api/runtime/"):
+            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+            return
+        elif not hmac.compare_digest(headers.get(b"authorization", b""), b"Bearer " + self.token):
             await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
             return
         body = bytearray()
@@ -157,14 +181,20 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
-    app.add_middleware(OperatorAuth, token=token)
+    run_access = RunAccess(hearth)
+    app.add_middleware(OperatorAuth, token=token, run_access=run_access)
     app.state.hearth, app.state.execution, app.state.executor = hearth, execution, executor
     app.state.supervisor = supervisor
+    app.state.run_access = run_access
 
     @app.exception_handler(Refused)
     async def refused(request: Request, error: Refused):
         status = 404 if error.code.endswith("_not_found") else 409
         return JSONResponse({"error": error.code}, status_code=status)
+
+    @app.get("/api/runtime/runs/{run_id}/context")
+    def runtime_context(request: Request):
+        return request.scope["hearth.runtime_context"]
 
     @app.get("/health")
     def healthcheck():

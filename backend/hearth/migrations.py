@@ -126,3 +126,10 @@ def control_schema(db: sqlite3.Connection) -> None:
         revision INTEGER NOT NULL CHECK (revision > 0),
         paused INTEGER NOT NULL CHECK (paused IN (0,1)), updated_at INTEGER NOT NULL
     )""")
+
+
+def run_access_schema(db: sqlite3.Connection) -> None:
+    db.execute("""CREATE TABLE run_credentials (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), digest TEXT NOT NULL,
+        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER
+    )""")
