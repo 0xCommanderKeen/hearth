@@ -56,12 +56,18 @@ def encode_receipt(receipt: dict, expected: UsageBinding) -> tuple[str, str, Evi
         if len(raw.encode()) > MAX_STREAM:
             raise ValueError("oversized receipt")
         value = json.loads(raw, object_pairs_hook=unique_object)
-        if set(value) != {"binding", "requests", "terminal"} or value["binding"] != asdict(
-            expected
-        ):
+        operational = "containers" in value
+        keys = {"binding", "requests", "terminal"}
+        if operational:
+            keys |= {"assets", "containers", "stopped", "journal"}
+        if set(value) != keys or value["binding"] != asdict(expected):
             raise ValueError("receipt binding mismatch")
         if not isinstance(value["requests"], list) or len(value["requests"]) > MAX_REQUESTS:
             raise ValueError("invalid request sequence")
+        if operational:
+            stopped = verify_runtime_receipt(value, expected)
+            if stopped is not None:
+                return raw, hashlib.sha256(raw.encode()).hexdigest(), stopped
         transcript, estimate = interpret_details(value["requests"], value["terminal"], expected)
         if estimate.reason not in {None, "missing_usage", "missing_or_excessive_requests"}:
             raise ValueError("invalid usage")
@@ -86,13 +92,26 @@ def encode_receipt(receipt: dict, expected: UsageBinding) -> tuple[str, str, Evi
 def verify_stored(db, run) -> None:
     """Backup verification uses SQLite evidence, never the former worker's files."""
     row = db.execute("SELECT receipt,sha256 FROM run_usage WHERE run_id=?", (run["id"],)).fetchone()
-    if row is None or run["finished_at"] is None or not run["launch_attempted"]:
+    if row is None or run["finished_at"] is None:
         raise Refused("backup_priced_run_unsettled")
     try:
         raw, digest, evidence = encode_receipt(json.loads(row["receipt"]), binding(db, run))
     except ValueError, TypeError:
         raise Refused("backup_runtime_invalid") from None
     if raw != row["receipt"] or digest != row["sha256"] or evidence.status != run["status"]:
+        raise Refused("backup_runtime_invalid")
+    value = json.loads(raw)
+    if run["runtime_kind"] == "codex_mock":
+        assets = db.execute("SELECT value FROM system_meta WHERE key='codex_assets'").fetchone()
+        if assets is None or value.get("assets") != assets[0] or "containers" not in value:
+            raise Refused("backup_runtime_invalid")
+    if not run["launch_attempted"] and not (
+        run["runtime_kind"] == "codex_mock"
+        and run["cancellation_requested"]
+        and evidence.status == "cancelled"
+        and evidence.cost == 0
+        and value.get("containers") == {"cli": None, "collector": None}
+    ):
         raise Refused("backup_runtime_invalid")
     reconciliation = db.execute(
         "SELECT amount FROM usage_reconciliations WHERE run_id=?", (run["id"],)
@@ -116,3 +135,46 @@ def verify_stored(db, run) -> None:
 
     elif run["artifact_id"] is not None:
         raise Refused("backup_runtime_invalid")
+
+
+def verify_runtime_receipt(value, expected):
+    from hearth.codex_container import CodexContainer
+
+    containers = value["containers"]
+    if (
+        set(containers) != {"cli", "collector"}
+        or not isinstance(value["assets"], str)
+        or len(value["assets"]) != 64
+    ):
+        raise Refused("run_usage_invalid")
+    for role, item in containers.items():
+        if item is not None:
+            CodexContainer.validate_export(item)
+            if item["claim"]["binding"] != asdict(expected) or item["claim"]["role"] != role:
+                raise Refused("run_usage_invalid")
+    cli, collector = containers["cli"], containers["collector"]
+    if cli is not None and (
+        collector is None or cli["claim"]["network"] != "container:" + collector["identity"]["id"]
+    ):
+        raise Refused("run_usage_invalid")
+    if value["stopped"] is not None:
+        if value["stopped"] not in {"cancelled", "failed"} or value["terminal"] is not None:
+            raise Refused("run_usage_invalid")
+        return Evidence(value["stopped"], cost=0 if cli is None or cli["start"] is None else None)
+    if (
+        cli is None
+        or collector is None
+        or any(
+            item["terminal"]["status"] != "exited" or item["terminal"]["exit_code"] != 0
+            for item in (cli, collector)
+        )
+    ):
+        raise Refused("run_usage_invalid")
+    output = json.loads(cli["terminal"]["logs"])
+    if value["terminal"] != {
+        "stdout": output["stdout"],
+        "exit_code": output["returncode"],
+        "final": output["final"],
+    }:
+        raise Refused("run_usage_invalid")
+    return None

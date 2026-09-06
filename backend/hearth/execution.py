@@ -115,7 +115,7 @@ class Execution:
             if row is None or row["owner_token"] != owner_token:
                 raise Refused("run_ownership_lost")
             if (
-                row["runtime_kind"] != "process_mock"
+                row["runtime_kind"] not in {"process_mock", "codex_mock"}
                 or row["runtime_version"] != 1
                 or row["input_digest"] != input_digest
                 or not row["launch_attempted"]
@@ -127,7 +127,10 @@ class Execution:
                 or row["status"] not in {"starting", "running", "interrupted"}
             ):
                 raise Refused("run_dispatch_inactive")
-            if codex_accounting.pricing(db, run_id) is not None:
+            if (
+                codex_accounting.pricing(db, run_id) is not None
+                and row["runtime_kind"] != "codex_mock"
+            ):
                 raise Refused("run_requires_codex_worker")
             revision = db.execute(
                 "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
@@ -173,7 +176,22 @@ class Execution:
             pricing = codex_accounting.pricing(db, run_id)
             receipt_digest = None
             if pricing is not None:
-                if not row["launch_attempted"]:
+                if row["runtime_kind"] == "codex_mock":
+                    if (
+                        _usage_receipt is None
+                        or _usage_receipt.get("assets")
+                        != db.execute(
+                            "SELECT value FROM system_meta WHERE key='codex_assets'"
+                        ).fetchone()[0]
+                    ):
+                        raise Refused("run_usage_required")
+                if not row["launch_attempted"] and not (
+                    row["runtime_kind"] == "codex_mock"
+                    and row["cancellation_requested"]
+                    and _usage_receipt is not None
+                    and _usage_receipt.get("stopped") == "cancelled"
+                    and _usage_receipt.get("containers") == {"cli": None, "collector": None}
+                ):
                     raise Refused("run_launch_intent_required")
                 if _usage_receipt is None:
                     raise Refused("run_usage_required")
@@ -259,6 +277,46 @@ class Executor:
         self.runtime = runtime
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
+    def _step_codex(self, run):
+        from hearth.codex_runtime import CodexMockRuntime
+
+        assert isinstance(self.runtime, CodexMockRuntime)
+        if run.cancellation_requested and not run.launch_attempted:
+            with self.execution.hearth.database.transaction() as db:
+                row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
+                receipt = {
+                    "binding": asdict(codex_accounting.binding(db, row)),
+                    "assets": db.execute(
+                        "SELECT value FROM system_meta WHERE key='codex_assets'"
+                    ).fetchone()[0],
+                    "containers": {"cli": None, "collector": None},
+                    "requests": [],
+                    "terminal": None,
+                    "stopped": "cancelled",
+                    "journal": {},
+                }
+            return self.execution.finish(
+                run.id, run.owner_token, Evidence("cancelled", cost=0), _usage_receipt=receipt
+            )
+        if run.cancellation_requested:
+            self.runtime.stop(run.id)
+        evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
+        if evidence.status == "absent" and run.status == "starting":
+            if self.execution.prepare_start(run.id, run.owner_token):
+                with self.execution.hearth.database.transaction() as db:
+                    context = read_context(db, run.id, Memory(self.execution.hearth).files)
+                self.runtime.start(
+                    run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
+                )
+                evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
+        if evidence.status in {"succeeded", "failed", "cancelled"}:
+            return self.execution.finish(
+                run.id, run.owner_token, evidence, _usage_receipt=self.runtime.receipt(run.id)
+            )
+        return self.execution.observe(
+            run.id, run.owner_token, "running" if evidence.status == "running" else "interrupted"
+        )
+
     def step(self) -> list[Run]:
         if self.execution.hearth.database.restored():
             raise Refused("restored_copy_read_only")
@@ -282,6 +340,9 @@ class Executor:
                     self.runtime.version,
                 ):
                     raise Refused("runtime_run_mismatch")
+                if self.runtime.kind == "codex_mock":
+                    results.append(self._step_codex(run))
+                    continue
                 with self.execution.hearth.database.transaction() as db:
                     priced = codex_accounting.pricing(db, run.id) is not None
                 if priced:

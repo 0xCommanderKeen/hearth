@@ -101,7 +101,17 @@ RESPONSE_USAGE: dict = {
     "input_tokens_details": {"cached_tokens": 10, "cache_write_tokens": 5},
     "output_tokens_details": {"reasoning_tokens": 3},
 }
-text = "Synthetic summary: the Reader mock is ready. No model was called."
+try:
+    context = json.loads(PROMPT)
+except ValueError:
+    context = None
+text = (
+    "# Daily summary — Codex CLI simulation\n\n"
+    + "\n".join("- " + note for note in context["notes"])
+    + "\n\nThis response came from the local fixture; no model was called."
+    if isinstance(context, dict) and context.get("simulated") is True
+    else "Synthetic summary: the Reader mock is ready. No model was called."
+)
 item = {
     "id": "msg_synthetic",
     "type": "message",

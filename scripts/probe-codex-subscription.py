@@ -8,7 +8,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import time
@@ -16,7 +15,8 @@ import uuid
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-from hearth import codex_events, codex_pricing, codex_usage
+from hearth import codex_container, codex_events, codex_pricing, codex_usage
+from hearth.codex_container import CodexContainer
 from hearth.codex_events import CodexEvents, TokenUsage
 from hearth.codex_pricing import estimate_api_equivalent
 from hearth.container_rehearsal import IMAGE, LocalDocker
@@ -100,81 +100,36 @@ def validate(result, attack):
 
 @contextmanager
 def owned_container(docker, claims, name, mounts, command, *, network="none"):
-    claim = claims / (name + ".json")
-    codex_usage.publish(claim, {"name": name, "label": LABEL, "image": IMAGE})
-    print(f"Offline container ownership claim: {claim}", flush=True)
-    cid = None
+    root = claims / (name + "-container")
+    binding = codex_usage.UsageBinding(
+        command[command.index("--run-id") + 1],
+        hashlib.sha256(command[command.index("--prompt") + 1].encode()).hexdigest(),
+        "gpt-6-astra",
+        "standard",
+    )
+    container = CodexContainer(root, docker=docker)
     try:
-        cid = docker(
-            "create",
-            "--pull",
-            "never",
-            "--name",
-            name,
-            "--label",
-            LABEL + "=" + name,
-            "--restart",
-            "no",
-            "--network",
-            network,
-            "--read-only",
-            "--user",
-            f"{os.getuid()}:{os.getgid()}",
-            "--init",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges=true",
-            "--security-opt",
-            "seccomp=builtin",
-            "--pids-limit",
-            "128",
-            "--memory",
-            "512m",
-            "--memory-swap",
-            "512m",
-            "--cpus",
-            "0.5",
-            "--tmpfs",
-            "/scratch:rw,noexec,nosuid,nodev,size=32m,mode=1777",
-            *[
-                part
-                for source, target, writable in mounts
-                for part in (
-                    "--mount",
-                    f"type=bind,source={source},target={target}"
-                    + ("" if writable else ",readonly"),
-                )
-            ],
-            IMAGE,
-            "python3",
-            "-I",
-            "/probe.py",
-            *command,
-        ).strip()
-        assert re.fullmatch("[0-9a-f]{64}", cid)
-        before = json.loads(docker("inspect", cid))[0]
-        assert before["Id"] == cid and before["Config"]["Labels"][LABEL] == name
-        assert before["HostConfig"]["NetworkMode"] == network
-        assert before["HostConfig"]["ReadonlyRootfs"] is True
-        assert before["HostConfig"]["PidMode"] == ""
-        assert {(mount["Destination"], mount["RW"]) for mount in before["Mounts"]} == {
-            (target, writable) for _, target, writable in mounts
-        }
-        yield cid
+        container = CodexContainer.create(
+            root,
+            binding,
+            role="collector" if "--collector" in command else "cli",
+            name=name,
+            mounts=mounts,
+            command=command,
+            network=network,
+            docker=docker,
+        )
+        print(f"Offline durable container claim: {root / 'claim.json'}", flush=True)
+        yield container
     finally:
-        # Lost create acknowledgements only inspect the durable exact name/label.
-        state = json.loads(
-            docker("inspect", cid if cid and re.fullmatch("[0-9a-f]{64}", cid) else name)
-        )[0]
-        assert state["Config"]["Labels"][LABEL] == name and state["Name"] == "/" + name
-        assert re.fullmatch("[0-9a-f]{64}", state["Id"])
-        if cid and re.fullmatch("[0-9a-f]{64}", cid):
-            assert state["Id"] == cid
-        cid = state["Id"]
-        if state["State"]["Running"]:
-            docker("stop", "--time", "12", cid)
-        docker("rm", cid)
+        if (root / "claim.json").exists():
+            receipt = container.stop()
+            container.remove()
+
+            def unavailable(*_):
+                raise OSError("daemon intentionally unavailable after cleanup")
+
+            assert CodexContainer(root, docker=unavailable).inspect() == receipt
 
 
 def run_case(vendor, child, attack, claims, *, interrupt=False):
@@ -210,7 +165,7 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
                 command + ["--collector"],
             )
         )
-        docker("start", collector)
+        collector.start()
         deadline = time.monotonic() + 10
         while not (journal_root / "ready.json").exists():
             if time.monotonic() >= deadline:
@@ -224,30 +179,21 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
                 name,
                 [(vendor, "/runtime", False), (child, "/probe.py", False)],
                 command,
-                network="container:" + collector,
+                network="container:" + collector.container_id,
             )
         )
-        process = subprocess.run(
-            [
-                "docker",
-                "--host",
-                "unix://" + str(Path.home() / ".docker/run/docker.sock"),
-                "start",
-                "--attach",
-                cli,
-            ],
-            capture_output=True,
-            timeout=40,
-            check=True,
-        )
-        assert len(process.stdout) <= 4 * 1024 * 1024
-        result = json.loads(process.stdout)
-        after = json.loads(docker("inspect", cli))[0]
-        assert not after["State"]["Running"] and after["State"]["ExitCode"] == 0
-        # Stop and join collector handlers before trusting the durable handoff.
-        docker("stop", "--time", "12", collector)
-        after = json.loads(docker("inspect", collector))[0]
-        assert not after["State"]["Running"] and after["State"]["ExitCode"] == 0
+        cli.start()
+        deadline = time.monotonic() + 40
+        while (terminal := cli.inspect())["status"] == "running":
+            if time.monotonic() >= deadline:
+                raise TimeoutError("CLI termination unproved")
+            time.sleep(0.05)
+        assert terminal["status"] == "exited" and terminal["exit_code"] == 0
+        result = json.loads(terminal["logs"])
+        # The host can reopen lifecycle ownership before terminal handoff.
+        collector = CodexContainer(collector.root, docker=docker)
+        terminal = collector.stop()
+        assert terminal["status"] == "exited" and terminal["exit_code"] == 0
         captured = codex_usage.read(journal_root / "collector.json")
         assert captured["stopped_by_host"] and captured["upstream_canary_loaded"]
         result["requests"], result["errors"] = captured["requests"], captured["errors"]
@@ -272,6 +218,7 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
                 "redispatch_refused": True,
                 "journal_survived_exit": True,
                 "collector_isolated": True,
+                "terminal_receipt_replay": True,
                 "journal": {
                     path.name: json.loads(path.read_text())
                     for path in (journal_root / "usage").glob("*.json")
@@ -301,6 +248,7 @@ def run_case(vendor, child, attack, claims, *, interrupt=False):
         assert codex_usage.UsageJournal(recovered, binding).estimate() == estimate
         result["held_usage_replay"] = True
         result["collector_isolated"] = True
+        result["terminal_receipt_replay"] = True
         return {"scenario": "tool_injection" if attack else "success", "result": result}
 
 
@@ -317,7 +265,7 @@ def main():
         raise RuntimeError("Choose a new report path")
     archive = args.archive.read_bytes()
     assert hashlib.sha512(archive).digest() == base64.b64decode(ARCHIVE_SHA512)
-    child = Path(__file__).with_name("probe-codex-subscription-child.py").resolve()
+    child = Path(codex_container.__file__).with_name("codex_fixture.py").resolve()
     report = {
         "synthetic": True,
         "real_host_probe": True,
@@ -331,6 +279,7 @@ def main():
             for path in (
                 Path(__file__),
                 child,
+                Path(codex_container.__file__),
                 Path(codex_events.__file__),
                 Path(codex_pricing.__file__),
                 Path(codex_usage.__file__),

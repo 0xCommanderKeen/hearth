@@ -182,6 +182,7 @@ def create_app(
     supervise: bool = True,
     runtime_kind: str | None = None,
     process_boundary: str | None = None,
+    codex_archive: Path | None = None,
 ) -> FastAPI:
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
@@ -198,6 +199,10 @@ def create_app(
         if database.runtime_kind() == "process_mock"
         else MockRuntime(data / "mock-runtime", scenario=scenario)
     )
+    if database.runtime_kind() == "codex_mock":
+        from hearth.codex_runtime import CodexMockRuntime
+
+        runtime = CodexMockRuntime(data, archive=codex_archive, scenario=scenario)
     executor = Executor(execution, runtime)
     authority = Authority(hearth, execution.artifacts)
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
@@ -457,4 +462,7 @@ def from_env() -> FastAPI:
         scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
         runtime_kind=os.environ.get("HEARTH_MOCK_RUNTIME"),
         process_boundary=os.environ.get("HEARTH_PROCESS_BOUNDARY"),
+        codex_archive=Path(os.environ["HEARTH_CODEX_ARCHIVE"])
+        if os.environ.get("HEARTH_CODEX_ARCHIVE")
+        else None,
     )
