@@ -1,3 +1,18 @@
+export type HouseholdPolicy = {
+  revision: number;
+  daily_limit: number;
+  timezone: string;
+  resident_limit: number;
+  concurrency_limit: number;
+  resident_count: number;
+  active_runs: number;
+  uncertain_reserved?: number;
+  spent: number;
+  reserved: number;
+  unknown: number;
+  remaining: number;
+  budget_day: string;
+};
 export type Routine = {
   id: string;
   resident_id: string;
@@ -74,6 +89,7 @@ export type Run = {
   memory_revision?: number;
 };
 export type Snapshot = {
+  household?: HouseholdPolicy;
   restore_hold?: boolean;
   schema_version: 1;
   simulated: boolean;

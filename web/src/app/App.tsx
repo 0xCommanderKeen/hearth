@@ -12,6 +12,7 @@ import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { Skills } from "../features/residents/Skills";
 import { Memory } from "../features/residents/Memory";
+import { HouseholdPanel } from "../features/household/Household";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
@@ -445,6 +446,16 @@ export function App() {
                 completed in recent history
               </span>
             </div>
+            {view === "townhall" && snapshot.household && (
+              <HouseholdPanel
+                client={client}
+                policy={snapshot.household}
+                readOnly={snapshot.restore_hold === true}
+                onSaved={() => {
+                  void client.state().then(publish).catch(fail);
+                }}
+              />
+            )}
             {view === "hamlet" && (
               <Hamlet snapshot={snapshot} connected={connected} />
             )}

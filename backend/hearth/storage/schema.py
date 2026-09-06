@@ -2,6 +2,17 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE run_household_windows (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), timezone TEXT NOT NULL,
+        budget_day TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
+        policy_revision INTEGER NOT NULL
+    )""",
+    """CREATE TABLE household_policy (
+        id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+        daily_limit INTEGER NOT NULL CHECK(daily_limit>=0), timezone TEXT NOT NULL,
+        resident_limit INTEGER NOT NULL CHECK(resident_limit BETWEEN 1 AND 1000),
+        concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100)
+    )""",
     """CREATE TABLE approvals (
         id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
         resident_id TEXT NOT NULL REFERENCES residents(id),

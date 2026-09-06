@@ -11,6 +11,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from hearth.authority.household import check_admission, check_creation, pin_admission
 from hearth.residents.models import (
     Declaration,
     Receipt,
@@ -78,6 +79,7 @@ class Hearth:
                     "UPDATE residents SET revision = ? WHERE id = ?", (revision, resident_id)
                 )
             else:
+                check_creation(db, now)
                 db.execute("INSERT INTO residents VALUES (?, ?)", (resident_id, revision))
             db.execute(
                 "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -201,7 +203,7 @@ class Hearth:
         task_id: str,
         *,
         reserve: int,
-        concurrency_limit: int = 2,
+        concurrency_limit: int | None = None,
         pricing_mode: str | None = None,
     ) -> Run:
         """Reserve exposure and resident ownership before any runtime can launch.
@@ -216,7 +218,9 @@ class Hearth:
         microdollars(reserve)
         if reserve == 0:
             raise Refused("reservation_required")
-        if type(concurrency_limit) is not int or not 1 <= concurrency_limit <= 100:
+        if concurrency_limit is not None and (
+            type(concurrency_limit) is not int or not 1 <= concurrency_limit <= 100
+        ):
             raise Refused("invalid_concurrency_limit")
         with self.database.transaction(write=True) as db:
             now = int(self.clock())
@@ -239,7 +243,7 @@ class Hearth:
                 (resident_id,),
             ).fetchone():
                 raise Refused("resident_busy")
-            if (
+            if concurrency_limit is not None and (
                 db.execute(f"SELECT COUNT(*) FROM runs WHERE status IN {ACTIVE_RUNS}").fetchone()[0]
                 >= concurrency_limit
             ):
@@ -266,6 +270,7 @@ class Hearth:
             ).fetchone()[0]
             if outstanding + spent + reserve > declaration["daily_limit"]:
                 raise Refused("budget_exhausted")
+            check_admission(db, now, reserve)
             run = Run(
                 str(uuid.uuid4()),
                 task_id,
@@ -285,6 +290,7 @@ class Hearth:
                 "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 tuple(asdict(run).values()),
             )
+            pin_admission(db, now, run.id)
             db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
             memory = db.execute(
                 "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
