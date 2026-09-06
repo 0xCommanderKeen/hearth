@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -65,53 +66,60 @@ def validate(result, attack):
         assert not outputs
 
 
-def run_case(vendor, child, attack):
+def run_case(vendor, child, attack, claims):
     docker = LocalDocker()
     name = "hearth-codex-offline-" + uuid.uuid4().hex
-    cid = docker(
-        "create",
-        "--pull",
-        "never",
-        "--name",
-        name,
-        "--label",
-        LABEL + "=" + name,
-        "--restart",
-        "no",
-        "--network",
-        "none",
-        "--read-only",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}",
-        "--init",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges=true",
-        "--security-opt",
-        "seccomp=builtin",
-        "--pids-limit",
-        "128",
-        "--memory",
-        "512m",
-        "--memory-swap",
-        "512m",
-        "--cpus",
-        "0.5",
-        "--tmpfs",
-        "/scratch:rw,noexec,nosuid,nodev,size=32m,mode=1777",
-        "--mount",
-        f"type=bind,source={vendor},target=/runtime,readonly",
-        "--mount",
-        f"type=bind,source={child},target=/probe.py,readonly",
-        IMAGE,
-        "python3",
-        "-I",
-        "/probe.py",
-        *(["--attack"] if attack else []),
-    ).strip()
-    assert re.fullmatch("[0-9a-f]{64}", cid)
+    claim = claims / (name + ".json")
+    with claim.open("x") as stream:
+        json.dump({"name": name, "label": LABEL, "image": IMAGE}, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    print(f"Offline container ownership claim: {claim}", flush=True)
+    cid = None
     try:
+        cid = docker(
+            "create",
+            "--pull",
+            "never",
+            "--name",
+            name,
+            "--label",
+            LABEL + "=" + name,
+            "--restart",
+            "no",
+            "--network",
+            "none",
+            "--read-only",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--init",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges=true",
+            "--security-opt",
+            "seccomp=builtin",
+            "--pids-limit",
+            "128",
+            "--memory",
+            "512m",
+            "--memory-swap",
+            "512m",
+            "--cpus",
+            "0.5",
+            "--tmpfs",
+            "/scratch:rw,noexec,nosuid,nodev,size=32m,mode=1777",
+            "--mount",
+            f"type=bind,source={vendor},target=/runtime,readonly",
+            "--mount",
+            f"type=bind,source={child},target=/probe.py,readonly",
+            IMAGE,
+            "python3",
+            "-I",
+            "/probe.py",
+            *(["--attack"] if attack else []),
+        ).strip()
+        assert re.fullmatch("[0-9a-f]{64}", cid)
         before = json.loads(docker("inspect", cid))[0]
         assert before["Id"] == cid and before["Config"]["Labels"][LABEL] == name
         assert before["HostConfig"]["NetworkMode"] == "none"
@@ -138,8 +146,17 @@ def run_case(vendor, child, attack):
         validate(result, attack)
         return {"scenario": "tool_injection" if attack else "success", "result": result}
     finally:
-        state = json.loads(docker("inspect", cid))[0]
-        assert state["Id"] == cid and state["Config"]["Labels"][LABEL] == name
+        # An uncertain create reply permits inspection of this pre-recorded name,
+        # never another create/start. Require the exact label before any mutation.
+        state = json.loads(
+            docker("inspect", cid if cid and re.fullmatch("[0-9a-f]{64}", cid) else name)
+        )[0]
+        assert state["Config"]["Labels"][LABEL] == name
+        assert state["Name"] == "/" + name
+        assert re.fullmatch("[0-9a-f]{64}", state["Id"])
+        if cid and re.fullmatch("[0-9a-f]{64}", cid):
+            assert state["Id"] == cid
+        cid = state["Id"]
         if state["State"]["Running"]:
             docker("stop", "--time", "1", cid)
         docker("rm", cid)
@@ -173,7 +190,8 @@ def main():
         },
         "cases": [],
     }
-    with tempfile.TemporaryDirectory(prefix="hearth-codex-offline-") as temporary:
+    temporary = Path(tempfile.mkdtemp(prefix="hearth-codex-offline-"))
+    try:
         # Verify the exact bytes being extracted, not a mutable caller path again.
         pinned = Path(temporary) / "codex.tgz"
         pinned.write_bytes(archive)
@@ -184,7 +202,12 @@ def main():
             (vendor / "bin/codex").read_bytes()
         ).hexdigest()
         for attack in (False, True):
-            report["cases"].append(run_case(vendor, child, attack))
+            report["cases"].append(run_case(vendor, child, attack, temporary))
+    except BaseException:
+        print(f"Offline probe evidence and ownership claims retained at {temporary}")
+        raise
+    else:
+        shutil.rmtree(temporary)
     report["status"] = "passed"
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(f"Offline subscription CLI probe passed: {args.report}")

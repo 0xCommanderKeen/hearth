@@ -20,7 +20,9 @@ installer. It requires the already-cached digest-pinned image from the
 personal configuration read. Only the verified CLI bundle and fixture script are
 mounted, readonly; fresh synthetic state lives on bounded scratch. The container
 has no external network, root write access, Docker socket or Hearth data mount.
-Exact inspected ownership guards cleanup. A failed observation refuses a passing
+A flushed ownership claim precedes create; a lost reply only inspects that exact
+name and label. Exact inspected ownership guards cleanup. Failed probes retain
+the extracted bundle and claims and print their location. A failed observation refuses a passing
 report; if ownership cannot be verified, cleanup refuses too.
 
 The fixture accepts only a bounded WebSocket request at `/responses` and bounded

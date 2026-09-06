@@ -7,7 +7,7 @@
   "archive_url": "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz",
   "archive_integrity": "sha512-8OLcPXaAol/FOrRoDxWhIiHIFa73KRsM41EKocjRZOwiT4TcelzJWn3dHyiuSb7teWF25rrslvSPyvhULYRRCQ==",
   "source_sha256": {
-    "probe-codex-subscription.py": "4a3e4bb69cff90201b6002b4f6bad8fd532e562d1da62e8049300fe8258231f1",
+    "probe-codex-subscription.py": "bb9fcc595227cb14ec3b83187ea83b19ca5ef0e17a60eb2654d429b0e32405e4",
     "probe-codex-subscription-child.py": "e014f704cb27ccd1c180efa672273f32de2ef6356ba24ee076cc8cbfaedfa037",
     "codex_events.py": "f0dadc3c408ab4f961536b3062d04d07ad40ea2496e972305e589f635eeb752e"
   },
@@ -17,7 +17,7 @@
       "result": {
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0778f-dd64-7dc0-a3ce-2626e111074e\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":8,\"reasoning_output_tokens\":0}}\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a07794-1d1f-7ad3-8dbe-ee4e0ca6e745\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":8,\"reasoning_output_tokens\":0}}\n",
         "stderr": "Reading additional input from stdin...\n",
         "requests": [
           {
@@ -120,8 +120,8 @@
       "result": {
         "version": "codex-cli 0.145.0",
         "returncode": 0,
-        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a0778f-e5d5-7f30-9cea-3b717178d892\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":16,\"reasoning_output_tokens\":0}}\n",
-        "stderr": "Reading additional input from stdin...\n2026-09-06T16:31:54.756702Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T16:31:54.758148Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
+        "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a07794-2817-7381-9158-ee104e65c538\"}\n{\"type\":\"turn.started\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"Synthetic summary: the Reader mock is ready. No model was called.\"}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":60,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":16,\"reasoning_output_tokens\":0}}\n",
+        "stderr": "Reading additional input from stdin...\n2026-09-06T16:36:34.655572Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-09-06T16:36:34.656743Z ERROR codex_core::tools::router: error=view_image is not allowed because you do not support image inputs\n",
         "requests": [
           {
             "method": "POST",
@@ -250,7 +250,7 @@
                 "call_id": "call_exec",
                 "output": "unsupported call: exec_command",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a0778f-e63d-7e12-8e32-01ec7d6908bf"
+                  "turn_id": "01a07794-2b9c-71c2-b351-23f928cae5af"
                 }
               },
               {
@@ -258,7 +258,7 @@
                 "call_id": "call_image",
                 "output": "view_image is not allowed because you do not support image inputs",
                 "internal_chat_message_metadata_passthrough": {
-                  "turn_id": "01a0778f-e63d-7e12-8e32-01ec7d6908bf"
+                  "turn_id": "01a07794-2b9c-71c2-b351-23f928cae5af"
                 }
               }
             ]

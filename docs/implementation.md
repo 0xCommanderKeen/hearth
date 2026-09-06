@@ -234,7 +234,7 @@ See [probe reproduction and limits](codex-subscription-probe.md). This does not
 complete issue #69 or enable the Codex runtime: production credential separation,
 transport failure/recovery and operational integration remain to be established.
 No real account, login, model call, subscription charge or source data was used.
-Full `make check` passed 368 backend and 35 browser tests, lint/types/build and both
+Full `make check` passed 372 backend and 35 browser tests, lint/types/build and both
 installed-wheel journeys. The [Mac report](evidence/codex-subscription-2026-09-06.json)
 records successful completion and tool-injection cases with exact source pins.
 
@@ -242,3 +242,6 @@ Miha subsequently confirmed a shared accounting policy: price subscription token
 at API-equivalent rates so a future API switch retains the same usage calculation
 and $10/day budget. Implementation of the versioned estimator remains next;
 subscription estimates must remain separate from actual provider charges.
+
+Four probe recovery checks cover lost/invalid create replies, foreign ownership
+and unavailable daemon observation; uncertain creation never authorizes relaunch.
