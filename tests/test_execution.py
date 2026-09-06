@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 from hearth.artifacts import Artifacts
 from hearth.core import Hearth
-from hearth.database import SCHEMA, Database
+from hearth.database import SCHEMA, SCHEMA_VERSION, Database
 from hearth.execution import Execution, Executor
 from hearth.models import Declaration, Refused
 from hearth.runtime import Evidence, MockRuntime
@@ -243,7 +243,7 @@ def test_upgrade_preserves_foundation_records_and_foreign_keys(tmp_path):
     assert hearth.receipt("cmd").task_id == "task"
     with database.transaction() as db:
         assert list(db.execute("PRAGMA foreign_key_check")) == []
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_upgrade_failure_preserves_original_schema_and_version(tmp_path, monkeypatch):
