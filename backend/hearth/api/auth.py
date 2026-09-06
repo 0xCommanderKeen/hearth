@@ -57,6 +57,10 @@ class OperatorAuth:
             r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}/memory", scope["path"]
         ):
             body_limit = MAX_MEMORY * 6 + 1024  # JSON escaping may expand UTF-8 bytes.
+        if scope["method"] in {"POST", "PUT"} and re.fullmatch(
+            r"/api/skills(?:/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})?", scope["path"]
+        ):
+            body_limit = (120 + 2000 + 32000) * 6 + 1024
         try:
             while True:
                 message = await asyncio.wait_for(receive(), timeout=15)

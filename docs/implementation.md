@@ -417,6 +417,28 @@ Independent Standards and Spec reviews both report zero remaining findings after
 fixing offline bundle preservation. Karen/shared Skills (#85) and deployment remain
 outside this issue.
 
+## Shared skill catalog — issue #86
+
+Townhall now has a reusable Skills library with search, create/edit, safe Markdown
+preview, exact revision history and archive controls. The authenticated API returns
+durable create/save/archive receipts and rejects changed retries or stale edits.
+Creator/editor identity and timestamps come from the authenticated route. Immutable
+content, digest, catalog pointer, receipt and audit commit in one SQLite transaction;
+current-data backup verifies content and held restore preserves history read-only.
+See [the catalog contract](shared-skills.md) and [the approved Karen scope](adr/0009-karen-and-shared-skills.md).
+
+Verified with real temporary SQLite: duplicate concurrent create/reopen, competing
+edits, immutable/archive history, request validation, forged provenance refusal,
+audit failure rollback, changed-content refusal and backup/held restore. A rendered
+browser passed create → refresh → revise → old revision → two-editor conflict with
+retained draft → archive → archived search and inspection. Desktop/mobile screenshots
+were inspected, preview contrast corrected, and 390px overflow and inert HTML
+checks passed. These checks use disposable synthetic data and make no provider calls.
+
+`make check` passed 495 backend and 44 browser tests, lint, format, typechecks,
+build and both installed-wheel journeys. Resident assignment/run pins (#87) and
+Karen management/runtime work remain separate subissues. The selected live demo and personal data were untouched.
+
 ## Shared household policy — issue #90
 
 A fresh store has one $10/day API-equivalent household allowance in
@@ -448,4 +470,19 @@ review axes passed; the suggested day-window helper cleanup passed 10 focused
 tests, including 23/25-hour Ljubljana DST days, lint and typechecking. Playwright
 verified policy edits, a visible blocked admission, allowance restoration, refresh
 persistence and mobile layout; screenshot inspection confirmed theme/contrast.
-No live data or provider calls used. PR/CI/merge remain pending.
+No live data or provider calls used. PR #97 merged at `4206c81` with green CI.
+
+Issue #86 integration with merged household policy #97 passed `make check`:
+505 backend and 45 browser tests, lint/format/types/build and both installed-wheel
+journeys. The rendered browser also passed Townhall policy edit → Skills create,
+refresh, revise, history, two-editor stale-draft conflict, archive and archived
+search, with mobile overflow and inert Markdown checks. Independent Standards and
+Spec reviews of the catalog reported no findings before this additive integration.
+
+An integration review found that household admission refusals escaped the routine
+queue and prevented the supervisor from progressing active runs. Routine admission
+now treats shared budget/concurrency refusals as normal queued holds. Two regression
+cases failed with runs stuck in `starting` before the fix and pass afterward: an
+active run settles despite either household hold, and the capacity-blocked routine
+then completes when the slot is released. All 25 supervisor/routine/household checks,
+lint/format and backend types pass. Integrity failures remain visible refusals.

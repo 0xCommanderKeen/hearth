@@ -172,6 +172,8 @@ class Routines:
                     "resident_paused",
                     "capacity_exhausted",
                     "budget_exhausted",
+                    "household_budget_exhausted",
+                    "household_concurrency_limit",
                     "task_already_admitted",
                 }:
                     raise
