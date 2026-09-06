@@ -17,11 +17,28 @@ from hearth.runtime import MockRuntime
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["demo", "backup", "verify-backup", "restore"])
+    parser.add_argument(
+        "command",
+        choices=["demo", "backup", "verify-backup", "restore", "export-state", "verify-state"],
+    )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
+    if args.command in {"export-state", "verify-state"}:
+        from hearth.portable import MAX_EXPORT, export, validate
+
+        if args.source is None:
+            parser.error(f"{args.command} requires --source")
+        if args.command == "export-state":
+            if args.destination is None:
+                parser.error("export-state requires --destination")
+            result = export(args.source, args.destination)
+        else:
+            with args.source.open("rb") as file:
+                result = validate(file.read(MAX_EXPORT + 1))
+        print(json.dumps(result, indent=2))
+        return
     if args.command != "demo":
         from hearth.backup import capture, restore, verify
 
