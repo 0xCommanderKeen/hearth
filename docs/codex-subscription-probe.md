@@ -17,8 +17,9 @@ uv run python scripts/probe-codex-subscription.py --archive /tmp/hearth-codex.tg
 The driver verifies SHA-512 before extracting the exact bytes; it runs no package
 installer. It requires the already-cached digest-pinned image from the
 [Mac container probe](mac-isolation.md). There is no implicit image pull, login or
-personal configuration read. Only the verified CLI bundle and fixture script are
-mounted, readonly; fresh synthetic state lives on bounded scratch. The container
+personal configuration read. The verified CLI bundle, fixture script and copied accounting modules are mounted
+readonly. Fresh synthetic login state lives on bounded scratch; a dedicated
+writable mount preserves only the fixture collector’s synthetic usage journal. The container
 has no external network, root write access, Docker socket or Hearth data mount.
 A flushed ownership claim precedes create; a lost reply only inspects that exact
 name and label. Exact inspected ownership guards cleanup. Failed probes retain
@@ -33,7 +34,9 @@ exporter; those are consumed locally, never forwarded. CLI output is captured on
 the limited scratch filesystem, then read with a one-MiB limit per file. Deadlines
 bound both the CLI and host attachment.
 
-Two cases verify a fixed completion and injected tool calls. Both require actual
+Two cases verify a fixed completion and injected tool calls. A third interrupts
+an unresolved request and verifies its persisted journal prevents redispatch or
+known-cost interpretation after the container exits. Both require actual
 CLI exit zero, exact final-file/parsed-output agreement, `gpt-6-astra`, synthetic
 Bearer/account headers and no server errors. The injection case requires explicit
 rejection of `exec_command` and of `view_image` for the text-only model profile;
@@ -55,3 +58,6 @@ data. The selected accounting policy prices reported tokens at API-equivalent ra
 for the $10/day Hearth allowance, consistently across subscription and a future
 API backend. These estimates do not establish subscription charges or a provider cap. Real credential separation, failure/retry/cancellation behavior, authoritative
 run receipts and real subscription usage remain open before application wiring.
+
+The [usage journal](codex-usage.md) describes durable request capture and the
+remaining production collector isolation and operational settlement requirements.

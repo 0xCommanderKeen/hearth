@@ -12,6 +12,18 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# This readonly package is copied and pinned by the host probe, never user config.
+sys.path.insert(0, "/app")
+from hearth.codex_events import TokenUsage  # noqa: E402
+from hearth.codex_usage import UsageBinding, UsageJournal  # noqa: E402
+
+PROMPT = sys.argv[sys.argv.index("--prompt") + 1]
+run_id = sys.argv[sys.argv.index("--run-id") + 1]
+binding = UsageBinding(
+    run_id, hashlib.sha256(PROMPT.encode()).hexdigest(), "gpt-6-astra", "standard"
+)
+journal = UsageJournal.create(Path("/journal/usage"), binding)
+
 state = Path("/scratch/state")
 state.mkdir()
 
@@ -76,7 +88,7 @@ model = {
 requests = []
 errors = []
 MAX_FRAME = 2 * 1024 * 1024
-RESPONSE_USAGE = {
+RESPONSE_USAGE: dict = {
     "input_tokens": 30,
     "output_tokens": 8,
     "total_tokens": 38,
@@ -93,7 +105,7 @@ item = {
 }
 
 
-def stream_events():
+def stream_events() -> list[dict]:
     events = [
         {
             "type": "response.created",
@@ -171,7 +183,12 @@ class Server(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
         body = json.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
         self.record(body)
-        events = stream_events()
+        request = journal.begin() if body.get("generate") is not False else None
+        if "--interrupt" in sys.argv and request is not None:
+            time.sleep(5)
+            self.close_connection = True
+            return
+        events: list[dict] = stream_events()
         if (
             "--attack" in sys.argv
             and body.get("generate") is not False
@@ -219,6 +236,18 @@ class Server(BaseHTTPRequestHandler):
                 ]
             )
         for event in events:
+            if event["type"] == "response.completed" and request is not None:
+                usage = event["response"]["usage"]
+                journal.complete(
+                    request,
+                    TokenUsage(
+                        usage["input_tokens"],
+                        usage["input_tokens_details"]["cached_tokens"],
+                        usage["output_tokens"],
+                        usage["output_tokens_details"]["reasoning_tokens"],
+                        usage["input_tokens_details"]["cache_write_tokens"],
+                    ),
+                )
             data = json.dumps(event).encode()
             header = (
                 bytes([129, len(data)])
@@ -318,7 +347,7 @@ cmd = [
 ]
 for key, value in config.items():
     cmd += ["-c", key + "=" + json.dumps(value)]
-cmd += ["Summarize this synthetic note: the Reader mock is ready. Do not use tools."]
+cmd += [PROMPT]
 
 
 def read_output(name):
@@ -351,11 +380,28 @@ try:
             stdin=subprocess.DEVNULL,
             stdout=stdout,
             stderr=stderr,
-            timeout=25,
+            timeout=2 if "--interrupt" in sys.argv else 25,
         )
+    estimate = journal.seal(
+        read_output("stdout"),
+        exit_code=result.returncode,
+        final=read_output("final.txt") if Path("/scratch/final.txt").exists() else None,
+    )
+    reopened = UsageJournal(Path("/journal/usage"), binding)
+    if reopened.estimate() != estimate:
+        raise ValueError("reopened usage changed")
     print(
         json.dumps(
             {
+                "journal_estimate": {
+                    "microdollars": estimate.microdollars,
+                    "schedule": estimate.schedule,
+                    "basis": estimate.basis,
+                },
+                "journal": {
+                    path.name: json.loads(path.read_text())
+                    for path in Path("/journal/usage").glob("*.json")
+                },
                 "version": version,
                 "returncode": result.returncode,
                 "stdout": read_output("stdout"),
