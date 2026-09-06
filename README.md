@@ -57,5 +57,11 @@ Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulat
 not runtime/provider selectors. For browser development, `pnpm --dir web dev`
 proxies its `/api` requests to the same local backend.
 
+For a fresh process-backed simulation, set `HEARTH_MOCK_RUNTIME=process_mock` and
+`HEARTH_DATA` to a new directory before starting the browser application. Reopening
+that store without the selector uses its recorded runtime; a conflicting selector
+is refused. Both modes remain simulations. The current schema requires fresh data
+from earlier prototype layouts, with no conversion. See [process recovery](docs/process-mock.md).
+
 See the [implementation gates](docs/implementation.md),
 [project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).

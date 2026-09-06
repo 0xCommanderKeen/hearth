@@ -37,8 +37,10 @@ class Database:
         connection.execute("PRAGMA synchronous = FULL")
         return connection
 
-    def initialize(self) -> None:
+    def initialize(self, *, runtime_kind: str | None = None) -> None:
         """Create the complete schema once; never upgrade an existing store."""
+        if runtime_kind not in {None, "inline_mock", "process_mock"}:
+            raise Refused("runtime_kind_invalid")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = self._connect()
         try:
@@ -52,6 +54,10 @@ class Database:
                 connection.execute(
                     "INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),)
                 )
+                connection.execute(
+                    "INSERT INTO system_meta VALUES ('runtime_kind', ?)",
+                    (runtime_kind or "inline_mock",),
+                )
                 connection.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             elif version != SCHEMA_VERSION:
@@ -60,6 +66,13 @@ class Database:
                 raise RuntimeError(
                     "Incompatible Hearth database layout; use a fresh data directory"
                 )
+            stored = connection.execute(
+                "SELECT value FROM system_meta WHERE key='runtime_kind'"
+            ).fetchone()
+            if stored is None or stored[0] not in {"inline_mock", "process_mock"}:
+                raise Refused("runtime_configuration_invalid")
+            if runtime_kind is not None and runtime_kind != stored[0]:
+                raise Refused("runtime_store_mismatch")
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Database contains invalid references")
             connection.commit()
@@ -68,6 +81,13 @@ class Database:
             raise
         finally:
             connection.close()
+
+    def runtime_kind(self) -> str:
+        with self.transaction() as db:
+            row = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
+            if row is None or row[0] not in {"inline_mock", "process_mock"}:
+                raise Refused("runtime_configuration_invalid")
+            return row[0]
 
     def restored(self) -> bool:
         with self.transaction() as db:

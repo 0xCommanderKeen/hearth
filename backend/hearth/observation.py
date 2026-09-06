@@ -44,6 +44,7 @@ def snapshot(hearth: Hearth) -> dict:
             dict(row)
             for row in db.execute(f"""SELECT id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
+                   runtime_kind, runtime_version, input_digest,
                    created_at, actual_cost,
                    COALESCE((SELECT revision FROM run_memory m WHERE m.run_id=runs.id),0)
                    AS memory_revision,

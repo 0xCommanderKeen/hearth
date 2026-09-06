@@ -147,7 +147,7 @@ def test_deadline_has_unknown_usage_and_corrupt_receipt_is_not_success(tmp_path)
 
 def test_engine_restart_recovers_process_result_in_sqlite(tmp_path):
     db = Database(tmp_path / "hearth.db")
-    db.initialize()
+    db.initialize(runtime_kind="process_mock")
     hearth = Hearth(db)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
@@ -224,7 +224,7 @@ def test_child_fixture_preserves_terminal_usage(scenario, status, cost, tmp_path
 
 def test_ambiguous_process_launch_keeps_sqlite_ownership_on_cancel(tmp_path, monkeypatch):
     database = Database(tmp_path / "hearth.db")
-    database.initialize()
+    database.initialize(runtime_kind="process_mock")
     hearth = Hearth(database)
     hearth.save_resident("reader", Declaration("Reader", "Synthetic", 10_000), expected_revision=0)
     receipt = hearth.submit("first", "reader", "Synthetic", expires_at=int(time.time()) + 300)

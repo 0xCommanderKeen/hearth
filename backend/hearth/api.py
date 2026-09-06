@@ -26,6 +26,7 @@ from hearth.memory import MAX_MEMORY, Memory
 from hearth.models import Declaration, Refused
 from hearth.notifications import MockInbox, Notifications
 from hearth.observation import snapshot
+from hearth.process_mock import ProcessMockRuntime
 from hearth.routines import Routines
 from hearth.run_access import RunAccess
 from hearth.runtime import MockRuntime
@@ -174,17 +175,27 @@ class UsagePost(BaseModel):
 
 
 def create_app(
-    data: Path, token: str, *, scenario: str = "success", supervise: bool = True
+    data: Path,
+    token: str,
+    *,
+    scenario: str = "success",
+    supervise: bool = True,
+    runtime_kind: str | None = None,
 ) -> FastAPI:
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
-    database.initialize()
+    database.initialize(runtime_kind=runtime_kind)
     if database.restored():
         supervise = False
     hearth = Hearth(database)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
-    executor = Executor(execution, MockRuntime(data / "mock-runtime", scenario=scenario))
+    runtime = (
+        ProcessMockRuntime(data / "process-mock", scenario=scenario)
+        if database.runtime_kind() == "process_mock"
+        else MockRuntime(data / "mock-runtime", scenario=scenario)
+    )
+    executor = Executor(execution, runtime)
     authority = Authority(hearth, execution.artifacts)
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
     routines = Routines(hearth)
@@ -344,7 +355,14 @@ def create_app(
     @app.get("/api/runs/{run_id}")
     def inspect_run(run_id: str):
         run = hearth.run(run_id)
-        return {"id": run.id, "status": run.status, "artifact_id": run.artifact_id}
+        return {
+            "id": run.id,
+            "status": run.status,
+            "artifact_id": run.artifact_id,
+            "runtime_kind": run.runtime_kind,
+            "runtime_version": run.runtime_version,
+            "input_digest": run.input_digest,
+        }
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel(run_id: str):
@@ -429,4 +447,5 @@ def from_env() -> FastAPI:
         Path(os.environ.get("HEARTH_DATA", ".hearth/local")),
         os.environ.get("HEARTH_OPERATOR_TOKEN", ""),
         scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
+        runtime_kind=os.environ.get("HEARTH_MOCK_RUNTIME"),
     )

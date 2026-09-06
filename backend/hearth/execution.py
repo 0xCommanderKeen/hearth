@@ -1,6 +1,7 @@
 """One supervised lifecycle for mock execution, recovery, and terminal accounting."""
 
 import fcntl
+import hashlib
 import json
 from dataclasses import asdict
 
@@ -194,13 +195,20 @@ class Executor:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise Refused("executor_busy") from None
+            if self.execution.hearth.database.runtime_kind() != self.runtime.kind:
+                raise Refused("runtime_store_mismatch")
             results = []
             for run in self.execution.active():
-                evidence = self.runtime.inspect(run.id)
+                if (run.runtime_kind, run.runtime_version) != (
+                    self.runtime.kind,
+                    self.runtime.version,
+                ):
+                    raise Refused("runtime_run_mismatch")
+                evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
                 if run.cancellation_requested:
                     if evidence.status == "running":
                         self.runtime.stop(run.id)
-                        evidence = self.runtime.inspect(run.id)
+                        evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
                     elif evidence.status == "absent":
                         # A durable launch intent distinguishes never-started work from ambiguity.
                         evidence = (
@@ -223,10 +231,14 @@ class Executor:
                         )
                         continue
                     if self.execution.prepare_start(run.id, run.owner_token):
-                        self.runtime.start(
-                            run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
-                        )
-                    evidence = self.runtime.inspect(run.id)
+                        instruction = json.dumps(context, sort_keys=True, separators=(",", ":"))
+                        if hashlib.sha256(instruction.encode()).hexdigest() != run.input_digest:
+                            results.append(
+                                self.execution.observe(run.id, run.owner_token, "interrupted")
+                            )
+                            continue
+                        self.runtime.start(run.id, instruction)
+                    evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
                 if evidence.status in {"succeeded", "failed", "cancelled"}:
                     results.append(self.execution.finish(run.id, run.owner_token, evidence))
                 elif evidence.status == "running":

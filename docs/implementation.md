@@ -63,15 +63,25 @@ Mac process/isolation behavior remain unverified. No Codex task was launched.
 
 ## Process lifecycle rehearsal
 
-Issue #52 implements a developer-only process mock through the existing Runtime
+Issue #52 implements a process mock through the existing Runtime
 contract. [The rehearsal](process-mock.md) uses a detached trusted worker, durable
 launch/started claims, bounded synthetic child output and durable cancellation.
 Real processes and temporary SQLite verify restart recovery and retention of
-ownership after uncertain launch. The application default stays the in-process
-mock; selector/provenance/backup wiring and real Codex isolation remain pending.
-Full `make check` now passes 216 backend and 35 browser tests plus isolated release
-verification. Independent Standards and Spec reviews found no blocking issues;
-each also ran all 12 process checks successfully.
+ownership after uncertain launch. Its baseline passed 216 backend and 35 browser
+tests; both independent reviewers also ran all 12 process checks.
+
+Issue #54 connects the process mock to fresh application stores. Store runtime
+choice is immutable; runs pin adapter kind/version and serialized input digest at
+admission. Wrong adapters or mismatched evidence cannot execute or settle a run.
+Authenticated snapshots and run inspection expose the pins. Quiescent process
+backups preserve validated durable claims; active/unknown runs refuse capture.
+Restored stores infer their runtime and stay held. The schema is defined directly;
+incompatible prototype layouts require fresh data and are never converted.
+
+Real model/pricing provenance, Codex event parsing and Mac confinement remain
+pending. This wiring enables process-backed simulations only. Full `make check`
+passes 226 backend and 35 browser tests. Installed-wheel HTTP journeys pass for
+both runtimes, including pinned result/restart and verified held backup restore.
 
 ## Remaining acceptance
 

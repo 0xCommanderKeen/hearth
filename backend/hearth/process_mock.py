@@ -58,6 +58,9 @@ class ProcessMockRuntime:
     proves local lifecycle behavior, not confinement or provider cancellation.
     """
 
+    kind = "process_mock"
+    version = 1
+
     def __init__(self, root: Path, *, scenario: str = "success", timeout: float = 30):
         if scenario not in {"success", "hold", "failure", "unknown_usage"}:
             raise ValueError("Unknown mock scenario")
@@ -109,12 +112,14 @@ class ProcessMockRuntime:
             )
             threading.Thread(target=worker.wait, daemon=True).start()
 
-    def inspect(self, run_id: str) -> Evidence:
+    def inspect(self, run_id: str, *, expected_digest: str | None = None) -> Evidence:
         folder = self.folder(run_id)
         if not folder.exists():
             return Evidence("absent")
         try:
             request = read_request(folder)
+            if expected_digest is not None and request["instruction_digest"] != expected_digest:
+                return Evidence("unknown")
             result = MockRuntime(folder).inspect("result")
             if result.status in {"succeeded", "failed", "cancelled"}:
                 with (folder / "result.json").open("rb") as file:

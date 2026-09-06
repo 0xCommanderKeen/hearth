@@ -137,7 +137,7 @@ def test_cancel_between_inventory_and_launch_refuses_launch(system, monkeypatch)
     worker = executor(system)
     original = worker.runtime.inspect
 
-    def cancel_then_inspect(run_id):
+    def cancel_then_inspect(run_id, **kwargs):
         execution.cancel(run_id)
         return original(run_id)
 

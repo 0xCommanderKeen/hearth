@@ -58,3 +58,9 @@ or modified schemas are refused without conversion. Backups preserve every resid
 memory revision and run pin, including unreferenced immutable files. Verification
 rejects corrupt memory and references to another resident's memory. All restored
 copies remain held. There is no historical upgrade path or data importer.
+
+Process-backed stores require all runs to be settled and workers idle before capture.
+Active or uncertain process runs refuse backup without stopping the worker. Durable
+request/result/cancel/started claims are checksummed and checked against pinned run
+identity, input and results. Locks and fixture scratch files are excluded. Held
+restore preserves the store's runtime choice; it does not reactivate that runtime.
