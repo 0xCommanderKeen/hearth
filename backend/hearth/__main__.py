@@ -21,6 +21,7 @@ def main() -> None:
         "command",
         choices=[
             "demo",
+            "ownership-demo",
             "backup",
             "verify-backup",
             "restore",
@@ -43,6 +44,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.upgrade and args.command != "restore":
         parser.error("--upgrade is only valid with restore")
+    if args.command == "ownership-demo":
+        from hearth.rehearsal import execution_handoff
+
+        print(json.dumps(execution_handoff(args.data), indent=2))
+        return
     if args.command == "diff-state":
         from hearth.portable import MAX_EXPORT, compare
 

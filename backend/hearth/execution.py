@@ -7,6 +7,7 @@ from hearth.artifacts import Artifact, Artifacts
 from hearth.core import ACTIVE_RUNS, Hearth, _audit
 from hearth.models import Refused, Run, microdollars
 from hearth.notifications import enqueue
+from hearth.ownership import ExecutionGuard
 from hearth.runtime import Evidence, Runtime
 
 
@@ -172,9 +173,14 @@ class Executor:
     wired exclusively to MockRuntime until real execution is explicitly enabled.
     """
 
-    def __init__(self, execution: Execution, runtime: Runtime):
+    def __init__(
+        self, execution: Execution, runtime: Runtime, *, guard: ExecutionGuard | None = None
+    ):
         self.execution = execution
         self.runtime = runtime
+        if guard is not None and guard.hearth is not execution.hearth:
+            raise Refused("ownership_database_mismatch")
+        self.guard = guard
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
     def step(self) -> list[Run]:
@@ -187,7 +193,22 @@ class Executor:
             except BlockingIOError:
                 raise Refused("executor_busy") from None
             results = []
+            if self.guard:
+                self.guard.settle()
             for run in self.execution.active():
+                if self.guard:
+                    try:
+                        self.guard.claim(run)
+                    except Refused as error:
+                        if error.code not in {
+                            "execution_owner_changed",
+                            "execution_claim_unsettled",
+                        }:
+                            raise
+                        results.append(
+                            self.execution.observe(run.id, run.owner_token, "interrupted")
+                        )
+                        continue
                 evidence = self.runtime.inspect(run.id)
                 if run.cancellation_requested:
                     if evidence.status == "running":
@@ -211,4 +232,6 @@ class Executor:
                     results.append(self.execution.observe(run.id, run.owner_token, "running"))
                 else:
                     results.append(self.execution.observe(run.id, run.owner_token, "interrupted"))
+            if self.guard:
+                self.guard.settle()
             return results

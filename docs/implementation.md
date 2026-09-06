@@ -87,3 +87,17 @@ Verification for issue #33: full `make check` passes with 260 backend and 25 bro
 tests. Both independent reviews are clear. Tests cover every supported older schema;
 the original schema-6 rehearsal backup also upgraded into a held copy with source
 hashes unchanged. Current-schema portable tests continue to pass.
+
+Issue #35 adds a shared execution-ownership registry and a two-control-plane
+`ownership-demo`. Participating mock executors retain claims through uncertainty
+and missing usage, require terminal accounting before release, and reject stale
+owners. See `execution-handoff.md`; this is execution exclusion evidence, not data,
+input, budget or effect-authority migration, and ordinary API execution is not yet
+wired to this handoff registry.
+
+Verification for issue #35: full `make check` passes with 274 backend and 25 browser
+tests, including forced claim-first and transfer-first orderings, uncertainty and
+missing-usage holds, interrupted settlement, replay/handback, audit rollback and
+progress for an unrelated resident after ownership denial. A fresh CLI rehearsal
+refused transfer during active work, cancelled and settled the source, completed
+target work and interrupted stale source work without launching it.
