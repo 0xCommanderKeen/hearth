@@ -95,7 +95,7 @@ def main():
             with patch("hearth.integrations.mock.process.subprocess.Popen", capture_worker):
                 app.state.executor.step()
             assert len(owned_workers) == 1
-            runtime = ContainerRehearsal(hearth.storage.database, data / "container-runs")
+            runtime = ContainerRehearsal(hearth.database, data / "container-runs")
             if scenario != "success":
 
                 def running(runtime=runtime, run=run):

@@ -71,7 +71,7 @@ def test_command_payload_or_deadline_cannot_change(hearth):
 def test_expired_commands_are_refused_but_receipt_remains_queryable(hearth):
     resident(hearth)
     receipt = submit(hearth)
-    future = Hearth(hearth.storage.database, clock=lambda: NOW + 601)
+    future = Hearth(hearth.database, clock=lambda: NOW + 601)
     with pytest.raises(Refused, match="invalid_command_deadline"):
         submit(future)
     assert future.receipt(receipt.command_id) == receipt
@@ -130,7 +130,7 @@ def test_midnight_does_not_release_unresolved_resident_exposure(hearth):
     resident(hearth)
     first = submit(hearth)
     hearth.admit(first.task_id, reserve=1_000_000)
-    tomorrow = Hearth(hearth.storage.database, clock=lambda: NOW + 86_400)
+    tomorrow = Hearth(hearth.database, clock=lambda: NOW + 86_400)
     second = tomorrow.submit("tomorrow", "reader", "Next summary", expires_at=NOW + 87_000)
     with pytest.raises(Refused, match="resident_busy"):
         tomorrow.admit(second.task_id, reserve=1_000_000)
@@ -279,7 +279,7 @@ def test_deadline_is_checked_after_waiting_for_write_transaction(hearth, monkeyp
             tick[0] = NOW + 601
             yield db
 
-    monkeypatch.setattr(hearth.storage.database, "transaction", delayed_transaction)
+    monkeypatch.setattr(hearth.database, "transaction", delayed_transaction)
     with pytest.raises(Refused, match="invalid_command_deadline"):
         submit(hearth)
     assert [fact["kind"] for fact in hearth.audit()] == ["resident.saved"]
@@ -298,7 +298,7 @@ def test_same_version_foreign_layout_is_refused_without_changes(tmp_path):
 
 
 def test_failed_initialization_rolls_back_all_schema_and_seed_writes(tmp_path, monkeypatch):
-    import hearth.storage.database as module
+    import hearth.database as module
 
     path = tmp_path / "new.db"
     monkeypatch.setattr(module, "SCHEMA", (*module.SCHEMA, "INVALID SQL"))

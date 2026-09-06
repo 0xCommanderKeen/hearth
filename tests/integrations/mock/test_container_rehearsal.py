@@ -115,12 +115,12 @@ def system(tmp_path):
 
 def test_reopen_reuses_claim_and_private_actual_stage(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     assert worker.start(run.id).status == "running"
     path = root / "inputs" / run.id / "context.json"
     original = path.read_bytes()
     Memory(hearth).save("reader", "Future memory", expected_revision=1)
-    reopened = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    reopened = ContainerRehearsal(hearth.database, root, docker=docker)
     assert reopened.start(run.id).status == "running"
     assert path.read_bytes() == original and path.stat().st_mode & 0o777 == 0o400
     assert path.parent.stat().st_mode & 0o777 == 0o700
@@ -136,19 +136,19 @@ def test_reopen_reuses_claim_and_private_actual_stage(system):
 def test_uncertain_dispatch_never_repeats_create_or_start(system, lost):
     hearth, run, docker, root = system
     docker.lose = lost
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     with pytest.raises(OSError):
         worker.start(run.id)
     before = [c for c in docker.calls if c[0] in {"create", "start"}]
     docker.lose = None
-    result = ContainerRehearsal(hearth.storage.database, root, docker=docker).start(run.id)
+    result = ContainerRehearsal(hearth.database, root, docker=docker).start(run.id)
     assert result.status == ("running" if lost == "start" else "unknown")
     assert [c for c in docker.calls if c[0] in {"create", "start"}] == before
 
 
 def test_cancellation_and_removed_container_never_release_claim(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id, scenario="hold")
     assert worker.stop(run.id).status == "exited"
     worker.remove(run.id)
@@ -159,7 +159,7 @@ def test_cancellation_and_removed_container_never_release_claim(system):
 @pytest.mark.parametrize("wrong", ["label", "id", "name"])
 def test_wrong_container_is_never_stopped_or_removed(system, wrong):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     if wrong == "label":
         docker.container["Config"]["Labels"][LABEL] = "foreign"
@@ -174,7 +174,7 @@ def test_wrong_container_is_never_stopped_or_removed(system, wrong):
 
 def test_changed_scenario_and_changed_stage_refuse_without_dispatch(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     with pytest.raises(Refused, match="container_identity_conflict"):
         worker.start(run.id, scenario="hold")
@@ -189,7 +189,7 @@ def test_changed_scenario_and_changed_stage_refuse_without_dispatch(system):
 
 def test_concurrent_start_dispatches_once(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda _: worker.start(run.id), range(8)))
     assert all(result.status == "running" for result in results)
@@ -198,7 +198,7 @@ def test_concurrent_start_dispatches_once(system):
 
 def test_cross_run_output_is_not_accepted(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.run_id = "other-run"
     docker.complete()
@@ -207,7 +207,7 @@ def test_cross_run_output_is_not_accepted(system):
 
 def test_missing_pinned_identity_never_adopts_running_container(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     (root / run.id / "identity.json").unlink()
     assert worker.inspect(run.id).status == "unknown"
@@ -225,7 +225,7 @@ def test_wrong_policy_refuses_before_start(system):
             docker.container["HostConfig"]["NetworkMode"] = "bridge"
         return result
 
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=altered)
+    worker = ContainerRehearsal(hearth.database, root, docker=altered)
     with pytest.raises(Refused, match="container_configuration_mismatch"):
         worker.start(run.id)
     assert not any(c[0] == "start" for c in docker.calls)
@@ -235,9 +235,9 @@ def test_wrong_policy_refuses_before_start(system):
 
 def test_foreign_claim_directory_cannot_control_other_root(system, tmp_path):
     hearth, run, docker, root = system
-    ContainerRehearsal(hearth.storage.database, root, docker=docker).start(run.id)
+    ContainerRehearsal(hearth.database, root, docker=docker).start(run.id)
     foreign_root = tmp_path / "foreign"
-    other = ContainerRehearsal(hearth.storage.database, foreign_root, docker=docker)
+    other = ContainerRehearsal(hearth.database, foreign_root, docker=docker)
     (foreign_root / run.id).symlink_to(root / run.id, target_is_directory=True)
     with pytest.raises(Refused, match="container_claim_invalid"):
         other.stop(run.id)
@@ -246,7 +246,7 @@ def test_foreign_claim_directory_cannot_control_other_root(system, tmp_path):
 
 def test_terminal_receipt_survives_removal_and_daemon_loss(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     expected = worker.inspect(run.id)
@@ -257,7 +257,7 @@ def test_terminal_receipt_survives_removal_and_daemon_loss(system):
     def offline(*args):
         raise AssertionError("Receipt read must not require daemon access")
 
-    reopened = ContainerRehearsal(hearth.storage.database, root, docker=offline)
+    reopened = ContainerRehearsal(hearth.database, root, docker=offline)
     assert reopened.inspect(run.id) == expected
     assert reopened.start(run.id) == expected
     assert receipt.read_bytes() == original
@@ -278,7 +278,7 @@ def test_terminal_receipt_survives_removal_and_daemon_loss(system):
 )
 def test_corrupt_receipt_is_not_replaced_and_prevents_removal(system, field, value):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     worker.inspect(run.id)
@@ -297,7 +297,7 @@ def test_corrupt_receipt_is_not_replaced_and_prevents_removal(system, field, val
 @pytest.mark.parametrize("phase", ["link", "sync"])
 def test_storage_failure_blocks_cleanup_then_reconciles(system, monkeypatch, phase):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
 
@@ -320,7 +320,7 @@ def test_conflicting_concurrent_terminal_capture_stays_unknown(system):
     from hearth.integrations.mock.container import publish_receipt
 
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     worker.inspect(run.id)
@@ -344,7 +344,7 @@ def test_conflicting_concurrent_terminal_capture_stays_unknown(system):
 
 def test_concurrent_inspection_captures_terminal_logs_once(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -355,7 +355,7 @@ def test_concurrent_inspection_captures_terminal_logs_once(system):
 
 def test_missing_receipt_after_container_removal_cannot_relaunch(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     worker.remove(run.id)
@@ -366,7 +366,7 @@ def test_missing_receipt_after_container_removal_cannot_relaunch(system):
 
 def test_malformed_events_preserve_terminal_failure_evidence(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     docker.raw = "malformed synthetic event"
@@ -379,7 +379,7 @@ def test_malformed_events_preserve_terminal_failure_evidence(system):
 @pytest.mark.parametrize("field,value", [("Pid", 12), ("ExitCode", True), ("Running", None)])
 def test_unproven_terminal_state_never_creates_receipt_or_removes(system, field, value):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     docker.container["State"][field] = value
@@ -393,7 +393,7 @@ def test_unproven_terminal_state_never_creates_receipt_or_removes(system, field,
 @pytest.mark.parametrize("kind", ["symlink", "hardlink", "fifo"])
 def test_unsafe_receipt_cannot_be_read_or_replaced(system, tmp_path, kind):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     worker.inspect(run.id)
@@ -416,7 +416,7 @@ def test_unsafe_receipt_cannot_be_read_or_replaced(system, tmp_path, kind):
 
 def test_oversized_receipt_blocks_removal(system, monkeypatch):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     monkeypatch.setattr("hearth.integrations.mock.container.MAX_STREAM", 64)
@@ -428,7 +428,7 @@ def test_oversized_receipt_blocks_removal(system, monkeypatch):
 
 def test_deeply_nested_corrupt_receipt_stays_unknown(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     worker.inspect(run.id)
@@ -440,7 +440,7 @@ def test_deeply_nested_corrupt_receipt_stays_unknown(system):
 
 def test_cached_receipt_never_overrides_invalid_current_cleanup_state(system):
     hearth, run, docker, root = system
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=docker)
+    worker = ContainerRehearsal(hearth.database, root, docker=docker)
     worker.start(run.id)
     docker.complete()
     assert worker.inspect(run.id).status == "exited"
@@ -467,7 +467,7 @@ def test_cleanup_waits_for_dispatch_and_preserves_fast_completion(system):
             assert (root / run.id / "terminal.json").exists()
         return docker(*args)
 
-    worker = ContainerRehearsal(hearth.storage.database, root, docker=paused)
+    worker = ContainerRehearsal(hearth.database, root, docker=paused)
     with ThreadPoolExecutor(max_workers=2) as pool:
         starting = pool.submit(worker.start, run.id)
         assert entered.wait(3)

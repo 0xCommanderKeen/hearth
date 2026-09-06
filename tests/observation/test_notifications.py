@@ -43,7 +43,7 @@ def test_result_queue_is_safe_and_durable(system):
     assert "PRIVATE" not in row["payload"]
     assert run.owner_token not in row["payload"]
     assert f"/#run-{run.id}" in row["payload"]
-    Notifications(Hearth(hearth.storage.database, clock=hearth.clock), worker.inbox).step()
+    Notifications(Hearth(hearth.database, clock=hearth.clock), worker.inbox).step()
     assert deliveries(system)[0]["status"] == "delivered"
     assert len(list(worker.inbox.files.root.glob("*.md"))) == 1
 
