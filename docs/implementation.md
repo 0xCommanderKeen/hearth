@@ -416,3 +416,36 @@ mock data. No provider call, live-data edit or credential access was needed.
 Independent Standards and Spec reviews both report zero remaining findings after
 fixing offline bundle preservation. Karen/shared Skills (#85) and deployment remain
 outside this issue.
+
+## Shared household policy — issue #90
+
+A fresh store has one $10/day API-equivalent household allowance in
+Europe/Ljubljana, a finite 20-resident limit and two concurrent runs. Townhall
+shows measured usage, active reservations, terminal unknown holds, remaining
+headroom and count/capacity. Operator-only `GET/PUT /api/household` edits the policy
+with `expected_revision`; stale drafts remain visible. Runtime credentials cannot
+access this endpoint. Smaller resident allowances still apply.
+
+Creation and all admissions check the shared policy inside their SQLite write
+transaction. `authority.household.check_creation(db, now)` is the same transaction
+seam for the forthcoming provisioning operation. The count includes all existing
+resident identities, including paused residents. Lowering a limit stops new work
+without claiming active runs have stopped. Admission pins the household timezone
+and day bounds. Known usage counts when admitted in today's configured day or while
+its original pinned day remains current, preventing timezone edits from resetting
+spend. Active and unknown holds carry across midnight; unknown execution still
+holds concurrency. Terminal unknown usage can receive the existing explicit,
+immutable operator report with evidence; it is manual accounting, not verified
+provider usage. Replaying that report cannot double-charge. Missing/corrupt window
+pins fail admission and backup verification.
+
+Verified: 497 backend and 41 frontend tests, lint, formatting, Python/TypeScript
+checks and browser build passed. Installed-wheel verification required network
+access for locked runtime dependencies and passed. Focused coverage includes simultaneous
+admissions/creations, timezone edits, unknown usage/cancellation, restart,
+current-data backup/held restore and conflicting policy drafts. Both independent
+review axes passed; the suggested day-window helper cleanup passed 10 focused
+tests, including 23/25-hour Ljubljana DST days, lint and typechecking. Playwright
+verified policy edits, a visible blocked admission, allowance restoration, refresh
+persistence and mobile layout; screenshot inspection confirmed theme/contrast.
+No live data or provider calls used. PR/CI/merge remain pending.
