@@ -104,6 +104,15 @@ SCHEMA = (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), digest TEXT NOT NULL,
         expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, revoked_at INTEGER
     )""",
+    """CREATE TABLE run_pricing (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id),
+        model TEXT NOT NULL, mode TEXT NOT NULL CHECK(mode IN ('standard','fast')),
+        schedule TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_usage (
+        run_id TEXT PRIMARY KEY REFERENCES run_pricing(run_id),
+        receipt TEXT NOT NULL, sha256 TEXT NOT NULL
+    )""",
     """CREATE TABLE run_memory (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL,
         revision INTEGER NOT NULL,

@@ -190,6 +190,17 @@ class UsageJournal:
                 publish(path, terminal)
             return interpret(requests, terminal, self.binding)
 
+    @contextmanager
+    def snapshot(self):
+        """Freeze a verified receipt while the caller commits its authoritative copy."""
+        with self.locked():
+            requests = [
+                read(self.root / name.replace("request-", "usage-")) for name in self._requests()
+            ]
+            terminal = read(self.root / "terminal.json")
+            interpret(requests, terminal, self.binding)
+            yield {"binding": asdict(self.binding), "requests": requests, "terminal": terminal}
+
     def estimate(self) -> Estimate:
         """Reopen sealed evidence without execution or trusting a saved scalar cost."""
         with self.locked():
@@ -200,6 +211,10 @@ class UsageJournal:
 
 
 def interpret(requests: list[dict], terminal: dict, binding: UsageBinding) -> Estimate:
+    return interpret_details(requests, terminal, binding)[1]
+
+
+def interpret_details(requests: list[dict], terminal: dict, binding: UsageBinding):
     if (
         set(terminal) != {"stdout", "exit_code", "final"}
         or type(terminal["exit_code"]) is not int
@@ -226,4 +241,4 @@ def interpret(requests: list[dict], terminal: dict, binding: UsageBinding) -> Es
             if all(value is not None for value in values):
                 if getattr(transcript.usage, field) != sum(values):
                     raise ValueError("CLI/request usage contradiction")
-    return estimate
+    return transcript, estimate

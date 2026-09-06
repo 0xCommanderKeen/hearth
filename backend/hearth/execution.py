@@ -6,6 +6,7 @@ import json
 from contextlib import contextmanager
 from dataclasses import asdict
 
+from hearth import codex_accounting
 from hearth.artifacts import Artifact, Artifacts
 from hearth.core import ACTIVE_RUNS, Hearth, _audit
 from hearth.memory import Memory
@@ -126,6 +127,8 @@ class Execution:
                 or row["status"] not in {"starting", "running", "interrupted"}
             ):
                 raise Refused("run_dispatch_inactive")
+            if codex_accounting.pricing(db, run_id) is not None:
+                raise Refused("run_requires_codex_worker")
             revision = db.execute(
                 "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
             ).fetchone()
@@ -133,7 +136,26 @@ class Execution:
                 raise Refused("run_declaration_changed")
             yield
 
-    def finish(self, run_id: str, owner_token: str, evidence: Evidence) -> Run:
+    def finish_from_usage(self, run_id: str, owner_token: str, journal) -> Run:
+        with self.hearth.database.transaction() as db:
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None or row["owner_token"] != owner_token:
+                raise Refused("run_ownership_lost")
+            expected = codex_accounting.binding(db, row)
+        if journal.binding != expected:
+            raise Refused("run_usage_binding_mismatch")
+        try:
+            with journal.snapshot() as receipt:
+                _, _, evidence = codex_accounting.encode_receipt(receipt, expected)
+                return self.finish(run_id, owner_token, evidence, _usage_receipt=receipt)
+        except Refused:
+            raise
+        except ValueError, OSError, TypeError, KeyError:
+            raise Refused("run_usage_invalid") from None
+
+    def finish(
+        self, run_id: str, owner_token: str, evidence: Evidence, *, _usage_receipt=None
+    ) -> Run:
         if evidence.status not in {"succeeded", "failed", "cancelled"}:
             raise Refused("terminal_evidence_required")
         if evidence.cost is not None:
@@ -148,6 +170,19 @@ class Execution:
                 raise Refused("run_ownership_lost")
             if row["finished_at"] is not None:
                 raise Refused("run_already_finished")
+            pricing = codex_accounting.pricing(db, run_id)
+            receipt_digest = None
+            if pricing is not None:
+                if not row["launch_attempted"]:
+                    raise Refused("run_launch_intent_required")
+                if _usage_receipt is None:
+                    raise Refused("run_usage_required")
+                raw, receipt_digest, evidence = codex_accounting.encode_receipt(
+                    _usage_receipt, codex_accounting.binding(db, row)
+                )
+                db.execute("INSERT INTO run_usage VALUES (?,?,?)", (run_id, raw, receipt_digest))
+            elif _usage_receipt is not None:
+                raise Refused("run_pricing_required")
             now = int(self.hearth.clock())
             artifact = None
             if evidence.status == "succeeded":
@@ -196,7 +231,8 @@ class Execution:
                     "usage_known": evidence.cost is not None,
                     "artifact_id": artifact.id if artifact else None,
                     "simulated": True,
-                },
+                }
+                | ({"accounting": pricing | {"receipt_sha256": receipt_digest}} if pricing else {}),
             )
             enqueue(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
@@ -246,6 +282,11 @@ class Executor:
                     self.runtime.version,
                 ):
                     raise Refused("runtime_run_mismatch")
+                with self.execution.hearth.database.transaction() as db:
+                    priced = codex_accounting.pricing(db, run.id) is not None
+                if priced:
+                    results.append(self.execution.observe(run.id, run.owner_token, "interrupted"))
+                    continue
                 evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
                 if run.cancellation_requested:
                     if evidence.status == "running":

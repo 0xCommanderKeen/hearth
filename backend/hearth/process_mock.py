@@ -128,6 +128,8 @@ class ProcessMockRuntime:
                     row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
                     if row is None or row["input_digest"] != digest:
                         raise Refused("runtime_identity_conflict")
+                    if db.execute("SELECT 1 FROM run_pricing WHERE run_id=?", (run_id,)).fetchone():
+                        raise Refused("run_requires_codex_worker")
                     authority = {
                         "epoch": db.execute(
                             "SELECT value FROM system_meta WHERE key='epoch'"
