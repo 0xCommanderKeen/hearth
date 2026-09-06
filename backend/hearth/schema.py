@@ -13,7 +13,7 @@ SCHEMA = (
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
-        size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated = 1)
+        size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated IN (0,1))
     )""",
     """CREATE TABLE audit (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,7 +134,7 @@ SCHEMA = (
         cancellation_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancellation_requested IN (0,1)),
         launch_attempted INTEGER NOT NULL DEFAULT 0 CHECK (launch_attempted IN (0,1)),
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
-        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock')),
+        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription')),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)

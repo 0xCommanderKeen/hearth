@@ -76,7 +76,7 @@ export type Run = {
 export type Snapshot = {
   restore_hold?: boolean;
   schema_version: 1;
-  simulated: true;
+  simulated: boolean;
   epoch: string;
   cursor: number;
   residents: Resident[];
@@ -134,7 +134,7 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if (
     !s ||
     s.schema_version !== 1 ||
-    s.simulated !== true ||
+    typeof s.simulated !== "boolean" ||
     typeof s.epoch !== "string" ||
     !Number.isSafeInteger(s.cursor) ||
     !Array.isArray(s.residents) ||
