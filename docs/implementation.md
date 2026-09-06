@@ -33,13 +33,14 @@ wheel checks. Fresh CLI summary/restart and current-schema backup/restore preser
 memory and audit with the copied store held and the backup unchanged. The release
 wheel contains the direct schema and none of the removed modules. Rendered desktop
 and mobile journeys verify setup, memory save/conflict/reload and a pinned summary
-result. Independent review verification is in progress.
+result. Independent Standards and Spec reviews found no blocking issue; they also
+ran 77 and 108 focused checks respectively.
 
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
 | --- | --- | --- |
-| Fresh mock workflow | Full checks and fresh CLI/browser/backup rehearsal pass | Independent review of the simplification |
+| Fresh mock workflow | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
 | Bounded real Reader | Deferred by mock-only direction | Source/runtime/model/host/allowance decisions; useful output and actual read-only isolation |
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
 | Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
