@@ -7,6 +7,9 @@ Hearth is a home for persistent agents doing useful work under human supervision
 **Resident:** An enduring agent identity with purpose, permissions, and memory.
 _Avoid_: Bot, worker (when referring to the enduring identity).
 
+**Skill text:** Instructions describing how a resident should approach work.
+Skill text does not itself grant permission to act.
+
 **Task:** Requested work with a desired outcome, potentially requiring multiple attempts.
 _Avoid_: Job.
 
@@ -27,4 +30,3 @@ _Avoid_: Permission to continue.
 **Hamlet:** Hearth's visual village view, showing real resident activity.
 
 **Townhall:** Hearth's operator view for assigning work and governing residents.
-

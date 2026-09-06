@@ -36,6 +36,17 @@ export type Resident = {
   operator_paused?: number;
   control_revision?: number;
 };
+export type ResidentDeclaration = {
+  id: string;
+  revision: number;
+  declaration: {
+    name: string;
+    purpose: string;
+    daily_limit: number;
+    budget_timezone: string;
+    skill_text: string;
+  };
+};
 export type Task = {
   id: string;
   resident_id: string;
@@ -176,6 +187,24 @@ export class Client {
   }
   seed() {
     return this.request("/api/demo/reader", { method: "POST" });
+  }
+  resident(id: string) {
+    return this.request<ResidentDeclaration>(
+      `/api/residents/${encodeURIComponent(id)}`,
+    );
+  }
+  saveResident(resident: ResidentDeclaration, skillText: string) {
+    return this.request<ResidentDeclaration>(
+      `/api/residents/${encodeURIComponent(resident.id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          ...resident.declaration,
+          skill_text: skillText,
+          expected_revision: resident.revision,
+        }),
+      },
+    );
   }
   start(id: string) {
     return this.request(`/api/tasks/${encodeURIComponent(id)}/start`, {

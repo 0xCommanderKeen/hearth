@@ -28,6 +28,15 @@ def microdollars(value: int) -> None:
         raise Refused("invalid_amount")
 
 
+def validate_skill_text(value: str) -> None:
+    if not isinstance(value, str) or len(value) > 32_000:
+        raise Refused("invalid_skill_text")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise Refused("invalid_skill_text") from None
+
+
 @dataclass(frozen=True)
 class Declaration:
     """Initial resident shape. Source grants and runtime arrive with their owning slice."""
@@ -36,11 +45,13 @@ class Declaration:
     purpose: str
     daily_limit: int
     budget_timezone: str = "UTC"
+    skill_text: str = ""
 
     def validate(self) -> None:
         bounded_text(self.name, 100, "invalid_name")
         bounded_text(self.purpose, 8_000, "invalid_purpose")
         microdollars(self.daily_limit)
+        validate_skill_text(self.skill_text)
         bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
         try:
             ZoneInfo(self.budget_timezone)

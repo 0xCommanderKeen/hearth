@@ -21,7 +21,7 @@ from hearth.models import Refused, identifier
 
 FORMAT = 1
 # Format 1 first shipped with schema 6. Older databases were never backup inputs.
-SUPPORTED_SCHEMAS = frozenset({6, 7, 8, 9, 10})
+SUPPORTED_SCHEMAS = frozenset({6, 7, 8, 9, 10, 11})
 STORES = {
     "artifacts": ".md",
     "mock-runtime": ".json",
@@ -124,7 +124,7 @@ def _check_database(root: Path, *, schema: int = SCHEMA_VERSION) -> dict:
 
 
 def _check_upgrade_layout(root: Path, schema: int) -> None:
-    """The supported 6–10 path is additive; validate the actual historical layout."""
+    """The supported 6–11 path is additive; validate the actual historical layout."""
     with tempfile.TemporaryDirectory(prefix="hearth-schema-") as temporary:
         reference = Path(temporary) / "reference.db"
         Database(reference).initialize()
@@ -154,6 +154,8 @@ def _check_upgrade_layout(root: Path, schema: int) -> None:
                 ).fetchone()[0]
                 if schema < 10 and table in {"declarations", "runs"}:
                     sql = re.sub(r",\s*budget_timezone TEXT NOT NULL DEFAULT 'UTC'", "", sql)
+                if schema < 11 and table == "declarations":
+                    sql = re.sub(r",\s*skill_text TEXT NOT NULL DEFAULT ''", "", sql)
                 actual_sql = actual.execute(
                     "SELECT sql FROM sqlite_master WHERE name=?", (table,)
                 ).fetchone()[0]
@@ -162,6 +164,8 @@ def _check_upgrade_layout(root: Path, schema: int) -> None:
                 columns = expected.execute(f'PRAGMA table_info("{table}")').fetchall()
                 if schema < 10 and table in {"declarations", "runs"}:
                     columns = [row for row in columns if row[1] != "budget_timezone"]
+                if schema < 11 and table == "declarations":
+                    columns = [row for row in columns if row[1] != "skill_text"]
                 if columns != actual.execute(f'PRAGMA table_info("{table}")').fetchall():
                     raise Refused("backup_schema_layout_incompatible")
                 for query in (

@@ -53,7 +53,7 @@ epoch and remains held. Live disaster recovery and activation remain unproven.
 
 ## Explicit upgrades of older backups
 
-Format 1 began with schema 6. This binary supports backup schemas 6, 7, 8, 9 and 10;
+Format 1 began with schema 6. This binary supports backup schemas 6, 7, 8, 9, 10 and 11;
 unknown/future versions are refused. Verification checks an older backup's actual
 tables, definitions, columns, indexes and foreign keys against the supported
 historical layout, as well as its version, integrity, file checksums and references.

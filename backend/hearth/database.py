@@ -15,10 +15,11 @@ from hearth.migrations import (
     observation_schema,
     routine_schema,
     run_access_schema,
+    skill_schema,
 )
 from hearth.models import Refused
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = (
     """CREATE TABLE residents (
@@ -127,6 +128,9 @@ class Database:
                 version = 9
             if version == 9:
                 budget_zone_schema(connection)
+                version = 10
+            if version == 10:
+                skill_schema(connection)
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Migration would leave invalid references")
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
