@@ -13,12 +13,6 @@ if TYPE_CHECKING:
 MAX_NOTES = 32
 MAX_NOTE = 4000
 MAX_SET_BYTES = 32768
-BUILTIN_INPUT = "synthetic-reader-notes"
-BUILTIN_NOTES = [
-    "Synthetic note: drafted the Hearth foundation.",
-    "Synthetic note: task submission survives retries.",
-    "Synthetic note: exercise cancellation and recovery next.",
-]
 
 
 def content_digest(name: str, notes: list[str]) -> str:
@@ -179,14 +173,3 @@ class Inputs:
         )
         _audit(db, "input.saved", input_set_id, now, receipt)
         return receipt
-
-    def seed_in_transaction(self, db) -> str:
-        self.save_in_transaction(
-            db,
-            "seed-synthetic-reader-notes",
-            input_set_id=BUILTIN_INPUT,
-            name="Synthetic Reader example notes",
-            notes=BUILTIN_NOTES,
-            actor="operator",
-        )
-        return BUILTIN_INPUT

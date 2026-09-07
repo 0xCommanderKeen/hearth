@@ -19,7 +19,6 @@ an authenticated client, and the authoritative snapshot stream.
 ```sh
 uv sync --frozen
 make check
-uv run python -m hearth demo
 ```
 
 Python 3.14, uv, Node 22.22+, and pnpm 11.22 are required. The backend uses FastAPI;
@@ -30,15 +29,15 @@ See the [standalone installation steps](docs/release.md).
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 
-The demo stores its local state in ignored `.hearth/demo`. Use `--data /some/fresh/path`
-for a separate simulation. Incompatible prototype databases are refused; there is
+Hearth stores its local state in ignored `.hearth`. Use `HEARTH_DATA=/some/fresh/path`
+for a separate instance. Incompatible prototype databases are refused; there is
 no upgrade or data-import command. Existing data is never automatically rewritten.
-Every output and cost is labeled simulated. The mock
-returns a fixed synthetic summary; it does not interpret arbitrary instructions.
+Under a mock runtime every output and cost is labeled simulated; the mock returns a
+fixed synthetic summary and does not interpret arbitrary instructions.
 Runtime scenarios include success, held execution, failure, and unknown usage for
 deterministic recovery tests.
 
-## Open the local mock application
+## Open the application
 
 Build with `make check`, set `HEARTH_OPERATOR_TOKEN` to a local operator credential
 of at least 16 characters, then start:
@@ -47,12 +46,11 @@ of at least 16 characters, then start:
 uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
-Open `http://127.0.0.1:8766` and enter that token. Set up mock Reader, assign a task,
-and open its summary. Fresh Reader setup has a $10 daily allowance using
-Europe/Ljubljana budget days. Repeating setup preserves existing settings.
-The credential stays in browser memory for the session.
+Open `http://127.0.0.1:8766` and enter that token. Hearth starts empty and ships no
+sample data: create a resident, assign it a task, and open its summary. The
+credential stays in browser memory for the session.
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
-Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate demo to exercise cancellation.
+Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate mock instance to exercise cancellation.
 Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulations,
 not runtime/provider selectors. For browser development, `pnpm --dir web dev`
 proxies its `/api` requests to the same local backend.

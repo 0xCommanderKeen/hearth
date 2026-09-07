@@ -1197,7 +1197,7 @@ table.ledger {
 .provisioning[aria-label="New resident setup"] > .eyebrow,
 .provisioning[aria-label="New resident setup"] > h2,
 .approvals > .eyebrow,
-section[aria-label="Daily mock routine"] > .eyebrow {
+section[aria-label="Daily routines"] > .eyebrow {
   display: none;
 }
 .skill-catalog .skill-library-heading,

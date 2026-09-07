@@ -10,8 +10,8 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
     with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
-        assert client.post("/api/demo/karen").status_code == 401
-        first = client.post("/api/demo/karen", headers=AUTH)
+        assert client.post("/api/management/bootstrap").status_code == 401
+        first = client.post("/api/management/bootstrap", headers=AUTH)
         assert first.status_code == 200
         receipt = first.json()
         resident_id, skill_id = receipt["resident_id"], receipt["skill_id"]
@@ -43,7 +43,7 @@ def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
             },
         )
         assert edit.status_code == 200
-        assert client.post("/api/demo/karen", headers=AUTH).json() == receipt
+        assert client.post("/api/management/bootstrap", headers=AUTH).json() == receipt
         assert not client.get(path, headers=AUTH).json()["enabled"]
         assert client.get("/api/skills/" + skill_id, headers=AUTH).json()["revision"] == 2
         assert len(client.get("/api/state", headers=AUTH).json()["residents"]) == 1

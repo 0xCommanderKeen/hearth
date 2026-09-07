@@ -114,18 +114,11 @@ function addReader() {
   ];
 }
 
-it("opens the gate, seeds the reader, and switches views without separate state", async () => {
-  const seed = vi
-    .spyOn(Client.prototype, "seed")
-    .mockImplementation(async () => {
-      addReader();
-      return {};
-    });
-  await login();
+it("opens the gate and switches views without separate state", async () => {
+  addReader();
+  await login(false);
   expect(screen.queryByLabelText("Operator token")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Set up mock Reader/ }));
   await screen.findByRole("link", { name: /View resident/ });
-  expect(seed).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("link", { name: /Residents$/ }));
   await waitFor(() =>
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
@@ -307,7 +300,7 @@ it("keeps a newer streamed snapshot when an older snapshot arrives later", async
   );
 });
 
-it("shows mock delivery uncertainty and opens Townhall without deciding", async () => {
+it("shows delivery uncertainty and opens Townhall without deciding", async () => {
   addReader();
   state.notifications = [
     {
@@ -329,7 +322,7 @@ it("shows mock delivery uncertainty and opens Townhall without deciding", async 
   const link = screen.getByRole("link", { name: "Open approval review" });
   expect(link.getAttribute("href")).toBe("/#approval-review");
   fireEvent.click(link);
-  await screen.findByRole("region", { name: "Mock approvals" });
+  await screen.findByRole("region", { name: "Approvals" });
   expect(decide).not.toHaveBeenCalled();
 });
 

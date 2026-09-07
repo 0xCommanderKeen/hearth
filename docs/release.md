@@ -26,12 +26,12 @@ uv pip sync --python "$hearth_install/venv/bin/python" --require-hashes \
 uv pip install --python "$hearth_install/venv/bin/python" --no-deps \
   dist/hearth-0.1.0-py3-none-any.whl
 cd "$hearth_install"
-./venv/bin/python -I -m hearth demo --data ./demo-data
+./venv/bin/python -I -m hearth verify-backup --help
 ```
 
 Keep the exact wheel, lockfile and source commit together as release provenance.
 The installed application needs Python and its runtime dependencies; Node and pnpm
-are build tools. The demo uses fresh synthetic data and a deterministic mock.
+are build tools. The release ships no seeded or sample data.
 
 For the browser application, set `HEARTH_OPERATOR_TOKEN` to a local credential of
 at least 16 characters and `HEARTH_DATA` to a fresh data directory, then run:

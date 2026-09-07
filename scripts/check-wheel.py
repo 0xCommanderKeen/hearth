@@ -45,6 +45,41 @@ with tempfile.TemporaryDirectory(prefix="hearth-release-") as folder:
     run("uv", "venv", str(environment), "--python", sys.executable)
     run("uv", "pip", "sync", "--python", str(python), "--require-hashes", str(requirements))
     run("uv", "pip", "install", "--python", str(python), "--no-deps", str(wheel_path))
-    for _ in range(2):
-        run(str(python), "-I", "-m", "hearth", "demo", "--data", "cli-data", cwd=isolated)
     run(str(python), "-I", str(root / "scripts/smoke-installed.py"), cwd=isolated)
+    # The release seeds no data, so exercise the installed CLI against what the
+    # smoke run left behind. Reads repeat to prove they do not mutate the store.
+    for _ in range(2):
+        run(
+            str(python),
+            "-I",
+            "-m",
+            "hearth",
+            "show-resident",
+            "--data",
+            "http-data-inline_mock",
+            "--resident",
+            "reader",
+            cwd=isolated,
+        )
+    run(
+        str(python),
+        "-I",
+        "-m",
+        "hearth",
+        "backup",
+        "--data",
+        "http-data-inline_mock",
+        "--destination",
+        "cli-backup",
+        cwd=isolated,
+    )
+    run(
+        str(python),
+        "-I",
+        "-m",
+        "hearth",
+        "verify-backup",
+        "--source",
+        "cli-backup",
+        cwd=isolated,
+    )

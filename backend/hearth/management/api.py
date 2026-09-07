@@ -1,4 +1,4 @@
-"""Operator-only grant and explicit Karen setup routes."""
+"""Operator-only grant and management bootstrap routes."""
 
 import json
 
@@ -42,7 +42,7 @@ def mount_management(app: FastAPI, hearth: Hearth) -> None:
                 ],
             }
 
-    @app.post("/api/demo/karen")
+    @app.post("/api/management/bootstrap")
     def setup():
         return bootstrap(hearth)
 

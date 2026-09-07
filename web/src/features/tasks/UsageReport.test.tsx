@@ -24,15 +24,15 @@ it("retains exact amount, evidence and command identity after acknowledgement lo
     await action().catch(() => {});
   };
   render(<UsageReport client={client} runId="run" busy={false} act={act} />);
-  fireEvent.change(screen.getByLabelText(/Mock cost/), {
+  fireEvent.change(screen.getByLabelText(/Cost in micro-USD/), {
     target: { value: "2500" },
   });
   fireEvent.change(screen.getByLabelText(/Evidence/), {
     target: { value: "Synthetic meter" },
   });
-  fireEvent.click(screen.getByText("Record mock usage"));
+  fireEvent.click(screen.getByText("Record usage"));
   await waitFor(() => expect(report).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByText("Record mock usage"));
+  fireEvent.click(screen.getByText("Record usage"));
   await waitFor(() => expect(report).toHaveBeenCalledTimes(2));
   expect(report.mock.calls[1]).toEqual(report.mock.calls[0]);
   expect(report.mock.calls[0]).toEqual([

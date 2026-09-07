@@ -135,7 +135,7 @@ it("keeps restored-state reads available but refuses mutations before fetch", as
   );
   const client = new Client("synthetic-test-token");
   await client.state();
-  await expect(client.seed()).rejects.toThrow("read-only");
+  await expect(client.bootstrapManagement()).rejects.toThrow("read-only");
   expect(fetcher).toHaveBeenCalledTimes(1);
   await client.state();
   expect(fetcher).toHaveBeenCalledTimes(2);

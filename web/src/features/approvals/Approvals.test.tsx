@@ -30,12 +30,21 @@ const proposal: Approval = {
     destination_revision: 3,
   },
 };
+const reader = {
+  id: "reader",
+  name: "Reader",
+  purpose: "Summarize notes.",
+  revision: 1,
+  daily_limit: 10_000_000,
+  presence: "idle",
+  pause_reason: null,
+};
 const state: Snapshot = {
   schema_version: 1,
   simulated: true,
   epoch: "test",
   cursor: 1,
-  residents: [],
+  residents: [reader],
   tasks: [],
   runs: [],
   activity: [],
@@ -56,11 +65,11 @@ it("requires exact preview before sending the reviewed digest", async () => {
     .spyOn(client, "decide")
     .mockResolvedValue({ ...proposal, status: "approved" });
   render(<Approvals client={client} snapshot={state} busy={false} act={run} />);
-  expect(screen.queryByText("Approve this exact mock action")).toBeNull();
+  expect(screen.queryByText("Approve this exact action")).toBeNull();
   fireEvent.click(screen.getByText("Review exact summary"));
   await screen.findByText("Exact synthetic summary");
   expect(screen.getByText(/Resident revision 1/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Approve this exact mock action"));
+  fireEvent.click(screen.getByText("Approve this exact action"));
   await waitFor(() => expect(decide).toHaveBeenCalledWith(proposal, true));
 });
 
@@ -87,7 +96,7 @@ it("offers reconciliation for unknown actions and does not call publication on r
   expect(screen.getByRole("status").textContent).toContain(
     "without sending again",
   );
-  fireEvent.click(screen.getByText("Reconcile mock action"));
+  fireEvent.click(screen.getByText("Reconcile action"));
   await waitFor(() => expect(execute).toHaveBeenCalledWith("review"));
 });
 
@@ -151,11 +160,11 @@ it("opens an approval link even when it is outside recent history", async () => 
     />,
   );
   await screen.findByText("Older exact summary");
-  fireEvent.click(screen.getByText("Deny this mock action"));
+  fireEvent.click(screen.getByText("Deny this action"));
   await waitFor(() => expect(decide).toHaveBeenCalledWith(proposal, false));
   await waitFor(() =>
     expect(
-      (screen.getByText("Deny this mock action") as HTMLButtonElement).disabled,
+      (screen.getByText("Deny this action") as HTMLButtonElement).disabled,
     ).toBe(true),
   );
 });

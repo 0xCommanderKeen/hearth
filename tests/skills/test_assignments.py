@@ -7,6 +7,8 @@ from hearth.skills.catalog import Skills
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.support import seed_reader_via
+
 
 def test_two_residents_deliberately_upgrade_independently_and_pin_inputs(tmp_path):
     from hearth.skills.assignments import Assignments
@@ -78,7 +80,7 @@ def test_api_conflicts_order_archive_and_held_restore(tmp_path):
     auth = {"Authorization": "Bearer " + token}
     data = tmp_path / "data"
     with TestClient(create_app(data, token, supervise=False)) as client:
-        client.post("/api/demo/reader", headers=auth)
+        seed_reader_via(client)
         ids = []
         for name in ("Summary", "Tone"):
             result = client.post(

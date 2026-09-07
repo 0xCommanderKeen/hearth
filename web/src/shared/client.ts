@@ -549,12 +549,12 @@ export class Client {
       );
     return result;
   }
-  setupKaren() {
+  bootstrapManagement() {
     return this.request<{
       resident_id: string;
       skill_id: string;
       status: string;
-    }>("/api/demo/karen", { method: "POST" });
+    }>("/api/management/bootstrap", { method: "POST" });
   }
   saveManagement(id: string, change: ManagementChange) {
     return this.request<ManagementGrant>(
@@ -757,9 +757,6 @@ export class Client {
         "The skill receipt is incomplete. Retry to reconcile it.",
       );
     return receipt;
-  }
-  seed() {
-    return this.request("/api/demo/reader", { method: "POST" });
   }
   resident(id: string) {
     return this.request<ResidentDeclaration>(

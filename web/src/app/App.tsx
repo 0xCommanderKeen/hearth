@@ -125,7 +125,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState<Page>("townhall");
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [residentId, setResidentId] = useState("reader");
+  const [residentId, setResidentId] = useState("");
   const [provisionId, setProvisionId] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
@@ -460,14 +460,6 @@ export function App() {
               <a href="#new-resident">Create a new resident →</a>
             </p>
           )}
-          <p className="muted">Or explore with the synthetic Reader example.</p>
-          <button
-            className="primary"
-            disabled={busy || snapshot.restore_hold}
-            onClick={() => void act(() => client.seed())}
-          >
-            {snapshot.simulated ? "Set up mock Reader" : "Set up Reader"}
-          </button>
         </div>
       )}
     </>
@@ -1099,15 +1091,12 @@ export function App() {
 
             {(view === "activity" || view === "townhall") && (
               <div className="two-col">
-                <section
-                  className="output inbox"
-                  aria-label="Mock notifications"
-                >
+                <section className="output inbox" aria-label="Notifications">
                   <div className="section-title">
                     <div>
                       <h2>Inbox</h2>
                     </div>
-                    <span className="eyebrow">Local mock delivery</span>
+                    <span className="eyebrow">Local delivery</span>
                   </div>
                   <p>
                     Delivery status is separate from work status. These
@@ -1123,7 +1112,7 @@ export function App() {
                       <li key={n.id}>
                         <h3>
                           {n.kind === "approval.requested"
-                            ? "A mock action needs review"
+                            ? "An action needs review"
                             : n.kind.replace("run.", "Run ")}
                         </h3>
                         <p>
@@ -1133,7 +1122,7 @@ export function App() {
                               ? "Waiting for delivery confirmation"
                               : n.status === "obsolete"
                                 ? "No longer current"
-                                : "Delivered to the local mock inbox"}{" "}
+                                : "Delivered to the local inbox"}{" "}
                           · {n.attempts} attempts
                         </p>
                         {n.status !== "obsolete" && (

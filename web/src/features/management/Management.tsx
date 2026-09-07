@@ -60,7 +60,7 @@ export function ManagementPanel({
     setBusy(true);
     setError("");
     try {
-      const result = await client.setupKaren();
+      const result = await client.bootstrapManagement();
       if (!live.current) return;
       location.hash = `#management/${result.resident_id}`;
       setSelected(result.resident_id);

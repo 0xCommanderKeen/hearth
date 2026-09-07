@@ -41,11 +41,17 @@ export function Approvals({
       active = false;
     };
   }, [linkedId, client]);
+  const [residentId, setResidentId] = useState("");
+  const eligible = snapshot.residents.filter(
+    (r) => r.lifecycle?.state !== "archived",
+  );
+  const selected = residentId || eligible[0]?.id || "";
   const policy = snapshot.publication_policies?.find(
-    (p) => p.resident_id === "reader",
+    (p) => p.resident_id === selected,
   );
   const artifact = snapshot.runs.find(
-    (r) => r.status === "succeeded" && r.artifact_id,
+    (r) =>
+      r.status === "succeeded" && r.artifact_id && r.resident_id === selected,
   )?.artifact_id;
   const proposals = snapshot.approvals ?? [];
   const reviewed =
@@ -66,20 +72,37 @@ export function Approvals({
     pending.current = null;
   }
   return (
-    <section className="output approvals" aria-label="Mock approvals">
-      <span className="eyebrow">TOWNHALL / MOCK NOTICEBOARD</span>
+    <section className="output approvals" aria-label="Approvals">
+      <span className="eyebrow">TOWNHALL / NOTICEBOARD</span>
       <h2>Review before publication.</h2>
       <p>
-        A separate operator drill publishes a synthetic summary to a local mock
-        noticeboard. Reader remains read-only. Nothing is sent outside Hearth.
+        Publishing a result to the noticeboard needs your explicit approval.
+        Residents stay read-only until you grant it, and nothing is sent outside
+        Hearth.
       </p>
+      {eligible.length > 1 && (
+        <>
+          <label htmlFor="approvals-resident">Resident</label>
+          <select
+            id="approvals-resident"
+            value={selected}
+            onChange={(e) => setResidentId(e.target.value)}
+          >
+            {eligible.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       <div className="task-actions">
         <button
-          disabled={busy || !snapshot.residents.length}
+          disabled={busy || !selected}
           onClick={() =>
             void act(() =>
               client.publicationPolicy(
-                "reader",
+                selected,
                 !policy?.enabled,
                 policy?.revision ?? 0,
               ),
@@ -87,8 +110,8 @@ export function Approvals({
           }
         >
           {policy?.enabled
-            ? "Revoke mock publication"
-            : "Allow mock publication requests"}
+            ? "Revoke publication"
+            : "Allow publication requests"}
         </button>
         <button
           disabled={busy || !artifact || !policy?.enabled}
@@ -101,7 +124,7 @@ export function Approvals({
       </div>
       {!proposals.length && (
         <p className="muted">
-          No publication requests yet. Complete a mock summary to begin.
+          No publication requests yet. Complete a run to begin.
         </p>
       )}
       <ul className="tasks">
@@ -109,7 +132,7 @@ export function Approvals({
           const action = snapshot.actions?.find((a) => a.id === p.id);
           return (
             <li key={p.id} id={`approval-${p.id}`}>
-              <h3>Summary for the mock noticeboard</h3>
+              <h3>Summary for the noticeboard</h3>
               <p>
                 {action
                   ? `Action ${action.status}${action.reason ? ` · ${action.reason.replaceAll("_", " ")}` : ""}`
@@ -135,9 +158,7 @@ export function Approvals({
                       disabled={busy}
                       onClick={() => void act(() => client.execute(p.id))}
                     >
-                      {action
-                        ? "Reconcile mock action"
-                        : "Publish approved mock summary"}
+                      {action ? "Reconcile action" : "Publish approved summary"}
                     </button>
                   )}
               </div>
@@ -187,7 +208,7 @@ export function Approvals({
                 )
               }
             >
-              Approve this exact mock action
+              Approve this exact action
             </button>
             <button
               disabled={busy || reviewed?.status !== "pending"}
@@ -199,7 +220,7 @@ export function Approvals({
                 )
               }
             >
-              Deny this mock action
+              Deny this action
             </button>
             <button onClick={() => setReview(null)}>Close review</button>
           </div>
