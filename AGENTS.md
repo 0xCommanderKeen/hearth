@@ -14,7 +14,9 @@ for domain terms and `docs/implementation.md` for the current acceptance gate.
 - Read `docs/rebuild-plan.md` before changing persistence, runtime authority or
   project scope. Record material departures in an ADR.
 - Start with new data. Do not add migration, historical compatibility or cross-system
-  transfer machinery. Retain current-data persistence and backup/restore.
+  transfer machinery. Retain current-data persistence and backup/restore. The one
+  exception is definition-only resident bundles (`docs/adr/0010-portable-resident-bundles.md`):
+  content not ids, no history or runs, no authority, no schema change.
 - Live data and credentials stay outside the repository. Use synthetic notes until
   real testing is explicitly selected; obtain concrete runtime/source decisions first.
 - Update `docs/implementation.md` with verified evidence and remaining work at each

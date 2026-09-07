@@ -28,6 +28,8 @@ def main() -> None:
             "save-resident",
             "show-memory",
             "save-memory",
+            "export-resident",
+            "import-resident",
         ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
@@ -36,7 +38,38 @@ def main() -> None:
     parser.add_argument("--resident")
     parser.add_argument("--revision", type=int)
     parser.add_argument("--expected-revision", type=int)
+    parser.add_argument("--name")
+    parser.add_argument("--daily-limit", type=int)
+    parser.add_argument("--command-id")
     args = parser.parse_args()
+    if args.command in {"export-resident", "import-resident"}:
+        from hearth.residents.bundle import Bundles, load_bundle_file
+
+        bundles = Bundles(Hearth(Database(args.data / "hearth.db")))
+        try:
+            if args.command == "export-resident":
+                if args.resident is None or args.destination is None:
+                    parser.error("export-resident requires --resident and --destination")
+                result = bundles.export(args.resident)
+                args.destination.write_text(
+                    json.dumps(result, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
+                )
+            else:
+                if args.source is None:
+                    parser.error("import-resident requires --source")
+                overrides = {
+                    key: value
+                    for key, value in (("name", args.name), ("daily_limit", args.daily_limit))
+                    if value is not None
+                }
+                request = {"bundle": load_bundle_file(args.source)}
+                if overrides:
+                    request["overrides"] = overrides
+                result = bundles.import_(args.command_id or str(uuid.uuid4()), request)
+            print(json.dumps(result, indent=2, ensure_ascii=True))
+        except (Refused, OSError, ValueError) as error:
+            parser.error(str(error))
+        return
     if args.command in {"show-memory", "save-memory"}:
         from hearth.residents.memory import MAX_MEMORY, Memory
 
