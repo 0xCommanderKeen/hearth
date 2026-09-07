@@ -766,5 +766,6 @@ managed setup-operation digest initially overflowed its mobile provenance card;
 the owning style now wraps that text. The repeated browser check had no horizontal
 overflow or browser errors, and the screenshots were inspected. Final `make check`
 passed 659 backend and 71 browser tests, lint/types/build and both installed-wheel
-restart/held-restore journeys. Independent review remains pending; the real journey
-still awaits explicit approval and execution.
+restart/held-restore journeys. Independent Standards and Spec reviews are clear at
+`f5cb88a`, and its CI is green. The final stack merge changed documentation only.
+The real journey still awaits explicit approval and execution.
