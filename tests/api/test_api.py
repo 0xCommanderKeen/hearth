@@ -352,7 +352,7 @@ def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
 
 
 def test_resident_bundle_export_and_import_over_http(client, tmp_path):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     export = client.get("/api/residents/reader/export", headers=AUTH)
     assert export.status_code == 200
     assert export.headers["cache-control"] == "no-store"
