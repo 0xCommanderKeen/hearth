@@ -632,3 +632,118 @@ def test_manager_reassembles_large_configuration_and_rejects_changed_pages(tmp_p
         "hearth_residents_configuration", {"resident_id": child, "offset": 1}, "missing-digest"
     )
     assert not missing["success"] and "configuration_digest_required" in str(missing)
+
+
+def _receive_native_frame(frame, *, records=1):
+    import os
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from hearth.integrations.codex.app_server_transport import _Pipe
+
+    read_fd, write_fd = os.pipe()
+
+    def write():
+        try:
+            with os.fdopen(write_fd, "wb") as stream:
+                stream.write(frame)
+        except BrokenPipeError:
+            pass
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with os.fdopen(read_fd, "rb") as stdout, open(os.devnull, "wb") as stdin:
+            pipe = _Pipe(
+                SimpleNamespace(stdin=stdin, stdout=stdout), time.monotonic() + 5, lambda: False
+            )
+            pool.submit(write)
+            for _ in range(records):
+                message = pipe.receive()
+            return message
+
+
+def test_native_pipe_delivers_large_bounded_configuration_to_owner(tmp_path):
+    import json
+
+    from hearth.integrations.codex.app_server_transport import _tool_call
+    from hearth.integrations.codex.events import MAX_RECORD
+
+    app, _, _, child, call = managed_fixture(tmp_path)
+    config = Maintenance(app.state.hearth).configuration(child)
+    params = {
+        "threadId": "thread",
+        "turnId": "turn",
+        "callId": "large-native",
+        "tool": "hearth_residents_configure",
+        "arguments": {
+            "resident_id": child,
+            "operation_id": "large-native",
+            "changes": {
+                "expected_lifecycle_revision": config["lifecycle"]["revision"],
+                "memory": {**config["memory"], "text": "m" * 131072},
+                "routines": [
+                    {
+                        "routine_id": f"native-{i}",
+                        "expected_revision": 0,
+                        "instruction": "x" * 32000,
+                        "local_time": "09:00",
+                        "timezone": "UTC",
+                        "enabled": False,
+                    }
+                    for i in range(32)
+                ],
+            },
+        },
+    }
+    frame = json.dumps({"id": 0, "method": "item/tool/call", "params": params}).encode() + b"\n"
+    assert MAX_RECORD < len(frame) < 1_500_000
+    message = _receive_native_frame(frame)
+    result = _tool_call(
+        message,
+        "thread",
+        "turn",
+        {"hearth_residents_configure"},
+        lambda p: call(p["tool"], p["arguments"], p["callId"]),
+        {},
+        64,
+    )
+    assert result["success"], result
+    assert len(json.dumps(result).encode()) <= 256 * 1024
+    saved = Maintenance(app.state.hearth).configuration(child)
+    assert len(saved["routines"]) == 32
+    assert all(r["instruction"] == "x" * 32000 for r in saved["routines"])
+    assert saved["memory"]["text"] == "m" * 131072
+
+
+def test_native_pipe_large_exception_is_only_for_bounded_configure_requests():
+    import json
+
+    import pytest
+    from hearth.residents.models import Refused
+
+    base = {
+        "id": 0,
+        "method": "item/tool/call",
+        "params": {
+            "threadId": "thread",
+            "turnId": "turn",
+            "callId": "call",
+            "tool": "hearth_residents_configure",
+            "arguments": {"text": "x" * 1_100_000},
+        },
+    }
+    for change in (
+        {"method": "item/completed"},
+        {"id": None},
+        {"params": {**base["params"], "tool": "hearth_residents_read"}},
+        {"params": {**base["params"], "namespace": "untrusted"}},
+        {"params": {**base["params"], "namespace": []}},
+        {"params": {**base["params"], "arguments": {"text": "x" * 1_500_001}}},
+    ):
+        with pytest.raises(Refused, match="app_server_message_too_large"):
+            _receive_native_frame(json.dumps(base | change).encode() + b"\n")
+    with pytest.raises(Refused, match="app_server_message_too_large"):
+        _receive_native_frame(b"x" * (2 * 1024 * 1024 + 1))
+
+    with pytest.raises(Refused, match="app_server_transcript_too_large"):
+        _receive_native_frame((json.dumps(base).encode() + b"\n") * 4, records=4)

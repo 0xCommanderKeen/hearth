@@ -76,3 +76,10 @@ aggregate allowance, measured as UTF-8 JSON, with all per-group semantic limits
 unchanged. Other management requests keep their 256 KiB bound. A manager can thus
 read and edit a full legal Unicode declaration plus memory while preserving exact
 unchanged values, not merely retrieve them.
+
+The native incoming pipe permits a configure-specific envelope up to 2 MiB, only
+for a structurally valid `item/tool/call` with configure parameters within 1.5 MB.
+Other complete incoming records keep the 1 MiB limit. Tool replies remain bounded
+at 256 KiB and the aggregate incoming transcript remains bounded at 4 MiB. The
+exception changes transport capacity only; schema, revision, grant and ownership
+checks remain in the application writer.

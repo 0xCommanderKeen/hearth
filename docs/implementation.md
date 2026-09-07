@@ -656,3 +656,12 @@ lifecycle refusal is isolated to the affected resident, with its reason visible 
 snapshot while healthy due schedules continue. Regressions reproduced each issue
 before the fixes. Final checks after these changes passed 634 backend and 65 web
 tests, lint/format/types/builds, and both installed-wheel smoke journeys.
+
+Native transport recheck: the former 1 MiB pipe record limit prevented a schema-valid
+32-routine plus full-memory configure request from reaching the bridge. A narrow
+2 MiB incoming configure-envelope exception now aligns with the existing 1.5 MB
+parameter allowance. Real OS-pipe regression delivers a 1.16 MB frame through native
+call validation to the owner and verifies all saved routines/memory. Negative cases
+retain other-record, malformed-envelope, parameter, frame and aggregate-stream
+bounds. Final full checks passed 636 backend and 65 web tests, all static/build
+checks and both installed-wheel journeys; no real provider calls occurred.
