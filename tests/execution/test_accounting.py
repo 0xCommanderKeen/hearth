@@ -56,7 +56,9 @@ def test_operator_pause_survives_matching_usage_hold_resolution(system):
     accounting.reconcile("report", run.id, amount=2000, evidence="Synthetic meter")
     with hearth.database.transaction() as db:
         assert db.execute("SELECT 1 FROM pauses").fetchone() is None
-        assert db.execute("SELECT paused FROM operator_controls").fetchone()[0] == 1
+    from hearth.residents.maintenance import Maintenance
+
+    assert Maintenance(hearth).lifecycle("reader")["state"] == "paused"
     next_task = hearth.submit("next", "reader", "Synthetic", expires_at=int(hearth.clock()) + 600)
     with pytest.raises(Refused, match="resident_paused"):
         hearth.admit(next_task.task_id, reserve=10_000)

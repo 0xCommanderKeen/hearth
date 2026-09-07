@@ -660,3 +660,61 @@ browser tests plus release/installed-wheel checks. An actual Chromium regression
 an externally requested validation complete on an already-open revision while retaining
 unsaved human instructions and keeping publication disabled. Its screenshot was inspected
 and no browser errors occurred. Review recheck and real-provider acceptance remain pending.
+
+### Issue #93 — ongoing resident management
+
+Lifecycle and current ownership now have a revisioned, integrity-checked owner.
+The operator profile and scoped Karen tools share coherent declaration, memory,
+input, exact skill and routine edits with owning revision checks and durable
+receipts. Pause/archive gate admissions and scheduled occurrences; archive also
+serializes with actual launch. Running/unknown work, accounting holds and saved
+results remain visible. Operator-only ownership transfer grants no new authority.
+The profile retains conflicting drafts, retries uncertain commands exactly, and
+exposes archived history while Hamlet excludes archived homes and links unresolved
+archived work. See [resident maintenance](resident-maintenance.md).
+
+Verification: 632 backend tests and 64 browser unit tests, lint/format/types and
+release builds passed. Both installed-wheel isolated HTTP/restart/held-restore
+journeys passed with cached dependencies (localhost socket permission required).
+Focused regressions cover competing manager/operator revisions, unrelated-agent
+refusal, forged transfer, archive dispatch gates, durable retry/restart, unknown
+mock evidence and held restore corruption, plus legal maximum Unicode groups.
+Actual rendered desktop/mobile verification created a synthetic resident/routine,
+ran and read its first result, retained a conflicting configuration draft, reloaded
+and saved declaration/memory, paused and archived, reopened the saved result,
+confirmed Hamlet exclusion and archived-directory access, then reloaded the mobile
+profile without overflow. Screenshots were inspected. The browser caught and fixed
+an invalid required-instructions constraint; a form-validity regression covers it.
+No provider calls were made. #91's separately bounded real creation proof remains
+pending explicit approval; these synthetic lifecycle checks do not replace it.
+Independent review and merge remain pending.
+
+Independent review corrections: managed configuration reads now provide bounded,
+digest-checked JSON-text pages so legal large Unicode declarations and full memory
+can be retrieved without hitting the native response cap or mixing concurrent
+versions. The browser accepts a zero daily limit during unrelated edits. Scheduler
+lifecycle refusal is isolated to the affected resident, with its reason visible in
+snapshot while healthy due schedules continue. Regressions reproduced each issue
+before the fixes. Final checks after these changes passed 634 backend and 65 web
+tests, lint/format/types/builds, and both installed-wheel smoke journeys.
+
+Native transport recheck: the former 1 MiB pipe record limit prevented a schema-valid
+32-routine plus full-memory configure request from reaching the bridge. A narrow
+2 MiB incoming configure-envelope exception now aligns with the existing 1.5 MB
+parameter allowance. Real OS-pipe regression delivers a 1.16 MB frame through native
+call validation to the owner and verifies all saved routines/memory. Negative cases
+retain other-record, malformed-envelope, parameter, frame and aggregate-stream
+bounds. Final full checks passed 636 backend and 65 web tests, all static/build
+checks and both installed-wheel journeys; no real provider calls occurred.
+
+## Integrated journey preparation — issue #94
+
+The isolated integration branch combines skill authoring and resident maintenance,
+including all seven scoped capabilities and both owning persistence/backup paths.
+The initial combined checks passed 650 backend tests, 71 browser tests, all static
+and build checks, and both installed-wheel restart/held-restore journeys. This is
+preparation, not end-to-end acceptance. Skill authoring's two independent review
+axes are clear at `6797ddd`. Maintenance still needs its native transport follow-up:
+the actual CLI repeats large tool arguments in item and turn events, beyond the
+single callback tested above. The complete scripted journey and bounded real proof
+remain pending; no provider call or original live-instance change has occurred.

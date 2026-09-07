@@ -4,6 +4,7 @@ import re
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import Hearth, _audit, _queue_task
 
@@ -79,6 +80,7 @@ class Routines:
     ) -> dict:
         identifier(routine_id)
         identifier(resident_id)
+        check_not_archived(db, resident_id)
         bounded_text(instruction, 32_000, "invalid_instruction")
         if not isinstance(local_time, str) or not re.fullmatch(
             r"(?:[01]\d|2[0-3]):[0-5]\d", local_time
@@ -124,10 +126,22 @@ class Routines:
             rows = db.execute(
                 "SELECT r.*, d.instruction, d.local_time, d.timezone FROM routines r "
                 "JOIN routine_revisions d ON d.routine_id = r.id AND d.revision = r.revision "
-                "WHERE enabled = 1 AND next_at <= ? ORDER BY next_at, r.id LIMIT 100",
+                "WHERE enabled = 1 AND next_at <= ? ORDER BY next_at, r.id",
                 (now,),
-            ).fetchall()
+            )
+            processed = 0
             for row in rows:
+                try:
+                    lifecycle = read_lifecycle(db, row["resident_id"])
+                except Refused:
+                    # Snapshot exposes the owning lifecycle's failure reason;
+                    # isolate this resident while healthy schedules keep moving.
+                    continue
+                if lifecycle["state"] != "ready":
+                    continue
+                if processed == 100:
+                    break
+                processed += 1
                 zone = ZoneInfo(row["timezone"])
                 scheduled_at = _latest(now, row["local_time"], zone)
                 # A timezone database update must not move a persisted occurrence backward.
@@ -198,6 +212,7 @@ class Routines:
                     not in {
                         "resident_busy",
                         "resident_paused",
+                        "resident_archived",
                         "capacity_exhausted",
                         "budget_exhausted",
                         "household_budget_exhausted",

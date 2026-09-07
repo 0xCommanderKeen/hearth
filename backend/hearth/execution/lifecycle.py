@@ -12,6 +12,7 @@ from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.observation.notifications import enqueue
+from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.memory import Memory
 from hearth.residents.models import Refused, Run, microdollars
 from hearth.skills.assignments import run_skills
@@ -59,6 +60,8 @@ class Execution:
             if row is None or row["owner_token"] != owner_token:
                 raise Refused("run_ownership_lost")
             if row["cancellation_requested"] or row["status"] != "starting":
+                return False
+            if read_lifecycle(db, row["resident_id"])["state"] == "archived":
                 return False
             revision = db.execute(
                 "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
@@ -136,8 +139,13 @@ class Execution:
             revision = db.execute(
                 "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
             ).fetchone()
-            if revision is None or revision[0] != row["resident_revision"]:
+            # Inline execution already pinned its declaration at prepare_start;
+            # detached workers retain their stricter prelaunch revision recheck.
+            if row["runtime_kind"] != "inline_mock" and (
+                revision is None or revision[0] != row["resident_revision"]
+            ):
                 raise Refused("run_declaration_changed")
+            check_not_archived(db, row["resident_id"])
             yield db
 
     def finish_from_usage(self, run_id: str, owner_token: str, journal) -> Run:
@@ -388,7 +396,26 @@ class Executor:
                                 self.execution.observe(run.id, run.owner_token, "interrupted")
                             )
                             continue
-                        self.runtime.start(run.id, instruction)
+                        if self.runtime.kind == "inline_mock":
+                            with self.execution.hearth.database.transaction() as db:
+                                epoch = db.execute(
+                                    "SELECT value FROM system_meta WHERE key='epoch'"
+                                ).fetchone()[0]
+                            try:
+                                # The inline simulation has no detached worker; serialize
+                                # its actual bounded start with archive here.
+                                with self.execution.dispatch_guard(
+                                    run.id,
+                                    run.owner_token,
+                                    epoch=epoch,
+                                    input_digest=run.input_digest,
+                                ):
+                                    self.runtime.start(run.id, instruction)
+                            except Refused as error:
+                                if error.code != "resident_archived":
+                                    raise
+                        else:
+                            self.runtime.start(run.id, instruction)
                     evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
                 if evidence.status in {"succeeded", "failed", "cancelled"}:
                     results.append(self.execution.finish(run.id, run.owner_token, evidence))

@@ -14,7 +14,13 @@ export function Hamlet({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const identities = snapshot.residents.map((r) => r.id).join("\0");
+  const villageResidents = snapshot.residents.filter(
+    (r) => r.lifecycle?.state !== "archived",
+  );
+  const archivedUnresolved = snapshot.residents.filter(
+    (r) => r.lifecycle?.state === "archived" && (r.unresolved_runs ?? 0) > 0,
+  );
+  const identities = villageResidents.map((r) => r.id).join("\0");
   useEffect(() => {
     if (!host.current) return;
     let renderer: THREE.WebGLRenderer;
@@ -28,7 +34,7 @@ export function Hamlet({
     const element = host.current;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#cbd5c1");
-    const rows = Math.max(1, Math.ceil((snapshot.residents.length + 1) / 4));
+    const rows = Math.max(1, Math.ceil((villageResidents.length + 1) / 4));
     const depth = Math.max(19, rows * 5 + 10);
     const centerZ = -(rows - 1) * 2.5;
     const distance = Math.max(19, depth * 1.25);
@@ -95,7 +101,7 @@ export function Hamlet({
     });
     square.position.set(0, 0, 4);
     scene.add(square);
-    snapshot.residents.forEach((r, i) => {
+    villageResidents.forEach((r, i) => {
       // The first row reserves its last plot for Townhall.
       const slot = i < 3 ? i : i + 1;
       const x = -7.5 + (slot % 4) * 5;
@@ -177,7 +183,7 @@ export function Hamlet({
         ref={host}
         className="scene-canvas"
         role="img"
-        aria-label={`${snapshot.residents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a resident using the links below.`}
+        aria-label={`${villageResidents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a resident using the links below.`}
       />
       {unavailable && (
         <p className="notice">
@@ -185,9 +191,17 @@ export function Hamlet({
           below.
         </p>
       )}
+      {archivedUnresolved.map((r) => (
+        <p className="notice" key={r.id}>
+          <a href={`#residents/${encodeURIComponent(r.id)}`}>{r.name}</a> is
+          archived with {r.unresolved_runs} unresolved run(s). Accounting holds
+          remain.
+        </p>
+      ))}
       <div className="scene-residents">
         <a href="#townhall">Townhall →</a>
-        {snapshot.residents.map((r) => (
+        <a href="#residents-archived">Archived residents & history →</a>
+        {villageResidents.map((r) => (
           <a key={r.id} href={`#residents/${encodeURIComponent(r.id)}`}>
             {r.name} · {connected ? r.presence : "disconnected"} →
           </a>

@@ -143,6 +143,9 @@ class Memory:
     def save_in_transaction(
         self, db, resident_id: str, text: str, *, expected_revision: int
     ) -> dict:
+        from hearth.residents.lifecycle import check_not_archived
+
+        check_not_archived(db, resident_id)
         identifier(resident_id)
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_memory_revision")

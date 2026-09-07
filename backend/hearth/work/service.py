@@ -43,6 +43,9 @@ def _queue_task(
     bounded_text(instruction, 32_000, "invalid_instruction")
     if not db.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone():
         raise Refused("resident_not_found")
+    from hearth.residents.lifecycle import check_not_archived
+
+    check_not_archived(db, resident_id)
     task_id = str(uuid.uuid4())
     db.execute(
         "INSERT INTO tasks VALUES (?, ?, ?, 'queued', ?)", (task_id, resident_id, instruction, now)
@@ -80,6 +83,9 @@ class Hearth:
             raise Refused("revision_conflict")
         revision = current + 1
         if row:
+            from hearth.residents.lifecycle import check_not_archived
+
+            check_not_archived(db, resident_id)
             db.execute("UPDATE residents SET revision = ? WHERE id = ?", (revision, resident_id))
         else:
             check_creation(db, now)
@@ -87,6 +93,18 @@ class Hearth:
             from hearth.inputs.selection import initialize_selection
 
             initialize_selection(db, resident_id)
+            from hearth.residents.lifecycle import record_lifecycle
+
+            record_lifecycle(
+                db,
+                resident_id,
+                revision=0,
+                state="ready",
+                manager="operator",
+                actor="operator",
+                originating_run_id=None,
+                now=now,
+            )
         db.execute(
             "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -105,34 +123,28 @@ class Hearth:
 
     def set_paused(self, resident_id: str, *, paused: bool, expected_revision: int) -> dict:
         """Operator control affects new admission, never clears safety holds or cancels work."""
-        identifier(resident_id)
         if type(paused) is not bool or type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_pause_control")
+        from hearth.residents.maintenance import LifecycleChange, Maintenance
+
         with self.database.transaction(write=True) as db:
-            if not db.execute("SELECT 1 FROM residents WHERE id=?", (resident_id,)).fetchone():
-                raise Refused("resident_not_found")
-            row = db.execute(
-                "SELECT revision FROM operator_controls WHERE resident_id=?", (resident_id,)
-            ).fetchone()
-            revision = row[0] if row else 0
-            if expected_revision != revision:
-                raise Refused("revision_conflict")
-            revision += 1
-            now = int(self.clock())
-            db.execute(
-                "INSERT INTO operator_controls VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(resident_id) DO UPDATE SET revision=excluded.revision, "
-                "paused=excluded.paused, updated_at=excluded.updated_at",
-                (resident_id, revision, paused, now),
+            result = Maintenance(self).change_lifecycle_in_transaction(
+                db,
+                str(uuid.uuid4()),
+                resident_id,
+                LifecycleChange(
+                    expected_revision=expected_revision, state="paused" if paused else "ready"
+                ),
+                actor="operator",
             )
             _audit(
                 db,
                 "resident.operator_paused" if paused else "resident.operator_resumed",
                 resident_id,
-                now,
-                {"revision": revision},
+                int(self.clock()),
+                {"revision": result["revision"]},
             )
-            return {"resident_id": resident_id, "revision": revision, "paused": paused}
+            return {"resident_id": resident_id, "revision": result["revision"], "paused": paused}
 
     def resident(self, resident_id: str, *, revision: int | None = None) -> Resident:
         with self.database.transaction() as db:
@@ -258,13 +270,10 @@ class Hearth:
             (resident_id,),
         ).fetchone():
             raise Refused("resident_setup_incomplete")
-        if (
-            db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone()
-            or db.execute(
-                "SELECT 1 FROM operator_controls WHERE resident_id=? AND paused=1",
-                (resident_id,),
-            ).fetchone()
-        ):
+        from hearth.residents.lifecycle import check_ready
+
+        check_ready(db, resident_id)
+        if db.execute("SELECT 1 FROM pauses WHERE resident_id = ?", (resident_id,)).fetchone():
             raise Refused("resident_paused")
         if db.execute(
             f"SELECT 1 FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
