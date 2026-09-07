@@ -13,7 +13,8 @@ existing locks, then holds a SQLite write transaction while SQLite's backup API
 copies the database and the known mock stores are copied. Scheduler and API writes
 are therefore frozen too. Busy workers cause a refusal; retry the command later.
 The allowlist is `hearth.db`, `artifacts`, `mock-runtime`, `mock-inbox`, and
-`mock-noticeboard`, and nested resident `memory` files. Dotfiles, unrelated directories, and credentials are not copied.
+`mock-noticeboard`, nested resident `memory` files, and the archived journal entries
+one level below them in `memory/{resident}/journal`. Dotfiles, unrelated directories, and credentials are not copied.
 This is the defined mock application layout, not a general filesystem backup.
 
 A versioned manifest records schema, package version, backend source fingerprint,
@@ -56,8 +57,11 @@ epoch and remains held. Live disaster recovery and activation remain unproven.
 Only the current schema and complete layout are accepted. Incompatible prototypes
 or modified schemas are refused without conversion. Backups preserve every resident
 memory revision and run pin, including unreferenced immutable files. Verification
-rejects corrupt memory and references to another resident's memory. All restored
-copies remain held. There is no historical upgrade path or data importer.
+rejects corrupt memory and references to another resident's memory. Journal entries, archived
+references and their files are preserved the same way; verification rejects a changed
+entry, a changed, renamed or missing archived file, an archived document that disagrees
+with its row, and either half naming a run that belongs to another resident.
+All restored copies remain held. There is no historical upgrade path or data importer.
 
 Process-backed stores require all runs to be settled and workers idle before capture.
 Active or uncertain process runs refuse backup without stopping the worker. Durable

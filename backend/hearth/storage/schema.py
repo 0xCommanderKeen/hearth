@@ -164,7 +164,8 @@ SCHEMA = (
         id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
         daily_limit INTEGER NOT NULL CHECK(daily_limit>=0), timezone TEXT NOT NULL,
         resident_limit INTEGER NOT NULL CHECK(resident_limit BETWEEN 1 AND 1000),
-        concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100)
+        concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100),
+        journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000)
     )""",
     """CREATE TABLE approvals (
         id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
@@ -218,6 +219,20 @@ SCHEMA = (
         size INTEGER NOT NULL CHECK(size >= 0 AND size <= 131072), created_at INTEGER NOT NULL,
         author TEXT NOT NULL CHECK(author IN ('operator','run')),
         PRIMARY KEY(resident_id, revision)
+    )""",
+    """CREATE TABLE journal_entries (
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        sequence INTEGER NOT NULL CHECK(sequence > 0),
+        run_id TEXT NOT NULL UNIQUE REFERENCES runs(id), at INTEGER NOT NULL,
+        sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size > 0 AND size <= 4096),
+        text TEXT NOT NULL, PRIMARY KEY(resident_id, sequence)
+    )""",
+    """CREATE TABLE journal_archives (
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        sequence INTEGER NOT NULL CHECK(sequence > 0),
+        run_id TEXT NOT NULL UNIQUE REFERENCES runs(id), at INTEGER NOT NULL,
+        sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size > 0 AND size <= 4608),
+        PRIMARY KEY(resident_id, sequence)
     )""",
     """CREATE TABLE memory_operations (
         run_id TEXT NOT NULL REFERENCES runs(id), operation_id TEXT NOT NULL,

@@ -73,3 +73,5 @@ class HouseholdPost(BaseModel):
     resident_limit: int
     concurrency_limit: int
     expected_revision: int = Field(ge=0)
+    # Omitted by clients that do not govern the journal bound; the stored value stays.
+    journal_limit: int | None = Field(default=None, ge=1, le=1000)
