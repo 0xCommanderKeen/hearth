@@ -970,3 +970,57 @@ browser only as the `writable_memory` grant checkbox, not as a declaration contr
 Resident bundles deliberately do not carry `memory_writable`; an imported resident starts
 without it. No real Codex run has used these tools, so the epic's recorded journey and its
 cost are still outstanding.
+
+## Townhall memory history, the journal and the etiquette skill — 2026-09-07
+
+Issue #119 (epic #126) makes what a resident remembers visible and moves the etiquette
+into the library. `Memory.history(resident_id, limit, offset)` and `GET
+/api/residents/{id}/memory/history` read revisions newest first with the recorded
+`author` and, for a run-authored revision, the run that wrote it, taken from that write's
+durable operation receipt rather than from any text. The operator snapshot now carries
+`journal_opened`, `journal_written` and `memory_written` per run. Townhall's resident page
+gains two explicitly loaded panels beside the work it already shows — **Memory history**
+with an author chip, a run link and a bounded line comparison against the previous
+revision, and **Journal** with entries newest first, each linked to its run — and the run
+view says which memory revision and journal entries the run opened with and whether it
+wrote either. The required page furniture is untouched: the nav names, the row link, the
+back link, the empty state, the new-resident link and Pause new runs all still read the
+same, and neither panel hides anything behind a tab.
+
+The etiquette is now the shared **Keep a journal** skill, seeded with the other bootstrap
+skills, assigned to Karen and appended to a resident provisioned with writable memory when
+the catalog holds it unarchived and the requested set leaves room inside the eight-skill
+bound. `docs/adr/0012-run-authored-memory-and-journal.md` records the departure from
+operator-only memory, and `docs/rebuild-plan.md` now names it.
+
+The epic's acceptance demo forced one correction #118 had left: a resident with writable
+memory but no management grant reached no tools at all, because the native transport was
+pinned only for granted runs. Admission now pins a `run_management` row for a writable
+declaration too, with a null grant revision and digest; `tool_specs(memory=..,
+management=..)` offers such a run the three memory tools and nothing else; `dispatch`
+refuses every management tool with `management_tool_not_permitted`; `authorize` neutralizes
+the grant so a later operator grant cannot reach back into an admitted run; and
+`management_summary` reports no authority for it. Backup verification refuses a grantless
+pin whose declaration is not writable.
+
+Verified with real temporary SQLite through the owning interfaces: memory history with
+three revisions reading operator/run/operator with the writing run and no text, its paging,
+its page bounds and its authenticated no-store route; a writable ungranted reader reaching
+`hearth_memory_read` and `hearth_journal_write` while `hearth_catalog` and
+`hearth_residents_provision` are refused, with no management reported on the run; a
+resident that neither manages nor remembers pinning no transport row at all; the etiquette
+skill attached after a caller's own skills, skipped when archived, and absent from a
+resident that cannot write. The deterministic acceptance journey
+(`tests/integrations/codex/test_journal_journey.py`) runs the Fictional orchard reporter
+twice through the ordinary supervisor, detached workers and the scripted native CLI: run 1
+opens with no journal, saves the durable fact as revision 2 and writes entry 1; run 2 opens
+with revision 2 and entry 1, quotes that entry in its saved report, does not repeat the
+fact it already remembers, and writes entry 2. Its snapshot rows, memory history, held
+backup and restore all carry the same authorship. `make check` passed on a plain developer
+PATH: ruff, ruff format, ty, 703 pytest tests, 89 browser tests, Prettier, the production
+build, packaged assets, the wheel and the installed-wheel check.
+
+Remaining: the household `journal_limit` still moves only through `PUT /api/household`,
+with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
+imported resident starts unable to write. A household that never sets Karen up has no
+"Keep a journal" skill to attach.

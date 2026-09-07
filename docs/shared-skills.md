@@ -7,6 +7,15 @@ history and excludes the skill from the default active catalog. Resident attachm
 and run pinning are delivered separately in #87; this catalog grants no execution
 or management authority.
 
+Setting Karen up also seeds the etiquette skills every household starts with:
+**Create residents**, **Create good skills** and **Keep a journal**. They are ordinary
+library entries with ordinary revisions, so an operator can read, edit or archive them.
+"Keep a journal" is the wording a resident that may write its own memory and journal
+follows — one short dated entry per run, only durable facts in memory, never an invented
+entry — and it is attached to a resident provisioned with writable memory at its current
+revision, when the catalog holds it unarchived and the requested set leaves room inside
+the eight-skill bound. Like every skill, it grants nothing.
+
 Names are bounded to 120 characters, descriptions to 2,000 and instructions to
 32,000. All three require non-whitespace text. Exact text is stored without
 execution. Preview supports headings, paragraphs, unordered lists, fenced code,

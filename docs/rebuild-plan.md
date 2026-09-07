@@ -28,7 +28,10 @@ ordered implementation steps before enabling that runtime.
 The operator should be able to define a resident's purpose, instructions, memory,
 limits and permitted sources; assign a task; inspect truthful progress and results;
 run a daily routine; pause or cancel work; decide exact approval requests; and
-recover Hearth's own data from backup. Reader receives read access only. It does
+recover Hearth's own data from backup. Memory is no longer operator-only: a
+resident's own live run may add a revision and writes its own journal, within the
+bounds recorded in [ADR 0012](adr/0012-run-authored-memory-and-journal.md).
+Reader receives read access only. It does
 not need broad tools, delegation, a marketplace or an imported resident fleet.
 
 Do not build data import/export, historical compatibility, cross-system ownership

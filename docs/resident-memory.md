@@ -90,6 +90,26 @@ arrives anyway is refused with `memory_not_writable`. Because the offered set di
 the pinned `tools_sha256` differs too: the tool schemas a run may use are fixed at the
 same admission that pins its grant and its memory.
 
+What a resident should write is not stated here or in the context builder. It is the
+shared **Keep a journal** skill in the library, editable like any other skill and
+granting nothing: one short dated entry per run about what it did and what a future it
+needs, only facts that will still be true next week saved to memory, and never an
+invented entry. Karen carries it, and so does a resident provisioned with writable
+memory when the library holds it unarchived and the requested set leaves room inside the
+eight-skill bound.
+
+## The transport a writable resident reaches
+
+Before this epic a run reached the native tool protocol only when its resident held an
+enabled management grant, so a resident that could remember still had no way to write.
+Admission now pins a `run_management` row for a writable declaration too, with no grant
+revision and no grant digest. Such a run is offered exactly the three tools above and
+nothing else; every management tool is refused with `management_tool_not_permitted`, a
+grant made after admission cannot reach back into it, and the run view never reports it
+as management authority. Remembering is not managing.
+[ADR 0012](adr/0012-run-authored-memory-and-journal.md) records the departure. Backup
+verification refuses a grantless pin whose declaration is not writable.
+
 ## Operator workflow
 
 Townhall's **Memory** drawer explicitly loads the current note. Drafts survive
@@ -97,9 +117,20 @@ incoming snapshots and failed/ambiguous save responses. A newer memory revision
 blocks saving until an explicit reload replaces the draft. Declaration edits do
 not produce a memory conflict. Restored copies allow reading but refuse saving.
 
+The resident page also carries an explicitly loaded **Memory history** panel: every
+revision newest first, each with the author Hearth recorded, its size and digest, a link
+to the run that wrote a run-authored one, and a line comparison against the revision
+before it. The comparison is bounded — beyond 400 differing lines it shows the changed
+block as removed then added rather than claiming a line match it did not compute. The
+run view says which memory revision the run opened with and which revisions it wrote.
+
 Authenticated `GET /api/residents/{id}/memory` accepts optional `?revision=N`.
 `PUT` takes `text` and `expected_revision`; runtime credentials cannot use either
-route. The write route permits bounded JSON escaping overhead for the 128 KiB byte
+route. `GET /api/residents/{id}/memory/history` reads revisions newest first with
+`limit` (1-100, default 20) and `offset`, returning `revision`, `sha256`, `size`,
+`created_at`, `author` and the writing `run_id` for a run-authored revision. It is
+metadata only: the note itself is still read one revision at a time. The write route
+permits bounded JSON escaping overhead for the 128 KiB byte
 limit; other routes retain their existing request limits. Responses are no-store.
 Only the memory revision, not its text, appears in ambient snapshots. Audit carries
 revision, checksum and size, never memory content.
