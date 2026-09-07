@@ -83,18 +83,18 @@ is the ordinary preserve-what-you-read edit and is allowed. An omitted flag in a
 declaration save, a configuration change or the CLI keeps the current value, so a form
 that never learned about the capability cannot withdraw it.
 
-The tools live on the native tool surface, which today exists only for a run whose
-admission pinned an enabled management grant. Capabilities are what a grant does *not*
-have to hold: an enabled grant with no capabilities at all still receives the memory
-tools, so writing memory is not a manager's privilege. But a resident with no grant has
-no tool surface at all, so the pinned context reports `memory_writable` only when the
-declaration allows it *and* this admission pinned that surface; the flag is the run's
-actual authority to write, never an unkeepable promise. Giving an ordinary ungranted
-resident these tools needs a native session that does not ride on a management grant,
-which is not built.
+The tools live on the native tool surface, which a writable declaration reaches on its
+own: admission pins the surface for a writable declaration whether or not the resident
+holds a management grant (see *Remembering is not managing* below). Capabilities are what
+a grant does *not* have to hold either, so writing memory is a manager's privilege in
+neither direction. The pinned context reports `memory_writable` only when the declaration
+allows it *and* this admission pinned that surface; the flag is the run's actual authority
+to write, never an unkeepable promise. Mock runtimes have no native tool surface at all,
+so a writable resident there is still told it may write when nothing is offered — the one
+place the flag can still overpromise, and known remaining work.
 
-A run that has both is offered three native tools beside whatever management tools its
-grant permits:
+A run with the surface is offered three native tools, beside whatever management tools a
+grant permits when it also holds one:
 
 - `hearth_memory_read` returns the run's own pinned revision as bounded 32,000-character
   pages (`offset`, `text`, `next_offset`), like the configuration reader. The revision
@@ -108,6 +108,32 @@ arrives anyway is refused with `memory_not_writable`. Because the offered set di
 the pinned `tools_sha256` differs too: the tool schemas a run may use are fixed at the
 same admission that pins its grant and its memory.
 
+What a resident should write is not stated here or in the context builder. It is the
+shared **Keep a journal** skill in the library, editable like any other skill and
+granting nothing: one short dated entry per run about what it did and what a future it
+needs, only facts that will still be true next week saved to memory, and never an
+invented entry. Karen carries it, and so does a resident provisioned with writable
+memory when the library holds it as an active revision and the requested set leaves room
+inside both assignment bounds. A request that leaves no room, or an etiquette left as a
+draft by an operator revising it, gets its resident without the skill rather than no
+resident at all.
+
+## The transport a writable resident reaches
+
+Before this epic a run reached the native tool protocol only when its resident held an
+enabled management grant, so a resident that could remember still had no way to write.
+Admission now pins a `run_management` row for a writable declaration too, with no grant
+revision and no grant digest. Such a run is offered exactly the three tools above and
+nothing else; every management tool is refused with `management_tool_not_permitted`, a
+grant made after admission cannot reach back into it, and the run view never reports it
+as management authority. The same holds when an operator revokes or edits a grant a
+writable run *did* hold: management refuses from that moment — every tool, a replayed
+call receipt included, with the existing `management_grant_changed_or_revoked` — while the
+memory and journal tools keep working, so the run can still close with the entry that says
+how its work ended. Remembering is not managing.
+[ADR 0012](adr/0012-run-authored-memory-and-journal.md) records the departure. Backup
+verification refuses a grantless pin whose declaration is not writable.
+
 ## Operator workflow
 
 Townhall's **Memory** drawer explicitly loads the current note. Drafts survive
@@ -115,9 +141,23 @@ incoming snapshots and failed/ambiguous save responses. A newer memory revision
 blocks saving until an explicit reload replaces the draft. Declaration edits do
 not produce a memory conflict. Restored copies allow reading but refuse saving.
 
+The resident page also carries an explicitly loaded **Memory history** panel: every
+revision newest first, each with the author Hearth recorded, its size and digest, a link
+to the run that wrote a run-authored one, and a line comparison against the revision
+before it. The comparison is bounded — beyond 400 differing lines it shows the changed
+block as removed then added rather than claiming a line match it did not compute. The
+panel pages by `offset`, because revisions are never deleted and a well-used note passes
+any single page, and it names a run it cannot open rather than offering a dead link: the
+run anchor lands on a row in Tasks & results, which holds only recent work. The
+run view says which memory revision the run opened with and which revisions it wrote.
+
 Authenticated `GET /api/residents/{id}/memory` accepts optional `?revision=N`.
 `PUT` takes `text` and `expected_revision`; runtime credentials cannot use either
-route. The write route permits bounded JSON escaping overhead for the 128 KiB byte
+route. `GET /api/residents/{id}/memory/history` reads revisions newest first with
+`limit` (1-100, default 20) and `offset`, returning `revision`, `sha256`, `size`,
+`created_at`, `author` and the writing `run_id` for a run-authored revision. It is
+metadata only: the note itself is still read one revision at a time. The write route
+permits bounded JSON escaping overhead for the 128 KiB byte
 limit; other routes retain their existing request limits. Responses are no-store.
 Only the memory revision, not its text, appears in ambient snapshots. Audit carries
 revision, checksum and size, never memory content.

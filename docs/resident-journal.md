@@ -40,12 +40,15 @@ The entry text, byte for byte.
 ```
 
 and is read back only if it re-serializes to itself under that resident's directory and
-says exactly what its `journal_archives` row says. Existing identical content is reused;
-conflicting bytes under a hash are refused. A failed database commit can leave an
-archived file no row points at, exactly as memory does; a later roll reuses it, and until
-then it is preserved evidence rather than journal history — nothing reads it back.
-Directory and file symlinks, nonregular files and unsafe identities are refused, and the
-archive directory is never followed through a link.
+says exactly what its `journal_archives` row says. The row moves with the text:
+`journal_archives` keeps the resident, sequence, run, time, digest and size of every
+entry that rolled out, so the operator surfaces still know which run wrote it. Existing
+identical content is reused; conflicting bytes under a hash are refused. A failed
+database commit can leave an archived file no row points at, exactly as memory does; a
+later roll reuses it, and until then it is preserved evidence rather than journal
+history — nothing reads it back. Directory and file symlinks, nonregular files and
+unsafe identities are refused, and the archive directory is never followed through a
+link.
 
 A pinned entry is read back through its `journal_archives` row when retention rolls it
 out during the run that pinned it; nothing else reads archived entries into a context.
@@ -77,14 +80,24 @@ missing pinned memory does; unrelated residents keep working.
 `hearth_journal_write` is the run's own writer, offered to a run whose declaration says
 `memory_writable` (see [memory](resident-memory.md)). What a resident should write —
 that it may keep durable facts in memory and closes its work with one short entry — is
-skill text in the library, not wording in the context builder.
+skill text in the library, not wording in the context builder. That text is the shared
+**Keep a journal** skill: write one short dated entry about what you did and what a
+future you needs, save to memory only facts that will still be true next week, and never
+invent an entry. It grants nothing and an operator may edit it. Karen carries it, and so
+does a resident provisioned with writable memory.
 
 ## Operator surface
 
 Authenticated `GET /api/residents/{id}/journal` accepts `limit` (1–100, default 20) and
 `offset`, newest first, `no-store`. There is no operator write route and no runtime
-route: runtime credentials are refused like every other operator path. Townhall does not
-show the journal yet; that is #119. The
+route: runtime credentials are refused like every other operator path. The resident page
+carries an explicitly loaded **Journal** panel — entries newest first, each with its
+sequence, its date and a link to the run that wrote it — and says plainly when a resident
+has none rather than filling the space. It pages by `offset`, so a journal longer than one
+page stays reachable, and it names a run it cannot open instead of offering a dead link:
+the run anchor lands on a row in Tasks & results, which holds only recent work. The run
+view says which entries a run opened with and which entry it wrote, reading an archived
+entry from `journal_archives` so a rolled-out entry never reads as "wrote none". The
 household `journal_limit` is settable through `PUT /api/household` and is preserved when
 a client omits it, so the existing Townhall policy form cannot reset it.
 

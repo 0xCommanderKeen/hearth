@@ -210,6 +210,50 @@ Preserve the number, crop and day relationships; invent no sales or weather.
     raise AssertionError(profile)
 
 
+REPORT = "Write today's fictional orchard report."
+
+
+def report(context):
+    """The reporter: read what yesterday left, report, remember, then write one entry.
+
+    The fixture never invents a fact. Its report repeats only the supplied notes and the
+    exact text of the entry Hearth pinned to this run, so a second run can only refer to
+    the first if the journal actually reached it.
+    """
+    assert context["memory_writable"] is True, context
+    notes = context["notes"]
+    assert notes == ["Harvested 12 pears Monday", "Planted 3 trees Tuesday"], notes
+    pinned = yield from call("hearth_memory_read", {})
+    day = len(context["journal"]) + 1
+    if context["journal"]:
+        opened = "Simulation: My last entry said: " + context["journal"][0]["text"]
+    else:
+        opened = "Simulation: No earlier entry was pinned to this run."
+    durable = "The orchard notes are fictional; report only what they contain."
+    if durable not in pinned["text"]:
+        yield from call(
+            "hearth_memory_save",
+            {
+                "operation_id": "orchard-durable-fact",
+                "resident_id": context["resident_id"],
+                "text": pinned["text"].rstrip("\n") + "\n" + durable,
+                "expected_revision": pinned["revision"],
+            },
+        )
+    yield from call(
+        "hearth_journal_write",
+        {
+            "text": (
+                "Day "
+                + str(day)
+                + ": reported 12 pears Monday and 3 trees Tuesday from the fictional orchard "
+                "notes. No sales or weather were supplied, so I reported none."
+            )
+        },
+    )
+    return opened + " Today: Harvested 12 pears Monday. Planted 3 trees Tuesday."
+
+
 def await_files(root, pattern, count):
     deadline = time.monotonic() + 10
     while len(list(root.glob(pattern))) < count:
@@ -353,11 +397,12 @@ def native(args):
                 }
             )
             context = json.loads(params["input"][0]["text"])
-            driver = (
-                contend(context)
-                if context["instruction"] == "Contend for one child slot."
-                else journey(params["input"])
-            )
+            if context["instruction"] == "Contend for one child slot.":
+                driver = contend(context)
+            elif context["instruction"] == REPORT:
+                driver = report(context)
+            else:
+                driver = journey(params["input"])
             index = 1
             tool, arguments, call_id = next(driver)
             send_call(index, tool, arguments, call_id)

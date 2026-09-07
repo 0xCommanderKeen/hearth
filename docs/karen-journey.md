@@ -89,3 +89,28 @@ Detailed host evidence, credentials and private accounting stay outside the
 repository. Provider calls remain outside CI. This establishes the bounded demo,
 not general model quality or daily adoption; production deployment and personal
 source connections remain outside its scope.
+
+## The journal journey — 2026-09-07
+
+Epic #126 asked for one more bounded real run: the Fictional orchard reporter's second
+daily run referring to what its first run wrote. The operator created the orchard input
+set, set the shared library up, and provisioned one writable reporter with the "Keep a
+journal" skill it receives at provisioning; four ordinary daily reports then ran on the
+real subscription against the same two fictional notes.
+
+Runs 1 and 2 each closed with their own entry, unprompted, and both said plainly that no
+memory update was needed — the etiquette working, not a shortage of facts. Run 2 opened
+with entry 1. The operator then asked the reporter to begin each report by saying what its
+journal records it reported last time. Run 3 opened with entries 2 and 1 and named the
+previous run by its identifier, which appears nowhere in the notes, the instruction or the
+memory: it could only have come from the entry admission pinned to it. Run 4 received a
+standing preference in its task, saved it as memory revision 2 recorded with
+`author='run'`, kept the operator's existing line, and said in its own entry which revision
+it wrote.
+
+Four runs cost 168,444 microdollars in API-equivalent estimates against the $10 household
+allowance. `docs/evidence/journal-journey-2026-09-07.json` records the runs, the entries
+and the quoted report. The data directory was fresh, outside the repository, and discarded
+after recording; host details, credentials and account identifiers stay out of it. This
+establishes that a resident's own runs write its journal and memory and that a later run
+opens with them. It is not evidence of model quality or daily adoption.

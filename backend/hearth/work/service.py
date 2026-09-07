@@ -348,7 +348,9 @@ class Hearth:
         pin_admission(db, now, run.id)
         from hearth.management.authority import pin_management
 
-        pin_management(db, run.id, resident_id, now)
+        pin_management(
+            db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
+        )
         db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
         memory = db.execute(
             "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)

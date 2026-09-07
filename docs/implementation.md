@@ -1018,3 +1018,123 @@ supersedes that limit, so the orchard reporter will not need a capability-less g
 Reporting `memory_writable` from the pinned tool surface rather than from the declaration
 outlives that change and stays: #119's pin leaves the gap open for mock runtimes, which
 have no native tool surface at all, and a run there must still be told it cannot write.
+
+## Townhall memory history, the journal and the etiquette skill — 2026-09-07
+
+Issue #119 (epic #126) makes what a resident remembers visible and moves the etiquette
+into the library. `Memory.history(resident_id, limit, offset)` and `GET
+/api/residents/{id}/memory/history` read revisions newest first with the recorded
+`author` and, for a run-authored revision, the run that wrote it, taken from that write's
+durable operation receipt rather than from any text. The operator snapshot now carries
+`journal_opened`, `journal_written` and `memory_written` per run. Townhall's resident page
+gains two explicitly loaded panels beside the work it already shows — **Memory history**
+with an author chip, a run link and a bounded line comparison against the previous
+revision, and **Journal** with entries newest first, each linked to its run — and the run
+view says which memory revision and journal entries the run opened with and whether it
+wrote either. The required page furniture is untouched: the nav names, the row link, the
+back link, the empty state, the new-resident link and Pause new runs all still read the
+same, and neither panel hides anything behind a tab.
+
+The etiquette is now the shared **Keep a journal** skill, seeded with the other bootstrap
+skills, assigned to Karen and appended to a resident provisioned with writable memory when
+the catalog holds it unarchived and the requested set leaves room inside the eight-skill
+bound. `docs/adr/0012-run-authored-memory-and-journal.md` records the departure from
+operator-only memory, and `docs/rebuild-plan.md` now names it.
+
+The epic's acceptance demo forced one correction #118 had left: a resident with writable
+memory but no management grant reached no tools at all, because the native transport was
+pinned only for granted runs. Admission now pins a `run_management` row for a writable
+declaration too, with a null grant revision and digest; `tool_specs(memory=..,
+management=..)` offers such a run the three memory tools and nothing else; `dispatch`
+refuses every management tool with `management_tool_not_permitted`; `authorize` neutralizes
+the grant so a later operator grant cannot reach back into an admitted run; and
+`management_summary` reports no authority for it. Backup verification refuses a grantless
+pin whose declaration is not writable.
+
+Verified with real temporary SQLite through the owning interfaces: memory history with
+three revisions reading operator/run/operator with the writing run and no text, its paging,
+its page bounds and its authenticated no-store route; a writable ungranted reader reaching
+`hearth_memory_read` and `hearth_journal_write` while `hearth_catalog` and
+`hearth_residents_provision` are refused, with no management reported on the run; a
+resident that neither manages nor remembers pinning no transport row at all; the etiquette
+skill attached after a caller's own skills, skipped when archived, and absent from a
+resident that cannot write. The deterministic acceptance journey
+(`tests/integrations/codex/test_journal_journey.py`) runs the Fictional orchard reporter
+twice through the ordinary supervisor, detached workers and the scripted native CLI: run 1
+opens with no journal, saves the durable fact as revision 2 and writes entry 1; run 2 opens
+with revision 2 and entry 1, quotes that entry in its saved report, does not repeat the
+fact it already remembers, and writes entry 2. Its snapshot rows, memory history, held
+backup and restore all carry the same authorship. `make check` passed on a plain developer
+PATH: ruff, ruff format, ty, 703 pytest tests, 89 browser tests, Prettier, the production
+build, packaged assets, the wheel and the installed-wheel check.
+
+The bounded real journey is recorded. On the real Codex subscription, in a fresh data
+directory outside the repository, the operator provisioned one writable Fictional orchard
+reporter — which received the "Keep a journal" skill at provisioning — and ran four daily
+reports on the same two fictional notes. Runs 1 and 2 each wrote their own entry unprompted
+and both said no memory update was needed. Run 3, after the operator asked the reporter to
+open with its journal, named the previous run by its identifier, which appears nowhere in
+the notes, the instruction or the memory. Run 4 saved a standing preference as memory
+revision 2 with `author='run'`, keeping the operator's line. Four runs cost 168,444
+microdollars in API-equivalent estimates against the $10 household allowance;
+`docs/evidence/journal-journey-2026-09-07.json` and `docs/karen-journey.md` record the runs,
+the entries and the quoted report, and the data directory was discarded after recording.
+
+Remaining: the pinned context still states `memory_writable` from the declaration alone.
+That now matches the offered tools on the subscription runtime, where a writable
+declaration always pins the transport, but the mock runtimes have no native tool surface
+at all, so a writable resident there is still told it may write when nothing is offered.
+The context should read the pinned tool surface rather than the declaration. The household
+`journal_limit` still moves only through `PUT /api/household`,
+with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
+imported resident starts unable to write. A household that never sets Karen up has no
+"Keep a journal" skill to attach.
+
+### Review corrections — 2026-09-07
+
+Review of the #119 PR found six issues; all are fixed on the same branch and the design
+the epic rests on is unchanged.
+
+`journal_written` went silently false once retention archived an entry: `_roll` deletes
+the row, the run stays on the page for another seventy runs, and Townhall then said "wrote
+no journal entry" about a run that wrote one — the exact claim the panel exists to make.
+Retention now records the reference it already had in files: `journal_archives` keeps the
+resident, sequence, run, time, digest and size of every rolled-out entry, written in the
+same transaction as the delete and its audit fact. `run_journal_summary` reads it, and
+backup verification refuses an archive reference whose document was recorded for another
+sequence, run or time, and refuses a cross-resident archived entry as it already did for a
+live one.
+
+`current_journal_skill` excluded archived revisions but not drafts, and `PUT /api/skills/{id}`
+accepts `authoring` — so an operator revising the etiquette with examples would have made
+every subsequent provision of a `memory_writable` resident fail with `skill_not_active`,
+naming a skill the caller never asked for. It now requires an *active* revision. The same
+guard grew the byte bound beside the eight-skill one: a caller's own set that already sits
+inside 128 KiB no longer loses its resident because the etiquette pushed it over.
+
+Revoking a management grant mid-run stripped a writable resident of `hearth_memory_save`
+and `hearth_journal_write` too, and the worker's liveness check tore the run down before it
+could close — losing precisely the "ended unclear" entry the etiquette asks for. A revoked
+grant now degrades to no authority rather than refusing outright when the declaration is
+writable: `check_management` refuses every management tool, replayed receipts and the
+bounded validation wait included, with the same `management_grant_changed_or_revoked` as
+before, while the memory tools keep working.
+
+Both panels paged by growing `limit` at offset zero, so everything past the hundredth
+entry or revision was unreachable and the affordance vanished without saying so — the
+household journal bound allows a thousand entries and memory revisions are never deleted.
+They page by `offset` now, keeping the sequences already shown so a retention roll between
+pages cannot repeat one. And a `#run-<id>` anchor only resolves against the recent task
+list, so both panels name a run they cannot open instead of rendering a link that does
+nothing.
+
+Verified: retention archiving three entries while each run still reports the entry it
+wrote, through the snapshot and through a held restore, and a backup whose archive
+reference names another document refused; an etiquette left as a draft, and a set that
+exactly fills the byte bound, each skipped rather than failing the provision; a revoked
+grant refusing `hearth_catalog` and `hearth_residents_provision` while the same run reads
+memory, saves a run-authored revision and writes its closing entry, with the liveness check
+still authorizing it; and both panels paging by offset and naming the runs they cannot
+open. `make check` passed on a plain developer PATH: ruff, ruff format, ty, 708 pytest
+tests, 90 browser tests, Prettier, the production build, packaged assets, the wheel and the
+installed-wheel check. The recorded real journey is unaffected and was not repeated.

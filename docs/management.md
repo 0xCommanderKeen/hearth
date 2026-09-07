@@ -33,14 +33,15 @@ session identities in the same SQLite writer as the application operation.
 Revocation also refuses replay; editing or disabling a grant stops the old run's
 authority and future use requires a new admission.
 
-Not every native tool is a management power. A granted run whose declaration says
-`memory_writable` also receives the memory and journal tools described in
-[resident memory](resident-memory.md), even when its grant holds no capabilities at all;
-the operator grant capability `writable_memory` separately governs handing that
-declaration to a provisioned or reconfigured resident. Those tools still ride on this
-native surface, so a resident without an enabled grant has none of them and its context
-says so. The offered set is what the admission pins: `tools_sha256` covers exactly the
-schemas that run may call.
+Not every native tool is a management power. A run whose declaration says
+`memory_writable` receives the memory and journal tools described in
+[resident memory](resident-memory.md) whether or not it holds a management grant, and a
+granted run receives them even when its grant holds no capabilities at all; the operator
+grant capability `writable_memory` separately governs handing that declaration to a
+provisioned or reconfigured resident. A run admitted on a writable declaration alone is
+pinned this surface with no grant behind it, is offered those three tools and nothing
+more, and is reported as holding no management authority. The offered set is what the
+admission pins: `tools_sha256` covers exactly the schemas that run may call.
 
 The initial tools inspect bounded catalog summaries, exact skill revisions and
 owned resident status; provision through the ordinary resident operation; and

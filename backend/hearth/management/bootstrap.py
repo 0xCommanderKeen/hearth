@@ -4,7 +4,7 @@ import json
 
 from hearth.management.authority import GrantPolicy, Management
 from hearth.residents.provisioning import Provisioning
-from hearth.skills.bootstrap import attach_authoring_skill
+from hearth.skills.bootstrap import attach_authoring_skill, attach_journal_skill
 from hearth.skills.catalog import Skills
 from hearth.work.service import Hearth, _audit
 
@@ -64,6 +64,8 @@ def bootstrap(hearth: Hearth) -> dict:
 
             raise Refused(resident["reason"])
         authoring_skill_id = attach_authoring_skill(db, hearth, resident["resident_id"])
+        # Karen may write memory and a journal, so she also carries the etiquette for it.
+        journal_skill_id = attach_journal_skill(db, hearth, resident["resident_id"])
         Management(hearth).save_in_transaction(
             db,
             resident["resident_id"],
@@ -89,6 +91,7 @@ def bootstrap(hearth: Hearth) -> dict:
             "resident_id": resident["resident_id"],
             "skill_id": skill["skill_id"],
             "authoring_skill_id": authoring_skill_id,
+            "journal_skill_id": journal_skill_id,
             "command_id": "bootstrap-karen",
             "status": "ready",
         }

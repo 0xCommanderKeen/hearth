@@ -322,6 +322,30 @@ class Journal:
         return [read_archive(self.files, row) for row in rows]
 
 
+def run_journal_summary(db, run_id: str) -> dict:
+    """What one run opened with and what it wrote, for the operator's run view.
+
+    Retention deletes the row but never the entry, so an entry that has rolled out is
+    still read from its archive reference. `journal_written` is None only when the run
+    wrote nothing at all.
+    """
+    opened = [
+        row["sequence"]
+        for row in db.execute(
+            "SELECT sequence FROM run_journal WHERE run_id=? ORDER BY position", (run_id,)
+        )
+    ]
+    written = db.execute(
+        "SELECT sequence FROM journal_entries WHERE run_id=? "
+        "UNION ALL SELECT sequence FROM journal_archives WHERE run_id=?",
+        (run_id, run_id),
+    ).fetchone()
+    return {
+        "journal_opened": opened,
+        "journal_written": written["sequence"] if written else None,
+    }
+
+
 def pin_journal(db, run_id: str, resident_id: str) -> None:
     """Admission records the exact entries the run opens with, newest first.
 

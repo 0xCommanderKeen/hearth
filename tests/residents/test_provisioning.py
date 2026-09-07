@@ -267,3 +267,141 @@ def test_same_transaction_provisioning_records_active_resident_authority(tmp_pat
         service.create_in_transaction(
             connection, "bad-manager", request(), actor="manager", originating_run_id=run.id
         )
+
+
+def test_the_journal_etiquette_joins_a_writable_resident_without_displacing_its_skills(tmp_path):
+    """The wording lives in the library, so the skill is attached, never inlined."""
+    from hearth.app import create_app
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import journal_skill
+    from hearth.skills.catalog import Skills
+
+    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    hearth = app.state.hearth
+    service = Provisioning(hearth)
+    plain = service.create("plain", request(), actor="operator")
+    with hearth.database.transaction() as db:
+        assert read_assignments(db, plain["resident_id"])["skills"] == []
+
+    with hearth.database.transaction(write=True) as db:
+        etiquette = journal_skill(db, hearth)
+    other = Skills(hearth).save(
+        "another",
+        name="Another skill",
+        description="Unrelated",
+        instructions="Do the thing",
+        actor="operator",
+    )
+    writable = service.create(
+        "writable",
+        {
+            **request(),
+            "memory_writable": True,
+            "skills": [{"skill_id": other["skill_id"], "revision": other["revision"]}],
+        },
+        actor="operator",
+    )
+    with hearth.database.transaction() as db:
+        entries = read_assignments(db, writable["resident_id"])["skills"]
+    assert [item["skill_id"] for item in entries] == [other["skill_id"], etiquette["skill_id"]]
+    assert [item["name"] for item in entries] == ["Another skill", "Keep a journal"]
+
+    # An archived etiquette is not attached to anyone; provisioning still succeeds.
+    Skills(hearth).archive(
+        "archive-etiquette",
+        etiquette["skill_id"],
+        expected_revision=etiquette["revision"],
+        actor="operator",
+    )
+    archived = service.create(
+        "after-archive", {**request(), "memory_writable": True}, actor="operator"
+    )
+    with hearth.database.transaction() as db:
+        assert read_assignments(db, archived["resident_id"])["skills"] == []
+
+
+def test_an_edited_etiquette_draft_is_skipped_instead_of_failing_the_provision(tmp_path):
+    """An operator revising the wording with examples leaves a draft current for a while."""
+    from hearth.app import create_app
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import KEEP_A_JOURNAL, journal_skill
+    from hearth.skills.catalog import Skills
+
+    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    hearth = app.state.hearth
+    with hearth.database.transaction(write=True) as db:
+        etiquette = journal_skill(db, hearth)
+    draft = Skills(hearth).save(
+        "edit-etiquette",
+        skill_id=etiquette["skill_id"],
+        expected_revision=etiquette["revision"],
+        name="Keep a journal",
+        description="Close a run with one short honest entry.",
+        instructions=KEEP_A_JOURNAL + "\nAnd say which input you read.",
+        actor="operator",
+        authoring={
+            "examples": [
+                {
+                    "kind": "normal",
+                    "instruction": "Close the day.",
+                    "notes": ["Fictional orchard harvested 12 pears."],
+                    "assertions": {
+                        "max_characters": 1000,
+                        "contains": ["12 pears"],
+                        "excludes": [],
+                    },
+                },
+                {
+                    "kind": "edge",
+                    "instruction": "Close a day that was refused.",
+                    "notes": [],
+                    "assertions": {
+                        "max_characters": 1000,
+                        "contains": ["No synthetic inputs"],
+                        "excludes": [],
+                    },
+                },
+            ]
+        },
+    )
+    assert Skills(hearth).read(etiquette["skill_id"])["status"] == "draft"
+    assert draft["revision"] == 2
+    ready = Provisioning(hearth).create(
+        "while-draft", {**request(), "memory_writable": True}, actor="operator"
+    )
+    assert ready["status"] == "ready"
+    with hearth.database.transaction() as db:
+        assert read_assignments(db, ready["resident_id"])["skills"] == []
+
+
+def test_the_etiquette_is_skipped_rather_than_pushing_a_set_over_its_byte_bound(tmp_path):
+    from hearth.app import create_app
+    from hearth.skills.assignments import MAX_TEXT_BYTES, read_assignments
+    from hearth.skills.bootstrap import journal_skill
+    from hearth.skills.catalog import Skills
+
+    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    hearth = app.state.hearth
+    with hearth.database.transaction(write=True) as db:
+        journal_skill(db, hearth)
+    # Five skills that exactly fill the byte bound: valid alone, over it with the etiquette.
+    sizes = [32000, 32000, 32000, 32000, MAX_TEXT_BYTES - 4 * 32000 - 1]
+    large = [
+        Skills(hearth).save(
+            f"large-{index}",
+            name=f"Large skill {index}",
+            description="Synthetic bulk",
+            instructions="x" * size,
+            actor="operator",
+        )
+        for index, size in enumerate(sizes)
+    ]
+    entries = [{"skill_id": item["skill_id"], "revision": item["revision"]} for item in large]
+    assert sum(sizes) == MAX_TEXT_BYTES - 1
+    ready = Provisioning(hearth).create(
+        "bulky", {**request(), "memory_writable": True, "skills": entries}, actor="operator"
+    )
+    assert ready["status"] == "ready"
+    with hearth.database.transaction() as db:
+        assigned = read_assignments(db, ready["resident_id"])["skills"]
+    assert [item["skill_id"] for item in assigned] == [item["skill_id"] for item in large]

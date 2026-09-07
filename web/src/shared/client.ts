@@ -371,6 +371,35 @@ export type ResidentMemory = {
   sha256: string | null;
   text: string;
 };
+export type MemoryRevision = {
+  revision: number;
+  sha256: string;
+  size: number;
+  created_at: number;
+  author: "operator" | "run";
+  run_id: string | null;
+};
+export type MemoryHistory = {
+  resident_id: string;
+  limit: number;
+  offset: number;
+  total: number;
+  revisions: MemoryRevision[];
+};
+export type JournalEntry = {
+  resident_id: string;
+  sequence: number;
+  run_id: string;
+  at: number;
+  text: string;
+};
+export type ResidentJournal = {
+  resident_id: string;
+  limit: number;
+  offset: number;
+  total: number;
+  entries: JournalEntry[];
+};
 export type ResidentDeclaration = {
   id: string;
   revision: number;
@@ -405,6 +434,9 @@ export type Run = InputProvenance & {
   usage_source?: string;
   cancellation_requested: number;
   memory_revision?: number;
+  memory_written?: number[];
+  journal_opened?: number[];
+  journal_written?: number | null;
   skills?: AssignedSkill[];
   skills_error?: string | null;
 };
@@ -839,6 +871,21 @@ export class Client {
   memory(id: string) {
     return this.request<ResidentMemory>(
       `/api/residents/${encodeURIComponent(id)}/memory`,
+    );
+  }
+  memoryHistory(id: string, limit = 20, offset = 0) {
+    return this.request<MemoryHistory>(
+      `/api/residents/${encodeURIComponent(id)}/memory/history?limit=${limit}&offset=${offset}`,
+    );
+  }
+  memoryRevision(id: string, revision: number) {
+    return this.request<ResidentMemory>(
+      `/api/residents/${encodeURIComponent(id)}/memory?revision=${revision}`,
+    );
+  }
+  journal(id: string, limit = 20, offset = 0) {
+    return this.request<ResidentJournal>(
+      `/api/residents/${encodeURIComponent(id)}/journal?limit=${limit}&offset=${offset}`,
     );
   }
   saveMemory(id: string, text: string, revision: number) {

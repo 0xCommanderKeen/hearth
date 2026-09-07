@@ -101,11 +101,14 @@ def pin_configuration(hearth, bound, binary):
     from hearth.management.tools import tool_specs
 
     with hearth.database.transaction() as db:
-        if not db.execute(
-            "SELECT 1 FROM run_management WHERE run_id=?", (bound.run_id,)
-        ).fetchone():
+        pin = db.execute(
+            "SELECT grant_revision FROM run_management WHERE run_id=?", (bound.run_id,)
+        ).fetchone()
+        if pin is None:
             return None
         # The declared tool set of this run; the write below rechecks it under authority.
+        # A run pinned without a grant revision is offered its memory tools and nothing else.
+        management = pin["grant_revision"] is not None
         memory = bool(
             db.execute(
                 "SELECT d.memory_writable FROM runs r JOIN declarations d "
@@ -113,10 +116,10 @@ def pin_configuration(hearth, bound, binary):
                 (bound.run_id,),
             ).fetchone()[0]
         )
-    pins = app_server.configuration_pins(binary, tool_specs(memory=memory))
+    pins = app_server.configuration_pins(binary, tool_specs(memory=memory, management=management))
     with hearth.database.transaction(write=True) as db:
         authority = authorize(db, bound, int(hearth.clock()))
-        if authority["memory_writable"] != memory:
+        if authority["memory_writable"] != memory or authority["grant"]["enabled"] != management:
             raise Refused("management_configuration_changed")
         row = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
         for key, value in pins.items():
@@ -194,7 +197,9 @@ def worker(folder, request, execution):
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],
-            tools=tool_specs(memory=authority["memory_writable"]),
+            tools=tool_specs(
+                memory=authority["memory_writable"], management=authority["grant"]["enabled"]
+            ),
             on_thread=bridge.bind_thread,
             on_turn=bridge.bind_turn,
             on_tool=bridge.call,

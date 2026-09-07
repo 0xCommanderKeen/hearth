@@ -11,6 +11,8 @@ import { Approvals } from "../features/approvals/Approvals";
 import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
+import { MemoryHistory } from "../features/residents/MemoryHistory";
+import { Journal } from "../features/residents/Journal";
 import {
   NewResident,
   ProfileProvenance,
@@ -341,6 +343,14 @@ export function App() {
   const visibleTasks = (snapshot?.tasks ?? []).filter(
     (task) => view !== "resident" || task.resident_id === residentId,
   );
+  // A `#run-<id>` anchor lands on a row in Tasks & results, so it can only open a run
+  // whose task is still listed there. Older work is named rather than linked.
+  const openableRun = (runId: string) =>
+    (snapshot?.runs ?? []).some(
+      (run) =>
+        run.id === runId &&
+        visibleTasks.some((task) => task.id === run.task_id),
+    );
   const completed =
     snapshot?.runs.filter((r) => r.status === "succeeded").length ?? 0;
   const active =
@@ -933,6 +943,21 @@ export function App() {
                                 {run.memory_revision === 0
                                   ? "Admitted without memory"
                                   : `Memory revision ${run.memory_revision}`}
+                                {run.journal_opened?.length
+                                  ? ` · opened with journal ${run.journal_opened
+                                      .map((sequence) => `#${sequence}`)
+                                      .join(", ")}`
+                                  : " · opened with no journal entries"}
+                              </small>
+                            )}
+                            {run && (
+                              <small aria-label="What the run wrote">
+                                {run.memory_written?.length
+                                  ? `Wrote memory revision ${run.memory_written.join(", ")}`
+                                  : "Wrote no memory"}
+                                {run.journal_written
+                                  ? ` · wrote journal entry #${run.journal_written}`
+                                  : " · wrote no journal entry"}
                               </small>
                             )}
                             {run && <RunInputs run={run} />}
@@ -1076,6 +1101,22 @@ export function App() {
                   readOnly={snapshot.restore_hold === true}
                   routines={snapshot.routines ?? []}
                   onChanged={() => void act(async () => {})}
+                />
+                <MemoryHistory
+                  key={`memory:${snapshot.epoch}:${current.id}`}
+                  client={client}
+                  resident={current}
+                  busy={busy}
+                  act={act}
+                  openable={openableRun}
+                />
+                <Journal
+                  key={`journal:${snapshot.epoch}:${current.id}`}
+                  client={client}
+                  resident={current}
+                  busy={busy}
+                  act={act}
+                  openable={openableRun}
                 />
                 {current.profile && (
                   <ProfileProvenance profile={current.profile} />

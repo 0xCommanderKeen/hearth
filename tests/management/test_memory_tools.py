@@ -333,25 +333,6 @@ def test_the_tools_reach_a_granted_run_that_manages_nothing(tmp_path):
     assert [item["text"] for item in context["journal"]] == ["Read the orchard notes."]
 
 
-def test_a_declaration_alone_does_not_promise_tools_the_run_will_not_have(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
-    hearth = app.state.hearth
-    hearth.save_resident(
-        "hopeful",
-        Declaration("Hopeful", "Summarize synthetic notes", 1000000, memory_writable=True),
-        expected_revision=0,
-    )
-    assert hearth.resident("hopeful").declaration.memory_writable is True
-    task = hearth.submit(
-        "hopeful-task", "hopeful", "Summarize", expires_at=int(hearth.clock()) + 600
-    )
-    run = hearth.admit(task.task_id, reserve=1000)
-    # No grant means no native tool surface, so the context claims nothing.
-    context = pinned_context(hearth, run.id)
-    assert context["memory_writable"] is False and context["journal"] == []
-    assert app.state.executor.step()[0].status == "succeeded"
-
-
 def test_preserving_a_declared_capability_is_not_an_escalation(tmp_path):
     app, hearth, karen = manager(tmp_path)
     run, call = working_run(app, karen, "provision")
@@ -505,3 +486,105 @@ def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_
     context = pinned_context(hearth, run.id)
     assert context["memory_writable"] is False and context["journal"] == []
     assert app.state.executor.step()[0].status == "succeeded"
+
+
+def test_a_resident_that_only_remembers_reaches_its_tools_without_management(tmp_path):
+    """Writable memory admits a run to the native tools; it grants no management at all."""
+    app = create_app(tmp_path, TOKEN, supervise=False)
+    hearth = app.state.hearth
+    hearth.clock = lambda: 1788640000
+    hearth.save_resident(
+        "reader",
+        Declaration("Reader", "Summarize synthetic notes", 100000, memory_writable=True),
+        expected_revision=0,
+    )
+    Memory(hearth).save("reader", "Reader remembers.", expected_revision=0)
+    run, call = working_run(app, "reader", "remembers")
+    with hearth.database.transaction() as db:
+        pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+    assert pin["grant_revision"] is None and pin["grant_sha256"] is None
+    # The declared tool set is the memory tools alone; management is not offered.
+    assert {spec["name"] for spec in tool_specs(memory=True, management=False)} == MEMORY_TOOL_NAMES
+    assert tool_specs(management=False) == []
+    ok, pinned = call("read", "hearth_memory_read", {})
+    assert ok and pinned["text"] == "Reader remembers."
+    assert call("journal", "hearth_journal_write", {"text": "Reader wrote its own entry."})[0]
+    ok, refused = call("catalog", "hearth_catalog", {"query": ""})
+    assert not ok and refused["error"] == "management_tool_not_permitted"
+    ok, refused = call(
+        "provision",
+        "hearth_residents_provision",
+        {"operation_id": "no", "resident": {"name": "N", "purpose": "P", "creation_reason": "C"}},
+    )
+    assert not ok and refused["error"] == "management_tool_not_permitted"
+    # Remembering is not managing, and the run view never reports it as authority.
+    assert snapshot(hearth)["runs"][0]["management"] is None
+    assert Journal(hearth).read("reader")["total"] == 1
+    settle(app, run)
+
+
+def test_a_resident_that_neither_manages_nor_remembers_is_pinned_no_tools(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False)
+    hearth = app.state.hearth
+    hearth.save_resident(
+        "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0
+    )
+    task = hearth.submit("plain", "reader", "Summarize", expires_at=int(hearth.clock()) + 600)
+    run = hearth.admit(task.task_id, reserve=1000)
+    with hearth.database.transaction() as db:
+        assert (
+            db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run.id,)).fetchone() is None
+        )
+
+
+def test_revoking_a_grant_mid_run_leaves_memory_and_the_closing_entry_intact(tmp_path):
+    """Revoking management takes management away, not the entry that says how work ended."""
+    from hearth.management.bridge import authorize
+
+    app, hearth, karen = manager(tmp_path)
+    run, call = working_run(app, karen, "revoked")
+    assert call("catalog", "hearth_catalog", {"query": ""})[0]
+
+    grant = Management(hearth).read(karen)
+    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
+    Management(hearth).save(
+        karen, {**policy, "enabled": False, "expected_revision": grant["revision"]}
+    )
+    for tool, arguments in (
+        ("hearth_catalog", {"query": ""}),
+        (
+            "hearth_residents_provision",
+            {
+                "operation_id": "no",
+                "resident": {"name": "N", "purpose": "P", "creation_reason": "C"},
+            },
+        ),
+    ):
+        ok, refused = call(tool.removeprefix("hearth_"), tool, arguments)
+        assert not ok and refused["error"] == "management_grant_changed_or_revoked"
+
+    ok, pinned = call("read", "hearth_memory_read", {})
+    assert ok and pinned["revision"] == 1
+    ok, saved = call(
+        "save",
+        "hearth_memory_save",
+        {
+            "operation_id": "after-revocation",
+            "resident_id": karen,
+            "text": "The operator withdrew management while this run worked.",
+            "expected_revision": 1,
+        },
+    )
+    assert ok and saved["author"] == "run"
+    ok, entry = call("journal", "hearth_journal_write", {"text": "Ended unclear: grant revoked."})
+    assert ok and entry["sequence"] == 1
+    # The run is not torn down: the worker's liveness check still authorizes it.
+    with hearth.database.transaction() as db:
+        authority = authorize(db, run_bound(app, hearth, run), int(hearth.clock()))
+    assert authority["management_revoked"] and authority["memory_writable"] is True
+    assert authority["grant"]["capabilities"] == []
+    settle(app, run)
+
+
+def run_bound(app, hearth, run) -> BoundRun:
+    return BoundRun(run.id, run.owner_token, snapshot(hearth)["epoch"], run.input_digest)

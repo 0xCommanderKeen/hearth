@@ -7,7 +7,9 @@ from hearth.authority.household import household_state
 from hearth.authority.permissions import _approval
 from hearth.inputs.selection import input_summary
 from hearth.management.authority import management_summary
+from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
+from hearth.residents.memory import run_memory_writes
 from hearth.residents.provisioning import profile_summary
 from hearth.skills.assignments import skill_summary
 from hearth.work.service import ACTIVE_RUNS, Hearth
@@ -84,6 +86,9 @@ def snapshot(hearth: Hearth) -> dict:
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
             run["management"] = management_summary(db, run["id"], run=True)
+            # What the run opened with and what it wrote, never who claimed to.
+            run.update(run_journal_summary(db, run["id"]))
+            run["memory_written"] = run_memory_writes(db, run["id"])
         audit = [
             dict(row)
             for row in db.execute(
