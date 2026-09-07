@@ -39,6 +39,13 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
     ).fetchone()
     if resident is None or resident[0] != run["resident_revision"]:
         raise Refused("management_declaration_changed")
+    # The memory.writable capability is read from the declaration this run admitted with.
+    declared = db.execute(
+        "SELECT memory_writable FROM declarations WHERE resident_id=? AND revision=?",
+        (run["resident_id"], run["resident_revision"]),
+    ).fetchone()
+    if declared is None:
+        raise Refused("management_declaration_changed")
     pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
     if pin is None or pin["resident_id"] != run["resident_id"]:
         raise Refused("management_not_granted_at_admission")
@@ -56,7 +63,12 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         raise Refused("management_thread_mismatch")
     if turn_id is not None and pin["turn_id"] != turn_id:
         raise Refused("management_turn_mismatch")
-    return {"actor": run["resident_id"], "run_id": bound.run_id, "grant": grant}
+    return {
+        "actor": run["resident_id"],
+        "run_id": bound.run_id,
+        "grant": grant,
+        "memory_writable": bool(declared[0]),
+    }
 
 
 def authorize_managed_resident(db, authority: dict, resident_id: str, action: str) -> dict:

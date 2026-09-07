@@ -23,6 +23,8 @@ class DeclarationPost(BaseModel):
     daily_limit: int
     budget_timezone: str
     skill_text: str
+    # Omitted keeps the resident's current memory.writable capability.
+    memory_writable: bool | None = None
     expected_revision: int = Field(ge=0)
 
 

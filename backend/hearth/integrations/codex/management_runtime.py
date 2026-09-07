@@ -105,9 +105,19 @@ def pin_configuration(hearth, bound, binary):
             "SELECT 1 FROM run_management WHERE run_id=?", (bound.run_id,)
         ).fetchone():
             return None
-    pins = app_server.configuration_pins(binary, tool_specs())
+        # The declared tool set of this run; the write below rechecks it under authority.
+        memory = bool(
+            db.execute(
+                "SELECT d.memory_writable FROM runs r JOIN declarations d "
+                "ON d.resident_id=r.resident_id AND d.revision=r.resident_revision WHERE r.id=?",
+                (bound.run_id,),
+            ).fetchone()[0]
+        )
+    pins = app_server.configuration_pins(binary, tool_specs(memory=memory))
     with hearth.database.transaction(write=True) as db:
-        authorize(db, bound, int(hearth.clock()))
+        authority = authorize(db, bound, int(hearth.clock()))
+        if authority["memory_writable"] != memory:
+            raise Refused("management_configuration_changed")
         row = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
         for key, value in pins.items():
             if row[key] is not None and row[key] != value:
@@ -184,7 +194,7 @@ def worker(folder, request, execution):
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],
-            tools=tool_specs(),
+            tools=tool_specs(memory=authority["memory_writable"]),
             on_thread=bridge.bind_thread,
             on_turn=bridge.bind_turn,
             on_tool=bridge.call,

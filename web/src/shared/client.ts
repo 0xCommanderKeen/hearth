@@ -493,7 +493,8 @@ export type ManagementCapability =
   | "author_skills"
   | "update_residents"
   | "manage_lifecycle"
-  | "assign_skills";
+  | "assign_skills"
+  | "writable_memory";
 export type ManagementGrant = {
   resident_id: string;
   revision: number;

@@ -203,6 +203,7 @@ SCHEMA = (
         created_at INTEGER NOT NULL,
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
         skill_text TEXT NOT NULL DEFAULT '',
+        memory_writable INTEGER NOT NULL DEFAULT 0 CHECK (memory_writable IN (0,1)),
         PRIMARY KEY (resident_id, revision)
     )""",
     """CREATE TABLE deliveries (
@@ -298,6 +299,12 @@ SCHEMA = (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL,
         revision INTEGER NOT NULL,
         FOREIGN KEY(resident_id, revision) REFERENCES memory_revisions(resident_id, revision)
+    )""",
+    """CREATE TABLE run_journal (
+        run_id TEXT NOT NULL REFERENCES runs(id), position INTEGER NOT NULL CHECK(position >= 0),
+        resident_id TEXT NOT NULL REFERENCES residents(id), sequence INTEGER NOT NULL CHECK(sequence > 0),
+        entry_run_id TEXT NOT NULL REFERENCES runs(id), at INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(run_id, position), UNIQUE(run_id, sequence)
     )""",
     """CREATE TABLE "runs" (
         id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id),

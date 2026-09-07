@@ -22,7 +22,13 @@ from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.management.authority import validate_management
-from hearth.residents.journal import JournalFiles, checked_entry, journal_path, read_archive
+from hearth.residents.journal import (
+    JournalFiles,
+    checked_entry,
+    journal_path,
+    read_archive,
+    run_journal,
+)
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
@@ -424,6 +430,9 @@ def _check_database(root: Path) -> dict:
             files.entries(resident["id"])
         for row in db.execute("SELECT * FROM journal_archives"):
             read_archive(files, row)
+        for run in db.execute("SELECT DISTINCT run_id FROM run_journal"):
+            # A pinned journal must still read back, from its rows or its archived files.
+            run_journal(db, files, run["run_id"])
         return {
             "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),

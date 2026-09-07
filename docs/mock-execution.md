@@ -11,7 +11,7 @@ evidence under stable run IDs so a new application process can recover an old
 result. Repeating start with the same identity/instruction is idempotent; changed
 instructions under that identity are refused.
 
-The executor sends canonical JSON context version 3: run/task/resident identities,
+The executor sends canonical JSON context version 6: run/task/resident identities,
 the declaration revision pinned at admission, its purpose and skill text, the task instruction and
 the fixed synthetic notes and pinned resident memory. The scoped runtime context route uses the same reader.
 Ownership tokens, credentials and other residents' data are absent. MockRuntime

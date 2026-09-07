@@ -25,7 +25,7 @@ operator storage; content hashes are integrity checks, not authentication.
 
 Admission records a reference to the current memory revision in the same transaction
 as the run, reservation and audit. No reference means the run admitted without
-memory, even if memory is added later. Context version 3 contains that exact memory
+memory, even if memory is added later. Context version 6 contains that exact memory
 revision and text. Later saves affect future admissions and do not change or revoke
 an existing run's pinned memory. Cancellation, credential revocation and declaration
 revision checks still apply. Authorized bytes already delivered cannot be retracted.
@@ -70,6 +70,43 @@ a checksum the revision does not have is refused with
 `memory_operation_receipt_corrupt`. A different payload under the same `operation_id`
 is refused with `operation_conflict`. A refused attempt records nothing, so retrying it
 is a fresh attempt.
+
+## The declared capability and its tools
+
+Writing memory from inside a run is a declared capability, not a management power.
+Each declaration revision carries `memory_writable`, and the declaration revision the
+run admitted with decides it. It is false for Reader and every ordinary resident, true
+for Karen. A manager may declare it on a resident it provisions or configures only with
+the `writable_memory` grant capability; raising it without that grant is refused with
+`management_memory_not_permitted`, while resubmitting a value the resident already has
+is the ordinary preserve-what-you-read edit and is allowed. An omitted flag in a
+declaration save, a configuration change or the CLI keeps the current value, so a form
+that never learned about the capability cannot withdraw it.
+
+The tools live on the native tool surface, which today exists only for a run whose
+admission pinned an enabled management grant. Capabilities are what a grant does *not*
+have to hold: an enabled grant with no capabilities at all still receives the memory
+tools, so writing memory is not a manager's privilege. But a resident with no grant has
+no tool surface at all, so the pinned context reports `memory_writable` only when the
+declaration allows it *and* this admission pinned that surface; the flag is the run's
+actual authority to write, never an unkeepable promise. Giving an ordinary ungranted
+resident these tools needs a native session that does not ride on a management grant,
+which is not built.
+
+A run that has both is offered three native tools beside whatever management tools its
+grant permits:
+
+- `hearth_memory_read` returns the run's own pinned revision as bounded 32,000-character
+  pages (`offset`, `text`, `next_offset`), like the configuration reader. The revision
+  cannot change under the run, so pages need no digest.
+- `hearth_memory_save` calls the run writer above with the model-supplied `resident_id`,
+  `expected_revision` and `operation_id`; the stated resident is checked against the run.
+- `hearth_journal_write` writes this run's [journal entry](resident-journal.md).
+
+The tools are absent from the declared tool set when the flag is false, and a call that
+arrives anyway is refused with `memory_not_writable`. Because the offered set differs,
+the pinned `tools_sha256` differs too: the tool schemas a run may use are fixed at the
+same admission that pins its grant and its memory.
 
 ## Operator workflow
 

@@ -214,13 +214,20 @@ def create_app(
     def save_resident(resident_id: str, body: DeclarationPost):
         if body.expected_revision == 0:
             raise Refused("use_resident_provisioning")
-        return asdict(
-            hearth.save_resident(
-                resident_id,
-                Declaration(**body.model_dump(exclude={"expected_revision"})),
-                expected_revision=body.expected_revision,
+        with hearth.database.transaction(write=True) as db:
+            values = body.model_dump(exclude={"expected_revision"})
+            # An omitted memory.writable keeps what the operator granted; the
+            # expected revision still refuses a save that raced a change to it.
+            if values["memory_writable"] is None:
+                values["memory_writable"] = hearth.declared_memory_writable(db, resident_id)
+            return asdict(
+                hearth.save_resident_in_transaction(
+                    db,
+                    resident_id,
+                    Declaration(**values),
+                    expected_revision=body.expected_revision,
+                )
             )
-        )
 
     @app.post("/api/tasks", status_code=201)
     def submit(body: TaskPost, idempotency_key: str = Header(min_length=1, max_length=128)):

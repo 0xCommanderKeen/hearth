@@ -14,6 +14,11 @@ from hearth.work.service import Hearth, _audit
 MAX_ENTRY = 4 * 1024
 MAX_PAGE = 100
 PAGE = 20
+# How many of the newest entries a run opens with. Bounded so a long journal can
+# never crowd out the rest of the pinned context. A run opens with the newest
+# min(CONTEXT_ENTRIES, journal_limit) entries: only rows are pinned, so a household
+# that keeps fewer than this many entries is the tighter of the two bounds.
+CONTEXT_ENTRIES = 5
 # A run writes its own entry while it works; settled or cancelled work writes nothing.
 WRITING_RUNS = frozenset({"starting", "running", "stopping"})
 
@@ -315,3 +320,76 @@ class Journal:
                 (resident_id,),
             ).fetchall()
         return [read_archive(self.files, row) for row in rows]
+
+
+def pin_journal(db, run_id: str, resident_id: str) -> None:
+    """Admission records the exact entries the run opens with, newest first.
+
+    A pin names the entry by sequence and repeats what the run read: its writing run,
+    its time and its text digest. Retention may move the entry from its row to its
+    archived file mid-run; the pin still recognizes the same entry either way.
+    """
+    for position, row in enumerate(
+        db.execute(
+            "SELECT * FROM journal_entries WHERE resident_id=? ORDER BY sequence DESC LIMIT ?",
+            (resident_id, CONTEXT_ENTRIES),
+        ).fetchall()
+    ):
+        entry = checked_entry(row)
+        db.execute(
+            "INSERT INTO run_journal VALUES (?,?,?,?,?,?,?)",
+            (
+                run_id,
+                position,
+                resident_id,
+                entry["sequence"],
+                entry["run_id"],
+                entry["at"],
+                row["sha256"],
+            ),
+        )
+
+
+def _pinned_entry(db, files: JournalFiles, resident_id: str, pin) -> dict:
+    """A pinned entry keeps its exact bytes whether it still has a row or a file."""
+    row = db.execute(
+        "SELECT * FROM journal_entries WHERE resident_id=? AND sequence=?",
+        (resident_id, pin["sequence"]),
+    ).fetchone()
+    if row is not None:
+        entry = checked_entry(row)
+    else:
+        # Retention may have rolled the entry out since admission; its archived row
+        # names the file, and the file must still say exactly what that row says.
+        archived = db.execute(
+            "SELECT * FROM journal_archives WHERE resident_id=? AND sequence=?",
+            (resident_id, pin["sequence"]),
+        ).fetchone()
+        if archived is None:
+            raise Refused("journal_entry_unavailable")
+        entry = read_archive(files, archived)
+    if (
+        entry["run_id"] != pin["entry_run_id"]
+        or entry["at"] != pin["at"]
+        or hashlib.sha256(entry["text"].encode("utf-8")).hexdigest() != pin["sha256"]
+    ):
+        raise Refused("journal_entry_changed")
+    return entry
+
+
+def run_journal(db, files: JournalFiles, run_id: str) -> list[dict]:
+    """The pinned journal of one run, newest first; later entries never join it."""
+    owner = db.execute("SELECT resident_id FROM runs WHERE id=?", (run_id,)).fetchone()
+    if owner is None:
+        raise Refused("run_not_found")
+    entries = []
+    for position, row in enumerate(
+        db.execute("SELECT * FROM run_journal WHERE run_id=? ORDER BY position", (run_id,))
+    ):
+        if row["position"] != position:
+            raise Refused("journal_order_changed")
+        if row["resident_id"] != owner["resident_id"]:
+            raise Refused("journal_run_mismatch")
+        entry = _pinned_entry(db, files, row["resident_id"], row)
+        entries.append({key: entry[key] for key in ("sequence", "run_id", "at", "text")})
+    return entries

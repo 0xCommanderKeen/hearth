@@ -934,3 +934,87 @@ Remaining for the epic: no model-facing tool writes an entry and no run context 
 with the journal (#118); Townhall shows neither the journal nor the household journal
 bound (#119), so today the bound moves only through `PUT /api/household`. No real Codex
 run has written a journal entry.
+
+## Memory and journal inside a run — 2026-09-07
+
+Issue #118 (epic #126) closes the loop: a run can read its pinned note, save the next
+memory revision and write its own journal entry, and the next run opens with both.
+Writing is a declared capability, `memory_writable` on each declaration revision, false
+for Reader and every ordinary resident and true for Karen. Handing it to another resident
+is the separate operator grant capability `writable_memory`, checked when a manager
+raises it on a resident it provisions or configures (`management_memory_not_permitted`);
+resubmitting a value the resident already has is the ordinary preserve-what-you-read edit
+and is allowed, so a narrowed grant does not lock a manager out of a resident it still
+maintains. An omitted flag on the declaration route, the configuration change or the CLI
+keeps the current value, so a form that predates the capability cannot withdraw it.
+
+`hearth_memory_read`, `hearth_memory_save` and `hearth_journal_write` live in
+`management/tools.py` and reach a granted runtime whose declaration allows them whatever
+its capabilities are — an enabled grant holding no capabilities at all still gets them, so
+writing memory is not a manager's privilege. They ride on the native tool surface, which
+today exists only where admission pinned an enabled grant, so `read_context` reports
+`memory_writable` only when the declaration allows it *and* this run has that surface: the
+context states the run's actual authority instead of promising tools that do not exist for
+it. `tool_specs(memory=...)` omits the tools otherwise, `dispatch` refuses a call that
+arrives anyway with `memory_not_writable`, and the pinned `tools_sha256` therefore differs
+between the two tool sets. The save tool passes the model-supplied `resident_id` into
+#116's `save_from_run`, which checks it against the run. Context version 6 adds
+`memory_writable`, the pinned `journal` and its `journal_usage` neutralization note; the
+newest five entries are pinned in `run_journal` in the same transaction as `run_memory`,
+each naming an entry by sequence and repeating what the run read — its writing run, its
+time and its text digest. A pinned entry is found in `journal_entries` while it has a row
+and through its `journal_archives` row once retention rolls it out, and either way those
+three values must still match, so a roll during the run keeps returning the identical
+bytes. Only rows are pinned, so a household `journal_limit` below five is the tighter
+bound and a run then opens with that many entries; the archive is not scanned to make the
+number up. A pinned
+journal that cannot be read leaves its own run interrupted through the same prelaunch
+check as the pinned skills and inputs, on the receipted path as well as the inline one.
+Etiquette stays out of the code: the context states the capability and the entries, and
+#119's shared skill says what to write.
+
+Verified with real temporary SQLite through the owning interfaces: a mock end-to-end
+where run 1 reads revision 1, saves revision 2 as `author='run'`, replays that revision on
+an uncertain retry and writes entry 1, an operator edit between the runs becomes revision
+3, and run 2's pinned context carries the operator's text and run 1's entry while its own
+entry waits for run 3; a run that lost a race is refused with `revision_conflict` and the
+human bytes survive, the refused operation identity still succeeds after merging, and
+another resident's id is refused; the three tools absent from `tool_specs()`, refused with
+`memory_not_writable` and leaving memory and journal untouched once the flag is off, while
+the run's management tools still work; a resident that manages nothing — an enabled grant
+with no capabilities — saving memory and writing a journal its next run opens with, while
+every management action is refused; a declaration flag without a pinned tool surface
+reporting `memory_writable: false` rather than promising absent tools; a manager whose
+grant lost
+`writable_memory` still editing a resident that already has the capability, and still
+refused when raising it from false; a deleted pinned entry interrupting only its own run
+while an unrelated resident's run succeeds in the same executor pass;
+`pin_configuration` offering and pinning different tool digests for the two declarations;
+a manager provisioning a writable child only with `writable_memory`; a pinned entry
+archived by a `journal_limit` of 1 mid-run reading back byte for byte through its archived
+row, and a pinned entry whose time changed under the run refused as
+`journal_entry_changed`, with backup verification reading every pinned journal back; and Reader unchanged — no journal, no
+writable memory, same launch.
+
+Complete `make check` passed on a plain developer PATH after merging main, which brought
+#133's toolchain fix and #117's archived-entry rows: ruff, ruff format, ty, 711 backend tests,
+the browser suite with Prettier and the production build, the packaged assets, and both
+installed-wheel journeys.
+
+Remaining for the epic: Townhall shows neither memory history with authorship nor the
+journal, and the "Keep a journal" shared skill and ADR 0012 are unwritten (#119) — so
+today nothing tells a resident to write an entry, and the capability is visible in the
+browser only as the `writable_memory` grant checkbox, not as a declaration control.
+Resident bundles deliberately do not carry `memory_writable`; an imported resident starts
+without it. No real Codex run has used these tools, so the epic's recorded journey and its
+cost are still outstanding.
+
+Two things about reaching the tools are already settled elsewhere. As this slice stands
+the native tool surface rides on an enabled management grant, so a resident with no grant
+cannot write however its declaration reads; Miha decided against leaving it there, and
+#119's grantless pin — nullable `run_management.grant_revision`, a pinned row for a
+writable declaration, exactly the three memory tools and every management tool refused —
+supersedes that limit, so the orchard reporter will not need a capability-less grant.
+Reporting `memory_writable` from the pinned tool surface rather than from the declaration
+outlives that change and stays: #119's pin leaves the gap open for mock runtimes, which
+have no native tool surface at all, and a run there must still be told it cannot write.

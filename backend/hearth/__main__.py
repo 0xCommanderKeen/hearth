@@ -103,14 +103,19 @@ def main() -> None:
                 if len(content) > 262_144:
                     raise Refused("declaration_file_too_large")
                 values = json.loads(content)
-                if not isinstance(values, dict) or set(values) != {
-                    "name",
-                    "purpose",
-                    "daily_limit",
-                    "budget_timezone",
-                    "skill_text",
-                }:
+                required = {"name", "purpose", "daily_limit", "budget_timezone", "skill_text"}
+                if (
+                    not isinstance(values, dict)
+                    or not required <= set(values)
+                    or set(values) - required - {"memory_writable"}
+                ):
                     raise Refused("declaration_fields_invalid")
+                if "memory_writable" not in values:
+                    # An omitted memory.writable keeps the capability the operator granted.
+                    with hearth.database.transaction() as db:
+                        values["memory_writable"] = hearth.declared_memory_writable(
+                            db, args.resident
+                        )
                 declaration = Declaration(**values)
                 resident = hearth.save_resident(
                     args.resident, declaration, expected_revision=args.expected_revision
