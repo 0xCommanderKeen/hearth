@@ -56,43 +56,36 @@ ownership through startup and execution. This preserves visible running evidence
 without sleeps or weakening management authorization. A gated OS-process regression
 checks delayed startup, worker death, spawn failure and invalid handoff.
 
-## Remaining real acceptance
+## Authenticated acceptance
 
-The first approved authenticated Mac Codex-subscription attempt finished with one
-fully accounted manager run costing 150512 microdollars ($0.150512), with no authoring
-mutations. Two draft-save requests supplied six required phrases where the schema
-permits four; the generic invalid-arguments reply did not identify that limit. This
-does not complete the creation, authoring or delivery gate.
+The bounded authenticated journey passed using synthetic orchard notes. Karen
+saved a draft, ran the ordinary and missing-input examples, published the exact
+passing revision, created a reporter with its pinned skill and named input, set a
+daily routine, and delivered the first saved report. The ordinary example preserved
+the supplied relationships; the missing-input example honestly reported absent
+notes. The actual report preserved the supplied harvest and planting facts.
 
-Schema validation refusals now retain their error code and include bounded field
-paths and schema limits, excluding submitted values and exception messages. A real
-Bridge/temporary-SQLite regression verifies rejection without catalog changes,
-durable refusal replay, and a corrected request using the same operation ID with a
-new call ID. Another checks bounded feedback with many errors and private values.
-Tool and bootstrap guidance state phrase/note limits and missing-input notation.
-This fix itself performs no provider retry; the standalone proof is superseded by
-the integrated journey.
+Independent owning-record checks verified publication and validation provenance,
+creator and provisioning receipts, exact revision and input pins, routine timing,
+saved output hashes and known accounting. Current-data backup verification and a
+new held restore preserve that chain. The held API rejects mutations. Actual
+Chromium desktop/mobile inspection passed for skill content, both passing examples
+and users, resident configuration and origin, scheduled occurrence, the saved report
+and Hamlet, with no overflow or browser errors.
 
-The prepared second attempt requires new explicit approval for four additional
-starts, five across both attempts. It verifies the first attempt's closed gate and
-known accounting before using a fresh directory, and subtracts its 150512
-microdollars from the shared allowance. The first attempt and its verified held
-backup remain preserved. A fresh directory never restores spent allowance.
+Earlier bounded attempts exposed opaque argument feedback and a self-authored
+output ceiling shorter than its required phrase. Schema refusals now give bounded
+trusted field/limit hints without echoing inputs; the checker continues to reject
+invalid output assertions. Known validation failure may be corrected through the
+normal revision workflow; uncertain execution never authorizes another run. Prior
+attempts and accounting remain preserved privately and do not reset the shared
+allowance.
 
-The prepared private harness fixes the reviewed release, existing selected CLI/model
-and login, one fresh data directory, fictional notes, three residents, concurrency
-two, 48 native calls and a ten-minute start window. A thread-safe gate durably consumes
-at most four distinct `runtime.start` allowances before delegating to the existing
-adapter. A fifth distinct run is refused before provider launch; replay does not
-restore or consume allowance. The gate closes before shutdown and cancellation
-cleanup, including when unused allowance remains. The shared allowance remains at
-most $10/day across all proof attempts, including known prior usage and unresolved
-exposure; a new directory never resets it.
+The manager returned slash-form run URLs. Both `/#runs/<id>` and `/#run-<id>` now
+open through the same authenticated reader, while saved output remains immutable
+plain text. This frontend correction does not require repeating model execution.
 
-An unexpected failure, interrupted execution or terminal unknown usage preserves
-its evidence and marks the proof incomplete. Only after terminal accounting does
-the harness stop its own supervisor and capture a held restore. Actual report
-meaning, Townhall/Residents/Hamlet views, restart identity and restored result/usage
-reads still need verification on that real evidence. A synthetic screenshot or a
-passing fixture never completes this gate. Stop at the working demo; production
-deployment and personal-source connections are outside this task.
+Detailed host evidence, credentials and private accounting stay outside the
+repository. Provider calls remain outside CI. This establishes the bounded demo,
+not general model quality or daily adoption; production deployment and personal
+source connections remain outside its scope.

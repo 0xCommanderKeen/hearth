@@ -2,7 +2,23 @@
 
 Hearth is a standalone project with a new read-only daily-summary Reader. Miha
 removed all migration requirements on 2026-09-06. The active scope is in
-[the project plan](rebuild-plan.md); current work remains mock-only.
+[the project plan](rebuild-plan.md). Current acceptance is summarized below; earlier
+milestones follow.
+
+## Current acceptance
+
+The [integrated Karen journey](karen-journey.md) passed authenticated acceptance with
+synthetic inputs. Skill authoring and executed examples, immutable publication,
+resident creation and assignments, a daily routine, a saved report and known usage
+were independently verified through their owning records. The current-data backup
+and held restore preserve the chain and refuse mutations. Actual desktop/mobile
+browser checks passed for Skills, resident provenance and configuration, both run
+URL forms, the saved report and Hamlet. Production rollout and personal sources
+remain outside this completed demo.
+
+Backend checks passed 661 tests and installed-wheel journeys; the final frontend
+change passed 72 tests, formatting, types and packaged production build. Independent
+Standards and Spec reviews are clear.
 
 ## Fresh-start simplification
 
@@ -811,7 +827,9 @@ No second authenticated attempt has run.
 
 The approved integrated journey subsequently completed with known accounting for
 all four runs. Independent domain review passed, and current-data backup and held
-restore verification passed. Final browser verification remains pending.
+restore verification passed. Final desktop/mobile browser verification passed for
+skill examples and users, resident origin and routine, both run URL forms, the
+exact saved report and Hamlet, with no overflow or browser errors.
 
 The manager's report used the `/#runs/<id>` URL form. The app now accepts that alias
 through the existing authenticated run reader and preserves `/#run-<id>` links.
