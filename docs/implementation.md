@@ -796,3 +796,13 @@ unchanged catalog, same-call replay, corrected same-operation acceptance, and bo
 many-error/private-value feedback. No authenticated retry was performed by this fix.
 Full `make check` passed 661 backend and 71 browser tests, lint/types/build, and both
 installed-wheel restart/held-restore journeys.
+
+Both independent review axes are clear at `2f4ab26`. The updated tool definitions
+also passed a credential-free pinned-CLI loopback preflight: the catalog callback,
+reply and native completion succeeded with parent/workspace instruction canaries
+absent. The failed real attempt has a verified current-data backup and read-only
+held restore; desktop/mobile inspection preserves its refusal result and accounting.
+A second complete attempt would require four additional model starts (five total)
+and explicit approval for that expanded scope. Its prepared guard retains the
+first attempt's 150512 microdollars, leaving 9849488 under the shared allowance.
+No second authenticated attempt has run.

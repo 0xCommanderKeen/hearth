@@ -73,6 +73,12 @@ Tool and bootstrap guidance state phrase/note limits and missing-input notation.
 This fix itself performs no provider retry; the standalone proof is superseded by
 the integrated journey.
 
+The prepared second attempt requires new explicit approval for four additional
+starts, five across both attempts. It verifies the first attempt's closed gate and
+known accounting before using a fresh directory, and subtracts its 150512
+microdollars from the shared allowance. The first attempt and its verified held
+backup remain preserved. A fresh directory never restores spent allowance.
+
 The prepared private harness fixes the reviewed release, existing selected CLI/model
 and login, one fresh data directory, fictional notes, three residents, concurrency
 two, 48 native calls and a ten-minute start window. A thread-safe gate durably consumes
