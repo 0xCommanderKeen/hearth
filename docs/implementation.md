@@ -1,7 +1,8 @@
 # Implementation checkpoint
 
 Hearth is a standalone project with a new read-only daily-summary Reader. Miha
-removed all migration requirements on 2026-09-06. The active scope is in
+removed cross-system migration on 2026-09-06 and restored forward upgrades of
+Hearth's own stores on 2026-09-07 (ADR 0013). The active scope is in
 [the project plan](rebuild-plan.md). Current acceptance is summarized below; earlier
 milestones follow.
 

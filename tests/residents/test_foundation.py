@@ -7,7 +7,7 @@ from threading import Barrier
 
 import pytest
 from hearth.residents.models import Declaration, Refused
-from hearth.storage.database import Database
+from hearth.storage.database import SCHEMA_VERSION, Database
 from hearth.work.service import Hearth
 
 NOW = 1_788_640_000
@@ -229,10 +229,10 @@ def test_initialize_is_concurrent_and_idempotent(tmp_path):
 
 
 @pytest.mark.parametrize("version", [12, 99])
-def test_incompatible_schema_is_never_changed(hearth, version):
+def test_newer_schema_is_never_changed(hearth, version):
     with sqlite3.connect(hearth.database.path) as db:
         db.execute(f"PRAGMA user_version = {version}")
-    with pytest.raises(RuntimeError, match="Incompatible"):
+    with pytest.raises(RuntimeError, match="newer than this release"):
         hearth.database.initialize()
     with pytest.raises(RuntimeError, match="compatible"):
         hearth.audit()
@@ -290,9 +290,14 @@ def test_same_version_foreign_layout_is_refused_without_changes(tmp_path):
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE valuable(note TEXT)")
         db.execute("INSERT INTO valuable VALUES ('keep')")
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    before = path.read_bytes()
+    with pytest.raises(RuntimeError, match="not a Hearth store"):
+        Database(path).initialize()
+    with sqlite3.connect(path) as db:
         db.execute("PRAGMA user_version=1")
     before = path.read_bytes()
-    with pytest.raises(RuntimeError, match="Incompatible"):
+    with pytest.raises(RuntimeError, match="Not a Hearth store"):
         Database(path).initialize()
     assert path.read_bytes() == before
 
