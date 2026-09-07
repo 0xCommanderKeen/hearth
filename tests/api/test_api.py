@@ -162,6 +162,28 @@ def test_demo_requires_explicit_nontrivial_operator_token(tmp_path):
         create_app(tmp_path, "")
 
 
+def test_local_mock_can_explicitly_allow_a_short_operator_token(tmp_path):
+    app = create_app(
+        tmp_path,
+        "test",
+        allow_short_operator_token=True,
+        supervise=False,
+    )
+    with TestClient(app) as client:
+        assert client.get("/api/state", headers={"Authorization": "Bearer test"}).status_code == 200
+
+
+def test_real_runtime_refuses_short_operator_token_even_with_override(tmp_path):
+    with pytest.raises(ValueError, match="operator token"):
+        create_app(
+            tmp_path,
+            "test",
+            allow_short_operator_token=True,
+            runtime_kind="codex_subscription",
+            supervise=False,
+        )
+
+
 def test_active_work_remains_visible_when_recent_history_is_full(client):
     seed_reader_via(client)
     hearth = client.app.state.hearth

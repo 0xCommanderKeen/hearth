@@ -52,6 +52,7 @@ def create_app(
     data: Path,
     token: str,
     *,
+    allow_short_operator_token: bool = False,
     scenario: str = "success",
     supervise: bool = True,
     runtime_kind: str | None = None,
@@ -60,10 +61,12 @@ def create_app(
     codex_binary: Path | None = None,
     codex_auth_home: Path | None = None,
 ) -> FastAPI:
-    if len(token) < 16:
-        raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
     database.initialize(runtime_kind=runtime_kind, process_boundary=process_boundary)
+    if len(token) < 16 and (
+        not allow_short_operator_token or database.runtime_kind() == "codex_subscription"
+    ):
+        raise ValueError("Set an operator token of at least 16 characters")
     if database.restored():
         supervise = False
     hearth = Hearth(database)
@@ -379,6 +382,7 @@ def from_env() -> FastAPI:
     return create_app(
         Path(os.environ.get("HEARTH_DATA", ".hearth/local")),
         os.environ.get("HEARTH_OPERATOR_TOKEN", ""),
+        allow_short_operator_token=os.environ.get("HEARTH_ALLOW_SHORT_OPERATOR_TOKEN") == "1",
         scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
         runtime_kind=os.environ.get("HEARTH_RUNTIME") or os.environ.get("HEARTH_MOCK_RUNTIME"),
         codex_binary=Path(os.environ["HEARTH_CODEX_BINARY"])
