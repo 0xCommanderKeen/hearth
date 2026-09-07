@@ -333,19 +333,23 @@ it("shows mock delivery uncertainty and opens Townhall without deciding", async 
   expect(decide).not.toHaveBeenCalled();
 });
 
-it("opens a linked result outside the recent task list after authentication", async () => {
-  window.history.replaceState(null, "", "/#run-older");
-  vi.spyOn(Client.prototype, "run").mockResolvedValue({
-    id: "older",
-    status: "succeeded",
-    artifact_id: "older-output",
-  });
-  vi.spyOn(Client.prototype, "artifact").mockResolvedValue({
-    content: "Older linked synthetic result",
-  });
-  await login();
-  await screen.findByText("Older linked synthetic result");
-});
+it.each(["/#run-older", "/#runs/older"])(
+  "opens %s outside the recent task list after authentication",
+  async (link) => {
+    window.history.replaceState(null, "", link);
+    const readRun = vi.spyOn(Client.prototype, "run").mockResolvedValue({
+      id: "older",
+      status: "succeeded",
+      artifact_id: "older-output",
+    });
+    vi.spyOn(Client.prototype, "artifact").mockResolvedValue({
+      content: "Older linked synthetic result",
+    });
+    await login();
+    await screen.findByText("Older linked synthetic result");
+    expect(readRun).toHaveBeenCalledWith("older");
+  },
+);
 
 it("pauses new runs using the displayed operator revision", async () => {
   addReader();

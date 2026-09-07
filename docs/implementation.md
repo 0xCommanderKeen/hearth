@@ -806,3 +806,17 @@ A second complete attempt would require four additional model starts (five total
 and explicit approval for that expanded scope. Its prepared guard retains the
 first attempt's 150512 microdollars, leaving 9849488 under the shared allowance.
 No second authenticated attempt has run.
+
+### Authenticated journey result and report links
+
+The approved integrated journey subsequently completed with known accounting for
+all four runs. Independent domain review passed, and current-data backup and held
+restore verification passed. Final browser verification remains pending.
+
+The manager's report used the `/#runs/<id>` URL form. The app now accepts that alias
+through the existing authenticated run reader and preserves `/#run-<id>` links.
+The existing older-result test was parameterized for both forms: the new alias
+failed first, then both passed. Session checks and plain-text result rendering are
+unchanged. This UI fix requires no provider rerun.
+`make web` passed formatting, all 72 frontend tests, TypeScript checking, the
+production build and packaged-asset generation.

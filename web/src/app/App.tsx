@@ -268,7 +268,10 @@ export function App() {
     const openLinkedView = () => {
       let hash: string;
       try {
-        hash = decodeURIComponent(window.location.hash);
+        hash = decodeURIComponent(window.location.hash).replace(
+          /^#runs\//,
+          "#run-",
+        );
       } catch {
         setError("Invalid notification link");
         return;
@@ -325,7 +328,7 @@ export function App() {
     return () => window.removeEventListener("hashchange", openLinkedView);
   }, [client]);
   useEffect(() => {
-    const hash = window.location.hash;
+    const hash = window.location.hash.replace(/^#runs\//, "#run-");
     if (hash.startsWith("#approval-") || hash.startsWith("#run-"))
       document
         .getElementById(hash.slice(1))
