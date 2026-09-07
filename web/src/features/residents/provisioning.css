@@ -1,99 +1,94 @@
-.provisioning,
-.provision-profile {
-  margin: 24px 0;
-  border: 1px solid var(--line);
-  padding: 24px;
-  background: var(--paper);
+/* Resident setup and maintenance — Ledger theme */
+.provisioning > .eyebrow + h2,
+.provisioning h2 {
+  font-size: 16px;
+}
+.provisioning > p {
+  color: var(--muted);
+  font-size: 13px;
 }
 .provisioning fieldset {
-  padding: 0;
-  border: 0;
-  margin: 0 0 24px;
-  min-width: 0;
+  margin: 0 0 16px;
 }
 .provisioning label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 16px 0;
-}
-.provisioning input,
-.provisioning textarea,
-.provisioning select {
-  width: 100%;
-  min-width: 0;
+  gap: 6px;
+  margin: 10px 0;
 }
 .provision-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  gap: 0 16px;
 }
 .provisioning .provision-check {
   flex-direction: row;
   align-items: center;
-}
-.provision-check input {
-  width: auto;
+  gap: 10px;
+  font-weight: 400;
 }
 .provisioning h3 {
   border-top: 1px solid var(--line);
-  padding-top: 24px;
-  margin-top: 28px;
+  padding-top: 16px;
+  margin-top: 18px;
 }
 .provisioning textarea {
-  min-height: 100px;
+  min-height: 90px;
+}
+.provision-profile dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 16px;
 }
 .provision-profile dd {
-  margin: 8px 0 0;
-  overflow-wrap: anywhere;
-}
-.provision-profile dt {
-  color: var(--muted);
+  margin: 2px 0 0;
+  font-size: 13px;
 }
 .provisioning small,
 .provision-profile small {
   overflow-wrap: anywhere;
 }
-.provision-failure {
-  margin: 16px 0;
-  padding: 16px;
-  border: 1px solid var(--line);
-}
-
 .resident-create {
-  color: var(--accent);
-  font-size: 13px;
+  font-weight: 500;
 }
 
-.maintenance {
-  margin: 24px 0;
+.maintenance .section-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 .maintenance .section-title h3 {
   border: 0;
   padding: 0;
   margin: 0;
 }
+.maintenance > p {
+  font-size: 13px;
+  color: var(--muted);
+}
 .maintenance-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin: 20px 0;
+  gap: 8px;
+  margin: 14px 0;
 }
 .maintenance-skill {
-  border-bottom: 1px solid var(--line);
-  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
 }
 .maintenance-skill label {
   max-width: 180px;
+  margin: 0;
 }
 .maintenance .maintenance-routine {
-  border: 1px solid var(--line);
-  padding: 16px;
-  margin: 16px 0;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 10px 0;
 }
 .maintenance p,
 .maintenance a {
