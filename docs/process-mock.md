@@ -57,7 +57,7 @@ escaped descendants need the actual Mac isolation boundary. No filesystem/networ
 confinement or provider usage guarantee is claimed. Cancellation costs remain
 explicit synthetic amounts; timeout has unknown usage.
 
-Store selection is immutable. Admission pins adapter kind, contract version and
+Store selection changes only on a quiet store. Admission pins adapter kind, contract version and
 the exact serialized input digest; observation and launch must match those pins.
 Process backups require settled runs and idle workers. They retain only durable
 request/completion/cancellation/started claims, with hashes and database-reference

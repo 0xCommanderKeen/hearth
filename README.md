@@ -29,9 +29,10 @@ See the [standalone installation steps](docs/release.md).
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 
-Hearth stores its local state in ignored `.hearth`. Use `HEARTH_DATA=/some/fresh/path`
-for a separate instance. Incompatible prototype databases are refused; there is
-no upgrade or data-import command. Existing data is never automatically rewritten.
+Hearth stores its local state in ignored `.hearth`. Use `HEARTH_DATA=/some/path`
+for a separate instance. A store from an older Hearth release is upgraded on start
+and the original is kept beside it as `hearth.db.before-v<N>`; a file that is not a
+Hearth store is refused untouched.
 Under a mock runtime every output and cost is labeled simulated; the mock returns a
 fixed synthetic summary and does not interpret arbitrary instructions.
 Runtime scenarios include success, held execution, failure, and unknown usage for
@@ -57,9 +58,9 @@ proxies its `/api` requests to the same local backend.
 
 For a fresh process-backed simulation, set `HEARTH_MOCK_RUNTIME=process_mock` and
 `HEARTH_DATA` to a new directory before starting the browser application. Reopening
-that store without the selector uses its recorded runtime; a conflicting selector
-is refused. Both modes remain simulations. The current schema requires fresh data
-from earlier prototype layouts, with no conversion. See [process recovery](docs/process-mock.md).
+that store without the selector uses its recorded runtime; a different selector
+switches a quiet store and is refused while a run is unfinished. Both modes remain
+simulations. See [process recovery](docs/process-mock.md).
 
 See the [implementation gates](docs/implementation.md),
 [project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).

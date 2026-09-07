@@ -51,12 +51,18 @@ def finish(app, run):
     return result
 
 
-def test_store_choice_is_immutable_and_reopening_infers_it(tmp_path):
+def test_reopening_infers_store_choice_and_a_busy_store_keeps_it(tmp_path):
     data = tmp_path / "data"
     app = create_app(data, TOKEN, runtime_kind="process_mock", supervise=False)
     assert create_app(data, TOKEN, supervise=False).state.executor.runtime.kind == "process_mock"
+    switched = create_app(data, TOKEN, runtime_kind="inline_mock", supervise=False)
+    assert switched.state.executor.runtime.kind == "inline_mock"
+    assert create_app(data, TOKEN, supervise=False).state.executor.runtime.kind == "inline_mock"
+    app = create_app(data, TOKEN, runtime_kind="process_mock", supervise=False)
+    run = task(app)
+    assert run.finished_at is None
     before = (data / "hearth.db").read_bytes()
-    with pytest.raises(Refused, match="runtime_store_mismatch"):
+    with pytest.raises(Refused, match="runtime_store_busy"):
         create_app(data, TOKEN, runtime_kind="inline_mock", supervise=False)
     assert (data / "hearth.db").read_bytes() == before
     assert app.state.hearth.database.runtime_kind() == "process_mock"
@@ -161,13 +167,13 @@ def test_rehashed_process_backup_rejects_mismatched_receipt(tmp_path):
         verify(backup)
 
 
-def test_previous_layout_requires_fresh_data_without_conversion(tmp_path):
+def test_unknown_layout_at_current_version_is_refused_untouched(tmp_path):
     database = Database(tmp_path / "hearth.db")
     database.initialize()
     with database.transaction(write=True) as db:
         db.execute("ALTER TABLE runs DROP COLUMN input_digest")
     before = database.path.read_bytes()
-    with pytest.raises(RuntimeError, match="fresh data directory"):
+    with pytest.raises(RuntimeError, match="not a Hearth store"):
         database.initialize()
     assert database.path.read_bytes() == before
 

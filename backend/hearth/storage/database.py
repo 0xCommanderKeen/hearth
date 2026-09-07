@@ -1,15 +1,19 @@
 """One database transaction owns each state change and its corresponding audit fact."""
 
+import json
 import sqlite3
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 from hearth.residents.models import Refused
+from hearth.storage.migration import upgrade
 from hearth.storage.schema import SCHEMA
 
-SCHEMA_VERSION = 1
+# Bump when SCHEMA changes; add fills for new required columns in migration.FILLS.
+SCHEMA_VERSION = 2
 
 
 def schema_matches(connection: sqlite3.Connection) -> bool:
@@ -40,7 +44,7 @@ class Database:
     def initialize(
         self, *, runtime_kind: str | None = None, process_boundary: str | None = None
     ) -> None:
-        """Create the complete schema once; never upgrade an existing store."""
+        """Create a fresh schema, or upgrade an older Hearth store forward in place."""
         if runtime_kind not in {
             None,
             "inline_mock",
@@ -52,6 +56,7 @@ class Database:
         if process_boundary not in {None, "posix", "container"}:
             raise Refused("process_boundary_invalid")
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._upgrade_if_older()
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -74,11 +79,13 @@ class Database:
                 )
                 connection.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            elif version > SCHEMA_VERSION:
+                raise RuntimeError("Hearth database is newer than this release; upgrade Hearth")
             elif version != SCHEMA_VERSION:
-                raise RuntimeError("Incompatible Hearth database; use a fresh data directory")
+                raise RuntimeError("Hearth database upgrade did not complete")
             if not schema_matches(connection):
                 raise RuntimeError(
-                    "Incompatible Hearth database layout; use a fresh data directory"
+                    "Incompatible Hearth database layout; this is not a Hearth store"
                 )
             stored = connection.execute(
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
@@ -90,13 +97,30 @@ class Database:
                 "codex_subscription",
             }:
                 raise Refused("runtime_configuration_invalid")
-            if runtime_kind is not None and runtime_kind != stored[0]:
-                raise Refused("runtime_store_mismatch")
             boundary = connection.execute(
                 "SELECT value FROM system_meta WHERE key='process_boundary'"
             ).fetchone()
             if boundary is None or boundary[0] not in {"posix", "container"}:
                 raise Refused("runtime_configuration_invalid")
+            if runtime_kind is not None and runtime_kind != stored[0]:
+                # A quiet store may change runtime: finished runs keep their own pins.
+                if boundary[0] == "container" or process_boundary == "container":
+                    raise Refused("runtime_store_mismatch")
+                if connection.execute("SELECT 1 FROM runs WHERE finished_at IS NULL").fetchone():
+                    raise Refused("runtime_store_busy")
+                connection.execute(
+                    "UPDATE system_meta SET value=? WHERE key='runtime_kind'", (runtime_kind,)
+                )
+                connection.execute(
+                    "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+                    (
+                        "runtime_kind_changed",
+                        "hearth.db",
+                        int(time.time()),
+                        json.dumps({"from": stored[0], "to": runtime_kind}, sort_keys=True),
+                    ),
+                )
+                stored = (runtime_kind,)
             if boundary[0] == "container" and stored[0] != "process_mock":
                 raise Refused("runtime_configuration_invalid")
             if process_boundary is not None and process_boundary != boundary[0]:
@@ -109,6 +133,17 @@ class Database:
             raise
         finally:
             connection.close()
+
+    def _upgrade_if_older(self) -> None:
+        if not self.path.exists():
+            return
+        connection = sqlite3.connect(self.path, isolation_level=None, timeout=10)
+        try:
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            connection.close()
+        if 0 < version < SCHEMA_VERSION:
+            upgrade(self.path, from_version=version, to_version=SCHEMA_VERSION)
 
     def runtime_kind(self) -> str:
         with self.transaction() as db:

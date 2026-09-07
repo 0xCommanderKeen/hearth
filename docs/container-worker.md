@@ -14,9 +14,9 @@ HEARTH_MOCK_RUNTIME=process_mock HEARTH_PROCESS_BOUNDARY=container \
 Keep the ordinary data-directory and operator-token configuration from the README.
 The selected Mac needs its existing local Docker Desktop socket and the pinned image
 from the [container rehearsal](container-rehearsal.md). No implicit image pull occurs.
-Only `success` and `hold` fixture scenarios are supported. The choice is immutable in
-the fresh database; subsequent starts infer it when the environment selector is unset.
-A conflicting selector refuses. Existing prototype configuration/request files lacking
+Only `success` and `hold` fixture scenarios are supported. The container boundary is
+immutable in the database; subsequent starts infer it when the environment selector is
+unset. A conflicting selector refuses. Existing prototype configuration/request files lacking
 the current required fields are refused without conversion; start with fresh data.
 
 ## Execution and recovery

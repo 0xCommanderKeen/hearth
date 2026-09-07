@@ -42,8 +42,8 @@ at least 16 characters and `HEARTH_DATA` to a fresh data directory, then run:
 ```
 
 Open `http://127.0.0.1:8766`. Stop the process before removing the installation.
-Keep data and backups separately if they should survive removal. Incompatible
-prototype databases are refused; there is no upgrade or data import step.
+Keep data and backups separately if they should survive removal. A store from an
+older release is upgraded on the first start, keeping the original beside it.
 
 This verifies a standalone local artifact. Host deployment, real runtime isolation,
 provider usage, retention policy and operational recovery still need acceptance

@@ -34,19 +34,21 @@ bounds recorded in [ADR 0012](adr/0012-run-authored-memory-and-journal.md).
 Reader receives read access only. It does
 not need broad tools, delegation, a marketplace or an imported resident fleet.
 
-Do not build data import/export, historical compatibility, cross-system ownership
-registries or source migration adapters. Definition-only resident bundles are the
-single accepted exception (ADR 0010): a resident's own content can be exported and
-imported, never its history, runs or authority, and never through a schema change. Do not automatically convert old prototype
-databases. Use a fresh data directory. Keep normal persistence, current-schema
-backup/restore and the run/supervisor ownership needed for safe local execution.
+Do not build import from other systems, cross-system ownership registries or source
+migration adapters. Definition-only resident bundles are the single cross-system
+path (ADR 0010): a resident's own content can be exported and imported, never its
+history, runs or authority. Hearth's own stores upgrade forward on start (ADR 0013):
+a version change never costs the operator their residents or history. Keep normal
+persistence, current-schema backup/restore and the run/supervisor ownership needed
+for safe local execution.
 
 ## Architecture
 
 One Python backend, one transactional SQLite database on local storage, and one
 React/TypeScript browser packaged into the same release artifact. Define the
-current schema directly. Initialization is explicit, atomic and idempotent;
-incompatible databases are refused without being changed.
+current schema directly. Initialization is explicit, atomic and idempotent; older
+Hearth stores are rebuilt forward with the original kept beside them, and files that
+are not Hearth stores are refused without being changed.
 
 - Residents owns revisioned declarations, skill text and persistent memory.
 - Work owns command receipts, tasks, attempts and routine occurrence identity.
@@ -113,7 +115,8 @@ requires checking runtime/effect authority before enabling a restored copy.
    retention, maintenance and recovery. Add another resident or runtime only when
    concrete useful work requires it.
 
-The active evidence and remaining decisions are in `implementation.md`. Real
+The active evidence and remaining decisions are in `implementation.md`; recent
+changes are in `CHANGELOG.md`. Real
 source grants, paid calls and deployment remain deferred under mock-only steering.
 Review simplicity against actual useful work before expanding the project. More
 mock features or passing tests do not replace the real workflow and observation gates.
