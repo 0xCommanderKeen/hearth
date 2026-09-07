@@ -1032,7 +1032,12 @@ microdollars in API-equivalent estimates against the $10 household allowance;
 `docs/evidence/journal-journey-2026-09-07.json` and `docs/karen-journey.md` record the runs,
 the entries and the quoted report, and the data directory was discarded after recording.
 
-Remaining: the household `journal_limit` still moves only through `PUT /api/household`,
+Remaining: the pinned context still states `memory_writable` from the declaration alone.
+That now matches the offered tools on the subscription runtime, where a writable
+declaration always pins the transport, but the mock runtimes have no native tool surface
+at all, so a writable resident there is still told it may write when nothing is offered.
+The context should read the pinned tool surface rather than the declaration. The household
+`journal_limit` still moves only through `PUT /api/household`,
 with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
 imported resident starts unable to write. A household that never sets Karen up has no
 "Keep a journal" skill to attach.
