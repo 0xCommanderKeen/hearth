@@ -92,13 +92,14 @@ def parse_entry(document: str, resident_id: str) -> dict:
 
 
 def checked_archive(data: bytes, resident_id: str, name: str) -> dict:
-    if hashlib.sha256(data).hexdigest() != Path(name).stem or Path(name).suffix != ".md":
+    digest = Path(name).stem
+    if hashlib.sha256(data).hexdigest() != digest or Path(name).suffix != ".md":
         raise Refused("journal_archive_corrupt")
     try:
         document = data.decode("utf-8")
     except UnicodeDecodeError:
         raise Refused("journal_archive_invalid") from None
-    return parse_entry(document, resident_id)
+    return parse_entry(document, resident_id) | {"sha256": digest}
 
 
 def checked_entry(row) -> dict:
@@ -143,16 +144,6 @@ class JournalFiles(MemoryFiles):
             finally:
                 os.close(directory)
 
-    def entry(self, resident_id: str, digest: str) -> dict:
-        """One archived entry by its content hash; anything else is refused, never repaired."""
-        name = Path(journal_path(resident_id, digest)).name
-        with self._directory(resident_id) as directory:
-            try:
-                data = self._read(directory, name)
-            except OSError:
-                raise Refused("journal_entry_unavailable") from None
-        return checked_archive(data, resident_id, name)
-
     def entries(self, resident_id: str) -> list[dict]:
         """Every archived entry, oldest first. A resident without archives has none."""
         identifier(resident_id)
@@ -166,6 +157,25 @@ class JournalFiles(MemoryFiles):
                     continue
                 entries.append(checked_archive(self._read(directory, name), resident_id, name))
         return sorted(entries, key=lambda entry: entry["sequence"])
+
+
+def read_archive(files: JournalFiles, row) -> dict:
+    """An archived row names its file; the file must still say exactly what the row does."""
+    try:
+        document = files.read(row["resident_id"], row["sha256"], row["size"])
+    except Refused as error:
+        missing = error.code == "memory_missing_or_unsafe"
+        raise Refused(
+            "journal_archive_missing_or_unsafe" if missing else "journal_archive_corrupt"
+        ) from None
+    entry = parse_entry(document, row["resident_id"])
+    if (entry["run_id"], entry["sequence"], entry["at"]) != (
+        row["run_id"],
+        row["sequence"],
+        row["at"],
+    ):
+        raise Refused("journal_archive_corrupt")
+    return entry | {"sha256": row["sha256"]}
 
 
 class Journal:
@@ -273,6 +283,19 @@ class Journal:
                 "DELETE FROM journal_entries WHERE resident_id=? AND sequence=?",
                 (resident_id, entry["sequence"]),
             )
+            # The row moves with the text: an archived entry keeps a checked reference,
+            # so a file nothing points at is an orphan and never journal history.
+            db.execute(
+                "INSERT INTO journal_archives VALUES (?,?,?,?,?,?)",
+                (
+                    resident_id,
+                    entry["sequence"],
+                    entry["run_id"],
+                    entry["at"],
+                    digest,
+                    len(document),
+                ),
+            )
             _audit(
                 db,
                 "journal.archived",
@@ -289,15 +312,22 @@ class Journal:
         return rolled
 
     def archived(self, resident_id: str) -> list[dict]:
-        """Every entry that rolled out of the database, oldest first; files are never removed."""
-        return self.files.entries(resident_id)
+        """Every entry that rolled out to a file, oldest first; files are never removed."""
+        identifier(resident_id)
+        with self.hearth.database.transaction() as db:
+            rows = db.execute(
+                "SELECT * FROM journal_archives WHERE resident_id=? ORDER BY sequence",
+                (resident_id,),
+            ).fetchall()
+        return [read_archive(self.files, row) for row in rows]
 
 
 def pin_journal(db, run_id: str, resident_id: str) -> None:
     """Admission records the exact entries the run opens with, newest first.
 
-    Each pin carries both the entry digest and the digest of the document retention
-    would archive it as, so the run keeps reading the same bytes after a later roll.
+    A pin names the entry by sequence and repeats what the run read: its writing run,
+    its time and its text digest. Retention may move the entry from its row to its
+    archived file mid-run; the pin still recognizes the same entry either way.
     """
     for position, row in enumerate(
         db.execute(
@@ -306,10 +336,17 @@ def pin_journal(db, run_id: str, resident_id: str) -> None:
         ).fetchall()
     ):
         entry = checked_entry(row)
-        archive = hashlib.sha256(entry_document(entry).encode("utf-8")).hexdigest()
         db.execute(
-            "INSERT INTO run_journal VALUES (?,?,?,?,?,?)",
-            (run_id, position, resident_id, entry["sequence"], row["sha256"], archive),
+            "INSERT INTO run_journal VALUES (?,?,?,?,?,?,?)",
+            (
+                run_id,
+                position,
+                resident_id,
+                entry["sequence"],
+                entry["run_id"],
+                entry["at"],
+                row["sha256"],
+            ),
         )
 
 
@@ -321,13 +358,19 @@ def _pinned_entry(db, files: JournalFiles, resident_id: str, pin) -> dict:
     ).fetchone()
     if row is not None:
         entry = checked_entry(row)
-        if row["sha256"] != pin["sha256"]:
-            raise Refused("journal_entry_changed")
-        return entry
-    # Retention may have rolled the entry into its immutable file since admission.
-    entry = files.entry(resident_id, pin["archive_sha256"])
+    else:
+        # Retention may have rolled the entry out since admission; its archived row
+        # names the file, and the file must still say exactly what that row says.
+        archived = db.execute(
+            "SELECT * FROM journal_archives WHERE resident_id=? AND sequence=?",
+            (resident_id, pin["sequence"]),
+        ).fetchone()
+        if archived is None:
+            raise Refused("journal_entry_unavailable")
+        entry = read_archive(files, archived)
     if (
-        entry["sequence"] != pin["sequence"]
+        entry["run_id"] != pin["entry_run_id"]
+        or entry["at"] != pin["at"]
         or hashlib.sha256(entry["text"].encode("utf-8")).hexdigest() != pin["sha256"]
     ):
         raise Refused("journal_entry_changed")

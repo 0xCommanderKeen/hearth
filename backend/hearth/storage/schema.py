@@ -221,17 +221,24 @@ SCHEMA = (
         author TEXT NOT NULL CHECK(author IN ('operator','run')),
         PRIMARY KEY(resident_id, revision)
     )""",
-    """CREATE TABLE memory_operations (
-        run_id TEXT NOT NULL REFERENCES runs(id), operation_id TEXT NOT NULL,
-        payload_digest TEXT NOT NULL, receipt TEXT NOT NULL,
-        PRIMARY KEY(run_id, operation_id)
-    )""",
     """CREATE TABLE journal_entries (
         resident_id TEXT NOT NULL REFERENCES residents(id),
         sequence INTEGER NOT NULL CHECK(sequence > 0),
         run_id TEXT NOT NULL UNIQUE REFERENCES runs(id), at INTEGER NOT NULL,
         sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size > 0 AND size <= 4096),
         text TEXT NOT NULL, PRIMARY KEY(resident_id, sequence)
+    )""",
+    """CREATE TABLE journal_archives (
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        sequence INTEGER NOT NULL CHECK(sequence > 0),
+        run_id TEXT NOT NULL UNIQUE REFERENCES runs(id), at INTEGER NOT NULL,
+        sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size > 0 AND size <= 4608),
+        PRIMARY KEY(resident_id, sequence)
+    )""",
+    """CREATE TABLE memory_operations (
+        run_id TEXT NOT NULL REFERENCES runs(id), operation_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, receipt TEXT NOT NULL,
+        PRIMARY KEY(run_id, operation_id)
     )""",
     """CREATE TABLE occurrences (
         routine_id TEXT NOT NULL, scheduled_at INTEGER NOT NULL, revision INTEGER NOT NULL,
@@ -296,7 +303,7 @@ SCHEMA = (
     """CREATE TABLE run_journal (
         run_id TEXT NOT NULL REFERENCES runs(id), position INTEGER NOT NULL CHECK(position >= 0),
         resident_id TEXT NOT NULL REFERENCES residents(id), sequence INTEGER NOT NULL CHECK(sequence > 0),
-        sha256 TEXT NOT NULL, archive_sha256 TEXT NOT NULL,
+        entry_run_id TEXT NOT NULL REFERENCES runs(id), at INTEGER NOT NULL, sha256 TEXT NOT NULL,
         PRIMARY KEY(run_id, position), UNIQUE(run_id, sequence)
     )""",
     """CREATE TABLE "runs" (

@@ -863,19 +863,28 @@ carry a new `author` column (`operator` | `run`) and the `memory.saved` audit ca
 revision. `memory_operations` makes a run write idempotent on `operation_id` — an
 identical retry replays the original receipt, reading the text back from its immutable
 file so memory content still never enters SQLite, and a changed payload is refused with
-`operation_conflict`. Run liveness is the existing run-context cutoff, extracted as
-`run_access.live_run` and now shared by credential issuance and the memory writer, plus
-an explicit revoked-credential check. Backup verification checks each operation receipt
-against its run's resident and a revision still recorded as run-written.
+`operation_conflict`; a replay returns only the memory of the resident the
+authenticated run writes. Run liveness is the existing run-context cutoff, extracted as
+`run_access.live_run` and now shared by credential issuance and the memory writer;
+`context_ended` is the credential half, shared with the context reader, so an expired or
+revoked credential ends reading and writing together. Backup verification checks run
+authorship in both directions — every receipt against its run's resident and a
+run-written revision, and every run-written revision against a receipt.
 
 Verified with real temporary SQLite through the owning interfaces: a live run writes a
 bounded, private, audited revision; a run and a concurrent operator edit produce exactly
 one `revision_conflict` and the winner's bytes and author survive; an uncertain retry
 returns the original receipt while a changed payload conflicts; a run refuses to write
 another resident's memory (`memory_run_mismatch`) or an archived one; cancelled,
-finished and revoked runs are refused (`run_context_unavailable`); and held backup and
-restore keep both authorship and the operation receipt while a relabelled, consistently
-rehashed backup is refused. `make check` passes.
+finished, revoked and expired-credential runs are refused (`run_context_unavailable`);
+a replayed receipt naming another resident is refused; and held backup and restore keep
+both authorship and the operation receipt while a consistently rehashed backup that
+demotes an author, promotes one or truncates a receipt is refused. `make check` passes.
+
+Review of PR #131 found four real gaps, all fixed here with regression tests: an
+unguarded `KeyError` escaped the backup receipt check instead of refusing; authorship
+was verified only in the demote direction; the replay path trusted the receipt's own
+`resident_id`; and the write cutoff checked revocation but not credential expiry.
 
 Remaining for the epic: the journal (#117), the in-run memory/journal tools and the
 `memory.writable` capability that gates them (#118), and Townhall memory history with
@@ -892,26 +901,34 @@ UTF-8. `hearth.residents.journal` owns the writer, the newest-first paged reader
 retention roll; `GET /api/residents/{id}/journal` is the only operator surface and there
 is deliberately no operator write. The household policy carries the bound
 (`journal_limit`, default 30); entries beyond it are published as immutable
-`memory/{resident}/journal/{sha256}.md` documents before their row and audit fact commit
-together, so nothing is deleted. `docs/resident-journal.md` records the exact document
-form and refusals.
+`memory/{resident}/journal/{sha256}.md` documents, and the row moves with the text in the
+same transaction as its audit fact — out of `journal_entries` and into `journal_archives`
+as a checked reference to the file, the way a memory revision references its content. So
+nothing is deleted, and a file no row points at is preserved evidence rather than journal
+history. `docs/resident-journal.md` records the exact document form and refusals.
 
 Verified with real temporary SQLite through the owning interfaces: write then replace
 inside one run with `journal.written`/`journal.replaced` audit and no entry text in
 audit; refusal after the run settles, after cancellation, for another resident's run,
 for oversized and blank text; two concurrent writes from one run leaving one entry; a
-failed `journal.archived` audit leaving only an orphan file that a later roll reuses;
+failed `journal.archived` audit leaving only a file no row points at, absent from the
+journal until a later roll reuses it;
 retention rollover keeping its files across further writes; newest-first paging with
 `total`; the household bound including an omitted `journal_limit` surviving an ordinary
 policy save; refusal to follow an archive-directory symlink; held backup/restore of both
 entries and archived files, twice; and refusal of a tampered entry, a tampered archived
-file and a cross-resident entry in a backup. Backend `make check` passed 683 tests, lint,
-formatting and types, and the browser suite passed 76 tests with Prettier, the production
-build and packaged assets. Two `make check` steps could not run on this machine, both for
-local toolchain reasons unrelated to this change: the root `pnpm --dir web` invocation
-resolved a pnpm the bundled corepack could not launch, and a developer plugin's PATH shim
-intercepted `uv pip`, which `scripts/check-wheel.py` needs precisely because `uv sync`
-cannot express `--require-hashes`. uv 0.10.4 itself supports `uv pip`; #133 fixes both.
+file, a cross-resident entry, a cross-resident archived reference, and a rewritten
+archived document renamed to its own new checksum and reattributed to another resident's
+run — the review finding on PR #132, which the archived half now refuses exactly as the
+row half does.
+
+`make check` passed end to end: 685 backend tests with lint, formatting and types, 76
+browser tests with Prettier, the production build and packaged assets, and both
+installed-wheel journeys. It first failed on this machine for
+reasons outside Hearth — a local plugin's PATH shims intercepted `uv pip` and displaced
+the pinned pnpm — and passed once they were off the path; uv 0.10.4 itself supports
+`uv pip`, which the wheel check needs because `uv sync` cannot express `--require-hashes`.
+The Makefile-side fix belongs to PR #133.
 
 Remaining for the epic: no model-facing tool writes an entry and no run context opens
 with the journal (#118); Townhall shows neither the journal nor the household journal
@@ -944,10 +961,13 @@ between the two tool sets. The save tool passes the model-supplied `resident_id`
 #116's `save_from_run`, which checks it against the run. Context version 6 adds
 `memory_writable`, the pinned `journal` and its `journal_usage` neutralization note; the
 newest five entries are pinned in `run_journal` in the same transaction as `run_memory`,
-each with the entry digest and the digest of the document retention would archive it as,
-so a roll during the run still reads the identical bytes back from the file. Only rows are
-pinned, so a household `journal_limit` below five is the tighter bound and a run then
-opens with that many entries; the archive is not scanned to make the number up. A pinned
+each naming an entry by sequence and repeating what the run read — its writing run, its
+time and its text digest. A pinned entry is found in `journal_entries` while it has a row
+and through its `journal_archives` row once retention rolls it out, and either way those
+three values must still match, so a roll during the run keeps returning the identical
+bytes. Only rows are pinned, so a household `journal_limit` below five is the tighter
+bound and a run then opens with that many entries; the archive is not scanned to make the
+number up. A pinned
 journal that cannot be read leaves its own run interrupted through the same prelaunch
 check as the pinned skills and inputs, on the receipted path as well as the inline one.
 Etiquette stays out of the code: the context states the capability and the entries, and
@@ -963,8 +983,9 @@ another resident's id is refused; the three tools absent from `tool_specs()`, re
 `memory_not_writable` and leaving memory and journal untouched once the flag is off, while
 the run's management tools still work; a resident that manages nothing — an enabled grant
 with no capabilities — saving memory and writing a journal its next run opens with, while
-every management action is refused; a declaration flag without a grant reporting
-`memory_writable: false` rather than promising absent tools; a manager whose grant lost
+every management action is refused; a declaration flag without a pinned tool surface
+reporting `memory_writable: false` rather than promising absent tools; a manager whose
+grant lost
 `writable_memory` still editing a resident that already has the capability, and still
 refused when raising it from false; a deleted pinned entry interrupting only its own run
 while an unrelated resident's run succeeds in the same executor pass;
@@ -974,12 +995,10 @@ archived by a `journal_limit` of 1 mid-run reading back byte for byte, with back
 verification reading every pinned journal back; and Reader unchanged — no journal, no
 writable memory, same launch.
 
-Complete `make check` passed: ruff, ruff format, ty, 702 pytest tests, the browser suite's
-76 tests with Prettier and the production build, the packaged assets, and both
-installed-wheel journeys. The previous milestone's two blocked steps were local toolchain
-faults, corrected in its note above and fixed for everyone by #133; that fix is not in
-this branch's base, so this run stood the two tools in on `PATH` and changed no repository
-file.
+Complete `make check` passed on a plain developer PATH after merging main, which brought
+#133's toolchain fix and #117's archived-entry rows: ruff, ruff format, ty, 710 backend tests,
+the browser suite with Prettier and the production build, the packaged assets, and both
+installed-wheel journeys.
 
 Remaining for the epic: Townhall shows neither memory history with authorship nor the
 journal, and the "Keep a journal" shared skill and ADR 0012 are unwritten (#119) — so
@@ -989,10 +1008,12 @@ Resident bundles deliberately do not carry `memory_writable`; an imported reside
 without it. No real Codex run has used these tools, so the epic's recorded journey and its
 cost are still outstanding.
 
-One decision is open. The native tool surface still rides on an enabled management grant,
-so a resident with no grant cannot write its memory or journal however its declaration
-reads, and the epic's orchard reporter therefore needs an enabled grant — one that may
-hold no capabilities at all — before it can keep a journal. Making the tools reach an
-ungranted run means a pinned native session that does not depend on a grant revision
-(`run_management` currently keys its policy pin to one), which is a change to the
-admission authority model and wants Miha's decision rather than a quiet extension here.
+Two things about reaching the tools are already settled elsewhere. As this slice stands
+the native tool surface rides on an enabled management grant, so a resident with no grant
+cannot write however its declaration reads; Miha decided against leaving it there, and
+#119's grantless pin — nullable `run_management.grant_revision`, a pinned row for a
+writable declaration, exactly the three memory tools and every management tool refused —
+supersedes that limit, so the orchard reporter will not need a capability-less grant.
+Reporting `memory_writable` from the pinned tool surface rather than from the declaration
+outlives that change and stays: #119's pin leaves the gap open for mock runtimes, which
+have no native tool surface at all, and a run there must still be told it cannot write.

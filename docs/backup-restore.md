@@ -57,9 +57,10 @@ epoch and remains held. Live disaster recovery and activation remain unproven.
 Only the current schema and complete layout are accepted. Incompatible prototypes
 or modified schemas are refused without conversion. Backups preserve every resident
 memory revision and run pin, including unreferenced immutable files. Verification
-rejects corrupt memory and references to another resident's memory. Journal entries and
-their archived files are preserved the same way; verification rejects a changed entry,
-a changed or renamed archived file and an entry whose run belongs to another resident.
+rejects corrupt memory and references to another resident's memory. Journal entries, archived
+references and their files are preserved the same way; verification rejects a changed
+entry, a changed, renamed or missing archived file, an archived document that disagrees
+with its row, and either half naming a run that belongs to another resident.
 All restored copies remain held. There is no historical upgrade path or data importer.
 
 Process-backed stores require all runs to be settled and workers idle before capture.

@@ -48,10 +48,16 @@ def live_run(db, run_id: str):
     return run
 
 
-def context_revoked(db, run_id: str) -> bool:
-    """A revoked context credential is a durable cutoff, not only a failed read."""
-    row = db.execute("SELECT revoked_at FROM run_credentials WHERE run_id=?", (run_id,)).fetchone()
-    return row is not None and row["revoked_at"] is not None
+def context_ended(db, run_id: str, now: int) -> bool:
+    """One credential cutoff for reading and writing: an expired or revoked context
+    credential ends both. A run that was issued none is not cut off by this rule; the
+    in-process runtime and the management bridge never hold one, and `live_run` is
+    their cutoff.
+    """
+    row = db.execute(
+        "SELECT expires_at,revoked_at FROM run_credentials WHERE run_id=?", (run_id,)
+    ).fetchone()
+    return row is not None and (row["revoked_at"] is not None or now >= row["expires_at"])
 
 
 class RunAccess:
@@ -119,8 +125,7 @@ class RunAccess:
             ):
                 raise Refused("runtime_unauthorized")
             if (
-                now >= row["expires_at"]
-                or row["revoked_at"] is not None
+                context_ended(db, run_id, now)
                 or row["status"] not in {"starting", "running"}
                 or row["cancellation_requested"]
             ):
