@@ -123,3 +123,22 @@ it("accepts a purpose edit when the existing instructions are empty", async () =
   const button = screen.getByRole("button", { name: "Save configuration" });
   expect(button.closest("form")?.checkValidity()).toBe(true);
 });
+
+it("allows an unrelated edit for a resident with a zero daily limit", async () => {
+  setup(resident, {
+    ...configuration,
+    declaration: { ...configuration.declaration, daily_limit: 0 },
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Edit configuration" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Purpose" }), {
+    target: { value: "Updated purpose" },
+  });
+  expect(
+    screen
+      .getByRole("button", { name: "Save configuration" })
+      .closest("form")
+      ?.checkValidity(),
+  ).toBe(true);
+});

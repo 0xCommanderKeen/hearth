@@ -333,7 +333,7 @@ export function ResidentMaintenance({
                 Daily limit (microdollars)
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   value={draft.declaration.daily_limit}
                   onChange={(e) =>
                     declaration("daily_limit", Number(e.target.value))

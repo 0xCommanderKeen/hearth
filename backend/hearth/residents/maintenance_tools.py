@@ -1,5 +1,7 @@
 """Scoped maintenance calls; every edit shares the ordinary resident writer."""
 
+import json
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from hearth.management.authority import digest
@@ -9,17 +11,22 @@ from hearth.residents.models import Refused
 from hearth.work.routines import ROUTINE_RESERVATION
 
 
-class ConfigurationRead(BaseModel):
+class ResidentTarget(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     resident_id: str = Field(min_length=1, max_length=128)
 
 
-class Configure(ConfigurationRead):
+class ConfigurationRead(ResidentTarget):
+    offset: int = Field(default=0, ge=0)
+    expected_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class Configure(ResidentTarget):
     operation_id: str = Field(min_length=1, max_length=128)
     changes: ConfigurationChange
 
 
-class ChangeLifecycle(ConfigurationRead):
+class ChangeLifecycle(ResidentTarget):
     operation_id: str = Field(min_length=1, max_length=128)
     change: LifecycleChange
 
@@ -27,7 +34,10 @@ class ChangeLifecycle(ConfigurationRead):
 MAINTENANCE_TOOLS = {
     "hearth_residents_configuration": (
         ConfigurationRead,
-        "Read a managed resident's complete editable configuration and exact owning revisions. "
+        "Read complete editable configuration as bounded JSON-text pages. Concatenate text in "
+        "offset order, then parse JSON to recover all values and owning revisions. Start at "
+        "offset 0; pass the returned digest as expected_digest with every next_offset until "
+        "next_offset is null. If configuration_changed is refused, restart from offset 0. "
         "Inspect before editing; preserve concurrent human changes.",
     ),
     "hearth_residents_configure": (
@@ -55,7 +65,24 @@ def dispatch_maintenance(db, hearth, authority, tool: str, arguments: dict) -> d
     authorize_managed_resident(db, authority, body.resident_id, action)
     maintenance = Maintenance(hearth)
     if not isinstance(body, Configure | ChangeLifecycle):
-        return maintenance.configuration_in_transaction(db, body.resident_id)
+        configuration = maintenance.configuration_in_transaction(db, body.resident_id)
+        current_digest = digest(configuration)
+        if body.offset and body.expected_digest is None:
+            raise Refused("configuration_digest_required")
+        if body.expected_digest is not None and body.expected_digest != current_digest:
+            raise Refused("configuration_changed")
+        serialized = json.dumps(configuration, sort_keys=True, ensure_ascii=False)
+        if body.offset > len(serialized):
+            raise Refused("configuration_offset_invalid")
+        end = min(body.offset + 32000, len(serialized))
+        return {
+            "resident_id": body.resident_id,
+            "digest": current_digest,
+            "encoding": "json",
+            "offset": body.offset,
+            "text": serialized[body.offset : end],
+            "next_offset": end if end < len(serialized) else None,
+        }
     if isinstance(body, Configure):
         changes = body.changes
         grant = authority["grant"]

@@ -151,9 +151,14 @@ class Bridge:
                 if not isinstance(value, str):
                     raise Refused("management_call_invalid")
                 bounded_text(value, 256, "management_call_invalid")
+            # Coherent configuration has the same finite aggregate transport
+            # allowance as its operator endpoint; its groups keep owning limits.
+            argument_limit = (
+                1_500_000 if params["tool"] == "hearth_residents_configure" else 256 * 1024
+            )
             if (
                 not isinstance(params.get("arguments"), dict)
-                or len(json.dumps(params).encode()) > 256 * 1024
+                or len(json.dumps(params, ensure_ascii=False).encode()) > argument_limit
             ):
                 raise Refused("management_arguments_invalid")
             with self.hearth.database.transaction(write=True) as db:

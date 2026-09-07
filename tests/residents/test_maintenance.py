@@ -557,3 +557,78 @@ def test_configuration_accepts_legal_unicode_groups_and_rejects_transport_overfl
             route, headers={**AUTH, "Idempotency-Key": "oversized"}, content=b" " * 1_500_001
         )
         assert oversized.status_code == 413
+
+
+def test_manager_reassembles_large_configuration_and_rejects_changed_pages(tmp_path):
+    import json
+
+    from hearth.residents.maintenance import ConfigurationChange
+
+    app, _, _, child, call = managed_fixture(tmp_path)
+    maintenance = Maintenance(app.state.hearth)
+    before = maintenance.configuration(child)
+    maintenance.configure(
+        "large",
+        child,
+        ConfigurationChange.model_validate(
+            {
+                "expected_lifecycle_revision": before["lifecycle"]["revision"],
+                "declaration": {
+                    **before["declaration"],
+                    "instructions": "😀" * 32000,
+                    "purpose": "😀" * 8000,
+                },
+                "memory": {**before["memory"], "text": "x" * 131072},
+            }
+        ),
+    )
+    expected = maintenance.configuration(child)
+    fragments = []
+    arguments = {"resident_id": child}
+    page_number = 0
+    while True:
+        native = call("hearth_residents_configuration", arguments, f"page-{page_number}")
+        assert native["success"], native
+        assert len(json.dumps(native, ensure_ascii=False).encode()) <= 256 * 1024
+        page = json.loads(native["contentItems"][0]["text"])
+        fragments.append(page["text"])
+        if page["next_offset"] is None:
+            break
+        arguments = {
+            "resident_id": child,
+            "offset": page["next_offset"],
+            "expected_digest": page["digest"],
+        }
+        page_number += 1
+    assert page_number > 0
+    assert json.loads("".join(fragments)) == expected
+    edited = call(
+        "hearth_residents_configure",
+        {
+            "operation_id": "large-managed-edit",
+            "resident_id": child,
+            "changes": {
+                "expected_lifecycle_revision": expected["lifecycle"]["revision"],
+                "declaration": {**expected["declaration"], "purpose": "🌳" * 8000},
+                "memory": {**expected["memory"], "text": "y" * 131072},
+            },
+        },
+        "large-managed-edit",
+    )
+    assert edited["success"], edited
+    after = maintenance.configuration(child)
+    assert after["declaration"]["purpose"] == "🌳" * 8000
+    assert after["declaration"]["instructions"] == expected["declaration"]["instructions"]
+    assert (
+        after["declaration"]["expected_revision"]
+        == expected["declaration"]["expected_revision"] + 1
+    )
+    assert after["memory"]["text"] == "y" * 131072
+    oversized = call("hearth_residents_configure", {"padding": "x" * 1500001}, "oversized-config")
+    assert not oversized["success"] and "management_arguments_invalid" in str(oversized)
+    changed = call("hearth_residents_configuration", arguments, "changed-page")
+    assert not changed["success"] and "configuration_changed" in str(changed)
+    missing = call(
+        "hearth_residents_configuration", {"resident_id": child, "offset": 1}, "missing-digest"
+    )
+    assert not missing["success"] and "configuration_digest_required" in str(missing)

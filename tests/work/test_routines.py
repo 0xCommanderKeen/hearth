@@ -170,3 +170,43 @@ def test_scheduled_admission_preserves_budget_policy(system):
     task = routines.tick()[0]
     routines.admit_queued()
     assert routines.hearth.task(task).status == "queued"
+
+
+def test_corrupt_lifecycle_does_not_stall_healthy_due_routine(system):
+    from hearth.observation.snapshot import snapshot
+
+    routines, now, _ = system
+    for resident_id in ("a-corrupt", "b-healthy"):
+        routines.hearth.save_resident(
+            resident_id, Declaration(resident_id, "Synthetic", 100000), expected_revision=0
+        )
+        saved = routines.save(
+            resident_id,
+            resident_id,
+            "Daily synthetic report",
+            local_time="09:00",
+            timezone="UTC",
+            enabled=True,
+            expected_revision=0,
+        )
+    now[0] = saved["next_at"]
+    with routines.hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE resident_lifecycle_history SET sha256='damaged' WHERE resident_id='a-corrupt'"
+        )
+    tasks = routines.tick()
+    assert len(tasks) == 1
+    with routines.hearth.database.transaction() as db:
+        assert (
+            db.execute("SELECT resident_id FROM tasks WHERE id=?", (tasks[0],)).fetchone()[0]
+            == "b-healthy"
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM occurrences WHERE routine_id='a-corrupt'").fetchone()[
+                0
+            ]
+            == 0
+        )
+    broken = next(r for r in snapshot(routines.hearth)["residents"] if r["id"] == "a-corrupt")
+    assert broken["lifecycle"]["state"] == "unavailable"
+    assert broken["pause_reason"] == "resident_lifecycle_corrupt"

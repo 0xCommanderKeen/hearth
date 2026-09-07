@@ -55,3 +55,24 @@ skills, 32 routine edits per operation, 32,000 instruction characters and 128 Ki
 UTF-8 memory. The 1.5 MB authenticated transport cap accepts escaped legal Unicode
 configuration groups while bounding oversized requests. Archived configuration
 is read-only; operator ownership transfer remains possible for historical care.
+
+Managed configuration reads return bounded JSON-text pages of at most 32,000
+characters. Concatenate `text` in `offset` order and parse the completed JSON to
+recover every original value and owning revision. Start at zero; every continuation
+requires the returned `digest` as `expected_digest`. `next_offset: null` marks the
+complete configuration. If any configuration group or lifecycle changes between
+pages, `configuration_changed` requires restarting at zero, so a manager cannot
+silently combine incompatible revisions. Page envelopes stay within the native
+256 KiB response limit even for maximum Unicode values. Operator HTTP reads retain
+the complete configuration response.
+
+A due routine with unavailable/corrupt lifecycle is skipped without advancing its
+occurrence. Snapshot exposes that resident's lifecycle failure; healthy due routines
+continue in the same tick. A zero resident allowance is valid, including when editing
+an unrelated profile field; ordinary budget admission rules still apply.
+
+The managed configure request has the operator endpoint's same finite 1.5 MB
+aggregate allowance, measured as UTF-8 JSON, with all per-group semantic limits
+unchanged. Other management requests keep their 256 KiB bound. A manager can thus
+read and edit a full legal Unicode declaration plus memory while preserving exact
+unchanged values, not merely retrieve them.

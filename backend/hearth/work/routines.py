@@ -131,7 +131,13 @@ class Routines:
             )
             processed = 0
             for row in rows:
-                if read_lifecycle(db, row["resident_id"])["state"] != "ready":
+                try:
+                    lifecycle = read_lifecycle(db, row["resident_id"])
+                except Refused:
+                    # Snapshot exposes the owning lifecycle's failure reason;
+                    # isolate this resident while healthy schedules keep moving.
+                    continue
+                if lifecycle["state"] != "ready":
                     continue
                 if processed == 100:
                     break

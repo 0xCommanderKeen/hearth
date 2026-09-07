@@ -647,3 +647,12 @@ an invalid required-instructions constraint; a form-validity regression covers i
 No provider calls were made. #91's separately bounded real creation proof remains
 pending explicit approval; these synthetic lifecycle checks do not replace it.
 Independent review and merge remain pending.
+
+Independent review corrections: managed configuration reads now provide bounded,
+digest-checked JSON-text pages so legal large Unicode declarations and full memory
+can be retrieved without hitting the native response cap or mixing concurrent
+versions. The browser accepts a zero daily limit during unrelated edits. Scheduler
+lifecycle refusal is isolated to the affected resident, with its reason visible in
+snapshot while healthy due schedules continue. Regressions reproduced each issue
+before the fixes. Final checks after these changes passed 634 backend and 65 web
+tests, lint/format/types/builds, and both installed-wheel smoke journeys.
