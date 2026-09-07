@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 
+import pytest
 from hearth.app import create_app
 from hearth.authority.household import Household
 from hearth.execution.context import read_context
@@ -14,7 +15,7 @@ from hearth.management.tools import tool_specs
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import Journal
 from hearth.residents.memory import Memory
-from hearth.residents.models import Declaration
+from hearth.residents.models import Declaration, Refused
 
 TOKEN = "synthetic-memory-tools-operator"
 MEMORY_TOOL_NAMES = {"hearth_memory_read", "hearth_memory_save", "hearth_journal_write"}
@@ -445,6 +446,21 @@ def test_an_unreadable_pinned_journal_interrupts_only_its_own_run(tmp_path):
     results = {run.id: run.status for run in app.state.executor.step()}
     assert results[third.id] == "interrupted"
     assert results[unrelated.id] == "succeeded"
+
+
+def test_a_pinned_entry_that_changed_under_the_run_is_refused(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    first, call = working_run(app, karen, "first")
+    assert call("journal", "hearth_journal_write", {"text": "What the next run will read."})[0]
+    settle(app, first)
+    second, _ = working_run(app, karen, "second")
+    assert len(pinned_context(hearth, second.id)["journal"]) == 1
+    # The entry keeps its checksum and size but no longer says what the run read.
+    with hearth.database.transaction(write=True) as db:
+        db.execute("UPDATE journal_entries SET at=? WHERE resident_id=?", (1788650000, karen))
+    with pytest.raises(Refused, match="journal_entry_changed"):
+        pinned_context(hearth, second.id)
+    settle(app, second)
 
 
 def test_a_pinned_entry_that_retention_archives_is_still_read_back(tmp_path):

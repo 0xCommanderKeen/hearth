@@ -991,12 +991,13 @@ refused when raising it from false; a deleted pinned entry interrupting only its
 while an unrelated resident's run succeeds in the same executor pass;
 `pin_configuration` offering and pinning different tool digests for the two declarations;
 a manager provisioning a writable child only with `writable_memory`; a pinned entry
-archived by a `journal_limit` of 1 mid-run reading back byte for byte, with backup
-verification reading every pinned journal back; and Reader unchanged — no journal, no
+archived by a `journal_limit` of 1 mid-run reading back byte for byte through its archived
+row, and a pinned entry whose time changed under the run refused as
+`journal_entry_changed`, with backup verification reading every pinned journal back; and Reader unchanged — no journal, no
 writable memory, same launch.
 
 Complete `make check` passed on a plain developer PATH after merging main, which brought
-#133's toolchain fix and #117's archived-entry rows: ruff, ruff format, ty, 710 backend tests,
+#133's toolchain fix and #117's archived-entry rows: ruff, ruff format, ty, 711 backend tests,
 the browser suite with Prettier and the production build, the packaged assets, and both
 installed-wheel journeys.
 
