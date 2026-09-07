@@ -15,7 +15,7 @@ let state: Snapshot;
 let publish: (snapshot: Snapshot) => void;
 
 beforeEach(() => {
-  sessionStorage.clear();
+  localStorage.clear();
   window.history.replaceState(null, "", "/");
   state = {
     schema_version: 1,
@@ -498,7 +498,7 @@ it("keeps an authenticated tab unlocked after refresh and clears it on Lock", as
   cleanup();
   render(<App />);
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
-  expect(sessionStorage.length).toBe(0);
+  expect(localStorage.length).toBe(0);
 });
 
 it("forgets a saved token when the server rejects it after refresh", async () => {
@@ -510,7 +510,7 @@ it("forgets a saved token when the server rejects it after refresh", async () =>
   render(<App />);
   await screen.findByRole("alert");
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
-  expect(sessionStorage.length).toBe(0);
+  expect(localStorage.length).toBe(0);
 });
 
 it("reports damaged historical skill provenance without inventing an execution hold", async () => {

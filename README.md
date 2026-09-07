@@ -49,7 +49,7 @@ uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 
 Open `http://127.0.0.1:8766` and enter that token. Hearth starts empty and ships no
 sample data: create a resident, assign it a task, and open its summary. The
-credential stays in browser memory for the session.
+credential is remembered in this browser until you sign out.
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
 Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate mock instance to exercise cancellation.
 Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulations,

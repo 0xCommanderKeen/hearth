@@ -26,17 +26,18 @@ import { ImportResident } from "../features/residents/ImportResident";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
+// Remembered across browser restarts on this machine; Sign out clears it.
 function savedToken(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY);
+    return localStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
 }
 function saveToken(value: string | null) {
   try {
-    if (value === null) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, value);
+    if (value === null) localStorage.removeItem(SESSION_KEY);
+    else localStorage.setItem(SESSION_KEY, value);
   } catch {
     /* Storage may be disabled; the current login still works. */
   }
