@@ -104,8 +104,8 @@ export function InputSelection({
   }
   const locked = busy || readOnly || retry || conflict;
   return (
-    <section className="input-selection" aria-label="Resident synthetic inputs">
-      <h3>Synthetic inputs</h3>
+    <section className="input-selection" aria-label="Resident inputs">
+      <h3>Inputs</h3>
       <p>
         Choose up to four sets. Future admissions read their latest notes;
         admitted runs keep their exact revisions.
@@ -142,8 +142,7 @@ export function InputSelection({
               <span>
                 {item.name}
                 <small>
-                  Synthetic · revision {item.revision} · {item.notes.length}{" "}
-                  notes
+                  Revision {item.revision} · {item.notes.length} notes
                 </small>
               </span>
             </label>
@@ -161,7 +160,7 @@ export function InputSelection({
             </ol>
           )}
           <p>
-            <a href="#inputs">Open the synthetic input library →</a>
+            <a href="#inputs">Open the input library →</a>
           </p>
           <button
             className="primary"
@@ -194,11 +193,11 @@ export function RunInputs({ run }: { run: InputProvenance }) {
       </p>
     );
   if (run.input_state === "empty")
-    return <small>Admitted with no synthetic inputs.</small>;
+    return <small>Admitted with no inputs.</small>;
   if (!run.input_sets?.length) return null;
   return (
-    <div aria-label="Synthetic inputs used by run">
-      <small>Synthetic inputs used · in order</small>
+    <div aria-label="Inputs used by run">
+      <small>Inputs used · in order</small>
       <ol className="input-provenance">
         {run.input_sets.map((input) => (
           <li key={input.input_set_id}>

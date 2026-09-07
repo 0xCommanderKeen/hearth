@@ -416,7 +416,7 @@ export function ResidentMaintenance({
                 }
               />
             </label>
-            <h3>Synthetic inputs</h3>
+            <h3>Inputs</h3>
             <p>
               Selected in checkbox order; remove and reselect to change reading
               order. Up to four sets.
@@ -614,7 +614,7 @@ export function ResidentMaintenance({
                     {
                       routine_id: crypto.randomUUID(),
                       expected_revision: 0,
-                      instruction: "Summarize today’s synthetic notes.",
+                      instruction: "Summarize today’s notes.",
                       local_time: "09:00",
                       timezone: draft.declaration.budget_timezone,
                       enabled: false,

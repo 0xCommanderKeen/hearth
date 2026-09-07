@@ -66,13 +66,13 @@ export function InputLibrary({
     item.name.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <section className="input-library" aria-label="Synthetic input library">
+    <section className="input-library" aria-label="Input library">
       <div className="input-heading">
         <div>
           <span className="eyebrow">FICTIONAL NOTES · EXPLICIT ACCESS</span>
           <h2>Give each resident its own reading.</h2>
           <p>
-            Small, named sets of synthetic facts. Choose who receives them;
+            Small, named sets of fictional facts. Choose who receives them;
             inspect what every run read.
           </p>
         </div>
@@ -99,7 +99,7 @@ export function InputLibrary({
           </button>
         </p>
       ) : !items ? (
-        <p role="status">Loading synthetic inputs…</p>
+        <p role="status">Loading inputs…</p>
       ) : !filtered?.length ? (
         <div className="empty">
           <h3>No input sets here yet.</h3>
@@ -116,7 +116,7 @@ export function InputLibrary({
               key={item.input_set_id}
               href={`#inputs/${encodeURIComponent(item.input_set_id)}`}
             >
-              <span className="eyebrow">SYNTHETIC · REV {item.revision}</span>
+              <span className="eyebrow">REV {item.revision}</span>
               <h3>{item.name}</h3>
               <p>{item.notes[0] ?? "An empty note set."}</p>
               <small>
@@ -199,7 +199,7 @@ function InputEditor({
       pending.current = null;
       setRetry(false);
       setNotice(
-        `Saved synthetic input revision ${result.revision}. Future admissions use these notes.`,
+        `Saved input revision ${result.revision}. Future admissions use these notes.`,
       );
       if (id === "new")
         window.location.hash = `#inputs/${encodeURIComponent(result.input_set_id)}`;
@@ -231,12 +231,12 @@ function InputEditor({
   const locked =
     busy || readOnly || revision !== undefined || retry || conflict;
   return (
-    <section className="input-editor" aria-label="Synthetic input detail">
-      <a href="#inputs">← All synthetic inputs</a>
+    <section className="input-editor" aria-label="Input detail">
+      <a href="#inputs">← All inputs</a>
       <div className="input-heading">
         <div>
           <span className="eyebrow">
-            SYNTHETIC SOURCE DATA{saved ? ` · REVISION ${saved.revision}` : ""}
+            FICTIONAL SOURCE DATA{saved ? ` · REVISION ${saved.revision}` : ""}
           </span>
           <h2>{saved?.name ?? "Write a few fictional facts."}</h2>
           <p>
@@ -293,9 +293,7 @@ function InputEditor({
                 {notes.map((note, index) => (
                   <div className="input-note" key={index}>
                     <label>
-                      {index === 0
-                        ? "Synthetic notes"
-                        : `Synthetic note ${index + 1}`}
+                      {index === 0 ? "Notes" : `Note ${index + 1}`}
                       <textarea
                         maxLength={4000}
                         value={note}

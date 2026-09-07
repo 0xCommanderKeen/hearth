@@ -372,12 +372,10 @@ export function NewResident({
                 </label>
               ))}
               <p>
-                <a href="#inputs">Manage named synthetic input sets →</a>
+                <a href="#inputs">Manage named input sets →</a>
               </p>
               {!draft.input_sets.length && (
-                <p>
-                  No inputs selected. This resident receives no synthetic notes.
-                </p>
+                <p>No inputs selected. This resident receives no notes.</p>
               )}
               <div className="provision-fields">
                 <label>
@@ -419,8 +417,7 @@ export function NewResident({
                       "first_assignment",
                       e.target.checked
                         ? {
-                            instruction:
-                              "Summarize the selected synthetic notes.",
+                            instruction: "Summarize the selected notes.",
                           }
                         : null,
                     )
@@ -451,8 +448,7 @@ export function NewResident({
                       "routine",
                       e.target.checked
                         ? {
-                            instruction:
-                              "Summarize the selected synthetic notes.",
+                            instruction: "Summarize the selected notes.",
                             local_time: "09:00",
                             timezone: "Europe/Ljubljana",
                             enabled: true,
