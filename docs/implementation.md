@@ -1020,6 +1020,18 @@ backup and restore all carry the same authorship. `make check` passed on a plain
 PATH: ruff, ruff format, ty, 703 pytest tests, 89 browser tests, Prettier, the production
 build, packaged assets, the wheel and the installed-wheel check.
 
+The bounded real journey is recorded. On the real Codex subscription, in a fresh data
+directory outside the repository, the operator provisioned one writable Fictional orchard
+reporter — which received the "Keep a journal" skill at provisioning — and ran four daily
+reports on the same two fictional notes. Runs 1 and 2 each wrote their own entry unprompted
+and both said no memory update was needed. Run 3, after the operator asked the reporter to
+open with its journal, named the previous run by its identifier, which appears nowhere in
+the notes, the instruction or the memory. Run 4 saved a standing preference as memory
+revision 2 with `author='run'`, keeping the operator's line. Four runs cost 168,444
+microdollars in API-equivalent estimates against the $10 household allowance;
+`docs/evidence/journal-journey-2026-09-07.json` and `docs/karen-journey.md` record the runs,
+the entries and the quoted report, and the data directory was discarded after recording.
+
 Remaining: the household `journal_limit` still moves only through `PUT /api/household`,
 with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
 imported resident starts unable to write. A household that never sets Karen up has no

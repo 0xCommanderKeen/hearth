@@ -1,0 +1,101 @@
+{
+  "journey": "epic-126-resident-journal",
+  "synthetic_inputs": true,
+  "real_model_called": true,
+  "runtime_kind": "codex_subscription",
+  "model": "gpt-6-astra",
+  "usage_source": "api_equivalent_subscription",
+  "data_directory": "fresh, outside the repository, discarded after recording",
+  "resident": {
+    "name": "Fictional orchard reporter",
+    "created_by": "operator",
+    "memory_writable": true,
+    "management_grant": null,
+    "input_set": "Fictional orchard",
+    "notes": ["Harvested 12 pears Monday", "Planted 3 trees Tuesday"],
+    "skills": ["Keep a journal (revision 1, attached at provisioning)"]
+  },
+  "runs": [
+    {
+      "day": 1,
+      "run_id": "deb94139-861a-4535-b35f-608d3b1a3d09",
+      "status": "succeeded",
+      "actual_cost_microdollars": 25110,
+      "memory_revision_opened_with": 1,
+      "journal_opened_with": [],
+      "journal_written": 1,
+      "memory_written": []
+    },
+    {
+      "day": 2,
+      "run_id": "d86890f9-51f5-446c-ae7b-4da252713da2",
+      "status": "succeeded",
+      "actual_cost_microdollars": 25758,
+      "memory_revision_opened_with": 1,
+      "journal_opened_with": [1],
+      "journal_written": 2,
+      "memory_written": []
+    },
+    {
+      "day": 3,
+      "run_id": "ed1e1375-5801-4c20-90ec-3b8ea35712a2",
+      "status": "succeeded",
+      "actual_cost_microdollars": 45260,
+      "memory_revision_opened_with": 1,
+      "journal_opened_with": [2, 1],
+      "journal_written": 3,
+      "memory_written": [],
+      "note": "First run after the operator asked the reporter to open with its own journal."
+    },
+    {
+      "day": 4,
+      "run_id": "92d61a2e-3bc2-4347-b273-cac63534e28f",
+      "status": "succeeded",
+      "actual_cost_microdollars": 72316,
+      "memory_revision_opened_with": 1,
+      "journal_opened_with": [3, 2, 1],
+      "journal_written": 4,
+      "memory_written": [2],
+      "note": "The task supplied a standing preference; the run saved it and kept the operator's line."
+    }
+  ],
+  "total_cost_microdollars": 168444,
+  "household_daily_limit_microdollars": 10000000,
+  "second_run_refers_to_the_first": {
+    "entry_2_written_by_run_2": "Date not supplied; run d86890f9-51f5-446c-ae7b-4da252713da2. Read and summarized the supplied fictional orchard notes: 12 pears harvested Monday; 3 trees planted Tuesday. No memory update needed.",
+    "report_of_run_3": "My journal records that last time, in run “d86890f9-51f5-446c-ae7b-4da252713da2,” I reported 12 pears harvested Monday and 3 trees planted Tuesday. Today repeats those fictional notes.",
+    "why_this_is_evidence": "The previous run's identifier appears nowhere in today's notes, instruction or memory. Run 3 could only name it from the journal entry admission pinned to it."
+  },
+  "run_authored_memory": {
+    "revision": 2,
+    "author": "run",
+    "run_id": "92d61a2e-3bc2-4347-b273-cac63534e28f",
+    "sha256": "f1f946e77e90ad50bf77451a52b8357017d187589264071ea4991dd886f47721",
+    "size": 203,
+    "text": "The orchard notes are fictional.\nThe orchard keeper is named Mira Kovac and prefers pears counted by the crate, twelve pears to a crate. This is a standing preference, not a fact about any day's harvest.",
+    "kept_the_operator_line": true
+  },
+  "journal_entries": [
+    {
+      "sequence": 1,
+      "run_id": "deb94139-861a-4535-b35f-608d3b1a3d09",
+      "text": "Date not supplied; run deb94139-861a-4535-b35f-608d3b1a3d09. Read the two fictional orchard notes: 12 pears harvested Monday and 3 trees planted Tuesday. Summarized those figures only; no memory update needed."
+    },
+    {
+      "sequence": 2,
+      "run_id": "d86890f9-51f5-446c-ae7b-4da252713da2",
+      "text": "Date not supplied; run d86890f9-51f5-446c-ae7b-4da252713da2. Read and summarized the supplied fictional orchard notes: 12 pears harvested Monday; 3 trees planted Tuesday. No memory update needed."
+    },
+    {
+      "sequence": 3,
+      "run_id": "ed1e1375-5801-4c20-90ec-3b8ea35712a2",
+      "text": "Date not supplied; run ed1e1375-5801-4c20-90ec-3b8ea35712a2. Reviewed supplied fictional orchard notes and prior journal run d86890f9-51f5-446c-ae7b-4da252713da2; today's report repeats 12 pears harvested Monday and 3 trees planted Tuesday. No memory update needed."
+    },
+    {
+      "sequence": 4,
+      "run_id": "92d61a2e-3bc2-4347-b273-cac63534e28f",
+      "text": "Date not supplied; run 92d61a2e-3bc2-4347-b273-cac63534e28f. Reviewed supplied fictional notes and latest journal run ed1e1375-5801-4c20-90ec-3b8ea35712a2. Report repeats Monday's 12 pears (1 crate) and Tuesday's 3 trees. Saved Mira Kovac's name and standing twelve-pears-per-crate preference in memory revision 2."
+    }
+  ],
+  "limits": "Four bounded runs on synthetic notes. This records that a resident's own runs wrote its journal and one memory revision, and that a later run opened with them. It is not evidence of model quality, daily adoption or anything about real sources."
+}
