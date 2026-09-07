@@ -634,7 +634,7 @@ def test_manager_reassembles_large_configuration_and_rejects_changed_pages(tmp_p
     assert not missing["success"] and "configuration_digest_required" in str(missing)
 
 
-def _receive_native_frame(frame, *, records=1):
+def _receive_native_frame(frame, *, records=1, collect=False):
     import os
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -657,18 +657,24 @@ def _receive_native_frame(frame, *, records=1):
                 SimpleNamespace(stdin=stdin, stdout=stdout), time.monotonic() + 5, lambda: False
             )
             pool.submit(write)
-            for _ in range(records):
-                message = pipe.receive()
-            return message
+            messages = [pipe.receive() for _ in range(records)]
+            return messages if collect else messages[-1]
 
 
 def test_native_pipe_delivers_large_bounded_configuration_to_owner(tmp_path):
     import json
+    from dataclasses import asdict
+    from pathlib import Path
 
-    from hearth.integrations.codex.app_server_transport import _tool_call
+    import pytest
+    from hearth.integrations.codex.app_server_transport import MAX_NATIVE_STREAM, _tool_call
     from hearth.integrations.codex.events import MAX_RECORD
+    from hearth.integrations.codex.management_runtime import encode, publish_receipt
+    from hearth.integrations.codex.pricing import MODEL
+    from hearth.integrations.codex.subscription import CodexLiveRuntime
+    from hearth.integrations.codex.usage import UsageBinding, publish
 
-    app, _, _, child, call = managed_fixture(tmp_path)
+    app, _, run, child, call = managed_fixture(tmp_path)
     config = Maintenance(app.state.hearth).configuration(child)
     params = {
         "threadId": "thread",
@@ -680,7 +686,12 @@ def test_native_pipe_delivers_large_bounded_configuration_to_owner(tmp_path):
             "operation_id": "large-native",
             "changes": {
                 "expected_lifecycle_revision": config["lifecycle"]["revision"],
-                "memory": {**config["memory"], "text": "m" * 131072},
+                "memory": {**config["memory"], "text": "m" * 111072 + "\u0001" * 20000},
+                "declaration": {
+                    **config["declaration"],
+                    "instructions": "😀" * 32000,
+                    "purpose": "🌳" * 8000,
+                },
                 "routines": [
                     {
                         "routine_id": f"native-{i}",
@@ -695,9 +706,24 @@ def test_native_pipe_delivers_large_bounded_configuration_to_owner(tmp_path):
             },
         },
     }
-    frame = json.dumps({"id": 0, "method": "item/tool/call", "params": params}).encode() + b"\n"
-    assert MAX_RECORD < len(frame) < 1_500_000
-    message = _receive_native_frame(frame)
+    fixture = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "integrations/codex/fixtures/app-server-configure-events.json"
+        ).read_text()
+    )
+    events = fixture["events"]
+    for event in events:
+        if event["method"] == "item/tool/call":
+            event["params"]["arguments"] = params["arguments"]
+        item = event["params"].get("item", {})
+        if item.get("type") == "dynamicToolCall":
+            item["arguments"] = params["arguments"]
+    frame = b"".join(json.dumps(event, ensure_ascii=False).encode() + b"\n" for event in events)
+    assert 4 * MAX_RECORD < len(frame) < MAX_NATIVE_STREAM
+    delivered = _receive_native_frame(frame, records=len(events), collect=True)
+    message = next(event for event in delivered if event["method"] == "item/tool/call")
+    assert MAX_RECORD < len(json.dumps(message, ensure_ascii=False).encode()) < 1_500_000
     result = _tool_call(
         message,
         "thread",
@@ -709,10 +735,55 @@ def test_native_pipe_delivers_large_bounded_configuration_to_owner(tmp_path):
     )
     assert result["success"], result
     assert len(json.dumps(result).encode()) <= 256 * 1024
+    terminal = {
+        "protocol": "codex-app-server-0.153.4",
+        "launched": True,
+        "cancelled": False,
+        "error": None,
+        "exit_code": -15,
+        "events": [event for event in delivered if event["method"] != "item/started"],
+    }
+    # Native turn summaries may repeat the completed dynamic item as well.
+    dynamic_item = next(
+        event["params"]["item"]
+        for event in delivered
+        if event["method"] == "item/completed"
+        and event["params"].get("item", {}).get("type") == "dynamicToolCall"
+    )
+    terminal["events"][-1]["params"]["turn"]["items"].append(dynamic_item)
+    terminal_frame = json.dumps(terminal["events"][-1], ensure_ascii=False).encode() + b"\n"
+    assert _receive_native_frame(terminal_frame) == terminal["events"][-1]
+    binding = UsageBinding(run.id, run.input_digest, MODEL, "standard")
+    receipt = {
+        "kind": "codex_subscription",
+        "protocol": "management",
+        "binding": asdict(binding),
+        "binary": "synthetic-fixture",
+        "terminal": terminal,
+    }
+    raw, _, evidence = encode(receipt, binding)
+    assert raw == json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    assert 4 * MAX_RECORD < len(raw.encode()) < MAX_NATIVE_STREAM
+    assert evidence.status == "succeeded" and evidence.cost is not None
+    runtime = object.__new__(CodexLiveRuntime)
+    runtime.root = tmp_path / "native-runtime"
+    folder = runtime.folder(run.id)
+    folder.mkdir(parents=True)
+    publish(folder / "request.json", {"management": {"tools_sha256": "synthetic"}})
+    publish_receipt(folder / "receipt.json", receipt)
+    assert runtime.receipt(run.id) == receipt
+    assert encode(runtime.receipt(run.id), binding)[2] == evidence
+    with pytest.raises(ValueError, match="oversized usage file"):
+        publish(tmp_path / "ordinary-receipt.json", receipt)
+    (folder / "request.json").write_text("{}")
+    with pytest.raises(ValueError, match="oversized usage file"):
+        runtime.receipt(run.id)
     saved = Maintenance(app.state.hearth).configuration(child)
     assert len(saved["routines"]) == 32
     assert all(r["instruction"] == "x" * 32000 for r in saved["routines"])
-    assert saved["memory"]["text"] == "m" * 131072
+    assert saved["memory"]["text"] == params["arguments"]["changes"]["memory"]["text"]
+    assert saved["declaration"]["instructions"] == "😀" * 32000
+    assert saved["declaration"]["purpose"] == "🌳" * 8000
 
 
 def test_native_pipe_large_exception_is_only_for_bounded_configure_requests():
@@ -746,4 +817,4 @@ def test_native_pipe_large_exception_is_only_for_bounded_configure_requests():
         _receive_native_frame(b"x" * (2 * 1024 * 1024 + 1))
 
     with pytest.raises(Refused, match="app_server_transcript_too_large"):
-        _receive_native_frame((json.dumps(base).encode() + b"\n") * 4, records=4)
+        _receive_native_frame((json.dumps(base).encode() + b"\n") * 8, records=8)

@@ -2,10 +2,14 @@
 
 import hashlib
 import json
+import os
+import stat
 from dataclasses import asdict
 
 from hearth.integrations.codex import app_server
-from hearth.integrations.codex.events import MAX_STREAM
+from hearth.integrations.codex.app_server_transport import MAX_NATIVE_STREAM
+from hearth.integrations.codex.events import unique_object
+from hearth.integrations.codex.usage import sync_directory
 from hearth.residents.models import Refused
 
 
@@ -19,13 +23,47 @@ def encode(receipt, expected):
     ):
         raise Refused("run_usage_invalid")
     try:
-        raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        if len(raw.encode()) > MAX_STREAM:
+        encoded = json.dumps(receipt, allow_nan=False, ensure_ascii=False).encode()
+        if len(encoded) > MAX_NATIVE_STREAM:
             raise ValueError
+        # Keep existing immutable database receipt bytes/hashes stable; only
+        # the native transport/file budget is measured as UTF-8 JSON.
+        raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
         evidence = app_server.evidence(receipt["terminal"], mode=expected.mode)
     except ValueError, TypeError, KeyError, RecursionError:
         raise Refused("run_usage_invalid") from None
     return raw, hashlib.sha256(raw.encode()).hexdigest(), evidence
+
+
+def read_receipt(path):
+    """Read a bounded native receipt without changing the pinned exec collector."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("unsafe native receipt")
+        raw = stream.read(MAX_NATIVE_STREAM + 1)
+        if len(raw) > MAX_NATIVE_STREAM:
+            raise ValueError("oversized native receipt")
+        value = json.loads(raw, object_pairs_hook=unique_object)
+        os.fsync(stream.fileno())
+        sync_directory(path.parent)
+    return value
+
+
+def publish_receipt(path, value):
+    """Persist the same finite UTF-8 native envelope validated by encode."""
+    raw = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False
+    ).encode()
+    if len(raw) > MAX_NATIVE_STREAM:
+        raise ValueError("oversized native receipt")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    sync_directory(path.parent)
 
 
 def validate_pins(receipt: dict, pins: dict) -> None:
@@ -89,7 +127,7 @@ def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
 
-    from hearth.integrations.codex.usage import UsageBinding, publish
+    from hearth.integrations.codex.usage import UsageBinding
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
 
@@ -164,4 +202,4 @@ def worker(folder, request, execution):
         "terminal": terminal,
     }
     encode(receipt, UsageBinding(**request["binding"]))
-    publish(folder / "receipt.json", receipt)
+    publish_receipt(folder / "receipt.json", receipt)

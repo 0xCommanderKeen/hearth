@@ -15,7 +15,6 @@ from hearth.integrations.codex import app_server_config as config
 from hearth.integrations.codex.events import (
     MAX_EVENTS,
     MAX_RECORD,
-    MAX_STREAM,
     finite_float,
     reject_constant,
     short_string,
@@ -27,6 +26,7 @@ from hearth.residents.models import Refused
 PROTOCOL = "codex-app-server-0.153.4"
 _MAX_CONFIGURE_FRAME = 2 * 1024 * 1024
 _MAX_CONFIGURE_PARAMS = 1_500_000
+MAX_NATIVE_STREAM = 8 * 1024 * 1024
 _NO_INPUT = (
     "Interactive input is disabled. Continue within the supplied "
     "Hearth policy or report its refusal."
@@ -50,19 +50,9 @@ def configuration_pins(binary: Path, tools: list[dict]) -> dict:
     }
 
 
-def _large_configuration_request(message):
-    """Only the coherent configuration request has a larger incoming envelope.
-
-    The bridge still owns schema, authority and the finite argument allowance;
-    every reply, other record and aggregate transcript keeps its existing bound.
-    """
-    params = message.get("params")
+def _configuration_params(params):
     return (
-        set(message) <= {"id", "method", "params", "jsonrpc"}
-        and message.get("jsonrpc", "2.0") == "2.0"
-        and message.get("method") == "item/tool/call"
-        and type(message.get("id")) in {int, str}
-        and isinstance(params, dict)
+        isinstance(params, dict)
         and set(params) <= {"threadId", "turnId", "callId", "tool", "namespace", "arguments"}
         and all(short_string(params.get(key)) for key in ("threadId", "turnId", "callId"))
         and params.get("namespace") in (None, "functions")
@@ -70,6 +60,66 @@ def _large_configuration_request(message):
         and isinstance(params.get("arguments"), dict)
         and len(json.dumps(params, ensure_ascii=False).encode()) <= _MAX_CONFIGURE_PARAMS
     )
+
+
+def _configuration_item(item, thread_id, turn_id):
+    if not isinstance(item, dict) or item.get("type") != "dynamicToolCall":
+        return False
+    return _configuration_params(
+        {
+            "threadId": thread_id,
+            "turnId": turn_id,
+            "callId": item.get("id"),
+            "tool": item.get("tool"),
+            "namespace": item.get("namespace"),
+            "arguments": item.get("arguments"),
+        }
+    )
+
+
+def _large_configuration_record(message):
+    """The pinned CLI repeats configure arguments around the native callback.
+
+    Only recognized configure-bearing records may exceed the ordinary record
+    limit. Stripping their validated argument payloads must leave an ordinary
+    bounded record, so unrelated output cannot borrow this allowance.
+    """
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return False
+    method = message.get("method")
+    if method == "item/tool/call":
+        return (
+            set(message) <= {"id", "method", "params", "jsonrpc"}
+            and message.get("jsonrpc", "2.0") == "2.0"
+            and type(message.get("id")) in {int, str}
+            and _configuration_params(params)
+        )
+    if "id" in message or not short_string(params.get("threadId")):
+        return False
+    if method in {"item/started", "item/completed"}:
+        item = params.get("item")
+        if not _configuration_item(item, params["threadId"], params.get("turnId")):
+            return False
+        remainder = message | {"params": params | {"item": item | {"arguments": {}}}}
+    elif method == "turn/completed":
+        turn = params.get("turn")
+        if not isinstance(turn, dict) or not isinstance(turn.get("items"), list):
+            return False
+        found = False
+        items = []
+        for item in turn["items"]:
+            if _configuration_item(item, params["threadId"], turn.get("id")):
+                found = True
+                items.append(item | {"arguments": {}})
+            else:
+                items.append(item)
+        if not found:
+            return False
+        remainder = message | {"params": params | {"turn": turn | {"items": items}}}
+    else:
+        return False
+    return len(config.canonical(remainder)) <= MAX_RECORD
 
 
 class _Pipe:
@@ -136,7 +186,7 @@ class _Pipe:
                         raise Refused("app_server_protocol_invalid") from None
                     if not isinstance(message, dict):
                         raise Refused("app_server_protocol_invalid")
-                    if end > MAX_RECORD and not _large_configuration_request(message):
+                    if end > MAX_RECORD and not _large_configuration_record(message):
                         raise Refused("app_server_message_too_large")
                     return message
                 if len(self.buffer) > _MAX_CONFIGURE_FRAME:
@@ -150,7 +200,7 @@ class _Pipe:
                 if not chunk:
                     raise Refused("app_server_disconnected")
                 self.total += len(chunk)
-                if self.total > MAX_STREAM:
+                if self.total > MAX_NATIVE_STREAM:
                     raise Refused("app_server_transcript_too_large")
                 self.buffer.extend(chunk)
 
