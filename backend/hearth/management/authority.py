@@ -16,9 +16,16 @@ class GrantPolicy(BaseModel):
     enabled: bool = False
     profiles: list[str] = Field(default_factory=list, max_length=4)
     input_set_ids: list[str] = Field(default_factory=list, max_length=32)
-    capabilities: list[Literal["create_residents", "assign_work", "routines"]] = Field(
-        default_factory=list, max_length=3
-    )
+    capabilities: list[
+        Literal[
+            "create_residents",
+            "assign_work",
+            "routines",
+            "update_residents",
+            "manage_lifecycle",
+            "assign_skills",
+        ]
+    ] = Field(default_factory=list, max_length=6)
     max_residents: int = Field(default=5, ge=0, le=20)
     max_daily_limit: int = Field(default=1_000_000, ge=0, le=10_000_000)
     max_reserve: int = Field(default=500_000, ge=1, le=2_000_000)

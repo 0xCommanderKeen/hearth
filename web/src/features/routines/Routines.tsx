@@ -13,6 +13,11 @@ export function RoutinePanel({
   act: (operation: () => Promise<unknown>) => Promise<void>;
 }) {
   const routine = snapshot.routines?.find((r) => r.id === "reader-daily");
+  const lifecycle = snapshot.residents.find(
+    (r) => r.id === (routine?.resident_id ?? "reader"),
+  )?.lifecycle?.state;
+  const suspended = lifecycle === "paused" || lifecycle === "archived";
+  const readOnly = snapshot.restore_hold || lifecycle === "archived";
   const [localTime, setLocalTime] = useState("09:00");
   const [timezone, setTimezone] = useState("Europe/Ljubljana");
   return (
@@ -31,11 +36,17 @@ export function RoutinePanel({
             {routine.enabled ? "Enabled" : "Disabled"} · revision{" "}
             {routine.revision}
           </p>
-          {Boolean(routine.enabled) && (
+          {suspended && (
+            <p>
+              Suspended by {lifecycle} lifecycle. Existing tasks retain their
+              status.
+            </p>
+          )}
+          {Boolean(routine.enabled) && !suspended && (
             <p>Next: {new Date(routine.next_at * 1000).toLocaleString()}</p>
           )}
           <button
-            disabled={busy}
+            disabled={busy || readOnly}
             onClick={() =>
               void act(() =>
                 client.saveRoutine(routine.id, {
@@ -88,7 +99,7 @@ export function RoutinePanel({
             required
             maxLength={100}
           />
-          <button disabled={busy || !snapshot.residents.length}>
+          <button disabled={busy || readOnly || !snapshot.residents.length}>
             Enable daily mock summary
           </button>
         </form>

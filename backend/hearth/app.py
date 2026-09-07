@@ -362,6 +362,9 @@ def create_app(
             key: result[key] for key in ("run_id", "command_id", "amount", "source", "recorded_at")
         }
 
+    from hearth.residents.maintenance_api import mount_maintenance
+
+    mount_maintenance(app, hearth)
     mount_inputs(app, hearth)
     mount_management(app, hearth)
     mount_skills(app, hearth)

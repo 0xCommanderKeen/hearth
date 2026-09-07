@@ -59,13 +59,15 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
 
 
 def authorize_managed_resident(db, authority: dict, resident_id: str, action: str) -> dict:
+    from hearth.residents.lifecycle import read_lifecycle
+    from hearth.residents.provisioning import profile_summary
+
     identifier(resident_id)
     if action not in authority["grant"]["capabilities"]:
         raise Refused("management_capability_not_permitted")
-    profile = db.execute(
-        "SELECT * FROM resident_profiles WHERE resident_id=?", (resident_id,)
-    ).fetchone()
-    if profile is None or profile["manager"] != authority["actor"]:
+    profile = profile_summary(db, resident_id)
+    lifecycle = read_lifecycle(db, resident_id)
+    if profile is None or lifecycle["manager"] != authority["actor"]:
         raise Refused("management_resident_out_of_scope")
     if profile["execution_profile"] not in authority["grant"]["profiles"]:
         raise Refused("management_profile_not_permitted")
@@ -76,7 +78,7 @@ def authorize_managed_resident(db, authority: dict, resident_id: str, action: st
         for item in read_selection(db, resident_id)["input_sets"]
     ):
         raise Refused("management_input_not_permitted")
-    return dict(profile)
+    return dict(profile) | {"manager": lifecycle["manager"]}
 
 
 def response(value: dict, *, success: bool = True) -> dict:

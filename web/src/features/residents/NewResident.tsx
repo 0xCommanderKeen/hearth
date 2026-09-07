@@ -539,7 +539,7 @@ export function NewResident({
 export function ProfileProvenance({ profile }: { profile: ResidentProfile }) {
   return (
     <section className="provision-profile" aria-label="Resident setup profile">
-      <h3>Ready for work</h3>
+      <h3>Setup provenance</h3>
       <dl className="provision-fields">
         <div>
           <dt>Created by</dt>
@@ -573,7 +573,9 @@ export function ProfileProvenance({ profile }: { profile: ResidentProfile }) {
       </dl>
       <p>{profile.creation_reason}</p>
       <small>
-        Setup operation {profile.command_id}
+        {profile.command_id
+          ? `Setup operation ${profile.command_id}`
+          : "Direct resident setup"}
         {profile.originating_run_id
           ? ` · originating run ${profile.originating_run_id}`
           : ""}

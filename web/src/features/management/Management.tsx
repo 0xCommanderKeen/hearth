@@ -193,6 +193,9 @@ const capabilityLabels: Record<ManagementCapability, string> = {
   create_residents: "Create residents",
   assign_work: "Assign and start managed work",
   routines: "Create daily routines",
+  update_residents: "Edit managed configurations",
+  manage_lifecycle: "Pause, resume and archive managed residents",
+  assign_skills: "Assign existing skills to managed residents",
 };
 function GrantEditor({
   client,

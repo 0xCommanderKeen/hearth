@@ -619,3 +619,31 @@ native response acceptance and a permitted routine's actual reservation. A maxim
 Unicode skill remains complete; a populated Unicode catalog stays bounded. The
 actual pinned-CLI local probe passed again after UTF-8 serialization changed the
 configuration digest, with the same restricted tools and absent canaries.
+
+### Issue #93 — ongoing resident management
+
+Lifecycle and current ownership now have a revisioned, integrity-checked owner.
+The operator profile and scoped Karen tools share coherent declaration, memory,
+input, exact skill and routine edits with owning revision checks and durable
+receipts. Pause/archive gate admissions and scheduled occurrences; archive also
+serializes with actual launch. Running/unknown work, accounting holds and saved
+results remain visible. Operator-only ownership transfer grants no new authority.
+The profile retains conflicting drafts, retries uncertain commands exactly, and
+exposes archived history while Hamlet excludes archived homes and links unresolved
+archived work. See [resident maintenance](resident-maintenance.md).
+
+Verification: 632 backend tests and 64 browser unit tests, lint/format/types and
+release builds passed. Both installed-wheel isolated HTTP/restart/held-restore
+journeys passed with cached dependencies (localhost socket permission required).
+Focused regressions cover competing manager/operator revisions, unrelated-agent
+refusal, forged transfer, archive dispatch gates, durable retry/restart, unknown
+mock evidence and held restore corruption, plus legal maximum Unicode groups.
+Actual rendered desktop/mobile verification created a synthetic resident/routine,
+ran and read its first result, retained a conflicting configuration draft, reloaded
+and saved declaration/memory, paused and archived, reopened the saved result,
+confirmed Hamlet exclusion and archived-directory access, then reloaded the mobile
+profile without overflow. Screenshots were inspected. The browser caught and fixed
+an invalid required-instructions constraint; a form-validity regression covers it.
+No provider calls were made. #91's separately bounded real creation proof remains
+pending explicit approval; these synthetic lifecycle checks do not replace it.
+Independent review and merge remain pending.

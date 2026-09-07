@@ -67,6 +67,10 @@ class OperatorAuth:
             body_limit = 32768 * 6 + 1024
         if scope["method"] == "POST" and scope["path"] == "/api/residents/provision":
             body_limit = 1_500_000  # Aggregate transport cap; semantic/UTF-8 limits also apply.
+        if scope["method"] == "PUT" and re.fullmatch(
+            r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}/configuration", scope["path"]
+        ):
+            body_limit = 1_500_000
         try:
             while True:
                 message = await asyncio.wait_for(receive(), timeout=15)

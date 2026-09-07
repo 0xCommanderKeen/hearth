@@ -10,16 +10,14 @@ import "./style.css";
 import { Approvals } from "../features/approvals/Approvals";
 import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
-import { Skills } from "../features/residents/Skills";
-import { Memory } from "../features/residents/Memory";
+import { ResidentMaintenance } from "../features/residents/Maintenance";
 import {
   NewResident,
   ProfileProvenance,
 } from "../features/residents/NewResident";
-import { Assignments } from "../features/skills/Assignments";
 import { ManagementPanel } from "../features/management/Management";
 import { InputLibrary } from "../features/inputs/Inputs";
-import { InputSelection, RunInputs } from "../features/inputs/Selection";
+import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { Hamlet } from "../features/hamlet/Hamlet";
@@ -126,6 +124,7 @@ export function App() {
   const [token, setToken] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState<Page>("townhall");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [residentId, setResidentId] = useState("reader");
   const [provisionId, setProvisionId] = useState("");
   const [connected, setConnected] = useState(false);
@@ -277,6 +276,9 @@ export function App() {
       if (hash === "#new-resident" || hash.startsWith("#new-resident/")) {
         setProvisionId(hash === "#new-resident" ? "" : hash.slice(14));
         setView("new-resident");
+      } else if (hash === "#residents-archived") {
+        setIncludeArchived(true);
+        setView("residents");
       } else if (hash.startsWith("#management/")) {
         setView("management");
       } else if (hash.startsWith("#inputs/")) {
@@ -610,6 +612,14 @@ export function App() {
                     </button>
                   </div>
                 )}
+                <label className="archive-filter">
+                  <input
+                    type="checkbox"
+                    checked={includeArchived}
+                    onChange={(e) => setIncludeArchived(e.target.checked)}
+                  />{" "}
+                  Include archived residents and history
+                </label>
                 {residents.length > 0 && (
                   <div className="resident-table">
                     <div className="resident-table-head">
@@ -618,29 +628,34 @@ export function App() {
                       <span>Daily limit</span>
                       <span>Profile</span>
                     </div>
-                    {residents.map((r) => (
-                      <a
-                        className="resident-row"
-                        key={r.id}
-                        href={`#residents/${encodeURIComponent(r.id)}`}
-                      >
-                        <div>
-                          <strong>{r.name}</strong>
-                          <small>{r.id}</small>
-                          <p>{r.purpose}</p>
-                        </div>
-                        <span className={`state state-${r.presence}`}>
-                          {connected
-                            ? statusLabel(r.presence)
-                            : "Last known: " + statusLabel(r.presence)}
-                        </span>
-                        <div>
-                          ${(r.daily_limit / 1e6).toFixed(2)}
-                          <small>{r.budget_timezone ?? "UTC"}</small>
-                        </div>
-                        <span className="profile-link">View resident →</span>
-                      </a>
-                    ))}
+                    {residents
+                      .filter(
+                        (r) =>
+                          includeArchived || r.lifecycle?.state !== "archived",
+                      )
+                      .map((r) => (
+                        <a
+                          className="resident-row"
+                          key={r.id}
+                          href={`#residents/${encodeURIComponent(r.id)}`}
+                        >
+                          <div>
+                            <strong>{r.name}</strong>
+                            <small>{r.id}</small>
+                            <p>{r.purpose}</p>
+                          </div>
+                          <span className={`state state-${r.presence}`}>
+                            {connected
+                              ? statusLabel(r.presence)
+                              : "Last known: " + statusLabel(r.presence)}
+                          </span>
+                          <div>
+                            ${(r.daily_limit / 1e6).toFixed(2)}
+                            <small>{r.budget_timezone ?? "UTC"}</small>
+                          </div>
+                          <span className="profile-link">View resident →</span>
+                        </a>
+                      ))}
                   </div>
                 )}
               </section>
@@ -688,6 +703,45 @@ export function App() {
                     </dl>
                   </section>
                 ))}
+            {view === "resident" &&
+              residents
+                .filter((r) => r.id === residentId)
+                .map((r) => (
+                  <div key={`profile:${r.id}`}>
+                    <ResidentMaintenance
+                      key={`maintenance:${snapshot.epoch}:${r.id}`}
+                      client={client}
+                      resident={r}
+                      readOnly={snapshot.restore_hold === true}
+                      routines={snapshot.routines ?? []}
+                      onChanged={() => void act(async () => {})}
+                    />
+                    {r.profile && <ProfileProvenance profile={r.profile} />}
+                    {r.management && (
+                      <section
+                        className="management-profile"
+                        aria-label="Resident management authority"
+                      >
+                        <h3>Management authority</h3>
+                        {"error" in r.management ? (
+                          <p role="alert">
+                            {r.management.error.replaceAll("_", " ")}
+                          </p>
+                        ) : (
+                          <p>
+                            {r.management.enabled
+                              ? `Enabled · grant revision ${r.management.revision} · up to ${r.management.max_residents} managed residents`
+                              : "No management tools granted."}
+                          </p>
+                        )}
+                        <a href={`#management/${r.id}`}>
+                          Inspect or edit the operator grant →
+                        </a>
+                      </section>
+                    )}
+                  </div>
+                ))}
+
             {(view === "resident" || view === "tasks") && (
               <div
                 className={`workspace ${view === "tasks" ? "tasks-only" : ""}`}
@@ -747,6 +801,13 @@ export function App() {
                             disabled={
                               busy ||
                               !!snapshot.restore_hold ||
+                              (!pending.current &&
+                                residents.some(
+                                  (r) =>
+                                    r.id === residentId &&
+                                    r.lifecycle &&
+                                    r.lifecycle.state !== "ready",
+                                )) ||
                               (!!pending.current &&
                                 pending.current.body.resident_id !== residentId)
                             }
@@ -787,95 +848,12 @@ export function App() {
                                   : ""}
                               </span>
                             </div>
-                            <button
-                              disabled={busy || snapshot.restore_hold}
-                              onClick={() =>
-                                void act(() =>
-                                  client.pauseResident(
-                                    r.id,
-                                    !r.operator_paused,
-                                    r.control_revision ?? 0,
-                                  ),
-                                )
-                              }
-                            >
-                              {r.operator_paused
-                                ? "Resume new runs"
-                                : "Pause new runs"}
-                            </button>
                             <span className="revision">
                               REV {r.revision}
                               <br />
                               Budget day: {r.budget_timezone ?? "UTC"}
                             </span>
                           </div>
-                        ))}
-                      {residents
-                        .filter((r) => r.id === residentId)
-                        .map((r) => (
-                          <div key={`profile:${r.id}`}>
-                            <InputSelection
-                              key={`inputs:${snapshot.epoch}:${r.id}`}
-                              client={client}
-                              residentId={r.id}
-                              readOnly={snapshot.restore_hold === true}
-                            />
-                            {r.profile && (
-                              <ProfileProvenance profile={r.profile} />
-                            )}
-                            {r.management && (
-                              <section
-                                className="management-profile"
-                                aria-label="Resident management authority"
-                              >
-                                <h3>Management authority</h3>
-                                {"error" in r.management ? (
-                                  <p role="alert">
-                                    {r.management.error.replaceAll("_", " ")}
-                                  </p>
-                                ) : (
-                                  <p>
-                                    {r.management.enabled
-                                      ? `Enabled · grant revision ${r.management.revision} · up to ${r.management.max_residents} managed residents`
-                                      : "No management tools granted."}
-                                  </p>
-                                )}
-                                <a href={`#management/${r.id}`}>
-                                  Inspect or edit the operator grant →
-                                </a>
-                              </section>
-                            )}
-                            <Assignments
-                              key={`assigned:${snapshot.epoch}:${r.id}`}
-                              client={client}
-                              residentId={r.id}
-                              readOnly={snapshot.restore_hold === true}
-                            />
-                          </div>
-                        ))}
-                      {residents
-                        .filter((r) => r.id === residentId)
-                        .map((r) => (
-                          <Skills
-                            key={`${snapshot.epoch}:${r.id}`}
-                            client={client}
-                            resident={r}
-                            busy={busy}
-                            readOnly={snapshot.restore_hold === true}
-                            act={act}
-                          />
-                        ))}
-                      {residents
-                        .filter((r) => r.id === residentId)
-                        .map((r) => (
-                          <Memory
-                            key={`${snapshot.epoch}:${r.id}`}
-                            client={client}
-                            resident={r}
-                            busy={busy}
-                            readOnly={snapshot.restore_hold === true}
-                            act={act}
-                          />
                         ))}
                     </section>
                   )}

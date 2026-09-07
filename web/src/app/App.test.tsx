@@ -27,6 +27,35 @@ beforeEach(() => {
     runs: [],
     activity: [],
   };
+  vi.spyOn(Client.prototype, "configuration").mockImplementation(
+    async (id) => ({
+      resident_id: id,
+      lifecycle: state.residents.find((r) => r.id === id)?.lifecycle ?? {
+        resident_id: id,
+        state: "ready",
+        revision: 0,
+        manager: "operator",
+      },
+      execution_profile: "inline_mock",
+      declaration: {
+        expected_revision: 1,
+        name: id,
+        purpose: "Synthetic notes",
+        instructions: "Read",
+        daily_limit: 100000,
+        budget_timezone: "UTC",
+      },
+      memory: { expected_revision: 0, text: "" },
+      inputs: { expected_revision: 0, input_sets: [] },
+      skills: { expected_revision: 0, skills: [] },
+      routines: [],
+    }),
+  );
+  vi.spyOn(Client.prototype, "request").mockResolvedValue({
+    execution_profiles: [],
+    input_sets: [],
+    managers: [{ id: "operator", name: "Operator" }],
+  });
   vi.spyOn(Client.prototype, "inputSets").mockResolvedValue([]);
   vi.spyOn(Client.prototype, "inputSelection").mockImplementation(
     async (resident_id) => ({ resident_id, revision: 0, input_sets: [] }),
@@ -320,14 +349,27 @@ it("opens a linked result outside the recent task list after authentication", as
 
 it("pauses new runs using the displayed operator revision", async () => {
   addReader();
-  state.residents[0].control_revision = 3;
+  state.residents[0].lifecycle = {
+    resident_id: "reader",
+    state: "ready",
+    revision: 3,
+    manager: "operator",
+  };
   state.residents[0].operator_paused = 0;
   const pause = vi
-    .spyOn(Client.prototype, "pauseResident")
-    .mockResolvedValue({});
+    .spyOn(Client.prototype, "maintainResident")
+    .mockResolvedValue({ command_id: "pause", resident_id: "reader" });
   await login();
   fireEvent.click(screen.getByText("Pause new runs"));
-  await waitFor(() => expect(pause).toHaveBeenCalledWith("reader", true, 3));
+  await waitFor(() =>
+    expect(pause).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resident_id: "reader",
+        kind: "lifecycle",
+        body: { expected_revision: 3, state: "paused" },
+      }),
+    ),
+  );
   expect(screen.getByText(/Existing work continues/)).toBeTruthy();
 });
 

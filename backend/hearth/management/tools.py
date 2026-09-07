@@ -8,6 +8,8 @@ from hearth.authority.household import household_state
 from hearth.inputs.catalog import read_input
 from hearth.management.authority import digest
 from hearth.management.bridge import authorize_managed_resident
+from hearth.residents.lifecycle import read_lifecycle
+from hearth.residents.maintenance_tools import MAINTENANCE_TOOLS, dispatch_maintenance
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import Provisioning, ProvisionRequest, profile_summary
 from hearth.skills.catalog import checked_revision
@@ -55,6 +57,7 @@ class StartWork(Operation):
 
 
 TOOL_MODELS = {
+    **MAINTENANCE_TOOLS,
     "hearth_catalog": (
         Catalog,
         "Inspect resident/skill summaries, permitted synthetic inputs and current policy. "
@@ -117,7 +120,7 @@ def _catalog(db, authority, query: str, now: int) -> dict:
                     "id": row["id"],
                     "name": row["name"],
                     "purpose": row["purpose"][:500],
-                    "managed": row["manager"] == authority["actor"],
+                    "managed": read_lifecycle(db, row["id"])["manager"] == authority["actor"],
                 }
             )
         if len(residents) == 25:
@@ -216,9 +219,10 @@ def _provision(db, hearth, authority, body: Provision, payload: str) -> dict:
     previous = _existing_operation(db, authority, body.operation_id, payload)
     if previous:
         return previous
-    count = db.execute(
-        "SELECT COUNT(*) FROM resident_profiles WHERE manager=?", (authority["actor"],)
-    ).fetchone()[0]
+    count = sum(
+        read_lifecycle(db, row[0])["manager"] == authority["actor"]
+        for row in db.execute("SELECT id FROM residents")
+    )
     if count >= grant["max_residents"]:
         raise Refused("management_resident_count_limit")
     command_id = "management:" + digest([authority["actor"], body.operation_id])
@@ -302,14 +306,31 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
         raise Refused("management_tool_not_permitted")
     try:
+        if tool in MAINTENANCE_TOOLS:
+            return dispatch_maintenance(db, hearth, authority, tool, arguments)
         model = TOOL_MODELS[tool][0]
         body = model.model_validate(arguments)
         if isinstance(body, Catalog):
             return _catalog(db, authority, body.query, int(hearth.clock()))
         if isinstance(body, ResidentRead):
-            authorize_managed_resident(db, authority, body.resident_id, "assign_work")
+            capability = next(
+                (
+                    name
+                    for name in (
+                        "assign_work",
+                        "manage_lifecycle",
+                        "update_residents",
+                        "create_residents",
+                        "assign_skills",
+                    )
+                    if name in authority["grant"]["capabilities"]
+                ),
+                "assign_work",
+            )
+            authorize_managed_resident(db, authority, body.resident_id, capability)
             return {
                 "profile": profile_summary(db, body.resident_id),
+                "lifecycle": read_lifecycle(db, body.resident_id),
                 "tasks": [
                     dict(row)
                     for row in db.execute(

@@ -65,7 +65,7 @@ export type ResidentProfile = {
   inputs_error?: string | null;
   creator_name?: string;
   manager_name?: string;
-  command_id: string;
+  command_id: string | null;
   creator: string;
   manager: string;
   created_at: number;
@@ -173,6 +173,9 @@ export type Approval = {
   };
 };
 export type Resident = InputProvenance & {
+  lifecycle?: ResidentLifecycle;
+  unresolved_runs?: number;
+  safety_hold_reason?: string | null;
   profile?: ResidentProfile | null;
   management?: ManagementGrant | { enabled: false; error: string };
   id: string;
@@ -183,12 +186,72 @@ export type Resident = InputProvenance & {
   budget_timezone?: string;
   presence: string;
   pause_reason: string | null;
-  operator_paused?: number;
+  operator_paused?: number | boolean;
   control_revision?: number;
   memory_revision?: number;
   skills?: AssignedSkill[];
   skills_error?: string | null;
 };
+export type ResidentLifecycle = {
+  resident_id: string;
+  state: "ready" | "paused" | "archived" | "unavailable";
+  revision?: number;
+  manager?: string;
+  actor?: string;
+  originating_run_id?: string | null;
+  updated_at?: number;
+  error?: string;
+};
+export type Configuration = {
+  resident_id: string;
+  lifecycle: ResidentLifecycle;
+  execution_profile: string;
+  declaration: {
+    expected_revision: number;
+    name: string;
+    purpose: string;
+    instructions: string;
+    daily_limit: number;
+    budget_timezone: string;
+  };
+  memory: { expected_revision: number; text: string };
+  inputs: { expected_revision: number; input_sets: { input_set_id: string }[] };
+  skills: {
+    expected_revision: number;
+    skills: { skill_id: string; revision: number }[];
+  };
+  routines: ConfigurationRoutine[];
+};
+export type ConfigurationRoutine = {
+  routine_id: string;
+  expected_revision: number;
+  instruction: string;
+  local_time: string;
+  timezone: string;
+  enabled: boolean;
+};
+export type ConfigurationChange = {
+  expected_lifecycle_revision: number;
+  declaration?: Configuration["declaration"];
+  memory?: Configuration["memory"];
+  inputs?: Configuration["inputs"];
+  skills?: Configuration["skills"];
+  routines?: ConfigurationRoutine[];
+};
+export type MaintenanceChange = {
+  resident_id: string;
+  command_id: string;
+} & (
+  | { kind: "configuration"; body: ConfigurationChange }
+  | {
+      kind: "lifecycle";
+      body: {
+        expected_revision: number;
+        state: "ready" | "paused" | "archived";
+      };
+    }
+  | { kind: "manager"; body: { expected_revision: number; manager: string } }
+);
 export type ResidentMemory = {
   resident_id: string;
   revision: number;
@@ -311,7 +374,12 @@ export function decodeSnapshot(value: unknown): Snapshot {
 }
 
 export type ManagementCapability =
-  "create_residents" | "assign_work" | "routines";
+  | "create_residents"
+  | "assign_work"
+  | "routines"
+  | "update_residents"
+  | "manage_lifecycle"
+  | "assign_skills";
 export type ManagementGrant = {
   resident_id: string;
   revision: number;
@@ -390,6 +458,33 @@ export class Client {
 
   managementCatalog() {
     return this.request<ManagementCatalog>("/api/management");
+  }
+  configuration(id: string) {
+    return this.request<Configuration>(
+      `/api/residents/${encodeURIComponent(id)}/configuration`,
+    );
+  }
+  async maintainResident(change: MaintenanceChange) {
+    const result = await this.request<{
+      command_id: string;
+      resident_id: string;
+      revision?: number;
+    }>(
+      `/api/residents/${encodeURIComponent(change.resident_id)}/${change.kind}`,
+      {
+        method: "PUT",
+        headers: { "Idempotency-Key": change.command_id },
+        body: JSON.stringify(change.body),
+      },
+    );
+    if (
+      result.command_id !== change.command_id ||
+      result.resident_id !== change.resident_id
+    )
+      throw new Error(
+        "Resident operation is unconfirmed; retry the exact request.",
+      );
+    return result;
   }
   setupKaren() {
     return this.request<{

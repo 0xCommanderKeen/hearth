@@ -63,3 +63,38 @@
   color: var(--accent);
   font-size: 13px;
 }
+
+.maintenance {
+  margin: 24px 0;
+}
+.maintenance .section-title h3 {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+}
+.maintenance-skill {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.maintenance-skill label {
+  max-width: 180px;
+}
+.maintenance .maintenance-routine {
+  border: 1px solid var(--line);
+  padding: 16px;
+  margin: 16px 0;
+}
+.maintenance p,
+.maintenance a {
+  overflow-wrap: anywhere;
+}

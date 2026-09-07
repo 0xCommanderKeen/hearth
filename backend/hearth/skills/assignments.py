@@ -98,8 +98,10 @@ def save_assignments(
     now: int,
 ) -> dict:
     """Caller authenticates actor and owns transaction, including provisioning authority."""
+    from hearth.residents.lifecycle import check_not_archived
     from hearth.work.service import _audit
 
+    check_not_archived(db, resident_id)
     identifier(resident_id)
     identifier(actor)
     identifier(command_id)

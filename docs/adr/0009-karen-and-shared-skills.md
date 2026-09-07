@@ -49,3 +49,11 @@ provide separate evidence. Pause/archive preserve history and truthful active or
 unknown execution while stopping future admission. Personal-source connectors,
 broad shell access, package installation, marketplaces, production deployment and
 unrelated redesign remain outside this decision. Stop at the working demo.
+
+Ongoing maintenance uses a separate revisioned lifecycle/current-manager owner.
+Configuration groups retain their owning revisions and share one writer with current
+manager authorization and audit. Archive preserves history and unresolved accounting;
+it suspends routine creation, admissions and actual prelaunch dispatch without
+pretending to cancel execution. Ownership transfer is operator-only and grants no
+capabilities. [The maintenance contract](../resident-maintenance.md) defines the
+profile, transition, retry and permission boundaries.

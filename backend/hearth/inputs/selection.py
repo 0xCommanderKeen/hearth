@@ -61,8 +61,10 @@ def save_selection(
     now: int,
 ) -> dict:
     """Caller authenticates actor, scopes grants and owns the same write transaction."""
+    from hearth.residents.lifecycle import check_not_archived
     from hearth.work.service import _audit
 
+    check_not_archived(db, resident_id)
     identifier(resident_id)
     identifier(command_id)
     identifier(actor)

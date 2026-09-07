@@ -2,6 +2,18 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE resident_lifecycle (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>=0),
+        FOREIGN KEY(resident_id,revision) REFERENCES resident_lifecycle_history(resident_id,revision)
+    )""",
+    """CREATE TABLE resident_lifecycle_history (
+        resident_id TEXT NOT NULL REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>=0),
+        content TEXT NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(resident_id,revision)
+    )""",
+    """CREATE TABLE resident_maintenance_operations (
+        command_id TEXT PRIMARY KEY, actor TEXT NOT NULL, payload_digest TEXT NOT NULL,
+        receipt TEXT NOT NULL, receipt_sha256 TEXT NOT NULL
+    )""",
     """CREATE TABLE run_management (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
         grant_revision INTEGER NOT NULL, grant_sha256 TEXT NOT NULL, expires_at INTEGER NOT NULL,
@@ -184,11 +196,6 @@ SCHEMA = (
         created_at INTEGER NOT NULL,
         PRIMARY KEY(routine_id, scheduled_at),
         FOREIGN KEY(routine_id, revision) REFERENCES routine_revisions(routine_id, revision)
-    )""",
-    """CREATE TABLE operator_controls (
-        resident_id TEXT PRIMARY KEY REFERENCES residents(id),
-        revision INTEGER NOT NULL CHECK (revision > 0),
-        paused INTEGER NOT NULL CHECK (paused IN (0,1)), updated_at INTEGER NOT NULL
     )""",
     """CREATE TABLE pauses (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), reason TEXT NOT NULL,

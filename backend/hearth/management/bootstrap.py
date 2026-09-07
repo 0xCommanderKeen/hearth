@@ -70,7 +70,14 @@ def bootstrap(hearth: Hearth) -> dict:
                 "enabled": True,
                 "profiles": [runtime],
                 "input_set_ids": [row[0] for row in db.execute("SELECT id FROM input_sets")],
-                "capabilities": ["create_residents", "assign_work", "routines"],
+                "capabilities": [
+                    "create_residents",
+                    "assign_work",
+                    "routines",
+                    "update_residents",
+                    "manage_lifecycle",
+                    "assign_skills",
+                ],
             },
         )
         result = {

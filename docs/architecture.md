@@ -53,3 +53,9 @@ and exact source bytes; host module moves are translated only while packaging it
 sources. Auth and data remain outside the checkout. Existing integrity-pinned
 runtime assets continue to be verified against their exact source bytes; changed
 assets are never silently accepted or rewritten.
+
+Resident lifecycle and ownership are owned by `residents/lifecycle.py`, independently
+of execution presence. `residents/maintenance.py` composes the normal configuration
+owners in one revision-checked transaction. Operator API and scoped management tools
+share this service; routine scheduling and actual launch consult the lifecycle owner.
+See [resident maintenance](resident-maintenance.md) for transition and accounting rules.
