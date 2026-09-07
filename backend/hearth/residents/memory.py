@@ -1,6 +1,8 @@
 """Resident memory: immutable files, transactional revisions and pinned run reads."""
 
 import hashlib
+import hmac
+import json
 import os
 import re
 import sqlite3
@@ -143,6 +145,109 @@ class Memory:
     def save_in_transaction(
         self, db, resident_id: str, text: str, *, expected_revision: int
     ) -> dict:
+        """The operator writer. Runs reach the same revisions through `save_from_run`."""
+        return self._write(
+            db,
+            resident_id,
+            text,
+            expected_revision=expected_revision,
+            author="operator",
+            actor="operator",
+        )
+
+    def save_from_run(
+        self,
+        db,
+        run_id: str,
+        text: str,
+        *,
+        expected_revision: int,
+        operation_id: str,
+        resident_id: str | None = None,
+    ) -> dict:
+        """A live run writes its own resident's memory once per operation identity.
+
+        Authorship comes from the authenticated run, never from the text. The caller
+        owns the writer so the revision, its operation receipt and its audit commit
+        together.
+        """
+        from hearth.authority.run_access import context_ended, live_run
+
+        identifier(operation_id)
+        run = live_run(db, run_id)
+        if context_ended(db, run_id, int(self.hearth.clock())):
+            raise Refused("run_context_unavailable")
+        if resident_id is not None:
+            identifier(resident_id)
+            if resident_id != run["resident_id"]:
+                raise Refused("memory_run_mismatch")
+        resident_id = run["resident_id"]
+        pinned = db.execute(
+            "SELECT resident_id FROM run_memory WHERE run_id=?", (run_id,)
+        ).fetchone()
+        if pinned is not None and pinned["resident_id"] != resident_id:
+            raise Refused("memory_run_mismatch")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise Refused("invalid_memory_revision")
+        if not isinstance(text, str):
+            raise Refused("invalid_memory_text")
+        payload = hashlib.sha256(
+            json.dumps([resident_id, expected_revision, text], sort_keys=True).encode()
+        ).hexdigest()
+        previous = db.execute(
+            "SELECT * FROM memory_operations WHERE run_id=? AND operation_id=?",
+            (run_id, operation_id),
+        ).fetchone()
+        if previous is not None:
+            if not hmac.compare_digest(previous["payload_digest"], payload):
+                raise Refused("operation_conflict")
+            return self._original_receipt(db, previous["receipt"], resident_id)
+        saved = self._write(
+            db,
+            resident_id,
+            text,
+            expected_revision=expected_revision,
+            author="run",
+            actor="run:" + run_id,
+        )
+        receipt = {
+            "resident_id": resident_id,
+            "revision": saved["revision"],
+            "sha256": saved["sha256"],
+            "author": "run",
+            "operation_id": operation_id,
+            "run_id": run_id,
+        }
+        db.execute(
+            "INSERT INTO memory_operations VALUES (?,?,?,?)",
+            (run_id, operation_id, payload, json.dumps(receipt, sort_keys=True)),
+        )
+        return {**receipt, "text": text}
+
+    def _original_receipt(self, db, stored: str, resident_id: str) -> dict:
+        """A retry replays the recorded revision; memory text lives only in its file.
+
+        A receipt is recorded state, not authority: it can only replay the memory of
+        the resident this run writes, which is the invariant backup verification
+        enforces on the same rows.
+        """
+        try:
+            receipt = json.loads(stored)
+            recorded = receipt["resident_id"], receipt["revision"], receipt["sha256"]
+            author = receipt["author"]
+        except ValueError, TypeError, KeyError:
+            raise Refused("memory_operation_receipt_corrupt") from None
+        if recorded[0] != resident_id or author != "run" or type(recorded[1]) is not int:
+            raise Refused("memory_operation_receipt_corrupt")
+        # File-layer refusals keep their own codes; a bad file is not a bad receipt.
+        revision = read_revision(db, self.files, resident_id, recorded[1])
+        if revision["sha256"] != recorded[2]:
+            raise Refused("memory_operation_receipt_corrupt")
+        return {**receipt, "text": revision["text"]}
+
+    def _write(
+        self, db, resident_id: str, text: str, *, expected_revision: int, author: str, actor: str
+    ) -> dict:
         from hearth.residents.lifecycle import check_not_archived
 
         check_not_archived(db, resident_id)
@@ -169,15 +274,21 @@ class Memory:
         digest = self.files.publish(resident_id, data)
         now = int(self.hearth.clock())
         db.execute(
-            "INSERT INTO memory_revisions VALUES (?,?,?,?,?)",
-            (resident_id, revision, digest, len(data), now),
+            "INSERT INTO memory_revisions VALUES (?,?,?,?,?,?)",
+            (resident_id, revision, digest, len(data), now, author),
         )
         _audit(
             db,
             "memory.saved",
             resident_id,
             now,
-            {"revision": revision, "sha256": digest, "size": len(data)},
+            {
+                "actor": actor,
+                "author": author,
+                "revision": revision,
+                "sha256": digest,
+                "size": len(data),
+            },
         )
         return {
             "resident_id": resident_id,

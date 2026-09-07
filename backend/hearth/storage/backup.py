@@ -370,6 +370,45 @@ def _check_database(root: Path) -> dict:
             "WHERE m.resident_id != r.resident_id"
         ).fetchone():
             raise Refused("backup_references_invalid")
+        # Run authorship survives a copy only as a pair: every operation receipt names
+        # the authoring run's own resident and a revision recorded as run-written, and
+        # every run-written revision keeps the receipt that authored it. Checking one
+        # direction alone would let a rehashed copy promote or demote an author.
+        authored = set()
+        for row in db.execute(
+            "SELECT o.*,r.resident_id AS owner FROM memory_operations o JOIN runs r "
+            "ON r.id=o.run_id"
+        ):
+            try:
+                receipt = json.loads(row["receipt"])
+                identity = receipt["resident_id"], receipt["revision"], receipt["sha256"]
+                # Check the shape before binding it: a receipt is untrusted copied bytes.
+                named = (
+                    isinstance(identity[0], str)
+                    and type(identity[1]) is int
+                    and isinstance(identity[2], str)
+                    and identity[0] == row["owner"]
+                    and receipt["run_id"] == row["run_id"]
+                    and receipt["operation_id"] == row["operation_id"]
+                    and receipt["author"] == "run"
+                )
+            except ValueError, TypeError, KeyError:
+                raise Refused("backup_references_invalid") from None
+            if (
+                not named
+                or not db.execute(
+                    "SELECT 1 FROM memory_revisions WHERE resident_id=? AND revision=? "
+                    "AND sha256=? AND author='run'",
+                    identity,
+                ).fetchone()
+            ):
+                raise Refused("backup_references_invalid")
+            authored.add(identity)
+        for row in db.execute(
+            "SELECT resident_id,revision,sha256 FROM memory_revisions WHERE author='run'"
+        ):
+            if tuple(row) not in authored:
+                raise Refused("backup_references_invalid")
         for entry in db.execute("SELECT * FROM journal_entries"):
             checked_entry(entry)
         for table in ("journal_entries", "journal_archives"):

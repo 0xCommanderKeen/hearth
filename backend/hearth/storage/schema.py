@@ -217,6 +217,7 @@ SCHEMA = (
         resident_id TEXT NOT NULL REFERENCES residents(id),
         revision INTEGER NOT NULL CHECK(revision > 0), sha256 TEXT NOT NULL,
         size INTEGER NOT NULL CHECK(size >= 0 AND size <= 131072), created_at INTEGER NOT NULL,
+        author TEXT NOT NULL CHECK(author IN ('operator','run')),
         PRIMARY KEY(resident_id, revision)
     )""",
     """CREATE TABLE journal_entries (
@@ -232,6 +233,11 @@ SCHEMA = (
         run_id TEXT NOT NULL UNIQUE REFERENCES runs(id), at INTEGER NOT NULL,
         sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size > 0 AND size <= 4608),
         PRIMARY KEY(resident_id, sequence)
+    )""",
+    """CREATE TABLE memory_operations (
+        run_id TEXT NOT NULL REFERENCES runs(id), operation_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, receipt TEXT NOT NULL,
+        PRIMARY KEY(run_id, operation_id)
     )""",
     """CREATE TABLE occurrences (
         routine_id TEXT NOT NULL, scheduled_at INTEGER NOT NULL, revision INTEGER NOT NULL,

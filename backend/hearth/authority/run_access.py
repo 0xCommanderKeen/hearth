@@ -27,6 +27,39 @@ def _digest(token: str, owner: str, epoch: str) -> str:
     ).hexdigest()
 
 
+def live_run(db, run_id: str):
+    """The single cutoff for run-held authority: only current work of the resident it
+    runs for still acts. Terminal, stopping, cancelled or superseded work does not."""
+    identifier(run_id)
+    run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+    if run is None:
+        raise Refused("run_not_found")
+    resident = db.execute(
+        "SELECT revision FROM residents WHERE id=?", (run["resident_id"],)
+    ).fetchone()
+    if (
+        run["status"] not in {"starting", "running"}
+        or run["cancellation_requested"]
+        or run["finished_at"] is not None
+        or resident is None
+        or resident[0] != run["resident_revision"]
+    ):
+        raise Refused("run_context_unavailable")
+    return run
+
+
+def context_ended(db, run_id: str, now: int) -> bool:
+    """One credential cutoff for reading and writing: an expired or revoked context
+    credential ends both. A run that was issued none is not cut off by this rule; the
+    in-process runtime and the management bridge never hold one, and `live_run` is
+    their cutoff.
+    """
+    row = db.execute(
+        "SELECT expires_at,revoked_at FROM run_credentials WHERE run_id=?", (run_id,)
+    ).fetchone()
+    return row is not None and (row["revoked_at"] is not None or now >= row["expires_at"])
+
+
 class RunAccess:
     def __init__(self, hearth: Hearth):
         self.hearth = hearth
@@ -40,18 +73,10 @@ class RunAccess:
             raise Refused("invalid_credential_lifetime")
         with self.hearth.database.transaction(write=True) as db:
             now = int(self.hearth.clock())
-            run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-            if run is None or not hmac.compare_digest(run["owner_token"], owner_token):
+            owner = db.execute("SELECT owner_token FROM runs WHERE id=?", (run_id,)).fetchone()
+            if owner is None or not hmac.compare_digest(owner[0], owner_token):
                 raise Refused("run_ownership_lost")
-            resident = db.execute(
-                "SELECT revision FROM residents WHERE id=?", (run["resident_id"],)
-            ).fetchone()
-            if (
-                run["status"] not in {"starting", "running"}
-                or run["cancellation_requested"]
-                or resident[0] != run["resident_revision"]
-            ):
-                raise Refused("run_context_unavailable")
+            live_run(db, run_id)
             epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()[0]
             token = "hr_" + secrets.token_urlsafe(32)
             expires = now + lifetime
@@ -100,8 +125,7 @@ class RunAccess:
             ):
                 raise Refused("runtime_unauthorized")
             if (
-                now >= row["expires_at"]
-                or row["revoked_at"] is not None
+                context_ended(db, run_id, now)
                 or row["status"] not in {"starting", "running"}
                 or row["cancellation_requested"]
             ):
