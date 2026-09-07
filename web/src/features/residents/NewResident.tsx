@@ -68,7 +68,7 @@ export function NewResident({
       ]);
       if (!live.current) return;
       setOptions(choices);
-      setSkills(catalog);
+      setSkills(catalog.filter((skill) => skill.status === "active"));
       if (previous) {
         setDraft(previous.setup);
         setReceipt(previous);

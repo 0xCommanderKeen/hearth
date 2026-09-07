@@ -4,6 +4,7 @@ from fastapi import FastAPI, Header, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from hearth.skills.assignments import Assignments
+from hearth.skills.authoring import Authoring
 from hearth.skills.catalog import Skills
 from hearth.work.service import Hearth
 
@@ -13,6 +14,7 @@ class SkillPost(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=2000)
     instructions: str = Field(min_length=1, max_length=32000)
+    authoring: Authoring | None = None
 
 
 class SkillPut(SkillPost):
@@ -36,9 +38,44 @@ class AssignmentPut(BaseModel):
     skills: list[SkillEntry] = Field(max_length=8)
 
 
+class ValidationPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    revision: int = Field(ge=1)
+    reserve: int = Field(default=100000, ge=1, le=500000)
+
+
+class PublishPost(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_revision: int = Field(ge=1)
+    validation_id: str
+
+
 def mount_skills(app: FastAPI, hearth: Hearth) -> None:
     skills = Skills(hearth)
     assignments = Assignments(hearth)
+
+    from hearth.skills.validation import Validation
+
+    validation = Validation(hearth)
+
+    # create_app installs OperatorAuth for every /api/* path before dispatch.
+    # These ordinary operator routes never accept an agent/run credential.
+    # Database.transaction(write=True) refuses all mutations on held restores.
+    @app.get("/api/skill-validations/{validation_id}")
+    def validation_result(validation_id: str):
+        return validation.read(validation_id)
+
+    @app.post("/api/skills/{skill_id}/validations")
+    def validate(skill_id: str, body: ValidationPost):
+        return validation.request(skill_id, body.revision, body.reserve)
+
+    @app.post("/api/skills/{skill_id}/publish")
+    def publish(
+        skill_id: str,
+        body: PublishPost,
+        idempotency_key: str = Header(min_length=1, max_length=128),
+    ):
+        return skills.publish(idempotency_key, skill_id, body.expected_revision, body.validation_id)
 
     @app.get("/api/residents/{resident_id}/skills")
     def assigned(resident_id: str):

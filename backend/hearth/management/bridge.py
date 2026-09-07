@@ -151,9 +151,13 @@ class Bridge:
                 bounded_text(value, 256, "management_call_invalid")
             if (
                 not isinstance(params.get("arguments"), dict)
-                or len(json.dumps(params).encode()) > 256 * 1024
+                or len(json.dumps(params, ensure_ascii=False).encode()) > 256 * 1024
             ):
                 raise Refused("management_arguments_invalid")
+            if params["tool"] == "hearth_skills_validation":
+                from hearth.skills.tools import wait_for_validation
+
+                wait_for_validation(self.hearth, self.bound, params)
             with self.hearth.database.transaction(write=True) as db:
                 now = int(self.hearth.clock())
                 authority = authorize(

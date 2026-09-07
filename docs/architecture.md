@@ -11,7 +11,10 @@
   admission serialize through the same SQLite authority.
 - `inputs/` owns bounded synthetic note revisions, resident selections, explicit
   Reader seeding and ordered run input manifests; all mutations use the caller's
-  SQLite writer. `skills/` owns the reusable skill library and exact assignments.
+  SQLite writer. `skills/` owns the reusable skill library, draft authoring, bounded
+  example evaluation, immutable publication evidence and exact assignments. Its
+  evaluator task bindings select exact draft/input revisions through ordinary
+  admission; they confer no model-visible draft override or management authority.
 - `management/` owns operator grants, explicit Karen setup, admission authority and
   scoped tool dispatch. Its bridge calls provisioning/work writers in the same
   transaction as durable call/operation receipts and audit. The native transport

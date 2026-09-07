@@ -10,7 +10,9 @@ from hearth.management.authority import digest
 from hearth.management.bridge import authorize_managed_resident
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import Provisioning, ProvisionRequest, profile_summary
+from hearth.skills.authoring import decorate
 from hearth.skills.catalog import checked_revision
+from hearth.skills.tools import SKILL_TOOLS, dispatch_skill
 from hearth.work.routines import ROUTINE_RESERVATION
 from hearth.work.service import _audit, _queue_task
 
@@ -55,6 +57,7 @@ class StartWork(Operation):
 
 
 TOOL_MODELS = {
+    **SKILL_TOOLS,
     "hearth_catalog": (
         Catalog,
         "Inspect resident/skill summaries, permitted synthetic inputs and current policy. "
@@ -124,13 +127,18 @@ def _catalog(db, authority, query: str, now: int) -> dict:
             break
     skills = []
     for row in db.execute(
-        "SELECT r.* FROM skills s JOIN skill_revisions r ON r.skill_id=s.id "
-        "AND r.revision=s.revision WHERE r.status='active' ORDER BY r.name,s.id"
+        "SELECT r.*,s.created_by FROM skills s JOIN skill_revisions r ON r.skill_id=s.id "
+        "AND r.revision=s.revision WHERE r.status='active' OR "
+        "(r.status='draft' AND s.created_by=?) ORDER BY r.name,s.id",
+        (authority["actor"],),
     ):
         checked = checked_revision(row)
         if query in (checked["name"] + " " + checked["description"]).casefold():
             skills.append(
-                {key: checked[key] for key in ("skill_id", "revision", "name")}
+                {
+                    key: checked[key]
+                    for key in ("skill_id", "revision", "name", "status", "created_by")
+                }
                 | {"description": checked["description"][:500]}
             )
         if len(skills) == 25:
@@ -304,6 +312,8 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     try:
         model = TOOL_MODELS[tool][0]
         body = model.model_validate(arguments)
+        if tool in SKILL_TOOLS:
+            return dispatch_skill(db, hearth, authority, tool, body)
         if isinstance(body, Catalog):
             return _catalog(db, authority, body.query, int(hearth.clock()))
         if isinstance(body, ResidentRead):
@@ -325,12 +335,13 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
             }
         if isinstance(body, SkillRead):
             row = db.execute(
-                "SELECT * FROM skill_revisions WHERE skill_id=? AND revision=?",
+                "SELECT r.*,s.created_by,s.created_at FROM skill_revisions r JOIN skills s "
+                "ON s.id=r.skill_id WHERE skill_id=? AND r.revision=?",
                 (body.skill_id, body.revision),
             ).fetchone()
             if row is None:
                 raise Refused("skill_not_found")
-            return checked_revision(row)
+            return decorate(db, checked_revision(row))
         payload = digest([tool, arguments])
         if isinstance(body, Provision):
             return _provision(db, hearth, authority, body, payload)

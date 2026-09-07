@@ -132,6 +132,8 @@ def save_assignments(
     validated = []
     for entry in entries:
         skill = exact_skill(db, entry["skill_id"], entry["revision"])
+        if skill["status"] == "draft":
+            raise Refused("skill_not_active")
         latest = db.execute(
             "SELECT r.status FROM skills s JOIN skill_revisions r ON r.skill_id=s.id AND "
             "r.revision=s.revision WHERE s.id=?",
@@ -176,7 +178,18 @@ def save_assignments(
 
 
 def pin_skills(db, run_id: str, resident_id: str) -> None:
-    assigned = read_assignments(db, resident_id)
+    assigned: dict = read_assignments(db, resident_id)
+    from hearth.skills.evaluation import case_binding
+
+    evaluation = case_binding(db, run_id, resident_id)
+    if evaluation is not None:
+        entries = [evaluation["candidate"]]
+        assigned = {"revision": 0, "skills": entries, "sha256": _identity(entries)}
+        db.execute(
+            "UPDATE skill_validation_cases SET run_id=? "
+            "WHERE task_id=(SELECT task_id FROM runs WHERE id=?)",
+            (run_id, run_id),
+        )
     db.execute(
         "INSERT INTO run_skill_sets VALUES (?,?,?,?,?)",
         (run_id, resident_id, assigned["revision"], len(assigned["skills"]), assigned["sha256"]),

@@ -106,16 +106,78 @@ export type SkillDraft = {
   name: string;
   description: string;
   instructions: string;
+  authoring?: SkillAuthoring | null;
 };
-export type CatalogSkill = SkillDraft & {
+export type SkillExample = {
+  kind: "normal" | "edge";
+  instruction: string;
+  notes: string[];
+  assertions: {
+    max_characters: number;
+    contains: string[];
+    excludes: string[];
+  };
+};
+export type SkillAuthoring = { examples: SkillExample[] };
+export type SkillValidation = {
+  validation_id: string;
+  skill_id: string;
+  candidate_revision: number;
+  candidate_sha256: string;
+  evaluator_id: string | null;
+  status: "pending" | "passed" | "failed";
+  reason: string | null;
+  assessment: string;
+  cases: {
+    kind: "normal" | "edge";
+    position: number;
+    task_id: string;
+    run_id: string | null;
+    input_set_id: string;
+    input_revision: number;
+    input_sha256: string;
+    result: {
+      passed: boolean;
+      reasons: string[];
+      artifact_id: string | null;
+      artifact_sha256: string | null;
+      actual_cost: number;
+      simulated: boolean;
+      memory_revision?: number;
+      resident_revision?: number;
+      input_digest?: string;
+      checks: {
+        assertion: string;
+        expected: string | number;
+        actual?: number;
+        passed: boolean;
+      }[];
+    } | null;
+  }[];
+};
+export type SkillAuthoringEvidence = SkillAuthoring & {
+  manifest_sha256: string;
+  structure: { checker: string; passed: boolean; reasons: string[] };
+  validation: SkillValidation | null;
+  publication: {
+    candidate_revision: number;
+    validation_id: string;
+    revision: number;
+    sha256: string;
+  } | null;
+};
+export type CatalogSkill = Omit<SkillDraft, "authoring"> & {
   skill_id: string;
   revision: number;
-  status: "active" | "archived";
+  status: "active" | "archived" | "draft";
   created_by: string;
   created_at: number;
   edited_by: string;
   edited_at: number;
   sha256: string;
+  authoring?: SkillAuthoringEvidence | null;
+  created_by_name?: string;
+  edited_by_name?: string;
 };
 export type SkillReceipt = {
   command_id: string;
@@ -311,7 +373,11 @@ export function decodeSnapshot(value: unknown): Snapshot {
 }
 
 export type ManagementCapability =
-  "create_residents" | "assign_work" | "routines";
+  | "create_residents"
+  | "assign_work"
+  | "routines"
+  | "author_skills"
+  | "assign_skills";
 export type ManagementGrant = {
   resident_id: string;
   revision: number;
@@ -540,6 +606,38 @@ export class Client {
   skillHistory(id: string) {
     return this.request<CatalogSkill[]>(
       `/api/skills/${encodeURIComponent(id)}/history`,
+    );
+  }
+  skillValidation(id: string) {
+    return this.request<SkillValidation>(
+      `/api/skill-validations/${encodeURIComponent(id)}`,
+    );
+  }
+  validateSkill(skillId: string, revision: number, reserve: number) {
+    return this.request<SkillValidation>(
+      `/api/skills/${encodeURIComponent(skillId)}/validations`,
+      {
+        method: "POST",
+        body: JSON.stringify({ revision, reserve }),
+      },
+    );
+  }
+  publishSkill(change: {
+    command_id: string;
+    skill_id: string;
+    expected_revision: number;
+    validation_id: string;
+  }) {
+    return this.request<SkillReceipt>(
+      `/api/skills/${encodeURIComponent(change.skill_id)}/publish`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": change.command_id },
+        body: JSON.stringify({
+          expected_revision: change.expected_revision,
+          validation_id: change.validation_id,
+        }),
+      },
     );
   }
   async changeSkill(change: SkillChange) {

@@ -8,10 +8,20 @@ import {
 } from "../../shared/client";
 import { SkillUsers } from "./SkillUsers";
 import { Markdown } from "./Markdown";
+import { SkillEvidence } from "./SkillEvidence";
+import { SkillExamples, cleanExamples, exampleTemplate } from "./SkillExamples";
 import "./skills.css";
 
 const empty: SkillDraft = { name: "", description: "", instructions: "" };
 const stamp = (at: number) => new Date(at * 1000).toLocaleString();
+const editable = (skill: CatalogSkill): SkillDraft => ({
+  name: skill.name,
+  description: skill.description,
+  instructions: skill.instructions,
+  ...(skill.authoring
+    ? { authoring: { examples: skill.authoring.examples } }
+    : {}),
+});
 function route() {
   try {
     return window.location.hash.startsWith("#skills/")
@@ -43,16 +53,30 @@ export function SkillCatalog({
     let live = true;
     setSkills(null);
     setError("");
-    client
-      .skills(query, archived)
-      .then((rows) => {
-        if (live) setSkills(rows);
-      })
-      .catch((e) => {
-        if (live) setError(e.message);
-      });
+    let fetching = false;
+    const refresh = () => {
+      if (fetching) return;
+      fetching = true;
+      void client
+        .skills(query, archived)
+        .then((rows) => {
+          if (live) {
+            setSkills(rows);
+            setError("");
+          }
+        })
+        .catch((e) => {
+          if (live) setError(e.message);
+        })
+        .finally(() => {
+          fetching = false;
+        });
+    };
+    refresh();
+    const timer = selected ? undefined : window.setInterval(refresh, 1000);
     return () => {
       live = false;
+      window.clearInterval(timer);
     };
   }, [client, query, archived, reload, selected]);
   if (selected)
@@ -134,6 +158,13 @@ export function SkillCatalog({
                 </span>
                 <h3>{skill.name}</h3>
                 <p>{skill.description}</p>
+                {skill.authoring && (
+                  <small>
+                    By {skill.created_by_name ?? skill.created_by} ·{" "}
+                    {skill.authoring.validation?.status ??
+                      "awaiting executed checks"}
+                  </small>
+                )}
               </div>
               <span className="profile-link">Read skill →</span>
             </a>
@@ -159,6 +190,7 @@ function SkillEditor({
   const [prior, setPrior] = useState<CatalogSkill | null>(null);
   const [loading, setLoading] = useState(id !== "new");
   const [busy, setBusy] = useState(false);
+  const [validationBusy, setValidationBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -181,11 +213,7 @@ function SkillEditor({
       ]);
       if (!live.current) return;
       setSaved(skill);
-      setDraft({
-        name: skill.name,
-        description: skill.description,
-        instructions: skill.instructions,
-      });
+      setDraft(editable(skill));
       setHistory(revisions);
       setPrior(null);
       setConflict(false);
@@ -200,14 +228,23 @@ function SkillEditor({
     if (id !== "new") void load();
   }, [client, id]);
   async function change(archive = false) {
-    if (busy || readOnly || conflict) return;
+    if (busy || validationBusy || readOnly || conflict) return;
     if (!pending.current)
       pending.current = {
         command_id: crypto.randomUUID(),
         ...(saved
           ? { skill_id: saved.skill_id, expected_revision: saved.revision }
           : {}),
-        ...(archive ? {} : { content: { ...draft } }),
+        ...(archive
+          ? {}
+          : {
+              content: {
+                ...draft,
+                ...(draft.authoring
+                  ? { authoring: cleanExamples(draft.authoring) }
+                  : {}),
+              },
+            }),
       };
     setBusy(true);
     setError("");
@@ -250,14 +287,79 @@ function SkillEditor({
     }
   }
   const disabled =
-    busy || retry || readOnly || conflict || saved?.status === "archived";
-  const update = (field: keyof SkillDraft, value: string) => {
+    busy ||
+    validationBusy ||
+    retry ||
+    readOnly ||
+    conflict ||
+    saved?.status === "archived";
+  const update = (
+    field: "name" | "description" | "instructions",
+    value: string,
+  ) => {
     setDraft({ ...draft, [field]: value });
     setNotice("");
   };
+  const dirty =
+    !!saved &&
+    (draft.name !== saved.name ||
+      draft.description !== saved.description ||
+      draft.instructions !== saved.instructions ||
+      JSON.stringify(draft.authoring ?? null) !==
+        JSON.stringify(
+          saved.authoring ? { examples: saved.authoring.examples } : null,
+        ));
+  useEffect(() => {
+    if (!saved || loading || busy || validationBusy || retry || conflict)
+      return;
+    let active = true;
+    let fetching = false;
+    const timer = window.setInterval(() => {
+      if (fetching) return;
+      fetching = true;
+      void client
+        .skill(id)
+        .then(async (current) => {
+          if (!active || current.revision === saved.revision) return;
+          if (dirty) {
+            setConflict(true);
+            setError(
+              "A newer revision is available. Your draft is retained. Load the current revision before saving again.",
+            );
+            return;
+          }
+          const revisions = await client.skillHistory(id);
+          if (!active) return;
+          setSaved(current);
+          setDraft(editable(current));
+          setHistory(revisions);
+        })
+        .catch(() => {
+          /* The next refresh retries; preserve the current editor. */
+        })
+        .finally(() => {
+          fetching = false;
+        });
+    }, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [
+    client,
+    id,
+    saved,
+    draft,
+    dirty,
+    loading,
+    busy,
+    validationBusy,
+    retry,
+    conflict,
+  ]);
   return (
     <section className="skill-detail" aria-label="Skill detail">
-      {!busy && !retry && (
+      {!busy && !validationBusy && !retry && (
         <a href="#skills" className="back-link">
           ← All skills
         </a>
@@ -273,9 +375,11 @@ function SkillEditor({
         </div>
         {saved && (
           <small>
-            Created by {saved.created_by} · {stamp(saved.created_at)}
+            Created by {saved.created_by_name ?? saved.created_by} ·{" "}
+            {stamp(saved.created_at)}
             <br />
-            Edited by {saved.edited_by} · {stamp(saved.edited_at)}
+            Edited by {saved.edited_by_name ?? saved.edited_by} ·{" "}
+            {stamp(saved.edited_at)}
           </small>
         )}
       </div>
@@ -301,6 +405,17 @@ function SkillEditor({
               cannot be newly assigned.
             </p>
           )}
+          {saved?.authoring && (
+            <SkillEvidence
+              key={`${saved.skill_id}:${saved.revision}`}
+              client={client}
+              skill={saved}
+              readOnly={readOnly || busy || retry || conflict}
+              dirty={dirty}
+              onPublished={() => void load()}
+              onPendingChange={setValidationBusy}
+            />
+          )}
           {conflict && (
             <button disabled={busy || readOnly} onClick={() => void load()}>
               Load current revision (replace draft)
@@ -313,6 +428,29 @@ function SkillEditor({
             }}
           >
             <fieldset disabled={disabled}>
+              {saved?.authoring ? (
+                <p className="notice">
+                  Edits create a new draft and need fresh executed examples
+                  before activation. Existing resident assignments keep their
+                  exact revisions.
+                </p>
+              ) : (
+                <label className="skill-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.authoring}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        authoring: e.target.checked
+                          ? exampleTemplate()
+                          : undefined,
+                      })
+                    }
+                  />
+                  Require executed examples before activation
+                </label>
+              )}
               <label htmlFor="skill-name">Skill name</label>
               <input
                 id="skill-name"
@@ -356,6 +494,12 @@ function SkillEditor({
                   <Markdown text={draft.instructions} />
                 </section>
               </div>
+              {draft.authoring && (
+                <SkillExamples
+                  value={draft.authoring}
+                  onChange={(authoring) => setDraft({ ...draft, authoring })}
+                />
+              )}
             </fieldset>
             <div className="skill-actions">
               <button className="primary" disabled={disabled}>
@@ -394,7 +538,8 @@ function SkillEditor({
                   >
                     Revision {revision.revision} · {revision.status}
                     <small>
-                      {revision.edited_by} · {stamp(revision.edited_at)}
+                      {revision.edited_by_name ?? revision.edited_by} ·{" "}
+                      {stamp(revision.edited_at)}
                     </small>
                   </button>
                 ))}
@@ -407,6 +552,16 @@ function SkillEditor({
                   <h3>{prior.name}</h3>
                   <p>{prior.description}</p>
                   <Markdown text={prior.instructions} />
+                  {prior.authoring && (
+                    <SkillEvidence
+                      key={`history:${prior.revision}`}
+                      client={client}
+                      skill={prior}
+                      readOnly={true}
+                      dirty={false}
+                      onPublished={() => {}}
+                    />
+                  )}
                 </article>
               )}
             </section>
