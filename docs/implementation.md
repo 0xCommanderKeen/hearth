@@ -2,7 +2,23 @@
 
 Hearth is a standalone project with a new read-only daily-summary Reader. Miha
 removed all migration requirements on 2026-09-06. The active scope is in
-[the project plan](rebuild-plan.md); current work remains mock-only.
+[the project plan](rebuild-plan.md). Current acceptance is summarized below; earlier
+milestones follow.
+
+## Current acceptance
+
+The [integrated Karen journey](karen-journey.md) passed authenticated acceptance with
+synthetic inputs. Skill authoring and executed examples, immutable publication,
+resident creation and assignments, a daily routine, a saved report and known usage
+were independently verified through their owning records. The current-data backup
+and held restore preserve the chain and refuse mutations. Actual desktop/mobile
+browser checks passed for Skills, resident provenance and configuration, both run
+URL forms, the saved report and Hamlet. Production rollout and personal sources
+remain outside this completed demo.
+
+Backend checks passed 661 tests and installed-wheel journeys; the final frontend
+change passed 72 tests, formatting, types and packaged production build. Independent
+Standards and Spec reviews are clear.
 
 ## Fresh-start simplification
 
@@ -720,3 +736,105 @@ passed 651 backend tests, 71 browser tests, all static/build checks and both
 installed-wheel journeys. The merge preserves all seven capabilities and both
 authoring and lifecycle backup checks; the final journey's startup correction
 remains in its own issue #94 change.
+
+## Integrated journey preparation — issue #94
+
+The isolated integration branch combines skill authoring and resident maintenance,
+including all seven scoped capabilities and both owning persistence/backup paths.
+The initial combined checks passed 650 backend tests, 71 browser tests, all static
+and build checks, and both installed-wheel restart/held-restore journeys. This is
+preparation, not end-to-end acceptance. Skill authoring's two independent review
+axes are clear at `6797ddd`. Both maintenance review axes are clear at `bde770d`;
+its native follow-up is integrated. A real supervisor/worker test also exposed a startup
+race; an inherited worker-lock handoff now prevents an immediate false interruption.
+Its focused checks pass. The complete scripted journey and bounded real proof
+remain in progress; no real provider call or original live-instance change occurred.
+## Issue #94: integrated Karen journey — deterministic evidence
+
+The [integrated reporting journey](karen-journey.md) now exercises one scripted native
+manager task through authoring, two serial executed examples, immutable publication,
+resident creation, exact skill/input assignment, a daily routine and its first saved
+report. It uses the ordinary subscription adapter and supervisor with a credential-free
+fake executable. Names/output mark the fixture as simulated; its synthetic token
+counters do not establish real-provider acceptance.
+
+The owning-path test exposed and reproduced a detached-worker startup race. Parent
+lock acquisition and inherited worker-lock ownership now close that gap without
+sleeping or weakening authorization. Integrated checks cover five lost-reply
+boundaries, operation conflicts, reopened durable call receipts, supervisor restart
+without model relaunch, complete provenance, unknown-usage holds and held backup
+restore. Two simultaneous native fixture managers also prove shared-capacity refusal
+without duplicate work or starving the admitted child.
+
+A credential-free loopback preflight against the actual pinned CLI accepted all 15
+integrated Hearth tool schemas, delivered a native catalog callback and synthetic
+reply, and completed the turn. Parent/workspace instruction canaries were absent.
+Only the loopback fixture received requests; no authenticated provider was contacted.
+
+The private real harness now has a durably recorded four-start ceiling at the
+existing runtime seam and closes that gate before cleanup. Offline fake-adapter
+checks verified simultaneous admission, refusal with unused allowance after closing,
+and same-run replay. Real execution remains pending explicit approval; prior real
+proof spend is zero. Actual Chromium inspection of the held scripted fixture showed
+skill content, two saved passing examples and users, resident origin/configuration,
+the scheduled occurrence, saved report and Hamlet on desktop and mobile. The long
+managed setup-operation digest initially overflowed its mobile provenance card;
+the owning style now wraps that text. The repeated browser check had no horizontal
+overflow or browser errors, and the screenshots were inspected. Final `make check`
+passed 659 backend and 71 browser tests, lint/types/build and both installed-wheel
+restart/held-restore journeys. Independent Standards and Spec reviews are clear at
+`f5cb88a`, and its CI is green. The final stack merge changed documentation only.
+The real journey still awaits explicit approval and execution.
+
+The separate lifecycle demonstration also passed on the integrated release using
+credential-free native fixtures. After Karen's scripted reporter saved its result,
+scoped calls through that same active Karen run's bound bridge paused and archived
+the reporter. Both receipts retained Karen as actor and the original run as origin.
+Advancing its enabled routine to its due time in each state created no tasks, runs
+or occurrences; the saved report and hash stayed unchanged, and restart preserved
+archive state. These lifecycle calls were driven by the deterministic harness,
+not an authenticated model. The real four-run reporting acceptance remains pending.
+
+### First authenticated journey attempt and validation feedback
+
+The first explicitly approved attempt finished one manager run with known usage of
+150512 microdollars ($0.150512), and no authoring mutations. Both draft-save requests
+exceeded the four-phrase assertion limit; generic validation refusals hid the exact
+field and bound. The complete real journey remains unproven.
+
+Management schema refusals now give at most six schema-derived field hints, with
+bounded paths and a fresh-call-ID correction instruction, without echoing submitted
+values, arbitrary property names or exception messages. Existing rollback, recorded
+refusal replay and operation identity semantics remain intact. Tool/bootstrap
+guidance states the existing phrase/note limits and represents missing notes as an
+empty list. Two Bridge/temporary-SQLite regressions passed red-to-green: exact limit,
+unchanged catalog, same-call replay, corrected same-operation acceptance, and bounded
+many-error/private-value feedback. No authenticated retry was performed by this fix.
+Full `make check` passed 661 backend and 71 browser tests, lint/types/build, and both
+installed-wheel restart/held-restore journeys.
+
+Both independent review axes are clear at `2f4ab26`. The updated tool definitions
+also passed a credential-free pinned-CLI loopback preflight: the catalog callback,
+reply and native completion succeeded with parent/workspace instruction canaries
+absent. The failed real attempt has a verified current-data backup and read-only
+held restore; desktop/mobile inspection preserves its refusal result and accounting.
+A second complete attempt would require four additional model starts (five total)
+and explicit approval for that expanded scope. Its prepared guard retains the
+first attempt's 150512 microdollars, leaving 9849488 under the shared allowance.
+No second authenticated attempt has run.
+
+### Authenticated journey result and report links
+
+The approved integrated journey subsequently completed with known accounting for
+all four runs. Independent domain review passed, and current-data backup and held
+restore verification passed. Final desktop/mobile browser verification passed for
+skill examples and users, resident origin and routine, both run URL forms, the
+exact saved report and Hamlet, with no overflow or browser errors.
+
+The manager's report used the `/#runs/<id>` URL form. The app now accepts that alias
+through the existing authenticated run reader and preserves `/#run-<id>` links.
+The existing older-result test was parameterized for both forms: the new alias
+failed first, then both passed. Session checks and plain-text result rendering are
+unchanged. This UI fix requires no provider rerun.
+`make web` passed formatting, all 72 frontend tests, TypeScript checking, the
+production build and packaged-asset generation.

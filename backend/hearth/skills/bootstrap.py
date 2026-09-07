@@ -19,7 +19,10 @@ Save a draft with exactly two bounded synthetic examples: normal first, edge sec
 Use actual fictional notes and an expected phrase for the normal case. For the edge
 case use missing inputs with an explicit missing-input marker, or adversarial notes
 with a forbidden disclosure phrase. Declare a small output-size bound and exact
-required/forbidden phrases. Do not author pretend evaluation outputs.
+required/forbidden phrases. Each contains/excludes list permits at most four phrases,
+each at most 200 characters. Each example permits at most four notes, each at most
+2000 characters; represent missing input as notes=[], not an empty-string note.
+Do not author pretend evaluation outputs.
 
 Request validation, retain its identity and inspect its durable status. One visible
 read-only evaluator runs the two examples serially through ordinary accounted work.

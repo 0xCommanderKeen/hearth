@@ -90,6 +90,9 @@ SKILL_TOOLS = {
         "When to use; When not to use; Inputs; Procedure; Expected output; "
         "Uncertainty and failure; "
         "Success criteria. Retain operation_id and identical arguments after a lost reply. "
+        "Each example permits at most four notes (2000 characters each); use notes=[] for "
+        "missing input. Each assertions.contains/excludes list permits at most four phrases "
+        "(200 characters each). "
         "Drafts require actual bounded example runs before publication; text never grants tools.",
     ),
 }

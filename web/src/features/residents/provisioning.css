@@ -50,7 +50,8 @@
 .provision-profile dt {
   color: var(--muted);
 }
-.provisioning small {
+.provisioning small,
+.provision-profile small {
   overflow-wrap: anywhere;
 }
 .provision-failure {

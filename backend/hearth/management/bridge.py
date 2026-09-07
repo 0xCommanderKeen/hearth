@@ -4,6 +4,7 @@ import hmac
 import json
 from dataclasses import dataclass, field
 
+from hearth.management.arguments import InvalidArguments
 from hearth.management.authority import digest, read_grant
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import Hearth, _audit
@@ -193,7 +194,8 @@ class Bridge:
                     )
                 except Refused as error:
                     db.execute("ROLLBACK TO management_operation")
-                    result = response({"error": error.code}, success=False)
+                    details = error.details if isinstance(error, InvalidArguments) else {}
+                    result = response({"error": error.code, **details}, success=False)
                 finally:
                     db.execute("RELEASE management_operation")
                 db.execute(

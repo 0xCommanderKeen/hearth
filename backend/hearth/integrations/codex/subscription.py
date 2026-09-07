@@ -6,10 +6,12 @@ import json
 import os
 import selectors
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
@@ -224,16 +226,25 @@ class CodexLiveRuntime:
             if management is not None:
                 request["management"] = management
             folder.mkdir(mode=0o700)
-            publish(folder / "request.json", request)
-            subprocess.Popen(
-                [sys.executable, "-I", "-m", "hearth.integrations.codex.subscription", str(folder)],
-                cwd=folder,
-                env={"PATH": os.defpath},
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            with worker_lock(folder) as lock_fd:
+                publish(folder / "request.json", request)
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-m",
+                        "hearth.integrations.codex.subscription",
+                        str(folder),
+                        str(lock_fd),
+                    ],
+                    cwd=folder,
+                    env={"PATH": os.defpath},
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    pass_fds=(lock_fd,),
+                )
 
     def receipt(self, run_id):
         from hearth.integrations.codex.management_runtime import read_receipt
@@ -274,10 +285,34 @@ class CodexLiveRuntime:
             publish(folder / "cancel.json", {"cancelled": True})
 
 
-def worker(folder):
+@contextmanager
+def worker_lock(folder, inherited_fd=None):
+    """Transfer one flock open-file description to the worker with no unlocked interval."""
+    path = folder / "worker.lock"
+    fd = (
+        inherited_fd
+        if inherited_fd is not None
+        else os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    )
+    with os.fdopen(fd, "rb") as lock:
+        actual = os.fstat(fd)
+        expected = path.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISREG(actual.st_mode)
+            or actual.st_nlink != 1
+            or (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino)
+        ):
+            raise Refused("codex_worker_lock_invalid")
+        os.set_inheritable(fd, False)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        # Closing this copy must not explicitly unlock the child's inherited description.
+        yield lock.fileno()
+
+
+def worker(folder, inherited_fd=None):
     from hearth.execution.lifecycle import Execution
 
-    with container_lock(folder / "worker.lock"):
+    with worker_lock(folder, inherited_fd):
         if (folder / "started.json").exists():
             return
         publish(folder / "started.json", {"started": True})
@@ -404,4 +439,4 @@ def worker(folder):
 
 
 if __name__ == "__main__":
-    worker(Path(sys.argv[1]))
+    worker(Path(sys.argv[1]), int(sys.argv[2]) if len(sys.argv) > 2 else None)
