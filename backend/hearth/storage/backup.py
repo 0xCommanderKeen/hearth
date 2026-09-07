@@ -22,6 +22,7 @@ from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.management.authority import validate_management
+from hearth.residents.journal import JournalFiles, checked_entry, journal_path
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
@@ -46,18 +47,31 @@ PROCESS_TRANSIENT = {"worker.lock", "heartbeat", "child-started", "child-result.
 MAX_FILE = 128 * 1024 * 1024
 
 
+def _descend(root: Path, names: list[str]) -> int:
+    """Open a nested evidence directory without following a link at any level."""
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    for name in names:
+        try:
+            nested = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+        finally:
+            os.close(directory)
+        directory = nested
+    return directory
+
+
 def _read(path: Path) -> bytes:
     if path.parent.is_symlink():
         raise Refused("backup_file_missing_or_unsafe")
     try:
-        if path.parent.parent.name in {"memory", "process-mock"}:
-            root = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                directory = os.open(
-                    path.parent.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root
-                )
-            finally:
-                os.close(root)
+        archived = (
+            len(path.parents) > 2
+            and path.parents[0].name == "journal"
+            and path.parents[2].name == "memory"
+        )
+        if archived:
+            directory = _descend(path.parents[2], [path.parents[1].name, "journal"])
+        elif path.parent.parent.name in {"memory", "process-mock"}:
+            directory = _descend(path.parent.parent, [path.parent.name])
         else:
             directory = os.open(path.parent, os.O_RDONLY | os.O_NOFOLLOW)
         try:
@@ -108,6 +122,11 @@ def _allowed(name: str) -> bool:
             return False
     if pieces[0] == "process-mock":
         return False
+    if len(pieces) == 4 and pieces[0] == "memory" and pieces[2] == "journal":
+        try:
+            return name == "memory/" + journal_path(pieces[1], Path(pieces[3]).stem)
+        except Refused:
+            return False
     if len(pieces) == 3 and pieces[0] == "memory":
         try:
             return name == "memory/" + memory_path(pieces[1], Path(pieces[2]).stem)
@@ -162,9 +181,17 @@ def _store_files(folder: Path, *, skip_hidden: bool = False):
             identifier(child.name)
             if not child.is_dir():
                 raise Refused("backup_path_invalid")
-            candidates = child.iterdir()
+            candidates = []
+            for item in child.iterdir():
+                # Archived journal entries are the one nested level under a resident.
+                if folder.name == "memory" and item.name == "journal" and item.is_dir():
+                    if item.is_symlink():
+                        raise Refused("backup_source_unsafe")
+                    candidates.extend(item.iterdir())
+                else:
+                    candidates.append(item)
         else:
-            candidates = (child,)
+            candidates = [child]
         for path in candidates:
             if skip_hidden and folder.name == "process-mock" and path.name in PROCESS_TRANSIENT:
                 continue
@@ -343,6 +370,16 @@ def _check_database(root: Path) -> dict:
             "WHERE m.resident_id != r.resident_id"
         ).fetchone():
             raise Refused("backup_references_invalid")
+        for entry in db.execute("SELECT * FROM journal_entries"):
+            checked_entry(entry)
+        if db.execute(
+            "SELECT 1 FROM journal_entries j JOIN runs r ON r.id=j.run_id "
+            "WHERE j.resident_id != r.resident_id"
+        ).fetchone():
+            raise Refused("backup_references_invalid")
+        for resident in db.execute("SELECT id FROM residents"):
+            # Archived entries outlive their rows; every kept file must still be exact.
+            JournalFiles(root / "memory").entries(resident["id"])
         return {
             "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),

@@ -12,8 +12,15 @@ DEFAULTS: dict = dict(
     timezone="Europe/Ljubljana",
     resident_limit=20,
     concurrency_limit=2,
+    journal_limit=30,
 )
 ACTIVE = "('starting', 'running', 'stopping', 'interrupted')"
+
+
+def read_journal_limit(db) -> int:
+    """How many journal entries a resident keeps before older ones roll to files."""
+    row = db.execute("SELECT journal_limit FROM household_policy WHERE id=1").fetchone()
+    return row[0] if row else DEFAULTS["journal_limit"]
 
 
 def validate_windows(db) -> None:
@@ -106,6 +113,7 @@ class Household:
         resident_limit: int,
         concurrency_limit: int,
         expected_revision: int,
+        journal_limit: int | None = None,
     ) -> dict:
         """Operator-only API. No runtime bridge exposes this authority."""
         microdollars(daily_limit)
@@ -125,13 +133,19 @@ class Household:
             current = household_state(db, now)
             if current["revision"] != expected_revision:
                 raise Refused("revision_conflict")
+            # Omitting the journal bound keeps the stored one; it has no separate revision.
+            if journal_limit is None:
+                journal_limit = current["journal_limit"]
+            if type(journal_limit) is not int or not 1 <= journal_limit <= 1000:
+                raise Refused("invalid_household_limit")
             revision = expected_revision + 1
             db.execute(
-                "INSERT INTO household_policy VALUES (1,?,?,?,?,?) ON CONFLICT(id) "
+                "INSERT INTO household_policy VALUES (1,?,?,?,?,?,?) ON CONFLICT(id) "
                 "DO UPDATE SET revision=excluded.revision,daily_limit=excluded.daily_limit,"
                 "timezone=excluded.timezone,resident_limit=excluded.resident_limit,"
-                "concurrency_limit=excluded.concurrency_limit",
-                (revision, daily_limit, timezone, resident_limit, concurrency_limit),
+                "concurrency_limit=excluded.concurrency_limit,"
+                "journal_limit=excluded.journal_limit",
+                (revision, daily_limit, timezone, resident_limit, concurrency_limit, journal_limit),
             )
             db.execute(
                 "INSERT INTO audit(kind,resource_id,at,detail) VALUES (?,?,?,?)",
@@ -146,6 +160,7 @@ class Household:
                             timezone=timezone,
                             resident_limit=resident_limit,
                             concurrency_limit=concurrency_limit,
+                            journal_limit=journal_limit,
                             actor="operator",
                         )
                     ),
