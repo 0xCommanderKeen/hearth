@@ -907,11 +907,11 @@ policy save; refusal to follow an archive-directory symlink; held backup/restore
 entries and archived files, twice; and refusal of a tampered entry, a tampered archived
 file and a cross-resident entry in a backup. Backend `make check` passed 683 tests, lint,
 formatting and types, and the browser suite passed 76 tests with Prettier, the production
-build and packaged assets. Two `make check` steps could not run on this machine for
-reasons unrelated to this change: the root `pnpm --dir web` invocation resolves pnpm
-12.3.4, which the bundled corepack 0.34.0 cannot launch (running the same commands inside
-`web/` uses the pinned pnpm 11.22.0 and passes), and `scripts/check-wheel.py` calls
-`uv pip sync`, which uv 0.10.4 refuses as a removed legacy interface.
+build and packaged assets. Two `make check` steps could not run on this machine, both for
+local toolchain reasons unrelated to this change: the root `pnpm --dir web` invocation
+resolved a pnpm the bundled corepack could not launch, and a developer plugin's PATH shim
+intercepted `uv pip`, which `scripts/check-wheel.py` needs precisely because `uv sync`
+cannot express `--require-hashes`. uv 0.10.4 itself supports `uv pip`; #133 fixes both.
 
 Remaining for the epic: no model-facing tool writes an entry and no run context opens
 with the journal (#118); Townhall shows neither the journal nor the household journal
@@ -976,11 +976,10 @@ writable memory, same launch.
 
 Complete `make check` passed: ruff, ruff format, ty, 702 pytest tests, the browser suite's
 76 tests with Prettier and the production build, the packaged assets, and both
-installed-wheel journeys. The previous milestone's note that `uv 0.10.4` refuses
-`uv pip sync` was wrong: a developer PATH shim was intercepting `uv`, and separately the
-root `pnpm --dir web` invocation resolves a pnpm the bundled corepack cannot launch. Both
-are the toolchain fixes in #133, which is not in this branch's base, so this run stood
-them in on `PATH` and changed no repository file.
+installed-wheel journeys. The previous milestone's two blocked steps were local toolchain
+faults, corrected in its note above and fixed for everyone by #133; that fix is not in
+this branch's base, so this run stood the two tools in on `PATH` and changed no repository
+file.
 
 Remaining for the epic: Townhall shows neither memory history with authorship nor the
 journal, and the "Keep a journal" shared skill and ADR 0012 are unwritten (#119) — so
