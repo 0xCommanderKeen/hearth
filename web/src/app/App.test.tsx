@@ -609,3 +609,70 @@ it.each(["navigation", "lock", "epoch"])(
       expect(screen.getByLabelText("Operator token")).toBeTruthy();
   },
 );
+
+function addRun(overrides: Record<string, unknown>) {
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "Write today's report",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run-two",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: null,
+      actual_cost: 700,
+      usage_known: 1,
+      cancellation_requested: 0,
+      ...overrides,
+    },
+  ];
+}
+
+it("says what a run opened with and what it wrote, without hiding the page", async () => {
+  addReader();
+  addRun({
+    memory_revision: 2,
+    memory_written: [],
+    journal_opened: [1],
+    journal_written: 2,
+  });
+  await login();
+  expect(
+    screen.getByText(/Memory revision 2 . opened with journal #1/),
+  ).toBeTruthy();
+  expect(screen.getByLabelText("What the run wrote").textContent).toContain(
+    "Wrote no memory",
+  );
+  expect(screen.getByLabelText("What the run wrote").textContent).toContain(
+    "wrote journal entry #2",
+  );
+  // The panels sit on the page beside the work, not behind a tab.
+  expect(screen.getByText(/Reader . Memory history/)).toBeTruthy();
+  expect(screen.getByText(/Reader . Journal/)).toBeTruthy();
+  expect(screen.getByRole("link", { name: /All residents/ })).toBeTruthy();
+  expect(screen.getByText("Pause new runs")).toBeTruthy();
+});
+
+it("says plainly when a run opened with no journal and wrote memory", async () => {
+  addReader();
+  addRun({
+    memory_revision: 1,
+    memory_written: [2],
+    journal_opened: [],
+    journal_written: null,
+  });
+  await login();
+  expect(
+    screen.getByText(/Memory revision 1 . opened with no journal entries/),
+  ).toBeTruthy();
+  const wrote = screen.getByLabelText("What the run wrote").textContent;
+  expect(wrote).toContain("Wrote memory revision 2");
+  expect(wrote).toContain("wrote no journal entry");
+});

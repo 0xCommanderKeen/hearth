@@ -1217,3 +1217,53 @@ form select + button,
 form label + button {
   margin-top: 10px;
 }
+
+/* ---------- what a resident remembered and wrote ---------- */
+.chip.operator::before {
+  background: var(--muted);
+}
+.chip.run::before {
+  background: var(--ok);
+}
+.memory-history,
+.journal {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.memory-history > li,
+.journal > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.memory-revision {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.memory-revision time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+.journal-text {
+  white-space: pre-wrap;
+  margin: 6px 0;
+}
+.memory-diff {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 8px 0 0;
+}
+.memory-diff .diff-added {
+  color: var(--ok);
+}
+.memory-diff .diff-removed {
+  color: var(--bad);
+}
+.memory-diff .diff-same {
+  color: var(--muted);
+}
