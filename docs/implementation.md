@@ -838,3 +838,16 @@ failed first, then both passed. Session checks and plain-text result rendering a
 unchanged. This UI fix requires no provider rerun.
 `make web` passed formatting, all 72 frontend tests, TypeScript checking, the
 production build and packaged-asset generation.
+
+## Portable resident bundles — 2026-09-07
+
+The operator asked for a way to share a resident between Hearth installations after the
+local temporary stores were lost on 2026-09-07. `hearth.residents.bundle` exports one
+resident's definition (declaration, memory, exact pinned skill and input content, one
+routine, informational grant) and imports it through ordinary provisioning after
+materialising matching catalog content by digest. No schema change; the durable receipt
+is the existing provisioning row, so the setup receipt view and generic retry apply.
+ADR 0010 bounds the departure from the no-transfer rule; `AGENTS.md` and the rebuild
+plan name the exception. Karen's live export is the checked-in fixture and imports as
+an ordinary resident with no authority. Verified: backend bundle and HTTP tests, web
+import/export tests, `make check`, and a browser round trip on the local mock store.

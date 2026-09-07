@@ -66,7 +66,10 @@ class OperatorAuth:
             r"/api/input-sets(?:/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})?", scope["path"]
         ):
             body_limit = 32768 * 6 + 1024
-        if scope["method"] == "POST" and scope["path"] == "/api/residents/provision":
+        if scope["method"] == "POST" and scope["path"] in {
+            "/api/residents/provision",
+            "/api/residents/import",
+        }:
             body_limit = 1_500_000  # Aggregate transport cap; semantic/UTF-8 limits also apply.
         if scope["method"] == "PUT" and re.fullmatch(
             r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}/configuration", scope["path"]

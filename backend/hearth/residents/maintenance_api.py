@@ -1,7 +1,9 @@
 """Authenticated operator controls for resident readiness and configuration."""
 
 from fastapi import FastAPI, Header
+from fastapi.responses import JSONResponse
 
+from hearth.residents.bundle import Bundles, file_name
 from hearth.residents.maintenance import (
     ConfigurationChange,
     LifecycleChange,
@@ -13,6 +15,19 @@ from hearth.work.service import Hearth
 
 def mount_maintenance(app: FastAPI, hearth: Hearth) -> None:
     maintenance = Maintenance(hearth)
+    bundles = Bundles(hearth)
+
+    @app.post("/api/residents/import", status_code=201)
+    def import_bundle(body: dict, idempotency_key: str = Header(min_length=1, max_length=128)):
+        return bundles.import_(idempotency_key, body)
+
+    @app.get("/api/residents/{resident_id}/export")
+    def export_bundle(resident_id: str):
+        bundle = bundles.export(resident_id)
+        name = file_name(bundle["resident"]["name"])
+        return JSONResponse(
+            bundle, headers={"Content-Disposition": f'attachment; filename="{name}"'}
+        )
 
     @app.get("/api/residents/{resident_id}/lifecycle")
     def read(resident_id: str):

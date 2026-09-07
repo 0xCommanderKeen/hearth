@@ -11,3 +11,4 @@ htmlcov/
 node_modules/
 web/dist/
 backend/hearth/web/
+logs/

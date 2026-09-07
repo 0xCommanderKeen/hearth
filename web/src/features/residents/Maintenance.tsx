@@ -7,10 +7,30 @@ import {
   type ConfigurationChange,
   type MaintenanceChange,
   type Resident,
+  type ResidentBundle,
   type ResidentOptions,
   type Routine,
 } from "../../shared/client";
 import "./provisioning.css";
+
+export function downloadBundle(bundle: ResidentBundle) {
+  if (typeof URL.createObjectURL !== "function") return;
+  const safe =
+    bundle.resident.name
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "resident";
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(bundle, null, 2) + "\n"], {
+      type: "application/json",
+    }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safe}.hearth-resident.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function ResidentMaintenance({
   client,
@@ -206,6 +226,31 @@ export function ResidentMaintenance({
             Edit configuration
           </button>
         )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void (async () => {
+              setBusy(true);
+              setMessage("");
+              try {
+                const bundle = await client.exportResident(resident.id);
+                if (!live.current) return;
+                downloadBundle(bundle);
+                setMessage(
+                  `Exported ${bundle.resident.name} with ${bundle.skills.length} skill(s) and ${bundle.input_sets.length} input set(s). Runs, history and authority are not included.`,
+                );
+              } catch (e) {
+                if (live.current)
+                  setMessage(e instanceof Error ? e.message : "Export failed");
+              } finally {
+                if (live.current) setBusy(false);
+              }
+            })()
+          }
+        >
+          Export resident
+        </button>
       </div>
       {message && <p role="status">{message}</p>}
       {pending && (

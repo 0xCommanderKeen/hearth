@@ -61,6 +61,57 @@ export type ProvisionReceipt = {
   task_id: string | null;
   setup: ProvisionRequest;
 };
+export type ResidentBundle = {
+  bundle_version: 1;
+  source: {
+    resident_id: string;
+    declaration_revision: number;
+    memory_revision: number;
+    exported_at: number;
+  };
+  resident: {
+    name: string;
+    purpose: string;
+    instructions: string;
+    memory: string;
+    daily_limit: number;
+    budget_timezone: string;
+    execution_profile: string;
+    creation_reason: string;
+  };
+  skills: {
+    name: string;
+    description: string;
+    instructions: string;
+    sha256: string;
+  }[];
+  input_sets: { name: string; notes: string[]; sha256: string }[];
+  routine: ProvisionRequest["routine"];
+  management: Record<string, unknown> | null;
+};
+export type ImportRequest = {
+  bundle: ResidentBundle;
+  overrides?: { name?: string; daily_limit?: number; budget_timezone?: string };
+  manager?: string;
+};
+export type ImportReceipt = ProvisionReceipt & {
+  resolution: {
+    skills: {
+      name: string;
+      skill_id: string;
+      revision: number;
+      outcome: string;
+    }[];
+    input_sets: {
+      name: string;
+      input_set_id: string;
+      revision: number;
+      outcome: string;
+    }[];
+    execution_profile: { requested: string; used: string };
+    management_ignored: boolean;
+  };
+};
 export type ResidentProfile = {
   inputs_error?: string | null;
   creator_name?: string;
@@ -682,6 +733,27 @@ export class Client {
     )
       throw new Error(
         "Provisioning receipt is incomplete; retry the exact operation.",
+      );
+    return receipt;
+  }
+  exportResident(id: string) {
+    return this.request<ResidentBundle>(
+      `/api/residents/${encodeURIComponent(id)}/export`,
+    );
+  }
+  async importResident(command_id: string, body: ImportRequest) {
+    const receipt = await this.request<ImportReceipt>("/api/residents/import", {
+      method: "POST",
+      headers: { "Idempotency-Key": command_id },
+      body: JSON.stringify(body),
+    });
+    if (
+      receipt.command_id !== command_id ||
+      !["ready", "failed", "setup"].includes(receipt.status) ||
+      typeof receipt.resident_id !== "string"
+    )
+      throw new Error(
+        "Import receipt is incomplete; retry the exact operation.",
       );
     return receipt;
   }

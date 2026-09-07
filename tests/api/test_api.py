@@ -349,3 +349,53 @@ def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
         state = client.get("/api/state", headers=AUTH).json()
         assert state["runs"][0]["usage_source"] == "operator_reported_mock"
         assert state["residents"][0]["pause_reason"] is None
+
+
+def test_resident_bundle_export_and_import_over_http(client, tmp_path):
+    client.post("/api/demo/reader", headers=AUTH)
+    export = client.get("/api/residents/reader/export", headers=AUTH)
+    assert export.status_code == 200
+    assert export.headers["cache-control"] == "no-store"
+    assert export.headers["content-disposition"] == (
+        'attachment; filename="reader.hearth-resident.json"'
+    )
+    bundle = export.json()
+    assert bundle["bundle_version"] == 1 and bundle["resident"]["name"] == "Reader"
+    assert client.get("/api/residents/reader/export").status_code == 401
+    assert client.get("/api/residents/nobody/export", headers=AUTH).status_code == 404
+    assert (
+        client.post("/api/residents/import", headers=AUTH, json={"bundle": bundle}).status_code
+        == 422
+    )
+    imported = client.post(
+        "/api/residents/import",
+        headers={**AUTH, "Idempotency-Key": "import-reader"},
+        json={"bundle": bundle, "overrides": {"name": "Reader copy"}},
+    )
+    assert imported.status_code == 201
+    receipt = imported.json()
+    assert receipt["status"] == "ready" and receipt["command_id"] == "import-reader"
+    assert receipt["resolution"]["input_sets"][0]["outcome"] == "reused"
+    assert (
+        client.get("/api/resident-provisioning/import-reader", headers=AUTH).json()["status"]
+        == "ready"
+    )
+    names = [r["name"] for r in client.get("/api/state", headers=AUTH).json()["residents"]]
+    assert sorted(names) == ["Reader", "Reader copy"]
+    tampered = {"bundle": bundle | {"resident": bundle["resident"] | {"purpose": "x"}}}
+    conflict = client.post(
+        "/api/residents/import", headers={**AUTH, "Idempotency-Key": "import-reader"}, json=tampered
+    )
+    assert conflict.status_code == 409
+    large = client.post(
+        "/api/residents/import",
+        headers={**AUTH, "Idempotency-Key": "import-large"},
+        content="x" * 1_500_001,
+    )
+    assert large.status_code == 413
+    padded = client.post(
+        "/api/residents/import",
+        headers={**AUTH, "Idempotency-Key": "import-padded"},
+        json={"bundle": bundle | {"resident": bundle["resident"] | {"memory": "m" * 100_000}}},
+    )
+    assert padded.status_code == 201
