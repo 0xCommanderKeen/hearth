@@ -34,6 +34,16 @@ export function SkillEvidence({
   const pending = useRef<Parameters<Client["publishSkill"]>[0] | null>(null);
   const live = useRef(true);
   useEffect(() => {
+    const incoming = evidence.validation;
+    if (!incoming) return;
+    setValidation((current) =>
+      current?.validation_id === incoming.validation_id &&
+      current.status !== "pending"
+        ? current
+        : incoming,
+    );
+  }, [evidence.validation]);
+  useEffect(() => {
     onPendingChange?.(busy || retry);
   }, [busy, retry, onPendingChange]);
   useEffect(() => {

@@ -44,11 +44,23 @@ class SkillAssign(Strict):
     skills: list[SkillRef] = Field(max_length=8)
 
 
+class AssignmentsRead(Strict):
+    resident_id: str = Field(min_length=1, max_length=128)
+
+
 SKILL_TOOLS = {
+    "hearth_skills_assignments": (
+        AssignmentsRead,
+        "Read a managed resident's current assignment revision and complete ordered list of "
+        "at most eight exact skill references. Requires assign_skills. Read before replacing "
+        "assignments; after a conflict read again with a new call ID and preserve unrelated "
+        "entries.",
+    ),
     "hearth_skills_assign": (
         SkillAssign,
         "Explicitly replace exact active skill assignments of a resident you manage. Preserve "
-        "unrelated ordered assignments when adding one. Requires current expected_revision; "
+        "unrelated ordered assignments when adding one. First use hearth_skills_assignments "
+        "for the complete ordered list and current expected_revision; "
         "drafts cannot be assigned. Changes affect future admissions only.",
     ),
     "hearth_skills_validate": (
@@ -87,11 +99,35 @@ def dispatch_skill(db, hearth, authority, tool, body):
     from hearth.management.authority import digest
     from hearth.management.tools import _existing_operation, _record_operation
 
-    capability = "assign_skills" if isinstance(body, SkillAssign) else "author_skills"
+    capability = (
+        "assign_skills" if isinstance(body, (SkillAssign, AssignmentsRead)) else "author_skills"
+    )
     if capability not in authority["grant"]["capabilities"]:
         raise Refused("management_skill_authoring_not_permitted")
     from hearth.skills.validation import read_validation, request_validation
 
+    if isinstance(body, AssignmentsRead):
+        from hearth.management.bridge import authorize_managed_resident
+        from hearth.skills.assignments import read_assignments
+
+        authorize_managed_resident(db, authority, body.resident_id, "assign_skills")
+        result = read_assignments(db, body.resident_id)
+        return result | {
+            "skills": [
+                {
+                    key: entry[key]
+                    for key in (
+                        "skill_id",
+                        "revision",
+                        "name",
+                        "sha256",
+                        "latest_revision",
+                        "catalog_status",
+                    )
+                }
+                for entry in result["skills"]
+            ]
+        }
     if isinstance(body, ValidationRead):
         result = read_validation(db, body.validation_id)
         from hearth.skills.authoring import check_editor

@@ -181,3 +181,66 @@ it("preserves a dirty editor when an external revision arrives", async () => {
       .value,
   ).toBe("Karen's revision");
 });
+
+it.each(["passed", "failed"] as const)(
+  "refreshes externally started %s validation without replacing a dirty draft",
+  async (status) => {
+    window.location.hash = "#skills/summary";
+    const client = new Client("synthetic-token");
+    const authored: CatalogSkill = {
+      ...skill,
+      status: "draft",
+      authoring: {
+        examples: [],
+        manifest_sha256: "examples",
+        structure: { checker: "structure-v1", passed: true, reasons: [] },
+        publication: null,
+        validation: null,
+      },
+    };
+    vi.spyOn(client, "skills").mockResolvedValue([authored]);
+    vi.spyOn(client, "skillUsers").mockResolvedValue([]);
+    vi.spyOn(client, "skillHistory").mockResolvedValue([authored]);
+    const read = vi.spyOn(client, "skill").mockResolvedValue(authored);
+    render(<SkillCatalog client={client} readOnly={false} />);
+    await screen.findByText("Not evaluated");
+    fireEvent.change(screen.getByLabelText("Markdown instructions"), {
+      target: { value: "Unsaved human procedure" },
+    });
+    const validation = {
+      validation_id: "external",
+      skill_id: "summary",
+      candidate_revision: 1,
+      candidate_sha256: "digest",
+      evaluator_id: "evaluator",
+      status: "pending" as const,
+      reason: null,
+      assessment: "pending",
+      cases: [],
+    };
+    const result = vi
+      .spyOn(client, "skillValidation")
+      .mockResolvedValue(validation);
+    read.mockResolvedValue({
+      ...authored,
+      authoring: { ...authored.authoring!, validation },
+    });
+    await screen.findByText("pending", {}, { timeout: 2500 });
+    const terminal = {
+      ...validation,
+      status,
+      reason: status === "failed" ? "skill_example_failed" : null,
+    };
+    result.mockResolvedValue(terminal);
+    read.mockResolvedValue({
+      ...authored,
+      authoring: { ...authored.authoring!, validation: terminal },
+    });
+    await screen.findByText(status, {}, { timeout: 2500 });
+    expect(
+      (screen.getByLabelText("Markdown instructions") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Unsaved human procedure");
+    expect(screen.queryByText(/A newer revision is available/)).toBeNull();
+  },
+);

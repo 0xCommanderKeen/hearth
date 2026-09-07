@@ -649,3 +649,14 @@ screenshots were inspected, mobile had no horizontal overflow, and no browser er
 occurred. The deterministic examples establish wiring and recorded assertions, not
 model skill quality. No provider call, credential change or live household change was
 made. Independent review, PR/CI and the bounded real-provider acceptance remain pending.
+
+Spec review identified missing assignment-read recovery and external validation evidence
+that did not refresh when the skill's content revision stayed unchanged. Regressions
+first reproduced both gaps. A scoped bounded read now returns the complete ordered
+assignment references and current revision under assignment authority; recovery after a
+human edit preserves unrelated entries. Same-revision evidence updates now reach the
+open editor without replacing its draft. Final `make check` passed 634 backend and 67
+browser tests plus release/installed-wheel checks. An actual Chromium regression watched
+an externally requested validation complete on an already-open revision while retaining
+unsaved human instructions and keeping publication disabled. Its screenshot was inspected
+and no browser errors occurred. Review recheck and real-provider acceptance remain pending.

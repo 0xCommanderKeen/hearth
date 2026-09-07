@@ -28,8 +28,10 @@ not model grading or a guarantee of general quality. Unknown usage cannot pass.
 If pending, use bounded status waits and report the pending identity if time expires;
 never invent another validation to relaunch uncertain work. If failed, inspect reasons
 and revise the draft. Publish only the exact passing candidate, then explicitly assign
-the published revision to an authorized managed resident. Never silently upgrade other
-assignments. Keep operation_id and exact arguments for lost-reply recovery. Report
+the published revision to an authorized managed resident. First read the current ordered
+assignments with hearth_skills_assignments; preserve unrelated entries and use the returned
+assignment revision. After a conflict read again and reconsider the change. Never silently
+upgrade other assignments. Keep operation_id and exact arguments for lost-reply recovery. Report
 skill, validation, case-run and resident links rather than claiming unrecorded success.
 """
 

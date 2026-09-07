@@ -320,7 +320,22 @@ function SkillEditor({
       void client
         .skill(id)
         .then(async (current) => {
-          if (!active || current.revision === saved.revision) return;
+          if (!active) return;
+          if (current.revision === saved.revision) {
+            if (
+              JSON.stringify(current.authoring) !==
+              JSON.stringify(saved.authoring)
+            ) {
+              // Executed evidence can change without a content revision. Keep the editor draft.
+              setSaved(current);
+              setHistory((rows) =>
+                rows.map((row) =>
+                  row.revision === current.revision ? current : row,
+                ),
+              );
+            }
+            return;
+          }
           if (dirty) {
             setConflict(true);
             setError(

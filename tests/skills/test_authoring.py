@@ -49,10 +49,28 @@ def authoring():
     }
 
 
-def manager(tmp_path):
+def manager(tmp_path, *, capabilities=None):
     app = create_app(tmp_path, TOKEN, supervise=False)
     client = TestClient(app)
     karen = client.post("/api/demo/karen", headers=AUTH).json()
+    if capabilities is not None:
+        path = "/api/residents/" + karen["resident_id"] + "/management"
+        grant = client.get(path, headers=AUTH).json()
+        policy = {
+            key: value for key, value in grant.items() if key not in {"resident_id", "revision"}
+        }
+        assert (
+            client.put(
+                path,
+                headers=AUTH,
+                json=policy
+                | {
+                    "expected_revision": grant["revision"],
+                    "capabilities": capabilities,
+                },
+            ).status_code
+            == 200
+        )
     hearth = app.state.hearth
     task = hearth.submit(
         "author",
@@ -589,3 +607,105 @@ def test_candidate_prompt_cannot_give_evaluator_management_or_foreign_input_acce
     )
     success, result = call(denied, "hearth_catalog", {}, "escalate")
     assert not success and result["error"] == "management_not_granted_at_admission"
+
+
+def test_scoped_assignment_read_recovers_human_edits_and_preserves_order(tmp_path):
+    _, client, karen, bridge = manager(tmp_path, capabilities=["create_residents", "assign_skills"])
+    refs = []
+    for index in range(3):
+        receipt = client.post(
+            "/api/skills",
+            headers=AUTH | {"Idempotency-Key": f"manual-{index}"},
+            json={
+                "name": f"Human skill {index}",
+                "description": "Preserve ordered human choices",
+                "instructions": "Summarize permitted synthetic notes.",
+            },
+        ).json()
+        refs.append({"skill_id": receipt["skill_id"], "revision": 1})
+    ok, resident = call(
+        bridge,
+        "hearth_residents_provision",
+        {
+            "operation_id": "ordered-reporter",
+            "resident": {
+                "name": "Reporter",
+                "purpose": "Report fictional notes",
+                "execution_profile": "inline_mock",
+                "daily_limit": 100000,
+                "creation_reason": "Preserve existing assignments",
+            },
+        },
+        "provision-ordered",
+    )
+    assert ok, resident
+    path = "/api/residents/" + resident["resident_id"] + "/skills"
+    human = client.put(
+        path,
+        headers=AUTH | {"Idempotency-Key": "human-choice"},
+        json={
+            "expected_revision": 1,
+            "skills": [refs[1], refs[0]],
+        },
+    )
+    assert human.status_code == 200
+    ok, stale = call(
+        bridge,
+        "hearth_skills_assign",
+        {
+            "operation_id": "stale-choice",
+            "resident_id": resident["resident_id"],
+            "expected_revision": 1,
+            "skills": [refs[2]],
+        },
+        "stale-choice",
+    )
+    assert not ok and stale["error"] == "revision_conflict"
+    ok, current = call(
+        bridge,
+        "hearth_skills_assignments",
+        {"resident_id": resident["resident_id"]},
+        "read-current",
+    )
+    assert ok, current
+    assert current["revision"] == 2
+    preserved = [
+        {key: entry[key] for key in ("skill_id", "revision")} for entry in current["skills"]
+    ]
+    assert preserved == [refs[1], refs[0]]
+    assert all("instructions" not in entry for entry in current["skills"])
+    ok, updated = call(
+        bridge,
+        "hearth_skills_assign",
+        {
+            "operation_id": "preserved-choice",
+            "resident_id": resident["resident_id"],
+            "expected_revision": current["revision"],
+            "skills": preserved + [refs[2]],
+        },
+        "preserved-choice",
+    )
+    assert ok and updated["revision"] == 3, updated
+    actual = client.get(path, headers=AUTH).json()
+    assert [entry["skill_id"] for entry in actual["skills"]] == [
+        refs[1]["skill_id"],
+        refs[0]["skill_id"],
+        refs[2]["skill_id"],
+    ]
+    ok, denied = call(
+        bridge, "hearth_skills_assignments", {"resident_id": karen["resident_id"]}, "foreign-read"
+    )
+    assert not ok and denied["error"] == "management_resident_out_of_scope"
+
+
+def test_authoring_capability_alone_does_not_read_resident_assignments(tmp_path):
+    _, _, karen, bridge = manager(tmp_path, capabilities=["author_skills"])
+    ok, denied = call(
+        bridge,
+        "hearth_skills_assignments",
+        {
+            "resident_id": karen["resident_id"],
+        },
+        "no-assignment-authority",
+    )
+    assert not ok and denied["error"] == "management_skill_authoring_not_permitted"
