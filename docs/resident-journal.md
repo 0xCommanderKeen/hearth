@@ -42,14 +42,34 @@ failed database commit can leave an unreferenced archived file, exactly as memor
 a later roll reuses it. Directory and file symlinks, nonregular files and unsafe
 identities are refused, and the archive directory is never followed through a link.
 
-Reading archived entries back into a run's context is not implemented here.
+A pinned entry is read back from its archived file when retention rolls it out during
+the run that pinned it; nothing else reads archived entries into a context.
+
+## The journal a run opens with
+
+Admission pins the newest `CONTEXT_ENTRIES` (5) entries in `run_journal`, in the same
+transaction as `run_memory`, and context version 6 carries exactly those under `journal`,
+newest first, with `journal_usage` marking them as data that cannot grant authority or
+override instructions — the same neutralization the pinned inputs carry. Entries written
+later, including the run's own, join the next run's context, never this one's.
+
+Each pin holds the entry's sequence, its text digest and the digest of the document
+retention would archive it as, so a run that rolls its own pinned entry out mid-run still
+reads the identical bytes back from the file. A pinned entry that is neither a row nor its
+exact file leaves the run interrupted, exactly as missing pinned memory does; unrelated
+residents keep working.
+
+`hearth_journal_write` is the run's own writer, offered to a run whose declaration says
+`memory_writable` (see [memory](resident-memory.md)). What a resident should write —
+that it may keep durable facts in memory and closes its work with one short entry — is
+skill text in the library, not wording in the context builder.
 
 ## Operator surface
 
 Authenticated `GET /api/residents/{id}/journal` accepts `limit` (1–100, default 20) and
 `offset`, newest first, `no-store`. There is no operator write route and no runtime
 route: runtime credentials are refused like every other operator path. Townhall does not
-show the journal yet, and no model-facing tool writes one; those are #118 and #119. The
+show the journal yet; that is #119. The
 household `journal_limit` is settable through `PUT /api/household` and is preserved when
 a client omits it, so the existing Townhall policy form cannot reset it.
 
@@ -57,7 +77,8 @@ a client omits it, so the existing Townhall policy form cannot reset it.
 
 Current-schema backups preserve every journal entry and every archived file, including
 orphans. Verification refuses a changed entry (checksum or size), a changed or renamed
-archived file, an entry whose run belongs to another resident, and unsafe paths.
+archived file, an entry whose run belongs to another resident, and unsafe paths, and it
+reads back every run's pinned journal from its rows and archived files.
 Restored copies read the journal and refuse writes.
 
 Synthetic tests cover write/replace within a run, refusal after settling or cancelling,

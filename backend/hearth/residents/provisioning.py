@@ -44,6 +44,8 @@ class ProvisionRequest(Strict):
     purpose: str = Field(min_length=1, max_length=8000)
     instructions: str = Field(default="", max_length=32000)
     initial_memory: str = Field(default="", max_length=131072)
+    # The declared memory.writable capability; a manager needs writable_memory to set it.
+    memory_writable: bool = False
     skills: list[SkillRef] = Field(default_factory=list, max_length=8)
     execution_profile: str = Field(min_length=1, max_length=100)
     input_sets: list[InputRef] = Field(default_factory=list, max_length=4)
@@ -274,6 +276,7 @@ class Provisioning:
                     body.daily_limit,
                     body.budget_timezone,
                     body.instructions,
+                    body.memory_writable,
                 ),
                 expected_revision=0,
             )
@@ -398,6 +401,7 @@ class Provisioning:
             or body.routine
             or body.first_assignment
             or body.initial_memory
+            or body.memory_writable
         ):
             raise Refused("skill_evaluator_setup_invalid")
         if actor != "operator":

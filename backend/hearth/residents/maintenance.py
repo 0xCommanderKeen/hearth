@@ -36,6 +36,9 @@ class DeclarationChange(BaseModel):
     instructions: str = Field(max_length=32000)
     daily_limit: int = Field(ge=0)
     budget_timezone: str = Field(min_length=1, max_length=100)
+    # Omitted keeps the current memory.writable capability; a form that never
+    # learned about it cannot withdraw what an operator granted.
+    memory_writable: bool | None = None
 
 
 class MemoryChange(BaseModel):
@@ -119,6 +122,7 @@ class Maintenance:
                 "instructions": declaration["skill_text"],
                 "daily_limit": declaration["daily_limit"],
                 "budget_timezone": declaration["budget_timezone"],
+                "memory_writable": bool(declaration["memory_writable"]),
             },
             "memory": {"expected_revision": memory_revision, "text": memory["text"]},
             "inputs": {
@@ -195,6 +199,11 @@ class Maintenance:
                     change.daily_limit,
                     budget_timezone=change.budget_timezone,
                     skill_text=change.instructions,
+                    memory_writable=(
+                        self.hearth.declared_memory_writable(db, resident_id)
+                        if change.memory_writable is None
+                        else change.memory_writable
+                    ),
                 ),
                 expected_revision=change.expected_revision,
             )

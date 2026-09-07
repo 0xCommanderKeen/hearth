@@ -46,12 +46,16 @@ class Declaration:
     daily_limit: int
     budget_timezone: str = "UTC"
     skill_text: str = ""
+    # The declared memory.writable capability: may this resident's runs write its memory?
+    memory_writable: bool = False
 
     def validate(self) -> None:
         bounded_text(self.name, 100, "invalid_name")
         bounded_text(self.purpose, 8_000, "invalid_purpose")
         microdollars(self.daily_limit)
         validate_skill_text(self.skill_text)
+        if type(self.memory_writable) is not bool:
+            raise Refused("invalid_memory_capability")
         bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
         try:
             ZoneInfo(self.budget_timezone)

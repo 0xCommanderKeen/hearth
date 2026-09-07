@@ -917,3 +917,56 @@ Remaining for the epic: no model-facing tool writes an entry and no run context 
 with the journal (#118); Townhall shows neither the journal nor the household journal
 bound (#119), so today the bound moves only through `PUT /api/household`. No real Codex
 run has written a journal entry.
+
+## Memory and journal inside a run — 2026-09-07
+
+Issue #118 (epic #126) closes the loop: a run can read its pinned note, save the next
+memory revision and write its own journal entry, and the next run opens with both.
+Writing is a declared capability, `memory_writable` on each declaration revision, false
+for Reader and every ordinary resident and true for Karen. Handing it to another resident
+is the separate operator grant capability `writable_memory`, checked when a manager
+provisions or configures one (`management_memory_not_permitted`). An omitted flag on the
+declaration route, the configuration change or the CLI keeps the current value, so a form
+that predates the capability cannot withdraw it.
+
+`hearth_memory_read`, `hearth_memory_save` and `hearth_journal_write` live in
+`management/tools.py` and reach every granted runtime whose declaration allows them, not
+only managers; `tool_specs(memory=...)` omits them otherwise, `dispatch` refuses a call
+that arrives anyway with `memory_not_writable`, and the pinned `tools_sha256` therefore
+differs between the two tool sets. The save tool passes the model-supplied `resident_id`
+into #116's `save_from_run`, which checks it against the run. Context version 6 adds
+`memory_writable`, the pinned `journal` and its `journal_usage` neutralization note; the
+newest five entries are pinned in `run_journal` in the same transaction as `run_memory`,
+each with the entry digest and the digest of the document retention would archive it as,
+so a roll during the run still reads the identical bytes back from the file. Etiquette
+stays out of the code: the context states the capability and the entries, and #119's
+shared skill says what to write.
+
+Verified with real temporary SQLite through the owning interfaces: a mock end-to-end
+where run 1 reads revision 1, saves revision 2 as `author='run'`, replays that revision on
+an uncertain retry and writes entry 1, an operator edit between the runs becomes revision
+3, and run 2's pinned context carries the operator's text and run 1's entry while its own
+entry waits for run 3; a run that lost a race is refused with `revision_conflict` and the
+human bytes survive, the refused operation identity still succeeds after merging, and
+another resident's id is refused; the three tools absent from `tool_specs()`, refused with
+`memory_not_writable` and leaving memory and journal untouched once the flag is off, while
+the run's management tools still work; `pin_configuration` offering and pinning different
+tool digests for the two declarations; a manager provisioning a writable child only with
+`writable_memory`; a pinned entry archived by a `journal_limit` of 1 mid-run reading back
+byte for byte, with backup verification reading every pinned journal back; and Reader unchanged — no journal, no writable memory, same launch.
+
+Backend checks passed: ruff, ruff format, ty and 698 pytest tests. The browser suite
+passed 76 tests with Prettier, the production build and packaged assets, run inside
+`web/`. The same two `make check` steps as the previous milestone could not run on this
+machine, for the same unrelated reasons: the root `pnpm --dir web` invocation resolves
+pnpm 12.3.4, which the bundled corepack cannot launch, and `scripts/check-wheel.py` calls
+`uv pip sync`, which uv 0.10.4 refuses as a removed legacy interface (`uv build
+--no-sources` itself succeeds).
+
+Remaining for the epic: Townhall shows neither memory history with authorship nor the
+journal, and the "Keep a journal" shared skill and ADR 0012 are unwritten (#119) — so
+today nothing tells a resident to write an entry, and the capability is visible in the
+browser only as the `writable_memory` grant checkbox, not as a declaration control.
+Resident bundles deliberately do not carry `memory_writable`; an imported resident starts
+without it. No real Codex run has used these tools, so the epic's recorded journey and its
+cost are still outstanding.

@@ -9,8 +9,10 @@ from hearth.inputs.catalog import read_input
 from hearth.management.arguments import InvalidArguments
 from hearth.management.authority import digest
 from hearth.management.bridge import authorize_managed_resident
+from hearth.residents.journal import MAX_ENTRY, Journal
 from hearth.residents.lifecycle import read_lifecycle
 from hearth.residents.maintenance_tools import MAINTENANCE_TOOLS, dispatch_maintenance
+from hearth.residents.memory import MAX_MEMORY, Memory, read_revision
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import Provisioning, ProvisionRequest, profile_summary
 from hearth.skills.authoring import decorate
@@ -59,7 +61,47 @@ class StartWork(Operation):
     reserve: int = Field(default=100000, ge=1)
 
 
+class MemoryRead(Strict):
+    offset: int = Field(default=0, ge=0)
+
+
+class MemorySave(Operation):
+    resident_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(max_length=MAX_MEMORY)
+    expected_revision: int = Field(ge=0)
+
+
+class JournalWrite(Strict):
+    text: str = Field(min_length=1, max_length=MAX_ENTRY)
+
+
+# Remembering is not managing: these belong to any granted runtime whose resident
+# declares memory.writable, whatever management capabilities it holds.
+MEMORY_TOOLS = {
+    "hearth_memory_read": (
+        MemoryRead,
+        "Read this run's pinned memory note as bounded text pages. Concatenate text in offset "
+        "order; start at offset 0 and continue while next_offset is not null. The revision is "
+        "fixed for the whole run, so a page never changes underneath you.",
+    ),
+    "hearth_memory_save": (
+        MemorySave,
+        "Replace your own resident's memory note with the complete new text, supplying the "
+        "revision you last read as expected_revision. A concurrent human edit wins: a conflict "
+        "means read the current note again and merge, never overwrite blindly. Retain "
+        "operation_id and identical arguments for uncertain retries.",
+    ),
+    "hearth_journal_write": (
+        JournalWrite,
+        "Write this run's own journal entry. One entry per run: writing again replaces your "
+        "entry, and no one writes it for you. The next run of this resident opens with the "
+        "newest entries.",
+    ),
+}
+
+
 TOOL_MODELS = {
+    **MEMORY_TOOLS,
     **SKILL_TOOLS,
     **MAINTENANCE_TOOLS,
     "hearth_catalog": (
@@ -95,9 +137,12 @@ TOOL_MODELS = {
 }
 
 
-def tool_specs() -> list[dict]:
+def tool_specs(*, memory: bool = False) -> list[dict]:
+    """The exact declared tool set of one run; its digest joins the admission pins."""
     result = []
     for name, (model, description) in TOOL_MODELS.items():
+        if name in MEMORY_TOOLS and not memory:
+            continue
         schema = model.model_json_schema()
         if name == "hearth_residents_provision":
             resident = ProvisionRequest.model_json_schema()
@@ -213,6 +258,8 @@ def _provision(db, hearth, authority, body: Provision, payload: str) -> dict:
         raise Refused("management_resident_budget_limit")
     if body.reserve > grant["max_reserve"]:
         raise Refused("management_reservation_limit")
+    if resident.memory_writable and "writable_memory" not in grant["capabilities"]:
+        raise Refused("management_memory_not_permitted")
     if resident.routine is not None and "routines" not in grant["capabilities"]:
         raise Refused("management_routine_not_permitted")
     if (
@@ -311,14 +358,60 @@ def _work(db, hearth, authority, body: AssignWork | StartWork, payload: str) -> 
     )
 
 
+def _memory(db, hearth, authority, body: MemoryRead | MemorySave | JournalWrite) -> dict:
+    """A run reads its pinned note and writes its own resident's memory and journal."""
+    if isinstance(body, MemoryRead):
+        pinned = db.execute(
+            "SELECT resident_id,revision FROM run_memory WHERE run_id=?", (authority["run_id"],)
+        ).fetchone()
+        if pinned is not None and pinned["resident_id"] != authority["actor"]:
+            raise Refused("memory_run_mismatch")
+        current = read_revision(
+            db, Memory(hearth).files, authority["actor"], pinned["revision"] if pinned else 0
+        )
+        if body.offset > len(current["text"]):
+            raise Refused("memory_offset_invalid")
+        end = min(body.offset + 32000, len(current["text"]))
+        return {
+            "resident_id": current["resident_id"],
+            "revision": current["revision"],
+            "sha256": current["sha256"],
+            "encoding": "text",
+            "offset": body.offset,
+            "text": current["text"][body.offset : end],
+            "next_offset": end if end < len(current["text"]) else None,
+        }
+    if isinstance(body, MemorySave):
+        # The stated resident is checked against the run; authorship comes from the run.
+        saved = Memory(hearth).save_from_run(
+            db,
+            authority["run_id"],
+            body.text,
+            expected_revision=body.expected_revision,
+            operation_id=body.operation_id,
+            resident_id=body.resident_id,
+        )
+        return {key: saved[key] for key in ("resident_id", "revision", "sha256", "author")} | {
+            "operation_id": body.operation_id
+        }
+    entry = Journal(hearth).write_in_transaction(
+        db, authority["actor"], authority["run_id"], body.text
+    )
+    return {key: entry[key] for key in ("resident_id", "sequence", "run_id", "at", "archived")}
+
+
 def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
         raise Refused("management_tool_not_permitted")
+    if tool in MEMORY_TOOLS and not authority["memory_writable"]:
+        raise Refused("memory_not_writable")
     try:
         if tool in MAINTENANCE_TOOLS:
             return dispatch_maintenance(db, hearth, authority, tool, arguments)
         model = TOOL_MODELS[tool][0]
         body = model.model_validate(arguments)
+        if isinstance(body, MemoryRead | MemorySave | JournalWrite):
+            return _memory(db, hearth, authority, body)
         if tool in SKILL_TOOLS:
             return dispatch_skill(db, hearth, authority, tool, body)
         if isinstance(body, Catalog):

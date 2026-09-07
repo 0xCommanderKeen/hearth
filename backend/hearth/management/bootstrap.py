@@ -51,6 +51,7 @@ def bootstrap(hearth: Hearth) -> dict:
                     "Use the management tools and verify their receipts. Preserve human edits."
                 ),
                 initial_memory="New residents receive no management capabilities by default.",
+                memory_writable=True,
                 execution_profile=runtime,
                 daily_limit=2_000_000,
                 creation_reason="Explicit operator setup of the resident manager.",
@@ -80,6 +81,7 @@ def bootstrap(hearth: Hearth) -> dict:
                     "update_residents",
                     "manage_lifecycle",
                     "assign_skills",
+                    "writable_memory",
                 ],
             },
         )

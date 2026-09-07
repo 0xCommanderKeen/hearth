@@ -61,6 +61,15 @@ class Hearth:
         self.database = database
         self.clock = clock
 
+    def declared_memory_writable(self, db, resident_id: str) -> bool:
+        """The current declared memory.writable, so an omitted flag keeps what is granted."""
+        row = db.execute(
+            "SELECT d.memory_writable FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return bool(row[0]) if row else False
+
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
     ) -> Resident:
@@ -105,8 +114,9 @@ class Hearth:
                 originating_run_id=None,
                 now=now,
             )
+        writable = declaration.memory_writable
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -116,9 +126,16 @@ class Hearth:
                 now,
                 declaration.budget_timezone,
                 declaration.skill_text,
+                int(writable),
             ),
         )
-        _audit(db, "resident.saved", resident_id, now, {"revision": revision})
+        _audit(
+            db,
+            "resident.saved",
+            resident_id,
+            now,
+            {"revision": revision, "memory_writable": writable},
+        )
         return Resident(resident_id, revision, declaration)
 
     def set_paused(self, resident_id: str, *, paused: bool, expected_revision: int) -> dict:
@@ -164,6 +181,7 @@ class Hearth:
                     row["daily_limit"],
                     row["budget_timezone"],
                     row["skill_text"],
+                    bool(row["memory_writable"]),
                 ),
             )
 
@@ -337,6 +355,10 @@ class Hearth:
         ).fetchone()[0]
         if memory is not None:
             db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
+        # The journal the run opens with is pinned beside its memory, in this transaction.
+        from hearth.residents.journal import pin_journal
+
+        pin_journal(db, run.id, resident_id)
         from hearth.skills.assignments import pin_skills
 
         pin_skills(db, run.id, resident_id)

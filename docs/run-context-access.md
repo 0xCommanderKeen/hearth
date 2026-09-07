@@ -22,7 +22,9 @@ token cannot substitute for a runtime credential on this route. Malformed or
 unrecognized runtime routes do not fall back to operator authentication.
 
 Context contains only that run's identity, task identity, resident revision,
-purpose, skill text, pinned memory, instruction, context version and explicit synthetic notes. The executor
+purpose, skill text, pinned memory, its declared `memory_writable` capability, the
+pinned journal entries with their usage note, instruction, context version and explicit
+synthetic notes. The executor
 and this route use the same pinned context reader; the route keeps its credential
 checks in the same read transaction. It excludes run ownership
 secrets, budgets, other residents, real notes and effect credentials. Responses use

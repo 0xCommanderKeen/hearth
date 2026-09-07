@@ -25,7 +25,7 @@ operator storage; content hashes are integrity checks, not authentication.
 
 Admission records a reference to the current memory revision in the same transaction
 as the run, reservation and audit. No reference means the run admitted without
-memory, even if memory is added later. Context version 3 contains that exact memory
+memory, even if memory is added later. Context version 6 contains that exact memory
 revision and text. Later saves affect future admissions and do not change or revoke
 an existing run's pinned memory. Cancellation, credential revocation and declaration
 revision checks still apply. Authorized bytes already delivered cannot be retracted.
@@ -62,6 +62,33 @@ in `memory_operations`; an identical retry replays it, reading the text back fro
 immutable file rather than storing memory content in SQLite. A different payload under
 the same `operation_id` is refused with `operation_conflict`. A refused attempt records
 nothing, so retrying it is a fresh attempt.
+
+## The declared capability and its tools
+
+Writing memory from inside a run is a declared capability, not a management power.
+Each declaration revision carries `memory_writable`; the pinned context states it as
+`memory_writable` and the same declaration revision the run admitted with decides it.
+It is false for Reader and every ordinary resident, true for Karen. A manager may
+declare it on a resident it provisions or configures only with the `writable_memory`
+grant capability; provisioning or configuring one without that grant is refused with
+`management_memory_not_permitted`. An omitted flag in a declaration save, a
+configuration change or the CLI keeps the current value, so a form that never learned
+about the capability cannot withdraw it.
+
+A run whose declaration says `memory_writable` is offered three native tools beside
+whatever management tools it holds — a resident that manages nothing still gets them:
+
+- `hearth_memory_read` returns the run's own pinned revision as bounded 32,000-character
+  pages (`offset`, `text`, `next_offset`), like the configuration reader. The revision
+  cannot change under the run, so pages need no digest.
+- `hearth_memory_save` calls the run writer above with the model-supplied `resident_id`,
+  `expected_revision` and `operation_id`; the stated resident is checked against the run.
+- `hearth_journal_write` writes this run's [journal entry](resident-journal.md).
+
+The tools are absent from the declared tool set when the flag is false, and a call that
+arrives anyway is refused with `memory_not_writable`. Because the offered set differs,
+the pinned `tools_sha256` differs too: the tool schemas a run may use are fixed at the
+same admission that pins its grant and its memory.
 
 ## Operator workflow
 

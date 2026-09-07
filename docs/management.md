@@ -23,7 +23,7 @@ reload. Held restores expose this state read-only.
 ## Run authority and transactions
 
 Admission pins an immutable grant revision/digest and a ten-minute expiry separately
-from ordinary context version 5. Only admitted granted subscription runs select the
+from ordinary context version 6. Only admitted granted subscription runs select the
 native management adapter; Reader retains its existing read-only exec adapter.
 The trusted worker passes a private binding to the bridge, never model-visible
 owner tokens, operator credentials, database handles or auth paths. Native thread
@@ -32,6 +32,13 @@ intent, owner, epoch, declaration, admitted input, grant revision, expiry and na
 session identities in the same SQLite writer as the application operation.
 Revocation also refuses replay; editing or disabling a grant stops the old run's
 authority and future use requires a new admission.
+
+Not every native tool is a management power. A run whose declaration says
+`memory_writable` also receives the memory and journal tools described in
+[resident memory](resident-memory.md), whatever else its grant permits; the operator
+grant capability `writable_memory` separately governs handing that declaration to a
+provisioned or reconfigured resident. The offered set is what the admission pins:
+`tools_sha256` covers exactly the schemas that run may call.
 
 The initial tools inspect bounded catalog summaries, exact skill revisions and
 owned resident status; provision through the ordinary resident operation; and

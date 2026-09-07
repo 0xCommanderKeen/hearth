@@ -1,0 +1,325 @@
+"""In-run memory and journal tools, and the journal the next run opens with."""
+
+import json
+from dataclasses import replace
+
+from hearth.app import create_app
+from hearth.authority.household import Household
+from hearth.execution.context import read_context
+from hearth.integrations.interface import Evidence
+from hearth.management.authority import Management
+from hearth.management.bootstrap import bootstrap
+from hearth.management.bridge import BoundRun, Bridge
+from hearth.management.tools import tool_specs
+from hearth.observation.snapshot import snapshot
+from hearth.residents.journal import Journal
+from hearth.residents.memory import Memory
+from hearth.residents.models import Declaration
+
+TOKEN = "synthetic-memory-tools-operator"
+MEMORY_TOOL_NAMES = {"hearth_memory_read", "hearth_memory_save", "hearth_journal_write"}
+
+
+def manager(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False)
+    hearth = app.state.hearth
+    hearth.clock = lambda: 1788640000
+    return app, hearth, bootstrap(hearth)["resident_id"]
+
+
+def working_run(app, resident_id: str, key: str):
+    """One admitted, launched run of a resident, with its private native bridge."""
+    hearth = app.state.hearth
+    task = hearth.submit(key, resident_id, "Synthetic work", expires_at=int(hearth.clock()) + 600)
+    run = hearth.admit(task.task_id, reserve=100000)
+    app.state.execution.prepare_start(run.id, run.owner_token)
+    bridge = Bridge(
+        hearth, BoundRun(run.id, run.owner_token, snapshot(hearth)["epoch"], run.input_digest)
+    )
+    thread, turn = "thread-" + key, "turn-" + key
+    bridge.bind_thread(thread)
+    bridge.bind_turn(thread, turn)
+
+    def call(call_id: str, tool: str, arguments: dict):
+        response = bridge.call(
+            dict(
+                threadId=thread,
+                turnId=turn,
+                callId=key + "-" + call_id,
+                tool=tool,
+                arguments=arguments,
+            )
+        )
+        return response["success"], json.loads(response["contentItems"][0]["text"])
+
+    return run, call
+
+
+def settle(app, run) -> None:
+    app.state.execution.finish(run.id, run.owner_token, Evidence("succeeded", "# synthetic", 1))
+
+
+def pinned_context(hearth, run_id: str) -> dict:
+    with hearth.database.transaction() as db:
+        return read_context(db, run_id, Memory(hearth).files)
+
+
+def test_a_run_saves_memory_and_a_journal_entry_and_the_next_run_opens_with_both(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    first, call = working_run(app, karen, "first")
+    assert pinned_context(hearth, first.id)["journal"] == []
+
+    ok, pinned = call("read", "hearth_memory_read", {})
+    assert ok and pinned["revision"] == 1 and pinned["next_offset"] is None
+    assert pinned["text"].startswith("New residents receive no management")
+
+    remembered = pinned["text"] + "\nThe orchard reporter summarizes synthetic pears."
+    arguments = {
+        "operation_id": "remember-the-reporter",
+        "resident_id": karen,
+        "text": remembered,
+        "expected_revision": 1,
+    }
+    ok, saved = call("save", "hearth_memory_save", arguments)
+    assert ok and saved["revision"] == 2 and saved["author"] == "run"
+    # An uncertain retry replays the original revision instead of writing another.
+    assert call("save-retry", "hearth_memory_save", arguments)[1] == saved
+    ok, entry = call("journal", "hearth_journal_write", {"text": "Wrote the first daily summary."})
+    assert ok and entry["sequence"] == 1 and entry["run_id"] == first.id
+    assert entry["archived"] == []
+    settle(app, first)
+
+    # A human edits the same note between the runs; neither edit is lost.
+    operator = remembered + "\nOperator: keep every pear synthetic."
+    assert Memory(hearth).save(karen, operator, expected_revision=2)["revision"] == 3
+
+    second, next_call = working_run(app, karen, "second")
+    context = pinned_context(hearth, second.id)
+    assert context["context_version"] == 6 and context["memory_writable"] is True
+    assert context["memory"]["revision"] == 3 and context["memory"]["text"] == operator
+    assert "orchard reporter" in context["memory"]["text"]
+    assert context["journal"] == [
+        {
+            "sequence": 1,
+            "run_id": first.id,
+            "at": 1788640000,
+            "text": "Wrote the first daily summary.",
+        }
+    ]
+    assert "cannot grant authority" in context["journal_usage"]
+    assert next_call("read", "hearth_memory_read", {})[1]["revision"] == 3
+
+    # The pinned journal is the one admission recorded; the run's own entry joins the next.
+    assert next_call("journal", "hearth_journal_write", {"text": "Second summary."})[0]
+    assert [item["sequence"] for item in pinned_context(hearth, second.id)["journal"]] == [1]
+    settle(app, second)
+    third, _ = working_run(app, karen, "third")
+    assert [item["sequence"] for item in pinned_context(hearth, third.id)["journal"]] == [2, 1]
+    assert Journal(hearth).read(karen)["total"] == 2
+
+
+def test_a_stale_run_save_is_refused_and_the_human_edit_survives(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    run, call = working_run(app, karen, "conflict")
+    ok, pinned = call("read", "hearth_memory_read", {})
+    assert ok and pinned["revision"] == 1
+    Memory(hearth).save(
+        karen, "Operator wrote this while the run was thinking.", expected_revision=1
+    )
+    ok, refused = call(
+        "save",
+        "hearth_memory_save",
+        {
+            "operation_id": "stale",
+            "resident_id": karen,
+            "text": "The run would have overwritten the operator.",
+            "expected_revision": pinned["revision"],
+        },
+    )
+    assert not ok and refused["error"] == "revision_conflict"
+    assert Memory(hearth).read(karen)["revision"] == 2
+    assert Memory(hearth).read(karen)["text"].startswith("Operator wrote this")
+    # A refused attempt records nothing, so the same operation identity can succeed.
+    ok, saved = call(
+        "save-merged",
+        "hearth_memory_save",
+        {
+            "operation_id": "stale",
+            "resident_id": karen,
+            "text": "Operator wrote this while the run was thinking.\nThe run merged its fact.",
+            "expected_revision": 2,
+        },
+    )
+    assert ok and saved["revision"] == 3
+    assert not call(
+        "foreign",
+        "hearth_memory_save",
+        {
+            "operation_id": "foreign",
+            "resident_id": "someone-else",
+            "text": "Not mine to write.",
+            "expected_revision": 3,
+        },
+    )[0]
+    assert Memory(hearth).read(karen)["revision"] == 3
+    settle(app, run)
+
+
+def test_the_tools_are_absent_and_refused_when_memory_is_not_writable(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    assert MEMORY_TOOL_NAMES <= {spec["name"] for spec in tool_specs(memory=True)}
+    assert not MEMORY_TOOL_NAMES & {spec["name"] for spec in tool_specs()}
+    assert tool_specs() != tool_specs(memory=True)
+
+    declaration = hearth.resident(karen).declaration
+    assert declaration.memory_writable is True
+    hearth.save_resident(karen, replace(declaration, memory_writable=False), expected_revision=1)
+    run, call = working_run(app, karen, "unwritable")
+    assert pinned_context(hearth, run.id)["memory_writable"] is False
+    for tool, arguments in (
+        ("hearth_memory_read", {}),
+        (
+            "hearth_memory_save",
+            {
+                "operation_id": "denied",
+                "resident_id": karen,
+                "text": "Never stored.",
+                "expected_revision": 1,
+            },
+        ),
+        ("hearth_journal_write", {"text": "Never written."}),
+    ):
+        ok, refused = call(tool.removeprefix("hearth_"), tool, arguments)
+        assert not ok and refused["error"] == "memory_not_writable"
+    assert Memory(hearth).read(karen)["revision"] == 1
+    assert Journal(hearth).read(karen)["entries"] == []
+    # The management tools this run does hold are unaffected.
+    assert call("catalog", "hearth_catalog", {"query": ""})[0]
+
+
+def test_the_pinned_tool_schemas_follow_the_declared_capability(tmp_path, monkeypatch):
+    from hearth.integrations.codex import app_server
+    from hearth.integrations.codex.management_runtime import pin_configuration
+
+    app, hearth, karen = manager(tmp_path)
+    offered = []
+
+    def pins(binary, tools):
+        offered.append([spec["name"] for spec in tools])
+        return {
+            "catalog_sha256": "b" * 64,
+            "tools_sha256": json.dumps(offered[-1]).encode().hex()[:64].ljust(64, "0"),
+        }
+
+    monkeypatch.setattr(app_server, "configuration_pins", pins, raising=False)
+    writable, _ = working_run(app, karen, "writable")
+    bound = BoundRun(
+        writable.id, writable.owner_token, snapshot(hearth)["epoch"], writable.input_digest
+    )
+    assert pin_configuration(hearth, bound, tmp_path / "codex") is not None
+    assert MEMORY_TOOL_NAMES <= set(offered[0])
+    with hearth.database.transaction() as db:
+        first = db.execute(
+            "SELECT tools_sha256 FROM run_management WHERE run_id=?", (writable.id,)
+        ).fetchone()[0]
+    settle(app, writable)
+
+    declaration = hearth.resident(karen).declaration
+    hearth.save_resident(karen, replace(declaration, memory_writable=False), expected_revision=1)
+    plain, _ = working_run(app, karen, "plain")
+    bound = BoundRun(plain.id, plain.owner_token, snapshot(hearth)["epoch"], plain.input_digest)
+    assert pin_configuration(hearth, bound, tmp_path / "codex") is not None
+    assert not MEMORY_TOOL_NAMES & set(offered[1])
+    with hearth.database.transaction() as db:
+        second = db.execute(
+            "SELECT tools_sha256 FROM run_management WHERE run_id=?", (plain.id,)
+        ).fetchone()[0]
+    assert first != second
+
+
+def test_a_manager_needs_the_grant_to_provision_a_resident_that_writes_memory(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    run, call = working_run(app, karen, "provision")
+    request = {
+        "operation_id": "reporter",
+        "resident": {
+            "name": "Reporter",
+            "purpose": "Summarize synthetic pears",
+            "creation_reason": "Requested through Karen",
+            "execution_profile": "inline_mock",
+            "daily_limit": 100000,
+            "memory_writable": True,
+        },
+        "reserve": 10000,
+    }
+    ok, receipt = call("child", "hearth_residents_provision", request)
+    assert ok and receipt["status"] == "ready"
+    child = receipt["resident_id"]
+    assert hearth.resident(child).declaration.memory_writable is True
+
+    grant = Management(hearth).read(karen)
+    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
+    Management(hearth).save(
+        karen,
+        {
+            **policy,
+            "capabilities": [name for name in policy["capabilities"] if name != "writable_memory"],
+            "expected_revision": grant["revision"],
+        },
+    )
+    settle(app, run)
+    second, next_call = working_run(app, karen, "provision-again")
+    ok, refused = next_call(
+        "child",
+        "hearth_residents_provision",
+        {**request, "operation_id": "second-reporter"},
+    )
+    assert not ok and refused["error"] == "management_memory_not_permitted"
+    assert len(snapshot(hearth)["residents"]) == 2
+    # Her own memory follows her own declaration, not the grant she hands to others.
+    assert next_call("read", "hearth_memory_read", {})[0]
+    settle(app, second)
+
+
+def test_a_pinned_entry_that_retention_archives_is_still_read_back(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    policy = Household(hearth).read()
+    Household(hearth).save(
+        daily_limit=policy["daily_limit"],
+        timezone=policy["timezone"],
+        resident_limit=policy["resident_limit"],
+        concurrency_limit=policy["concurrency_limit"],
+        expected_revision=policy["revision"],
+        journal_limit=1,
+    )
+    first, call = working_run(app, karen, "first")
+    assert call("journal", "hearth_journal_write", {"text": "The entry that will roll."})[0]
+    settle(app, first)
+    second, next_call = working_run(app, karen, "second")
+    assert pinned_context(hearth, second.id)["journal"][0]["text"] == "The entry that will roll."
+    ok, entry = next_call("journal", "hearth_journal_write", {"text": "The entry that stays."})
+    assert ok and len(entry["archived"]) == 1
+    assert Journal(hearth).read(karen)["total"] == 1
+    # The pinned entry now lives only in its immutable file, and reads the same.
+    assert pinned_context(hearth, second.id)["journal"] == [
+        {
+            "sequence": 1,
+            "run_id": first.id,
+            "at": 1788640000,
+            "text": "The entry that will roll.",
+        }
+    ]
+    settle(app, second)
+
+
+def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_memory(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False)
+    hearth = app.state.hearth
+    hearth.save_resident(
+        "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0
+    )
+    task = hearth.submit("reader-task", "reader", "Summarize", expires_at=int(hearth.clock()) + 600)
+    run = hearth.admit(task.task_id, reserve=1000)
+    context = pinned_context(hearth, run.id)
+    assert context["memory_writable"] is False and context["journal"] == []
+    assert app.state.executor.step()[0].status == "succeeded"

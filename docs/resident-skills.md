@@ -45,7 +45,7 @@ request-body limit. Oversized input is refused without changing the revision.
 Saves and their audit facts commit together; only one concurrent expected-revision
 save wins. Earlier declaration revisions remain readable.
 
-Context version 3 includes the skill text from the admitted declaration revision.
+Context version 6 includes the skill text from the admitted declaration revision.
 The executor and scoped runtime route use the same reader. An edit before launch
 authorization refuses a new launch; an already-authorized input stays pinned, and
 existing runtime evidence remains recoverable. Configuration changes revoke old

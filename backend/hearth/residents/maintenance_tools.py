@@ -91,6 +91,12 @@ def dispatch_maintenance(db, hearth, authority, tool: str, arguments: dict) -> d
             and changes.declaration.daily_limit > grant["max_daily_limit"]
         ):
             raise Refused("management_resident_budget_limit")
+        if (
+            changes.declaration is not None
+            and changes.declaration.memory_writable
+            and "writable_memory" not in grant["capabilities"]
+        ):
+            raise Refused("management_memory_not_permitted")
         if changes.inputs is not None and any(
             item.input_set_id not in grant["input_set_ids"] for item in changes.inputs.input_sets
         ):

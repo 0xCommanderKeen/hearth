@@ -381,6 +381,7 @@ class Executor:
                         if not (
                             error.code.startswith("memory_")
                             or error.code.startswith("invalid_memory_")
+                            or error.code.startswith("journal_")
                             or error.code.startswith("skill_")
                             or error.code.startswith("input_")
                         ):
