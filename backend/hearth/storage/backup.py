@@ -27,6 +27,7 @@ from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
 from hearth.skills.assignments import read_assignments, run_skills
 from hearth.skills.catalog import checked_revision
+from hearth.skills.evaluation import verify_authoring_backup
 from hearth.storage.artifacts import Artifact, Artifacts, sync_directory
 from hearth.storage.database import SCHEMA_VERSION, Database, schema_matches
 
@@ -258,6 +259,7 @@ def _check_database(root: Path) -> dict:
                 ):
                     raise Refused("backup_runtime_invalid")
         validate_management(db)
+        verify_authoring_backup(db, root)
         validate_provisioning(db)
         validate_windows(db)
         for run in db.execute("SELECT * FROM runs"):

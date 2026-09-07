@@ -129,6 +129,12 @@ def _pin_identity(entries: list[dict]) -> str:
 def pin_inputs(db, run_id: str, resident_id: str) -> None:
     selected = read_selection(db, resident_id)
     entries = selected["input_sets"]
+    from hearth.skills.evaluation import case_binding
+
+    evaluation = case_binding(db, run_id, resident_id)
+    if evaluation is not None:
+        entries = [evaluation["input"]]
+        selected = {"revision": 0}
     db.execute(
         "INSERT INTO run_input_sets VALUES (?,?,?,?,?)",
         (run_id, resident_id, selected["revision"], len(entries), _pin_identity(entries)),

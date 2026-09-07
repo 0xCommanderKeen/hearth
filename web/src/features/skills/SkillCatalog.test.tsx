@@ -134,3 +134,113 @@ it("shows loading failures, retry and an empty searchable catalog", async () => 
   });
   await screen.findByText("No matching skills.");
 });
+
+it("shows externally created skills while the catalog stays open", async () => {
+  const client = setup();
+  await screen.findByRole("heading", { name: "Daily summary" });
+  vi.mocked(client.skills).mockResolvedValue([
+    skill,
+    { ...skill, skill_id: "new", name: "Karen's new report" },
+  ]);
+  await screen.findByRole(
+    "heading",
+    { name: "Karen's new report" },
+    { timeout: 2500 },
+  );
+});
+
+it("preserves a dirty editor when an external revision arrives", async () => {
+  window.location.hash = "#skills/summary";
+  const client = setup();
+  await screen.findByLabelText("Markdown instructions");
+  fireEvent.change(screen.getByLabelText("Markdown instructions"), {
+    target: { value: "Unsaved human draft" },
+  });
+  vi.mocked(client.skill).mockResolvedValue({
+    ...skill,
+    revision: 2,
+    instructions: "Karen's revision",
+  });
+  await screen.findByText(
+    /A newer revision is available/,
+    {},
+    { timeout: 2500 },
+  );
+  expect(
+    (screen.getByLabelText("Markdown instructions") as HTMLTextAreaElement)
+      .value,
+  ).toBe("Unsaved human draft");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Load current revision (replace draft)",
+    }),
+  );
+  await screen.findByText("REVISION 2 · ACTIVE");
+  expect(
+    (screen.getByLabelText("Markdown instructions") as HTMLTextAreaElement)
+      .value,
+  ).toBe("Karen's revision");
+});
+
+it.each(["passed", "failed"] as const)(
+  "refreshes externally started %s validation without replacing a dirty draft",
+  async (status) => {
+    window.location.hash = "#skills/summary";
+    const client = new Client("synthetic-token");
+    const authored: CatalogSkill = {
+      ...skill,
+      status: "draft",
+      authoring: {
+        examples: [],
+        manifest_sha256: "examples",
+        structure: { checker: "structure-v1", passed: true, reasons: [] },
+        publication: null,
+        validation: null,
+      },
+    };
+    vi.spyOn(client, "skills").mockResolvedValue([authored]);
+    vi.spyOn(client, "skillUsers").mockResolvedValue([]);
+    vi.spyOn(client, "skillHistory").mockResolvedValue([authored]);
+    const read = vi.spyOn(client, "skill").mockResolvedValue(authored);
+    render(<SkillCatalog client={client} readOnly={false} />);
+    await screen.findByText("Not evaluated");
+    fireEvent.change(screen.getByLabelText("Markdown instructions"), {
+      target: { value: "Unsaved human procedure" },
+    });
+    const validation = {
+      validation_id: "external",
+      skill_id: "summary",
+      candidate_revision: 1,
+      candidate_sha256: "digest",
+      evaluator_id: "evaluator",
+      status: "pending" as const,
+      reason: null,
+      assessment: "pending",
+      cases: [],
+    };
+    const result = vi
+      .spyOn(client, "skillValidation")
+      .mockResolvedValue(validation);
+    read.mockResolvedValue({
+      ...authored,
+      authoring: { ...authored.authoring!, validation },
+    });
+    await screen.findByText("pending", {}, { timeout: 2500 });
+    const terminal = {
+      ...validation,
+      status,
+      reason: status === "failed" ? "skill_example_failed" : null,
+    };
+    result.mockResolvedValue(terminal);
+    read.mockResolvedValue({
+      ...authored,
+      authoring: { ...authored.authoring!, validation: terminal },
+    });
+    await screen.findByText(status, {}, { timeout: 2500 });
+    expect(
+      (screen.getByLabelText("Markdown instructions") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Unsaved human procedure");
+    expect(screen.queryByText(/A newer revision is available/)).toBeNull();
+  },
+);

@@ -619,3 +619,44 @@ native response acceptance and a permitted routine's actual reservation. A maxim
 Unicode skill remains complete; a populated Unicode catalog stays bounded. The
 actual pinned-CLI local probe passed again after UTF-8 serialization changed the
 configuration digest, with the same restricted tools and absent canaries.
+
+## Shared skill authoring — issue #92
+
+Karen has the ordinary Create good skills library skill and separate scoped authoring
+and exact-assignment capabilities. Authored revisions remain drafts until structure
+and two bounded ordinary example runs pass. Publication preserves the exact tested
+content in a new immutable active revision. Human edits use the same conflict-aware
+workflow and need fresh checks; existing assignments retain their pinned revisions.
+The single visible evaluator has no management grant and uses only its exact fictional
+case inputs and empty memory. Pending checks are durable, release the writer, honor
+grant revocation, and preserve uncertain-usage holds. See [management](management.md)
+for the helper permission, expiry, repair and evidence boundaries.
+
+`make check` passed 632 backend tests and 65 browser tests, lint/format/types, frontend
+and wheel builds, and both isolated installed-wheel mock journeys. New regressions
+exercise exact lost-save/validation/publication replies, concurrent human/agent edits,
+unauthorized revisions and assignments, failed structural/output checks, unknown
+usage, revoked grants during bounded waits, prompt escalation, repaired evaluator
+memory and held-backup provenance. UI checks cover saved simulated evidence, retained
+publication requests, live catalog arrival and preservation of conflicting drafts.
+
+A fresh actual Chromium journey on synthetic localhost 8792 observed a scoped Karen
+creation appear in the open Skills catalog, inspected named authorship and two saved
+accounted mock example runs, published revision 2, and preserved an unsaved human draft
+when a scoped edit created revision 3. It then inspected a scoped assignment of the
+still-active exact revision 2 and the resident's ordinary saved report. Desktop/mobile
+screenshots were inspected, mobile had no horizontal overflow, and no browser errors
+occurred. The deterministic examples establish wiring and recorded assertions, not
+model skill quality. No provider call, credential change or live household change was
+made. Independent review, PR/CI and the bounded real-provider acceptance remain pending.
+
+Spec review identified missing assignment-read recovery and external validation evidence
+that did not refresh when the skill's content revision stayed unchanged. Regressions
+first reproduced both gaps. A scoped bounded read now returns the complete ordered
+assignment references and current revision under assignment authority; recovery after a
+human edit preserves unrelated entries. Same-revision evidence updates now reach the
+open editor without replacing its draft. Final `make check` passed 634 backend and 67
+browser tests plus release/installed-wheel checks. An actual Chromium regression watched
+an externally requested validation complete on an already-open revision while retaining
+unsaved human instructions and keeping publication disabled. Its screenshot was inspected
+and no browser errors occurred. Review recheck and real-provider acceptance remain pending.
