@@ -12,12 +12,21 @@ from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.observation.notifications import enqueue
+from hearth.residents.journal import JournalFiles, run_journal
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.memory import Memory
 from hearth.residents.models import Refused, Run, microdollars
 from hearth.skills.assignments import run_skills
 from hearth.storage.artifacts import Artifact, Artifacts
 from hearth.work.service import ACTIVE_RUNS, Hearth, _audit
+
+
+def unreadable_context(error: Refused) -> bool:
+    """A run whose own pinned context cannot be read is interrupted, not fatal to the pass."""
+    return any(
+        error.code.startswith(prefix)
+        for prefix in ("memory_", "invalid_memory_", "journal_", "skill_", "input_")
+    )
 
 
 class Execution:
@@ -299,8 +308,14 @@ class Executor:
             self.runtime.kind, status=run.status, launch_attempted=bool(run.launch_attempted)
         ):
             if self.execution.prepare_start(run.id, run.owner_token):
-                with self.execution.hearth.database.transaction() as db:
-                    context = read_context(db, run.id, Memory(self.execution.hearth).files)
+                try:
+                    with self.execution.hearth.database.transaction() as db:
+                        context = read_context(db, run.id, Memory(self.execution.hearth).files)
+                except Refused as error:
+                    if not unreadable_context(error):
+                        raise
+                    # One run's unreadable pinned context never stops the whole pass.
+                    return self.execution.observe(run.id, run.owner_token, "interrupted")
                 self.runtime.start(
                     run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
                 )
@@ -348,6 +363,11 @@ class Executor:
                         with self.execution.hearth.database.transaction() as db:
                             run_skills(db, run.id)
                             run_inputs(db, run.id)
+                            run_journal(
+                                db,
+                                JournalFiles(Memory(self.execution.hearth).files.root),
+                                run.id,
+                            )
                     except Refused:
                         results.append(
                             self.execution.observe(run.id, run.owner_token, "interrupted")
@@ -378,13 +398,7 @@ class Executor:
                         with self.execution.hearth.database.transaction() as db:
                             context = read_context(db, run.id, Memory(self.execution.hearth).files)
                     except Refused as error:
-                        if not (
-                            error.code.startswith("memory_")
-                            or error.code.startswith("invalid_memory_")
-                            or error.code.startswith("journal_")
-                            or error.code.startswith("skill_")
-                            or error.code.startswith("input_")
-                        ):
+                        if not unreadable_context(error):
                             raise
                         results.append(
                             self.execution.observe(run.id, run.owner_token, "interrupted")

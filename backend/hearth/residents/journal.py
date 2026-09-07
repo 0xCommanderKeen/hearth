@@ -15,7 +15,9 @@ MAX_ENTRY = 4 * 1024
 MAX_PAGE = 100
 PAGE = 20
 # How many of the newest entries a run opens with. Bounded so a long journal can
-# never crowd out the rest of the pinned context.
+# never crowd out the rest of the pinned context. A run opens with the newest
+# min(CONTEXT_ENTRIES, journal_limit) entries: only rows are pinned, so a household
+# that keeps fewer than this many entries is the tighter of the two bounds.
 CONTEXT_ENTRIES = 5
 # A run writes its own entry while it works; settled or cancelled work writes nothing.
 WRITING_RUNS = frozenset({"starting", "running", "stopping"})

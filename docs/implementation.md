@@ -925,22 +925,33 @@ memory revision and write its own journal entry, and the next run opens with bot
 Writing is a declared capability, `memory_writable` on each declaration revision, false
 for Reader and every ordinary resident and true for Karen. Handing it to another resident
 is the separate operator grant capability `writable_memory`, checked when a manager
-provisions or configures one (`management_memory_not_permitted`). An omitted flag on the
-declaration route, the configuration change or the CLI keeps the current value, so a form
-that predates the capability cannot withdraw it.
+raises it on a resident it provisions or configures (`management_memory_not_permitted`);
+resubmitting a value the resident already has is the ordinary preserve-what-you-read edit
+and is allowed, so a narrowed grant does not lock a manager out of a resident it still
+maintains. An omitted flag on the declaration route, the configuration change or the CLI
+keeps the current value, so a form that predates the capability cannot withdraw it.
 
 `hearth_memory_read`, `hearth_memory_save` and `hearth_journal_write` live in
-`management/tools.py` and reach every granted runtime whose declaration allows them, not
-only managers; `tool_specs(memory=...)` omits them otherwise, `dispatch` refuses a call
-that arrives anyway with `memory_not_writable`, and the pinned `tools_sha256` therefore
-differs between the two tool sets. The save tool passes the model-supplied `resident_id`
-into #116's `save_from_run`, which checks it against the run. Context version 6 adds
+`management/tools.py` and reach a granted runtime whose declaration allows them whatever
+its capabilities are — an enabled grant holding no capabilities at all still gets them, so
+writing memory is not a manager's privilege. They ride on the native tool surface, which
+today exists only where admission pinned an enabled grant, so `read_context` reports
+`memory_writable` only when the declaration allows it *and* this run has that surface: the
+context states the run's actual authority instead of promising tools that do not exist for
+it. `tool_specs(memory=...)` omits the tools otherwise, `dispatch` refuses a call that
+arrives anyway with `memory_not_writable`, and the pinned `tools_sha256` therefore differs
+between the two tool sets. The save tool passes the model-supplied `resident_id` into
+#116's `save_from_run`, which checks it against the run. Context version 6 adds
 `memory_writable`, the pinned `journal` and its `journal_usage` neutralization note; the
 newest five entries are pinned in `run_journal` in the same transaction as `run_memory`,
 each with the entry digest and the digest of the document retention would archive it as,
-so a roll during the run still reads the identical bytes back from the file. Etiquette
-stays out of the code: the context states the capability and the entries, and #119's
-shared skill says what to write.
+so a roll during the run still reads the identical bytes back from the file. Only rows are
+pinned, so a household `journal_limit` below five is the tighter bound and a run then
+opens with that many entries; the archive is not scanned to make the number up. A pinned
+journal that cannot be read leaves its own run interrupted through the same prelaunch
+check as the pinned skills and inputs, on the receipted path as well as the inline one.
+Etiquette stays out of the code: the context states the capability and the entries, and
+#119's shared skill says what to write.
 
 Verified with real temporary SQLite through the owning interfaces: a mock end-to-end
 where run 1 reads revision 1, saves revision 2 as `author='run'`, replays that revision on
@@ -950,18 +961,26 @@ entry waits for run 3; a run that lost a race is refused with `revision_conflict
 human bytes survive, the refused operation identity still succeeds after merging, and
 another resident's id is refused; the three tools absent from `tool_specs()`, refused with
 `memory_not_writable` and leaving memory and journal untouched once the flag is off, while
-the run's management tools still work; `pin_configuration` offering and pinning different
-tool digests for the two declarations; a manager provisioning a writable child only with
-`writable_memory`; a pinned entry archived by a `journal_limit` of 1 mid-run reading back
-byte for byte, with backup verification reading every pinned journal back; and Reader unchanged — no journal, no writable memory, same launch.
+the run's management tools still work; a resident that manages nothing — an enabled grant
+with no capabilities — saving memory and writing a journal its next run opens with, while
+every management action is refused; a declaration flag without a grant reporting
+`memory_writable: false` rather than promising absent tools; a manager whose grant lost
+`writable_memory` still editing a resident that already has the capability, and still
+refused when raising it from false; a deleted pinned entry interrupting only its own run
+while an unrelated resident's run succeeds in the same executor pass;
+`pin_configuration` offering and pinning different tool digests for the two declarations;
+a manager provisioning a writable child only with `writable_memory`; a pinned entry
+archived by a `journal_limit` of 1 mid-run reading back byte for byte, with backup
+verification reading every pinned journal back; and Reader unchanged — no journal, no
+writable memory, same launch.
 
-Backend checks passed: ruff, ruff format, ty and 698 pytest tests. The browser suite
-passed 76 tests with Prettier, the production build and packaged assets, run inside
-`web/`. The same two `make check` steps as the previous milestone could not run on this
-machine, for the same unrelated reasons: the root `pnpm --dir web` invocation resolves
-pnpm 12.3.4, which the bundled corepack cannot launch, and `scripts/check-wheel.py` calls
-`uv pip sync`, which uv 0.10.4 refuses as a removed legacy interface (`uv build
---no-sources` itself succeeds).
+Complete `make check` passed: ruff, ruff format, ty, 702 pytest tests, the browser suite's
+76 tests with Prettier and the production build, the packaged assets, and both
+installed-wheel journeys. The previous milestone's note that `uv 0.10.4` refuses
+`uv pip sync` was wrong: a developer PATH shim was intercepting `uv`, and separately the
+root `pnpm --dir web` invocation resolves a pnpm the bundled corepack cannot launch. Both
+are the toolchain fixes in #133, which is not in this branch's base, so this run stood
+them in on `PATH` and changed no repository file.
 
 Remaining for the epic: Townhall shows neither memory history with authorship nor the
 journal, and the "Keep a journal" shared skill and ADR 0012 are unwritten (#119) — so
@@ -970,3 +989,11 @@ browser only as the `writable_memory` grant checkbox, not as a declaration contr
 Resident bundles deliberately do not carry `memory_writable`; an imported resident starts
 without it. No real Codex run has used these tools, so the epic's recorded journey and its
 cost are still outstanding.
+
+One decision is open. The native tool surface still rides on an enabled management grant,
+so a resident with no grant cannot write its memory or journal however its declaration
+reads, and the epic's orchard reporter therefore needs an enabled grant — one that may
+hold no capabilities at all — before it can keep a journal. Making the tools reach an
+ungranted run means a pinned native session that does not depend on a grant revision
+(`run_management` currently keys its policy pin to one), which is a change to the
+admission authority model and wants Miha's decision rather than a quiet extension here.

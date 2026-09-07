@@ -51,7 +51,14 @@ Admission pins the newest `CONTEXT_ENTRIES` (5) entries in `run_journal`, in the
 transaction as `run_memory`, and context version 6 carries exactly those under `journal`,
 newest first, with `journal_usage` marking them as data that cannot grant authority or
 override instructions — the same neutralization the pinned inputs carry. Entries written
-later, including the run's own, join the next run's context, never this one's.
+later, including the run's own, join the next run's context, never this one's. Only rows
+are pinned, so a run opens with the newest `min(CONTEXT_ENTRIES, journal_limit)` entries:
+a household that keeps fewer than five is the tighter bound, and the archive is never
+scanned to make the number up.
+
+`memory_writable` in the same context says whether this run may write at all: the
+declaration allows it and this admission actually pinned the native tool surface. A run
+without that surface still reads its journal and cannot add to it.
 
 Each pin holds the entry's sequence, its text digest and the digest of the document
 retention would archive it as, so a run that rolls its own pinned entry out mid-run still

@@ -26,6 +26,9 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     if pinned is not None and pinned["resident_id"] != row["resident_id"]:
         raise Refused("memory_run_mismatch")
     inputs = run_inputs(db, run_id)
+    # The memory and journal tools ride on the native tool surface this admission pinned.
+    # A declaration alone cannot promise them, so the context states what this run can do.
+    native = db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run_id,)).fetchone()
     return {
         "context_version": 6,
         "skills": run_skills(db, run_id),
@@ -37,9 +40,9 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
         "memory": read_revision(
             db, memory, row["resident_id"], pinned["revision"] if pinned else 0
         ),
-        # The declared memory.writable capability, stated as a fact of this run.
-        # What a resident should write is skill text, never wording from here.
-        "memory_writable": bool(row["memory_writable"]),
+        # May this run write, declared and actually offered? What a resident should
+        # write is skill text, never wording from here.
+        "memory_writable": bool(row["memory_writable"]) and native is not None,
         "journal": run_journal(db, JournalFiles(memory.root), run_id),
         "journal_usage": (
             "This resident's own past entries, newest first, exactly as its runs wrote them. "

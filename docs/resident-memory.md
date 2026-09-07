@@ -66,17 +66,27 @@ nothing, so retrying it is a fresh attempt.
 ## The declared capability and its tools
 
 Writing memory from inside a run is a declared capability, not a management power.
-Each declaration revision carries `memory_writable`; the pinned context states it as
-`memory_writable` and the same declaration revision the run admitted with decides it.
-It is false for Reader and every ordinary resident, true for Karen. A manager may
-declare it on a resident it provisions or configures only with the `writable_memory`
-grant capability; provisioning or configuring one without that grant is refused with
-`management_memory_not_permitted`. An omitted flag in a declaration save, a
-configuration change or the CLI keeps the current value, so a form that never learned
-about the capability cannot withdraw it.
+Each declaration revision carries `memory_writable`, and the declaration revision the
+run admitted with decides it. It is false for Reader and every ordinary resident, true
+for Karen. A manager may declare it on a resident it provisions or configures only with
+the `writable_memory` grant capability; raising it without that grant is refused with
+`management_memory_not_permitted`, while resubmitting a value the resident already has
+is the ordinary preserve-what-you-read edit and is allowed. An omitted flag in a
+declaration save, a configuration change or the CLI keeps the current value, so a form
+that never learned about the capability cannot withdraw it.
 
-A run whose declaration says `memory_writable` is offered three native tools beside
-whatever management tools it holds — a resident that manages nothing still gets them:
+The tools live on the native tool surface, which today exists only for a run whose
+admission pinned an enabled management grant. Capabilities are what a grant does *not*
+have to hold: an enabled grant with no capabilities at all still receives the memory
+tools, so writing memory is not a manager's privilege. But a resident with no grant has
+no tool surface at all, so the pinned context reports `memory_writable` only when the
+declaration allows it *and* this admission pinned that surface; the flag is the run's
+actual authority to write, never an unkeepable promise. Giving an ordinary ungranted
+resident these tools needs a native session that does not ride on a management grant,
+which is not built.
+
+A run that has both is offered three native tools beside whatever management tools its
+grant permits:
 
 - `hearth_memory_read` returns the run's own pinned revision as bounded 32,000-character
   pages (`offset`, `text`, `next_offset`), like the configuration reader. The revision
