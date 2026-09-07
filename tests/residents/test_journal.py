@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.authority.household import Household
 from hearth.authority.run_access import RunAccess
-from hearth.residents.journal import MAX_ENTRY, Journal, journal_path
+from hearth.residents.journal import MAX_ENTRY, Journal, entry_document, journal_path
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
@@ -141,15 +141,19 @@ def test_a_failed_audit_writes_no_entry_and_leaves_only_an_orphan_file(system):
         journal.write("reader", run.id, "Synthetic entry that rolls the first one out")
     page = journal.read("reader")
     assert page["total"] == 1 and page["entries"][0]["sequence"] == 1
-    # The archived file was published before the refused commit and is kept as evidence.
+    # The file was published before the refused commit. It is kept as evidence, and
+    # nothing points at it, so it is an orphan rather than part of the journal.
     orphan = sorted(path.name for path in (root / "data/memory/reader/journal").iterdir())
-    assert len(orphan) == 1 and journal.archived("reader")[0]["sequence"] == 1
+    assert len(orphan) == 1 and journal.archived("reader") == []
     with app.state.hearth.database.transaction(write=True) as db:
         db.execute("DROP TRIGGER fail_journal")
+    # An orphan is preserved evidence, never a refusal reason.
+    capture(root / "data", root / "backup")
     journal.write("reader", run.id, "Synthetic entry that rolls the first one out")
     assert sorted(path.name for path in (root / "data/memory/reader/journal").iterdir()) == orphan
     assert [entry["sequence"] for entry in journal.read("reader")["entries"]] == [2]
-    capture(root / "data", root / "backup")
+    assert [entry["sequence"] for entry in journal.archived("reader")] == [1]
+    capture(root / "data", root / "second-backup")
 
 
 def test_retention_rolls_older_entries_into_kept_immutable_files(system):
@@ -211,7 +215,7 @@ def test_an_archive_directory_symlink_is_never_followed(system):
     outside = root / "outside"
     path.rename(outside)
     path.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(Refused, match="memory_missing_or_unsafe"):
+    with pytest.raises(Refused, match="journal_archive_missing_or_unsafe"):
         journal.archived("reader")
     run = start_run(app, "rolling-task")
     with pytest.raises(Refused, match="memory_missing_or_unsafe"):
@@ -309,6 +313,52 @@ def test_backup_journal_entries_cannot_cross_resident_identity(system):
     with pytest.raises(Refused, match="backup_references_invalid"):
         restore(root / "backup", root / "invalid")
     assert not (root / "invalid").exists()
+
+
+def test_backup_archived_entries_cannot_cross_resident_identity(system):
+    app, journal, root = system
+    keep(app, journal, 1)
+    write_entries(app, journal, 2)
+    capture(root / "data", root / "backup")
+    with sqlite3.connect(root / "backup/hearth.db") as db:
+        db.execute("UPDATE journal_archives SET resident_id='other'")
+    rehash(root, "hearth.db")
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        restore(root / "backup", root / "invalid")
+    assert not (root / "invalid").exists()
+
+
+def test_a_rewritten_archived_entry_cannot_claim_another_residents_run(system):
+    app, journal, root = system
+    keep(app, journal, 1)
+    write_entries(app, journal, 2)
+    stranger = write_entries(app, journal, 1, resident="other")[0]
+    capture(root / "data", root / "backup")
+    archived = journal.archived("reader")[0]
+    forged = entry_document(archived | {"run_id": stranger["run_id"], "text": "Forged entry"})
+    digest = hashlib.sha256(forged.encode()).hexdigest()
+    kept = "memory/" + journal_path("reader", archived["sha256"])
+    planted = "memory/" + journal_path("reader", digest)
+    (root / "backup" / kept).unlink()
+    (root / "backup" / planted).write_text(forged)
+    manifest_path = root / "backup/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["files"][kept]
+    manifest["files"][planted] = digest
+    manifest_path.write_text(json.dumps(manifest))
+    # The archived row still names the document the run actually wrote.
+    with pytest.raises(Refused, match="journal_archive_missing_or_unsafe"):
+        restore(root / "backup", root / "invalid")
+    assert not (root / "invalid").exists()
+    with sqlite3.connect(root / "backup/hearth.db") as db:
+        db.execute(
+            "UPDATE journal_archives SET sha256=?,size=?,run_id=? WHERE resident_id='reader'",
+            (digest, len(forged.encode()), stranger["run_id"]),
+        )
+    rehash(root, "hearth.db")
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        restore(root / "backup", root / "also-invalid")
+    assert not (root / "also-invalid").exists()
 
 
 def test_operator_route_reads_the_journal_and_offers_no_write(system):

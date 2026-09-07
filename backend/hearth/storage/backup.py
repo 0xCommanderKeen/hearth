@@ -22,7 +22,7 @@ from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.management.authority import validate_management
-from hearth.residents.journal import JournalFiles, checked_entry, journal_path
+from hearth.residents.journal import JournalFiles, checked_entry, journal_path, read_archive
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
@@ -372,14 +372,19 @@ def _check_database(root: Path) -> dict:
             raise Refused("backup_references_invalid")
         for entry in db.execute("SELECT * FROM journal_entries"):
             checked_entry(entry)
-        if db.execute(
-            "SELECT 1 FROM journal_entries j JOIN runs r ON r.id=j.run_id "
-            "WHERE j.resident_id != r.resident_id"
-        ).fetchone():
-            raise Refused("backup_references_invalid")
+        for table in ("journal_entries", "journal_archives"):
+            # An entry is what a run wrote, archived or not; neither half may cross residents.
+            if db.execute(
+                f"SELECT 1 FROM {table} j JOIN runs r ON r.id=j.run_id "
+                "WHERE j.resident_id != r.resident_id"
+            ).fetchone():
+                raise Refused("backup_references_invalid")
+        files = JournalFiles(root / "memory")
         for resident in db.execute("SELECT id FROM residents"):
-            # Archived entries outlive their rows; every kept file must still be exact.
-            JournalFiles(root / "memory").entries(resident["id"])
+            # Every kept file must be an exact document, including unreferenced orphans.
+            files.entries(resident["id"])
+        for row in db.execute("SELECT * FROM journal_archives"):
+            read_archive(files, row)
         return {
             "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),

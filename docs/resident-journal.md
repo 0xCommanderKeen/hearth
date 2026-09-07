@@ -21,8 +21,11 @@ first with `limit`/`offset` paging and the total of entries still in the databas
 The household policy keeps the newest `journal_limit` entries per resident, 30 by
 default and 1–1000 by policy. Every write rolls what falls outside that bound into an
 immutable file at `memory/{resident_id}/journal/{sha256}.md`, private directories and
-mode-0600 files, then removes only that row in the same transaction as its audit fact.
-Nothing is deleted: the file is the entry.
+mode-0600 files. The row moves with the text in the same transaction as its audit fact:
+`journal_entries` loses it and `journal_archives` gains a reference to the file with the
+same run, sequence and date. Nothing is deleted, and the text of an archived entry lives
+only in its file — but a checked row still points at it, exactly as a memory revision
+points at its content.
 
 An archived file is the exact document
 
@@ -36,11 +39,13 @@ at: 1757203200
 The entry text, byte for byte.
 ```
 
-and is read back only if it re-serializes to itself under that resident's directory.
-Existing identical content is reused; conflicting bytes under a hash are refused. A
-failed database commit can leave an unreferenced archived file, exactly as memory does;
-a later roll reuses it. Directory and file symlinks, nonregular files and unsafe
-identities are refused, and the archive directory is never followed through a link.
+and is read back only if it re-serializes to itself under that resident's directory and
+says exactly what its `journal_archives` row says. Existing identical content is reused;
+conflicting bytes under a hash are refused. A failed database commit can leave an
+archived file no row points at, exactly as memory does; a later roll reuses it, and until
+then it is preserved evidence rather than journal history — nothing reads it back.
+Directory and file symlinks, nonregular files and unsafe identities are refused, and the
+archive directory is never followed through a link.
 
 Reading archived entries back into a run's context is not implemented here.
 
@@ -55,12 +60,15 @@ a client omits it, so the existing Townhall policy form cannot reset it.
 
 ## Backup evidence
 
-Current-schema backups preserve every journal entry and every archived file, including
-orphans. Verification refuses a changed entry (checksum or size), a changed or renamed
-archived file, an entry whose run belongs to another resident, and unsafe paths.
+Current-schema backups preserve every journal entry, every archived reference and every
+archived file, including orphans. Verification refuses a changed entry (checksum or
+size), a changed, renamed or missing archived file, an archived document that disagrees
+with its row, an entry or archived reference whose run belongs to another resident, and
+unsafe paths. Both halves of a journal are therefore tamper-evident in the same way.
 Restored copies read the journal and refuse writes.
 
 Synthetic tests cover write/replace within a run, refusal after settling or cancelling,
-concurrent writes from one run, a failed audit leaving only an orphan file, retention
-rollover keeping its files, newest-first paging, the household bound, archive symlink
-refusal, backup round trip and backup tampering.
+concurrent writes from one run, a failed audit leaving only an unreferenced file,
+retention rollover keeping its files, newest-first paging, the household bound, archive
+symlink refusal, backup round trip, and backup tampering with an entry, with an archived
+document and with either half's resident identity.

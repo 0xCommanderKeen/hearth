@@ -87,13 +87,14 @@ def parse_entry(document: str, resident_id: str) -> dict:
 
 
 def checked_archive(data: bytes, resident_id: str, name: str) -> dict:
-    if hashlib.sha256(data).hexdigest() != Path(name).stem or Path(name).suffix != ".md":
+    digest = Path(name).stem
+    if hashlib.sha256(data).hexdigest() != digest or Path(name).suffix != ".md":
         raise Refused("journal_archive_corrupt")
     try:
         document = data.decode("utf-8")
     except UnicodeDecodeError:
         raise Refused("journal_archive_invalid") from None
-    return parse_entry(document, resident_id)
+    return parse_entry(document, resident_id) | {"sha256": digest}
 
 
 def checked_entry(row) -> dict:
@@ -151,6 +152,25 @@ class JournalFiles(MemoryFiles):
                     continue
                 entries.append(checked_archive(self._read(directory, name), resident_id, name))
         return sorted(entries, key=lambda entry: entry["sequence"])
+
+
+def read_archive(files: JournalFiles, row) -> dict:
+    """An archived row names its file; the file must still say exactly what the row does."""
+    try:
+        document = files.read(row["resident_id"], row["sha256"], row["size"])
+    except Refused as error:
+        missing = error.code == "memory_missing_or_unsafe"
+        raise Refused(
+            "journal_archive_missing_or_unsafe" if missing else "journal_archive_corrupt"
+        ) from None
+    entry = parse_entry(document, row["resident_id"])
+    if (entry["run_id"], entry["sequence"], entry["at"]) != (
+        row["run_id"],
+        row["sequence"],
+        row["at"],
+    ):
+        raise Refused("journal_archive_corrupt")
+    return entry | {"sha256": row["sha256"]}
 
 
 class Journal:
@@ -258,6 +278,19 @@ class Journal:
                 "DELETE FROM journal_entries WHERE resident_id=? AND sequence=?",
                 (resident_id, entry["sequence"]),
             )
+            # The row moves with the text: an archived entry keeps a checked reference,
+            # so a file nothing points at is an orphan and never journal history.
+            db.execute(
+                "INSERT INTO journal_archives VALUES (?,?,?,?,?,?)",
+                (
+                    resident_id,
+                    entry["sequence"],
+                    entry["run_id"],
+                    entry["at"],
+                    digest,
+                    len(document),
+                ),
+            )
             _audit(
                 db,
                 "journal.archived",
@@ -274,5 +307,11 @@ class Journal:
         return rolled
 
     def archived(self, resident_id: str) -> list[dict]:
-        """Every entry that rolled out of the database, oldest first; files are never removed."""
-        return self.files.entries(resident_id)
+        """Every entry that rolled out to a file, oldest first; files are never removed."""
+        identifier(resident_id)
+        with self.hearth.database.transaction() as db:
+            rows = db.execute(
+                "SELECT * FROM journal_archives WHERE resident_id=? ORDER BY sequence",
+                (resident_id,),
+            ).fetchall()
+        return [read_archive(self.files, row) for row in rows]

@@ -861,26 +861,34 @@ UTF-8. `hearth.residents.journal` owns the writer, the newest-first paged reader
 retention roll; `GET /api/residents/{id}/journal` is the only operator surface and there
 is deliberately no operator write. The household policy carries the bound
 (`journal_limit`, default 30); entries beyond it are published as immutable
-`memory/{resident}/journal/{sha256}.md` documents before their row and audit fact commit
-together, so nothing is deleted. `docs/resident-journal.md` records the exact document
-form and refusals.
+`memory/{resident}/journal/{sha256}.md` documents, and the row moves with the text in the
+same transaction as its audit fact — out of `journal_entries` and into `journal_archives`
+as a checked reference to the file, the way a memory revision references its content. So
+nothing is deleted, and a file no row points at is preserved evidence rather than journal
+history. `docs/resident-journal.md` records the exact document form and refusals.
 
 Verified with real temporary SQLite through the owning interfaces: write then replace
 inside one run with `journal.written`/`journal.replaced` audit and no entry text in
 audit; refusal after the run settles, after cancellation, for another resident's run,
 for oversized and blank text; two concurrent writes from one run leaving one entry; a
-failed `journal.archived` audit leaving only an orphan file that a later roll reuses;
+failed `journal.archived` audit leaving only a file no row points at, absent from the
+journal until a later roll reuses it;
 retention rollover keeping its files across further writes; newest-first paging with
 `total`; the household bound including an omitted `journal_limit` surviving an ordinary
 policy save; refusal to follow an archive-directory symlink; held backup/restore of both
 entries and archived files, twice; and refusal of a tampered entry, a tampered archived
-file and a cross-resident entry in a backup. Backend `make check` passed 683 tests, lint,
-formatting and types, and the browser suite passed 76 tests with Prettier, the production
-build and packaged assets. Two `make check` steps could not run on this machine for
-reasons unrelated to this change: the root `pnpm --dir web` invocation resolves pnpm
-12.3.4, which the bundled corepack 0.34.0 cannot launch (running the same commands inside
-`web/` uses the pinned pnpm 11.22.0 and passes), and `scripts/check-wheel.py` calls
-`uv pip sync`, which uv 0.10.4 refuses as a removed legacy interface.
+file, a cross-resident entry, a cross-resident archived reference, and a rewritten
+archived document renamed to its own new checksum and reattributed to another resident's
+run — the review finding on PR #132, which the archived half now refuses exactly as the
+row half does.
+
+`make check` passed end to end: 685 backend tests with lint, formatting and types, 76
+browser tests with Prettier, the production build and packaged assets, and both
+installed-wheel journeys. It first failed on this machine for
+reasons outside Hearth — a local plugin's PATH shims intercepted `uv pip` and displaced
+the pinned pnpm — and passed once they were off the path; uv 0.10.4 itself supports
+`uv pip`, which the wheel check needs because `uv sync` cannot express `--require-hashes`.
+The Makefile-side fix belongs to PR #133.
 
 Remaining for the epic: no model-facing tool writes an entry and no run context opens
 with the journal (#118); Townhall shows neither the journal nor the household journal
