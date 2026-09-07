@@ -714,6 +714,13 @@ and canonical database receipt serialization stay unchanged. Final full checks
 passed 637 backend and 65 web tests, all static/build checks and both installed-wheel
 journeys.
 
+The maintenance PR is stacked on the reviewed authoring branch so the final
+journey can be reviewed independently. Their combined owner and interface checks
+passed 651 backend tests, 71 browser tests, all static/build checks and both
+installed-wheel journeys. The merge preserves all seven capabilities and both
+authoring and lifecycle backup checks; the final journey's startup correction
+remains in its own issue #94 change.
+
 ## Integrated journey preparation — issue #94
 
 The isolated integration branch combines skill authoring and resident maintenance,
