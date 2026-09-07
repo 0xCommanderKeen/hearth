@@ -726,3 +726,38 @@ its native follow-up is integrated. A real supervisor/worker test also exposed a
 race; an inherited worker-lock handoff now prevents an immediate false interruption.
 Its focused checks pass. The complete scripted journey and bounded real proof
 remain in progress; no real provider call or original live-instance change occurred.
+## Issue #94: integrated Karen journey — deterministic evidence
+
+The [integrated reporting journey](karen-journey.md) now exercises one scripted native
+manager task through authoring, two serial executed examples, immutable publication,
+resident creation, exact skill/input assignment, a daily routine and its first saved
+report. It uses the ordinary subscription adapter and supervisor with a credential-free
+fake executable. Names/output mark the fixture as simulated; its synthetic token
+counters do not establish real-provider acceptance.
+
+The owning-path test exposed and reproduced a detached-worker startup race. Parent
+lock acquisition and inherited worker-lock ownership now close that gap without
+sleeping or weakening authorization. Integrated checks cover five lost-reply
+boundaries, operation conflicts, reopened durable call receipts, supervisor restart
+without model relaunch, complete provenance, unknown-usage holds and held backup
+restore. Two simultaneous native fixture managers also prove shared-capacity refusal
+without duplicate work or starving the admitted child.
+
+A credential-free loopback preflight against the actual pinned CLI accepted all 15
+integrated Hearth tool schemas, delivered a native catalog callback and synthetic
+reply, and completed the turn. Parent/workspace instruction canaries were absent.
+Only the loopback fixture received requests; no authenticated provider was contacted.
+
+The private real harness now has a durably recorded four-start ceiling at the
+existing runtime seam and closes that gate before cleanup. Offline fake-adapter
+checks verified simultaneous admission, refusal with unused allowance after closing,
+and same-run replay. Real execution remains pending explicit approval; prior real
+proof spend is zero. Actual Chromium inspection of the held scripted fixture showed
+skill content, two saved passing examples and users, resident origin/configuration,
+the scheduled occurrence, saved report and Hamlet on desktop and mobile. The long
+managed setup-operation digest initially overflowed its mobile provenance card;
+the owning style now wraps that text. The repeated browser check had no horizontal
+overflow or browser errors, and the screenshots were inspected. Final `make check`
+passed 659 backend and 71 browser tests, lint/types/build and both installed-wheel
+restart/held-restore journeys. Independent review remains pending; the real journey
+still awaits explicit approval and execution.
