@@ -769,3 +769,12 @@ passed 659 backend and 71 browser tests, lint/types/build and both installed-whe
 restart/held-restore journeys. Independent Standards and Spec reviews are clear at
 `f5cb88a`, and its CI is green. The final stack merge changed documentation only.
 The real journey still awaits explicit approval and execution.
+
+The separate lifecycle demonstration also passed on the integrated release using
+credential-free native fixtures. After Karen's scripted reporter saved its result,
+scoped calls through that same active Karen run's bound bridge paused and archived
+the reporter. Both receipts retained Karen as actor and the original run as origin.
+Advancing its enabled routine to its due time in each state created no tasks, runs
+or occurrences; the saved report and hash stayed unchanged, and restart preserved
+archive state. These lifecycle calls were driven by the deterministic harness,
+not an authenticated model. The real four-run reporting acceptance remains pending.
