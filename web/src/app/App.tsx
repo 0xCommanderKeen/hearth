@@ -132,9 +132,7 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [instruction, setInstruction] = useState(
-    "Summarize today’s synthetic notes.",
-  );
+  const [instruction, setInstruction] = useState("Summarize today’s notes.");
   const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
   const [output, setOutput] = useState<{
     content: string;
@@ -385,7 +383,7 @@ export function App() {
     "import-resident":
       "Bring a resident definition from another Hearth. Runs, history and authority never travel with it.",
     skills: "Reusable instructions, revision history and shared know-how.",
-    inputs: "Synthetic notes each resident is allowed to read.",
+    inputs: "Notes each resident is allowed to read.",
     management: "Which residents may create and assign work, within limits.",
     tasks: "Every assignment and its result.",
     routines: "Scheduled work.",
@@ -846,7 +844,7 @@ export function App() {
                     <h2>Assign work</h2>
                     <p>
                       {snapshot.simulated
-                        ? "A read-only assignment using synthetic notes."
+                        ? "A read-only assignment using the selected notes."
                         : "A read-only assignment. Results appear beside this panel."}
                     </p>
                     <form onSubmit={submit}>
@@ -1185,7 +1183,7 @@ export function App() {
         )}
         <footer>
           <span>Hearth · local development</span>
-          <span>Synthetic notes. Read-only summaries.</span>
+          <span>Fictional notes. Read-only summaries.</span>
         </footer>
       </main>
     </>

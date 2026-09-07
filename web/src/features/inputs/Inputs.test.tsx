@@ -30,16 +30,16 @@ it("retains an edited synthetic note draft on conflict and never renders source 
     .spyOn(client, "saveInput")
     .mockRejectedValue(new RequestError(409, "revision conflict"));
   render(<InputLibrary client={client} readOnly={false} />);
-  await screen.findByLabelText("Synthetic notes");
+  await screen.findByLabelText("Notes");
   expect(document.querySelector("script")).toBeNull();
-  fireEvent.change(screen.getByLabelText("Synthetic notes"), {
+  fireEvent.change(screen.getByLabelText("Notes"), {
     target: { value: "Fictional pears: 20." },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save input revision" }));
   await screen.findByText(/Your draft is retained/);
-  expect(
-    (screen.getByLabelText("Synthetic notes") as HTMLTextAreaElement).value,
-  ).toBe("Fictional pears: 20.");
+  expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).value).toBe(
+    "Fictional pears: 20.",
+  );
   expect(save).toHaveBeenCalledOnce();
 });
 
@@ -63,9 +63,8 @@ it("shows the exact historical input revision without permitting edits", async (
   await screen.findByDisplayValue("Original fictional pears: 12.");
   expect(read).toHaveBeenCalledWith("orchard", 1);
   expect(
-    (screen.getByLabelText("Synthetic notes") as HTMLTextAreaElement).closest(
-      "fieldset",
-    )?.disabled,
+    (screen.getByLabelText("Notes") as HTMLTextAreaElement).closest("fieldset")
+      ?.disabled,
   ).toBe(true);
   expect(
     screen.queryByRole("button", { name: "Save input revision" }),

@@ -326,7 +326,7 @@ function GrantEditor({
             ))}
           </div>
           <div>
-            <h4>Permitted synthetic inputs</h4>
+            <h4>Permitted inputs</h4>
             {catalog.input_sets.length ? (
               catalog.input_sets.map((item) => (
                 <label key={item.input_set_id} className="management-choice">
@@ -346,14 +346,13 @@ function GrantEditor({
                   />
                   <span>
                     {item.name}
-                    <small>Latest revision at admission · synthetic</small>
+                    <small>Latest revision at admission</small>
                   </span>
                 </label>
               ))
             ) : (
               <p>
-                No named inputs yet.{" "}
-                <a href="#inputs">Create synthetic input sets →</a>
+                No named inputs yet. <a href="#inputs">Create input sets →</a>
               </p>
             )}
             <p className="muted">
