@@ -6,6 +6,7 @@ from dataclasses import asdict
 from hearth.authority.household import household_state
 from hearth.authority.permissions import _approval
 from hearth.inputs.selection import input_summary
+from hearth.management.authority import management_summary
 from hearth.residents.provisioning import profile_summary
 from hearth.skills.assignments import skill_summary
 from hearth.work.service import ACTIVE_RUNS, Hearth
@@ -29,6 +30,7 @@ def snapshot(hearth: Hearth) -> dict:
                              LEFT JOIN operator_controls c ON c.resident_id=r.id ORDER BY r.id"""):
             resident = dict(row)
             resident["profile"] = profile_summary(db, row["id"])
+            resident["management"] = management_summary(db, row["id"])
             active = db.execute(
                 f"SELECT status FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
                 (row["id"],),
@@ -70,6 +72,7 @@ def snapshot(hearth: Hearth) -> dict:
         for run in runs:
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
+            run["management"] = management_summary(db, run["id"], run=True)
         audit = [
             dict(row)
             for row in db.execute(

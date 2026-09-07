@@ -17,6 +17,7 @@ import {
   ProfileProvenance,
 } from "../features/residents/NewResident";
 import { Assignments } from "../features/skills/Assignments";
+import { ManagementPanel } from "../features/management/Management";
 import { InputLibrary } from "../features/inputs/Inputs";
 import { InputSelection, RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
@@ -113,6 +114,7 @@ type Page =
   | "new-resident"
   | "skills"
   | "inputs"
+  | "management"
   | "tasks"
   | "routines"
   | "approvals"
@@ -275,6 +277,8 @@ export function App() {
       if (hash === "#new-resident" || hash.startsWith("#new-resident/")) {
         setProvisionId(hash === "#new-resident" ? "" : hash.slice(14));
         setView("new-resident");
+      } else if (hash.startsWith("#management/")) {
+        setView("management");
       } else if (hash.startsWith("#inputs/")) {
         setView("inputs");
       } else if (hash.startsWith("#skills/")) {
@@ -289,6 +293,7 @@ export function App() {
           "#residents",
           "#skills",
           "#inputs",
+          "#management",
           "#tasks",
           "#routines",
           "#approvals",
@@ -350,6 +355,7 @@ export function App() {
             "residents",
             "skills",
             "inputs",
+            "management",
             "tasks",
             "routines",
             "approvals",
@@ -513,6 +519,14 @@ export function App() {
                     </a>
                   </section>
                 ))}
+            {view === "management" && (
+              <ManagementPanel
+                key={snapshot.epoch}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
+                onChanged={() => void act(async () => {})}
+              />
+            )}
             {view === "inputs" && (
               <InputLibrary
                 key={snapshot.epoch}
@@ -809,6 +823,28 @@ export function App() {
                             {r.profile && (
                               <ProfileProvenance profile={r.profile} />
                             )}
+                            {r.management && (
+                              <section
+                                className="management-profile"
+                                aria-label="Resident management authority"
+                              >
+                                <h3>Management authority</h3>
+                                {"error" in r.management ? (
+                                  <p role="alert">
+                                    {r.management.error.replaceAll("_", " ")}
+                                  </p>
+                                ) : (
+                                  <p>
+                                    {r.management.enabled
+                                      ? `Enabled · grant revision ${r.management.revision} · up to ${r.management.max_residents} managed residents`
+                                      : "No management tools granted."}
+                                  </p>
+                                )}
+                                <a href={`#management/${r.id}`}>
+                                  Inspect or edit the operator grant →
+                                </a>
+                              </section>
+                            )}
                             <Assignments
                               key={`assigned:${snapshot.epoch}:${r.id}`}
                               client={client}
@@ -883,6 +919,13 @@ export function App() {
                               </small>
                             )}
                             {run && <RunInputs run={run} />}
+                            {run?.management && (
+                              <p aria-label="Management authority used by run">
+                                Management grant revision{" "}
+                                {run.management.grant_revision} ·{" "}
+                                {run.management.calls} recorded tool calls
+                              </p>
+                            )}
                             {run?.skills_error && (
                               <p className="notice error">
                                 Skill provenance unavailable:{" "}

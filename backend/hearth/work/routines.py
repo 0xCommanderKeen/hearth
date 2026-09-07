@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import Hearth, _audit, _queue_task
 
+ROUTINE_RESERVATION = 10_000
+
 
 def _instant(day: date, local_time: str, zone: ZoneInfo) -> int | None:
     wall = datetime.combine(day, time.fromisoformat(local_time))
@@ -189,7 +191,7 @@ class Routines:
         first_refusal = None
         for task in tasks:
             try:
-                self.hearth.admit(task, reserve=10_000)
+                self.hearth.admit(task, reserve=ROUTINE_RESERVATION)
             except Refused as error:
                 if (
                     error.code

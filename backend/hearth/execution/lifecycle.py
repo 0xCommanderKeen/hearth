@@ -138,7 +138,7 @@ class Execution:
             ).fetchone()
             if revision is None or revision[0] != row["resident_revision"]:
                 raise Refused("run_declaration_changed")
-            yield
+            yield db
 
     def finish_from_usage(self, run_id: str, owner_token: str, journal) -> Run:
         with self.hearth.database.transaction() as db:
@@ -182,7 +182,7 @@ class Execution:
                 before_launch = interface.validate_receipt_pins(
                     row["runtime_kind"],
                     _usage_receipt,
-                    usage_accounting.runtime_pins(db),
+                    usage_accounting.runtime_pins(db, run_id),
                     cancelled=bool(row["cancellation_requested"]),
                 )
                 if not row["launch_attempted"] and not before_launch:
@@ -279,7 +279,7 @@ class Executor:
                 receipt = interface.cancellation_receipt(
                     self.runtime.kind,
                     usage_accounting.binding(db, row),
-                    usage_accounting.runtime_pins(db),
+                    usage_accounting.runtime_pins(db, run.id),
                 )
             return self.execution.finish(
                 run.id, run.owner_token, Evidence("cancelled", cost=0), _usage_receipt=receipt

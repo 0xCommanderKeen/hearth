@@ -21,6 +21,7 @@ from hearth.inputs.catalog import checked_input
 from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
+from hearth.management.authority import validate_management
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
@@ -256,6 +257,7 @@ def _check_database(root: Path) -> dict:
                     or boundary[0] != "container"
                 ):
                     raise Refused("backup_runtime_invalid")
+        validate_management(db)
         validate_provisioning(db)
         validate_windows(db)
         for run in db.execute("SELECT * FROM runs"):

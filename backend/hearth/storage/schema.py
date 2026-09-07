@@ -2,6 +2,30 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE run_management (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
+        grant_revision INTEGER NOT NULL, grant_sha256 TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        thread_id TEXT, turn_id TEXT, catalog_sha256 TEXT, tools_sha256 TEXT,
+        FOREIGN KEY(resident_id,grant_revision) REFERENCES management_grant_revisions(resident_id,revision)
+    )""",
+    """CREATE TABLE management_calls (
+        run_id TEXT NOT NULL REFERENCES run_management(run_id), call_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, response TEXT NOT NULL, recorded_at INTEGER NOT NULL,
+        PRIMARY KEY(run_id,call_id)
+    )""",
+    """CREATE TABLE management_operations (
+        resident_id TEXT NOT NULL REFERENCES residents(id), operation_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, originating_run_id TEXT NOT NULL REFERENCES runs(id),
+        receipt TEXT NOT NULL, PRIMARY KEY(resident_id,operation_id)
+    )""",
+    """CREATE TABLE management_grants (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>0),
+        FOREIGN KEY(resident_id,revision) REFERENCES management_grant_revisions(resident_id,revision) DEFERRABLE INITIALLY DEFERRED
+    )""",
+    """CREATE TABLE management_grant_revisions (
+        resident_id TEXT NOT NULL REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>0),
+        policy TEXT NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(resident_id,revision)
+    )""",
     """CREATE TABLE input_selections (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>=0),
         count INTEGER NOT NULL CHECK(count BETWEEN 0 AND 4), sha256 TEXT NOT NULL

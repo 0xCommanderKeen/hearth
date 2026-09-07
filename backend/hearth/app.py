@@ -34,6 +34,7 @@ from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
 from hearth.integrations.mock.inline import MockRuntime
 from hearth.integrations.mock.process import ProcessMockRuntime
+from hearth.management.api import mount_management
 from hearth.observation.notifications import MockInbox, Notifications
 from hearth.observation.snapshot import snapshot
 from hearth.residents.memory import Memory
@@ -362,6 +363,7 @@ def create_app(
         }
 
     mount_inputs(app, hearth)
+    mount_management(app, hearth)
     mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"
