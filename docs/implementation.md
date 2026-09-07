@@ -698,14 +698,21 @@ snapshot while healthy due schedules continue. Regressions reproduced each issue
 before the fixes. Final checks after these changes passed 634 backend and 65 web
 tests, lint/format/types/builds, and both installed-wheel smoke journeys.
 
-Native transport recheck: the former 1 MiB pipe record limit prevented a schema-valid
-32-routine plus full-memory configure request from reaching the bridge. A narrow
-2 MiB incoming configure-envelope exception now aligns with the existing 1.5 MB
-parameter allowance. Real OS-pipe regression delivers a 1.16 MB frame through native
-call validation to the owner and verifies all saved routines/memory. Negative cases
-retain other-record, malformed-envelope, parameter, frame and aggregate-stream
-bounds. Final full checks passed 636 backend and 65 web tests, all static/build
-checks and both installed-wheel journeys; no real provider calls occurred.
+The actual pinned 0.153.4 CLI repeats configure arguments before and after its
+callback. A localhost fake-provider journey observed three 1.42 MB records and
+4,267,850 incoming bytes, then completed the native turn, saved all 32 routines plus
+full declaration/memory, and encoded/published/read the successful native receipt.
+No real provider or credentials were used; the CLI had an empty temporary home. A normalized fixture of that observed
+sequence now exercises real OS pipes, native call validation, the bridge and owning
+SQLite. It also covers a terminal summary repeating the arguments and a receipt
+larger than 4 MiB. Recognized configure-bearing frames stay within 2 MiB; native
+transcripts/UTF-8 receipts share 8 MiB, while ordinary exec/usage remains 4 MiB and
+replies remain 256 KiB. Wrong tool/method/namespace, frame/parameter/aggregate
+oversize and ordinary receipt limits remain tested. Native receipt I/O retains
+exclusive private files, hardlink refusal and durability checks; the pinned collector
+and canonical database receipt serialization stay unchanged. Final full checks
+passed 637 backend and 65 web tests, all static/build checks and both installed-wheel
+journeys.
 
 ## Integrated journey preparation — issue #94
 
@@ -714,7 +721,8 @@ including all seven scoped capabilities and both owning persistence/backup paths
 The initial combined checks passed 650 backend tests, 71 browser tests, all static
 and build checks, and both installed-wheel restart/held-restore journeys. This is
 preparation, not end-to-end acceptance. Skill authoring's two independent review
-axes are clear at `6797ddd`. Maintenance still needs its native transport follow-up:
-the actual CLI repeats large tool arguments in item and turn events, beyond the
-single callback tested above. The complete scripted journey and bounded real proof
-remain pending; no provider call or original live-instance change has occurred.
+axes are clear at `6797ddd`. Both maintenance review axes are clear at `bde770d`;
+its native follow-up is integrated. A real supervisor/worker test also exposed a startup
+race; an inherited worker-lock handoff now prevents an immediate false interruption.
+Its focused checks pass. The complete scripted journey and bounded real proof
+remain in progress; no real provider call or original live-instance change occurred.

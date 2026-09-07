@@ -77,9 +77,13 @@ unchanged. Other management requests keep their 256 KiB bound. A manager can thu
 read and edit a full legal Unicode declaration plus memory while preserving exact
 unchanged values, not merely retrieve them.
 
-The native incoming pipe permits a configure-specific envelope up to 2 MiB, only
-for a structurally valid `item/tool/call` with configure parameters within 1.5 MB.
-Other complete incoming records keep the 1 MiB limit. Tool replies remain bounded
-at 256 KiB and the aggregate incoming transcript remains bounded at 4 MiB. The
-exception changes transport capacity only; schema, revision, grant and ownership
-checks remain in the application writer.
+The pinned CLI repeats configure arguments in `item/started`, `item/tool/call`,
+`item/completed` and potentially `turn/completed`. These recognized configure-bearing
+records may use a 2 MiB frame only when every configure parameter payload remains
+within 1.5 MB and the remaining record fits the ordinary 1 MiB bound. Other complete
+incoming records retain 1 MiB. Tool replies remain bounded at 256 KiB. Management's
+incoming native transcript and its UTF-8 receipt encode/publish/read path share a
+finite 8 MiB allowance for the repeated envelopes; ordinary exec/usage remains at
+4 MiB. Canonical database receipt bytes/hashes and the pinned offline collector
+remain unchanged. Schema, revision, grant and ownership checks stay in the
+application writer.

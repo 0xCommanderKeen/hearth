@@ -1,0 +1,277 @@
+{
+  "provenance": "Pinned Codex 0.153.4 actual localhost fake-provider turn; identities and argument payload replaced by synthetic test placeholders. No real provider calls.",
+  "events": [
+    {
+      "method": "thread/started",
+      "params": {
+        "thread": {
+          "id": "thread",
+          "extra": null,
+          "sessionId": "thread",
+          "forkedFromId": null,
+          "parentThreadId": null,
+          "preview": "",
+          "ephemeral": true,
+          "section": null,
+          "sectionEnteredAt": null,
+          "projectId": null,
+          "historyMode": "legacy",
+          "modelProvider": "hearth_probe",
+          "model": "gpt-6-astra",
+          "reasoningEffort": "low",
+          "createdAt": 1788743102,
+          "updatedAt": 1788743102,
+          "recencyAt": 1788743102,
+          "status": {
+            "type": "idle"
+          },
+          "path": null,
+          "cwd": "/synthetic/workspace",
+          "cliVersion": "0.153.4",
+          "source": "vscode",
+          "canAcceptDirectInput": true,
+          "threadSource": null,
+          "agentNickname": null,
+          "agentRole": null,
+          "gitInfo": null,
+          "name": null,
+          "turns": []
+        }
+      },
+      "emittedAtMs": 1788743102343
+    },
+    {
+      "method": "turn/started",
+      "params": {
+        "threadId": "thread",
+        "turn": {
+          "id": "turn",
+          "items": [],
+          "itemsView": "notLoaded",
+          "status": "inProgress",
+          "error": null,
+          "startedAt": 1788743102,
+          "completedAt": null,
+          "durationMs": null
+        }
+      },
+      "emittedAtMs": 1788743102364
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "item": {
+          "type": "userMessage",
+          "id": "01a07965-afa9-7c00-93e6-eadc72ba0cc4",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "SYNTHETIC_TASK_CANARY",
+              "text_elements": []
+            }
+          ]
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "startedAtMs": 1788743102377
+      },
+      "emittedAtMs": 1788743102378
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "userMessage",
+          "id": "01a07965-afa9-7c00-93e6-eadc72ba0cc4",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "SYNTHETIC_TASK_CANARY",
+              "text_elements": []
+            }
+          ]
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "completedAtMs": 1788743102377
+      },
+      "emittedAtMs": 1788743102378
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "item": {
+          "type": "dynamicToolCall",
+          "id": "large-native",
+          "namespace": null,
+          "tool": "hearth_residents_configure",
+          "arguments": "__CONFIGURE_ARGUMENTS__",
+          "status": "inProgress",
+          "contentItems": null,
+          "success": null,
+          "durationMs": null
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "startedAtMs": 1788743102741
+      },
+      "emittedAtMs": 1788743102743
+    },
+    {
+      "method": "item/tool/call",
+      "id": 0,
+      "params": {
+        "threadId": "thread",
+        "turnId": "turn",
+        "callId": "large-native",
+        "namespace": null,
+        "tool": "hearth_residents_configure",
+        "arguments": "__CONFIGURE_ARGUMENTS__"
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "dynamicToolCall",
+          "id": "large-native",
+          "namespace": null,
+          "tool": "hearth_residents_configure",
+          "arguments": "__CONFIGURE_ARGUMENTS__",
+          "status": "completed",
+          "contentItems": [
+            {
+              "type": "inputText",
+              "text": "SYNTHETIC_TOOL_RECEIPT"
+            }
+          ],
+          "success": true,
+          "durationMs": 50
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "completedAtMs": 1788743102791
+      },
+      "emittedAtMs": 1788743102793
+    },
+    {
+      "method": "thread/tokenUsage/updated",
+      "params": {
+        "threadId": "thread",
+        "turnId": "turn",
+        "tokenUsage": {
+          "total": {
+            "totalTokens": 15,
+            "inputTokens": 10,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 5,
+            "reasoningOutputTokens": 0
+          },
+          "last": {
+            "totalTokens": 15,
+            "inputTokens": 10,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 5,
+            "reasoningOutputTokens": 0
+          },
+          "modelContextWindow": 258400
+        }
+      },
+      "emittedAtMs": 1788743102843
+    },
+    {
+      "method": "item/started",
+      "params": {
+        "item": {
+          "type": "agentMessage",
+          "id": "msg_probe",
+          "text": "Synthetic offline completion.",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "startedAtMs": 1788743102852
+      },
+      "emittedAtMs": 1788743102852
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "item": {
+          "type": "agentMessage",
+          "id": "msg_probe",
+          "text": "Synthetic offline completion.",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null
+        },
+        "threadId": "thread",
+        "turnId": "turn",
+        "completedAtMs": 1788743102852
+      },
+      "emittedAtMs": 1788743102852
+    },
+    {
+      "method": "thread/tokenUsage/updated",
+      "params": {
+        "threadId": "thread",
+        "turnId": "turn",
+        "tokenUsage": {
+          "total": {
+            "totalTokens": 30,
+            "inputTokens": 20,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 10,
+            "reasoningOutputTokens": 0
+          },
+          "last": {
+            "totalTokens": 15,
+            "inputTokens": 10,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 5,
+            "reasoningOutputTokens": 0
+          },
+          "modelContextWindow": 258400
+        }
+      },
+      "emittedAtMs": 1788743102852
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread",
+        "turn": {
+          "id": "turn",
+          "items": [
+            {
+              "type": "agentMessage",
+              "id": "msg_probe",
+              "text": "Synthetic offline completion.",
+              "phase": null,
+              "memoryCitation": null,
+              "delivery": null,
+              "questions": null
+            }
+          ],
+          "itemsView": "summary",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1788743102,
+          "completedAt": 1788743102,
+          "durationMs": 495
+        }
+      },
+      "emittedAtMs": 1788743102853
+    }
+  ]
+}

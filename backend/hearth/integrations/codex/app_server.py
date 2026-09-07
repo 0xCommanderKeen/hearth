@@ -2,11 +2,14 @@
 
 import json
 
-from hearth.integrations.codex.app_server_transport import configuration_pins, run
+from hearth.integrations.codex.app_server_transport import (
+    MAX_NATIVE_STREAM,
+    configuration_pins,
+    run,
+)
 from hearth.integrations.codex.events import (
     MAX_EVENTS,
     MAX_OUTPUT,
-    MAX_STREAM,
     MAX_TOKENS,
     TokenUsage,
     short_string,
@@ -41,7 +44,8 @@ def _interpret(result: dict, mode: str) -> Evidence:
             or (result["error"] is not None and not short_string(result["error"]))
             or not isinstance(result["events"], list)
             or len(result["events"]) > MAX_EVENTS
-            or len(json.dumps(result, allow_nan=False).encode()) > MAX_STREAM
+            or len(json.dumps(result, allow_nan=False, ensure_ascii=False).encode())
+            > MAX_NATIVE_STREAM
         ):
             raise ValueError("invalid receipt envelope")
         thread_id = turn_id = None

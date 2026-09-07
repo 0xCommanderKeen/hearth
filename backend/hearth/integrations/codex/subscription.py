@@ -247,7 +247,13 @@ class CodexLiveRuntime:
                 )
 
     def receipt(self, run_id):
-        return read(self.folder(run_id) / "receipt.json")
+        from hearth.integrations.codex.management_runtime import read_receipt
+
+        folder = self.folder(run_id)
+        request = read(folder / "request.json")
+        if request.get("management") is not None:
+            return read_receipt(folder / "receipt.json")
+        return read(folder / "receipt.json")
 
     def inspect(self, run_id, *, expected_digest=None):
         folder = self.folder(run_id)
