@@ -60,18 +60,46 @@ def profile_summary(db, resident_id: str) -> dict | None:
         "SELECT * FROM resident_profiles WHERE resident_id=?", (resident_id,)
     ).fetchone()
     if row is None:
-        return None
+        initial = db.execute(
+            "SELECT created_at FROM declarations WHERE resident_id=? AND revision=1",
+            (resident_id,),
+        ).fetchone()
+        if initial is None:
+            return None
+        # Explicit Reader/CLI declaration setup uses the same operator authority;
+        # it has no provisioning command receipt to invent.
+        profile = dict(
+            resident_id=resident_id,
+            command_id=None,
+            creator="operator",
+            manager="operator",
+            originating_run_id=None,
+            created_at=initial[0],
+            creation_reason="Explicit resident setup",
+            execution_profile=db.execute(
+                "SELECT value FROM system_meta WHERE key='runtime_kind'"
+            ).fetchone()[0],
+        )
+    else:
+        profile = dict(row)
+    from hearth.residents.lifecycle import lifecycle_summary
+
+    lifecycle = lifecycle_summary(db, resident_id)
+    profile["manager"] = lifecycle.get("manager")
+    profile["manager_error"] = lifecycle.get("error")
     labels = {}
     for role in ("creator", "manager"):
         named = db.execute(
             "SELECT d.name FROM residents r JOIN declarations d "
             "ON d.resident_id=r.id AND d.revision=r.revision WHERE r.id=?",
-            (row[role],),
+            (profile[role],),
         ).fetchone()
         labels[role + "_name"] = (
-            "Operator" if row[role] == "operator" else named[0] if named else row[role]
+            "Operator" if profile[role] == "operator" else named[0] if named else profile[role]
         )
-    return dict(row) | input_summary(db, resident_id) | {"setup_status": "ready", **labels}
+    if profile["manager_error"]:
+        labels["manager_name"] = "Unavailable"
+    return profile | input_summary(db, resident_id) | {"setup_status": "ready", **labels}
 
 
 def _receipt(row) -> dict:
@@ -286,6 +314,19 @@ class Provisioning:
                 command_id="provision-inputs:" + resident_id,
                 now=now,
             )
+            if body.manager != "operator":
+                from hearth.residents.lifecycle import record_lifecycle
+
+                record_lifecycle(
+                    db,
+                    resident_id,
+                    revision=1,
+                    state="ready",
+                    manager=body.manager,
+                    actor=actor,
+                    originating_run_id=originating_run_id,
+                    now=now,
+                )
             routine_id = None
             if body.routine is not None:
                 routine_id = "provision-routine:" + resident_id

@@ -77,6 +77,8 @@ def bootstrap(hearth: Hearth) -> dict:
                     "assign_work",
                     "routines",
                     "author_skills",
+                    "update_residents",
+                    "manage_lifecycle",
                     "assign_skills",
                 ],
             },

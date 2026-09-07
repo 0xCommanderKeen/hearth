@@ -89,7 +89,12 @@ def simulated(kind: str) -> bool:
 
 
 def supports_dispatch(kind: str, version: int) -> bool:
-    return version == 1 and kind in {"process_mock", "codex_mock", "codex_subscription"}
+    return version == 1 and kind in {
+        "inline_mock",
+        "process_mock",
+        "codex_mock",
+        "codex_subscription",
+    }
 
 
 def receipt_requests(raw: str) -> list:

@@ -59,13 +59,15 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
 
 
 def authorize_managed_resident(db, authority: dict, resident_id: str, action: str) -> dict:
+    from hearth.residents.lifecycle import read_lifecycle
+    from hearth.residents.provisioning import profile_summary
+
     identifier(resident_id)
     if action not in authority["grant"]["capabilities"]:
         raise Refused("management_capability_not_permitted")
-    profile = db.execute(
-        "SELECT * FROM resident_profiles WHERE resident_id=?", (resident_id,)
-    ).fetchone()
-    if profile is None or profile["manager"] != authority["actor"]:
+    profile = profile_summary(db, resident_id)
+    lifecycle = read_lifecycle(db, resident_id)
+    if profile is None or lifecycle["manager"] != authority["actor"]:
         raise Refused("management_resident_out_of_scope")
     if profile["execution_profile"] not in authority["grant"]["profiles"]:
         raise Refused("management_profile_not_permitted")
@@ -76,7 +78,7 @@ def authorize_managed_resident(db, authority: dict, resident_id: str, action: st
         for item in read_selection(db, resident_id)["input_sets"]
     ):
         raise Refused("management_input_not_permitted")
-    return dict(profile)
+    return dict(profile) | {"manager": lifecycle["manager"]}
 
 
 def response(value: dict, *, success: bool = True) -> dict:
@@ -149,9 +151,14 @@ class Bridge:
                 if not isinstance(value, str):
                     raise Refused("management_call_invalid")
                 bounded_text(value, 256, "management_call_invalid")
+            # Coherent configuration has the same finite aggregate transport
+            # allowance as its operator endpoint; its groups keep owning limits.
+            argument_limit = (
+                1_500_000 if params["tool"] == "hearth_residents_configure" else 256 * 1024
+            )
             if (
                 not isinstance(params.get("arguments"), dict)
-                or len(json.dumps(params, ensure_ascii=False).encode()) > 256 * 1024
+                or len(json.dumps(params, ensure_ascii=False).encode()) > argument_limit
             ):
                 raise Refused("management_arguments_invalid")
             if params["tool"] == "hearth_skills_validation":

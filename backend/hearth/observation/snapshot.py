@@ -7,6 +7,7 @@ from hearth.authority.household import household_state
 from hearth.authority.permissions import _approval
 from hearth.inputs.selection import input_summary
 from hearth.management.authority import management_summary
+from hearth.residents.lifecycle import lifecycle_summary
 from hearth.residents.provisioning import profile_summary
 from hearth.skills.assignments import skill_summary
 from hearth.work.service import ACTIVE_RUNS, Hearth
@@ -21,14 +22,22 @@ def snapshot(hearth: Hearth) -> dict:
                              d.budget_timezone,
                              (SELECT COALESCE(MAX(revision),0) FROM memory_revisions m
                               WHERE m.resident_id=r.id) AS memory_revision,
-                             COALESCE(p.reason, CASE WHEN c.paused=1 THEN 'operator' END)
-                             AS pause_reason,
-                             COALESCE(c.paused,0) AS operator_paused,
-                             COALESCE(c.revision,0) AS control_revision FROM residents r
+                             p.reason AS safety_hold_reason FROM residents r
                              JOIN declarations d ON d.resident_id = r.id AND d.revision = r.revision
-                             LEFT JOIN pauses p ON p.resident_id = r.id
-                             LEFT JOIN operator_controls c ON c.resident_id=r.id ORDER BY r.id"""):
+                             LEFT JOIN pauses p ON p.resident_id = r.id ORDER BY r.id"""):
             resident = dict(row)
+            lifecycle = lifecycle_summary(db, row["id"])
+            resident["lifecycle"] = lifecycle
+            resident["operator_paused"] = lifecycle["state"] == "paused"
+            resident["control_revision"] = lifecycle.get("revision", 0)
+            resident["pause_reason"] = row["safety_hold_reason"] or (
+                "operator" if lifecycle["state"] == "paused" else lifecycle.get("error")
+            )
+            resident["unresolved_runs"] = db.execute(
+                f"SELECT COUNT(*) FROM runs WHERE resident_id=? AND (status IN {ACTIVE_RUNS} "
+                "OR (finished_at IS NOT NULL AND usage_known=0))",
+                (row["id"],),
+            ).fetchone()[0]
             resident["profile"] = profile_summary(db, row["id"])
             resident["management"] = management_summary(db, row["id"])
             active = db.execute(
@@ -36,7 +45,9 @@ def snapshot(hearth: Hearth) -> dict:
                 (row["id"],),
             ).fetchone()
             resident["presence"] = (
-                active[0] if active else ("paused" if row["pause_reason"] else "ready")
+                active[0]
+                if active
+                else ("paused" if resident["pause_reason"] else lifecycle["state"])
             )
             resident.update(skill_summary(db, row["id"]))
             resident.update(input_summary(db, row["id"]))

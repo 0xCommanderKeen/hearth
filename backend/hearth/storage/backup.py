@@ -217,6 +217,12 @@ def _check_database(root: Path) -> dict:
             raise Refused("backup_references_invalid")
         if not schema_matches(db):
             raise Refused("backup_schema_unexpected")
+        from hearth.residents.lifecycle import validate_lifecycle
+        from hearth.residents.maintenance import checked_receipt
+
+        validate_lifecycle(db)
+        for receipt in db.execute("SELECT * FROM resident_maintenance_operations"):
+            checked_receipt(receipt)
         for resident in db.execute("SELECT id FROM residents"):
             read_assignments(db, resident["id"])
             read_selection(db, resident["id"])

@@ -504,3 +504,25 @@ def test_prose_and_interactive_question_never_dispatch_management(tmp_path, scen
     assert result["error"] is None
     assert evidence(result).status == "succeeded"
     assert evidence(result).cost == 700
+
+
+def test_native_receipt_files_keep_private_bounded_storage(tmp_path):
+    import os
+    import stat
+
+    from hearth.integrations.codex.app_server_transport import MAX_NATIVE_STREAM
+    from hearth.integrations.codex.management_runtime import publish_receipt, read_receipt
+
+    path = tmp_path / "native.json"
+    value = {"synthetic": "😀" * 32_000}
+    publish_receipt(path, value)
+    assert read_receipt(path) == value
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    with pytest.raises(FileExistsError):
+        publish_receipt(path, value)
+    with pytest.raises(ValueError, match="oversized native receipt"):
+        publish_receipt(tmp_path / "oversized.json", {"synthetic": "x" * MAX_NATIVE_STREAM})
+    assert not (tmp_path / "oversized.json").exists()
+    os.link(path, tmp_path / "linked.json")
+    with pytest.raises(ValueError, match="unsafe native receipt"):
+        read_receipt(path)

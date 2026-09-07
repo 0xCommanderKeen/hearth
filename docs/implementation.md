@@ -660,3 +660,63 @@ browser tests plus release/installed-wheel checks. An actual Chromium regression
 an externally requested validation complete on an already-open revision while retaining
 unsaved human instructions and keeping publication disabled. Its screenshot was inspected
 and no browser errors occurred. Review recheck and real-provider acceptance remain pending.
+
+### Issue #93 — ongoing resident management
+
+Lifecycle and current ownership now have a revisioned, integrity-checked owner.
+The operator profile and scoped Karen tools share coherent declaration, memory,
+input, exact skill and routine edits with owning revision checks and durable
+receipts. Pause/archive gate admissions and scheduled occurrences; archive also
+serializes with actual launch. Running/unknown work, accounting holds and saved
+results remain visible. Operator-only ownership transfer grants no new authority.
+The profile retains conflicting drafts, retries uncertain commands exactly, and
+exposes archived history while Hamlet excludes archived homes and links unresolved
+archived work. See [resident maintenance](resident-maintenance.md).
+
+Verification: 632 backend tests and 64 browser unit tests, lint/format/types and
+release builds passed. Both installed-wheel isolated HTTP/restart/held-restore
+journeys passed with cached dependencies (localhost socket permission required).
+Focused regressions cover competing manager/operator revisions, unrelated-agent
+refusal, forged transfer, archive dispatch gates, durable retry/restart, unknown
+mock evidence and held restore corruption, plus legal maximum Unicode groups.
+Actual rendered desktop/mobile verification created a synthetic resident/routine,
+ran and read its first result, retained a conflicting configuration draft, reloaded
+and saved declaration/memory, paused and archived, reopened the saved result,
+confirmed Hamlet exclusion and archived-directory access, then reloaded the mobile
+profile without overflow. Screenshots were inspected. The browser caught and fixed
+an invalid required-instructions constraint; a form-validity regression covers it.
+No provider calls were made. #91's separately bounded real creation proof remains
+pending explicit approval; these synthetic lifecycle checks do not replace it.
+Independent review and merge remain pending.
+
+Independent review corrections: managed configuration reads now provide bounded,
+digest-checked JSON-text pages so legal large Unicode declarations and full memory
+can be retrieved without hitting the native response cap or mixing concurrent
+versions. The browser accepts a zero daily limit during unrelated edits. Scheduler
+lifecycle refusal is isolated to the affected resident, with its reason visible in
+snapshot while healthy due schedules continue. Regressions reproduced each issue
+before the fixes. Final checks after these changes passed 634 backend and 65 web
+tests, lint/format/types/builds, and both installed-wheel smoke journeys.
+
+The actual pinned 0.153.4 CLI repeats configure arguments before and after its
+callback. A localhost fake-provider journey observed three 1.42 MB records and
+4,267,850 incoming bytes, then completed the native turn, saved all 32 routines plus
+full declaration/memory, and encoded/published/read the successful native receipt.
+No real provider or credentials were used; the CLI had an empty temporary home. A normalized fixture of that observed
+sequence now exercises real OS pipes, native call validation, the bridge and owning
+SQLite. It also covers a terminal summary repeating the arguments and a receipt
+larger than 4 MiB. Recognized configure-bearing frames stay within 2 MiB; native
+transcripts/UTF-8 receipts share 8 MiB, while ordinary exec/usage remains 4 MiB and
+replies remain 256 KiB. Wrong tool/method/namespace, frame/parameter/aggregate
+oversize and ordinary receipt limits remain tested. Native receipt I/O retains
+exclusive private files, hardlink refusal and durability checks; the pinned collector
+and canonical database receipt serialization stay unchanged. Final full checks
+passed 637 backend and 65 web tests, all static/build checks and both installed-wheel
+journeys.
+
+The maintenance PR is stacked on the reviewed authoring branch so the final
+journey can be reviewed independently. Their combined owner and interface checks
+passed 651 backend tests, 71 browser tests, all static/build checks and both
+installed-wheel journeys. The merge preserves all seven capabilities and both
+authoring and lifecycle backup checks; the final journey's startup correction
+remains in its own issue #94 change.
