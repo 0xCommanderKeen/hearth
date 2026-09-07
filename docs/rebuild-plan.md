@@ -32,7 +32,9 @@ recover Hearth's own data from backup. Reader receives read access only. It does
 not need broad tools, delegation, a marketplace or an imported resident fleet.
 
 Do not build data import/export, historical compatibility, cross-system ownership
-registries or source migration adapters. Do not automatically convert old prototype
+registries or source migration adapters. Definition-only resident bundles are the
+single accepted exception (ADR 0010): a resident's own content can be exported and
+imported, never its history, runs or authority, and never through a schema change. Do not automatically convert old prototype
 databases. Use a fresh data directory. Keep normal persistence, current-schema
 backup/restore and the run/supervisor ownership needed for safe local execution.
 

@@ -20,6 +20,7 @@ import { InputLibrary } from "../features/inputs/Inputs";
 import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
+import { ImportResident } from "../features/residents/ImportResident";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
@@ -110,6 +111,7 @@ type Page =
   | "residents"
   | "resident"
   | "new-resident"
+  | "import-resident"
   | "skills"
   | "inputs"
   | "management"
@@ -279,6 +281,8 @@ export function App() {
       if (hash === "#new-resident" || hash.startsWith("#new-resident/")) {
         setProvisionId(hash === "#new-resident" ? "" : hash.slice(14));
         setView("new-resident");
+      } else if (hash === "#import-resident") {
+        setView("import-resident");
       } else if (hash === "#residents-archived") {
         setIncludeArchived(true);
         setView("residents");
@@ -378,6 +382,8 @@ export function App() {
     residents: "Everyone who lives here.",
     resident: "",
     "new-resident": "Purpose, memory and skills become one complete resident.",
+    "import-resident":
+      "Bring a resident definition from another Hearth. Runs, history and authority never travel with it.",
     skills: "Reusable instructions, revision history and shared know-how.",
     inputs: "Synthetic notes each resident is allowed to read.",
     management: "Which residents may create and assign work, within limits.",
@@ -560,9 +566,14 @@ export function App() {
             <div className="page-actions">
               {(view === "townhall" || view === "residents") &&
                 !snapshot.restore_hold && (
-                  <a className="btn primary" href="#new-resident">
-                    New resident ＋
-                  </a>
+                  <>
+                    <a className="btn" href="#import-resident">
+                      Import resident
+                    </a>
+                    <a className="btn primary" href="#new-resident">
+                      New resident ＋
+                    </a>
+                  </>
                 )}
             </div>
           )}
@@ -723,6 +734,13 @@ export function App() {
                   )
                     window.location.hash = `#residents/${receipt.resident_id}`;
                 }}
+              />
+            )}
+            {view === "import-resident" && (
+              <ImportResident
+                key={snapshot.epoch}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
               />
             )}
             {(view === "townhall" || view === "residents") && setupFailures}

@@ -142,3 +142,36 @@ it("allows an unrelated edit for a resident with a zero daily limit", async () =
       ?.checkValidity(),
   ).toBe(true);
 });
+it("exports the resident definition through the client", async () => {
+  const { client } = setup();
+  const exportResident = vi.spyOn(client, "exportResident").mockResolvedValue({
+    bundle_version: 1,
+    source: {
+      resident_id: "reader",
+      declaration_revision: 1,
+      memory_revision: 0,
+      exported_at: 1,
+    },
+    resident: {
+      name: "Reader",
+      purpose: "Read fictional notes",
+      instructions: "Count carefully",
+      memory: "",
+      daily_limit: 100000,
+      budget_timezone: "UTC",
+      execution_profile: "inline_mock",
+      creation_reason: "Explicit resident setup",
+    },
+    skills: [],
+    input_sets: [{ name: "Notes", notes: ["a"], sha256: "x" }],
+    routine: null,
+    management: null,
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Export resident" }),
+  );
+  await screen.findByText(
+    /Exported Reader with 0 skill\(s\) and 1 input set\(s\)/,
+  );
+  expect(exportResident).toHaveBeenCalledWith("reader");
+});
