@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 
+import pytest
 from hearth.app import create_app
 from hearth.authority.household import Household
 from hearth.execution.context import read_context
@@ -14,7 +15,7 @@ from hearth.management.tools import tool_specs
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import Journal
 from hearth.residents.memory import Memory
-from hearth.residents.models import Declaration
+from hearth.residents.models import Declaration, Refused
 
 TOKEN = "synthetic-memory-tools-operator"
 MEMORY_TOOL_NAMES = {"hearth_memory_read", "hearth_memory_save", "hearth_journal_write"}
@@ -278,6 +279,168 @@ def test_a_manager_needs_the_grant_to_provision_a_resident_that_writes_memory(tm
     assert len(snapshot(hearth)["residents"]) == 2
     # Her own memory follows her own declaration, not the grant she hands to others.
     assert next_call("read", "hearth_memory_read", {})[0]
+    settle(app, second)
+
+
+def enable_grant(hearth, resident_id: str, capabilities: list[str]) -> None:
+    """The plain native surface: enabled, this runtime's profile, nothing else."""
+    Management(hearth).save(
+        resident_id,
+        {
+            "enabled": True,
+            "profiles": ["inline_mock"],
+            "input_set_ids": [],
+            "capabilities": capabilities,
+            "expected_revision": Management(hearth).read(resident_id)["revision"],
+        },
+    )
+
+
+def test_the_tools_reach_a_granted_run_that_manages_nothing(tmp_path):
+    app, hearth, _ = manager(tmp_path)
+    hearth.save_resident(
+        "diarist",
+        Declaration("Diarist", "Keep synthetic notes", 1000000, memory_writable=True),
+        expected_revision=0,
+    )
+    enable_grant(hearth, "diarist", [])
+    run, call = working_run(app, "diarist", "diary")
+    assert pinned_context(hearth, run.id)["memory_writable"] is True
+    ok, saved = call(
+        "save",
+        "hearth_memory_save",
+        {
+            "operation_id": "first-fact",
+            "resident_id": "diarist",
+            "text": "The synthetic orchard has pears.",
+            "expected_revision": 0,
+        },
+    )
+    assert ok and saved["revision"] == 1 and saved["author"] == "run"
+    assert call("journal", "hearth_journal_write", {"text": "Read the orchard notes."})[0]
+    assert call("read", "hearth_memory_read", {})[1]["revision"] == 0
+    # It manages nothing: every management action is refused, memory and journal are not.
+    ok, refused = call(
+        "assign",
+        "hearth_work_assign",
+        {"operation_id": "nope", "resident_id": "diarist", "instruction": "Again", "start": False},
+    )
+    assert not ok and refused["error"] == "management_capability_not_permitted"
+    settle(app, run)
+    second, _ = working_run(app, "diarist", "diary-again")
+    context = pinned_context(hearth, second.id)
+    assert context["memory"]["text"] == "The synthetic orchard has pears."
+    assert [item["text"] for item in context["journal"]] == ["Read the orchard notes."]
+
+
+def test_preserving_a_declared_capability_is_not_an_escalation(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    run, call = working_run(app, karen, "provision")
+    ok, receipt = call(
+        "child",
+        "hearth_residents_provision",
+        {
+            "operation_id": "reporter",
+            "resident": {
+                "name": "Reporter",
+                "purpose": "Summarize synthetic pears",
+                "creation_reason": "Requested through Karen",
+                "execution_profile": "inline_mock",
+                "daily_limit": 100000,
+                "memory_writable": True,
+            },
+        },
+    )
+    assert ok
+    child = receipt["resident_id"]
+    grant = Management(hearth).read(karen)
+    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
+    Management(hearth).save(
+        karen,
+        {
+            **policy,
+            "capabilities": [name for name in policy["capabilities"] if name != "writable_memory"],
+            "expected_revision": grant["revision"],
+        },
+    )
+    settle(app, run)
+    second, next_call = working_run(app, karen, "configure")
+    ok, configuration = next_call("read", "hearth_residents_configuration", {"resident_id": child})
+    assert ok
+    declaration = json.loads(configuration["text"])["declaration"]
+    assert declaration["memory_writable"] is True
+    # Echoing back what the read tool returned is the documented preserve-and-edit flow.
+    ok, saved = next_call(
+        "edit",
+        "hearth_residents_configure",
+        {
+            "resident_id": child,
+            "operation_id": "narrow-the-budget",
+            "changes": {
+                "expected_lifecycle_revision": 1,
+                "declaration": {**declaration, "daily_limit": 50000},
+            },
+        },
+    )
+    assert ok and saved["revisions"]["declaration"] == 2
+    assert hearth.resident(child).declaration.memory_writable is True
+    # Raising it from false to true is the escalation the grant still governs.
+    hearth.save_resident(
+        child,
+        replace(hearth.resident(child).declaration, memory_writable=False),
+        expected_revision=2,
+    )
+    ok, refused = next_call(
+        "raise",
+        "hearth_residents_configure",
+        {
+            "resident_id": child,
+            "operation_id": "raise-the-capability",
+            "changes": {
+                "expected_lifecycle_revision": 1,
+                "declaration": {**declaration, "memory_writable": True},
+            },
+        },
+    )
+    assert not ok and refused["error"] == "management_memory_not_permitted"
+    assert hearth.resident(child).declaration.memory_writable is False
+    settle(app, second)
+
+
+def test_an_unreadable_pinned_journal_interrupts_only_its_own_run(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    hearth.save_resident(
+        "other", Declaration("Other", "Summarize synthetic notes", 1000000), expected_revision=0
+    )
+    first, call = working_run(app, karen, "first")
+    assert call("journal", "hearth_journal_write", {"text": "The entry that goes missing."})[0]
+    settle(app, first)
+    second, _ = working_run(app, karen, "second")
+    assert len(pinned_context(hearth, second.id)["journal"]) == 1
+    settle(app, second)
+    third = app.state.hearth.submit("third", karen, "Work again", expires_at=1788640600)
+    third = hearth.admit(third.task_id, reserve=100000)
+    task = hearth.submit("unrelated", "other", "Summarize", expires_at=1788640600)
+    unrelated = hearth.admit(task.task_id, reserve=1000)
+    with hearth.database.transaction(write=True) as db:
+        db.execute("DELETE FROM journal_entries WHERE resident_id=?", (karen,))
+    results = {run.id: run.status for run in app.state.executor.step()}
+    assert results[third.id] == "interrupted"
+    assert results[unrelated.id] == "succeeded"
+
+
+def test_a_pinned_entry_that_changed_under_the_run_is_refused(tmp_path):
+    app, hearth, karen = manager(tmp_path)
+    first, call = working_run(app, karen, "first")
+    assert call("journal", "hearth_journal_write", {"text": "What the next run will read."})[0]
+    settle(app, first)
+    second, _ = working_run(app, karen, "second")
+    assert len(pinned_context(hearth, second.id)["journal"]) == 1
+    # The entry keeps its checksum and size but no longer says what the run read.
+    with hearth.database.transaction(write=True) as db:
+        db.execute("UPDATE journal_entries SET at=? WHERE resident_id=?", (1788650000, karen))
+    with pytest.raises(Refused, match="journal_entry_changed"):
+        pinned_context(hearth, second.id)
     settle(app, second)
 
 

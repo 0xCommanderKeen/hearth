@@ -91,10 +91,13 @@ def dispatch_maintenance(db, hearth, authority, tool: str, arguments: dict) -> d
             and changes.declaration.daily_limit > grant["max_daily_limit"]
         ):
             raise Refused("management_resident_budget_limit")
+        # Only an escalation needs the grant: echoing back a capability the resident
+        # already has is the ordinary preserve-what-you-read edit, not a new grant.
         if (
             changes.declaration is not None
             and changes.declaration.memory_writable
             and "writable_memory" not in grant["capabilities"]
+            and not hearth.declared_memory_writable(db, body.resident_id)
         ):
             raise Refused("management_memory_not_permitted")
         if changes.inputs is not None and any(

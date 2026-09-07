@@ -21,8 +21,11 @@ first with `limit`/`offset` paging and the total of entries still in the databas
 The household policy keeps the newest `journal_limit` entries per resident, 30 by
 default and 1–1000 by policy. Every write rolls what falls outside that bound into an
 immutable file at `memory/{resident_id}/journal/{sha256}.md`, private directories and
-mode-0600 files, then removes only that row in the same transaction as its audit fact.
-Nothing is deleted: the file is the entry.
+mode-0600 files. The row moves with the text in the same transaction as its audit fact:
+`journal_entries` loses it and `journal_archives` gains a reference to the file with the
+same run, sequence and date. Nothing is deleted, and the text of an archived entry lives
+only in its file — but a checked row still points at it, exactly as a memory revision
+points at its content.
 
 An archived file is the exact document
 
@@ -36,17 +39,19 @@ at: 1757203200
 The entry text, byte for byte.
 ```
 
-and is read back only if it re-serializes to itself under that resident's directory. The
-row moves with the text: `journal_archives` keeps the resident, sequence, run, time,
-digest and size of every entry that rolled out, so the operator surfaces still know which
-run wrote it and a file nothing points at is an orphan rather than journal history.
-Existing identical content is reused; conflicting bytes under a hash are refused. A
-failed database commit can leave an unreferenced archived file, exactly as memory does;
-a later roll reuses it. Directory and file symlinks, nonregular files and unsafe
-identities are refused, and the archive directory is never followed through a link.
+and is read back only if it re-serializes to itself under that resident's directory and
+says exactly what its `journal_archives` row says. The row moves with the text:
+`journal_archives` keeps the resident, sequence, run, time, digest and size of every
+entry that rolled out, so the operator surfaces still know which run wrote it. Existing
+identical content is reused; conflicting bytes under a hash are refused. A failed
+database commit can leave an archived file no row points at, exactly as memory does; a
+later roll reuses it, and until then it is preserved evidence rather than journal
+history — nothing reads it back. Directory and file symlinks, nonregular files and
+unsafe identities are refused, and the archive directory is never followed through a
+link.
 
-A pinned entry is read back from its archived file when retention rolls it out during
-the run that pinned it; nothing else reads archived entries into a context.
+A pinned entry is read back through its `journal_archives` row when retention rolls it
+out during the run that pinned it; nothing else reads archived entries into a context.
 
 ## The journal a run opens with
 
@@ -54,13 +59,23 @@ Admission pins the newest `CONTEXT_ENTRIES` (5) entries in `run_journal`, in the
 transaction as `run_memory`, and context version 6 carries exactly those under `journal`,
 newest first, with `journal_usage` marking them as data that cannot grant authority or
 override instructions — the same neutralization the pinned inputs carry. Entries written
-later, including the run's own, join the next run's context, never this one's.
+later, including the run's own, join the next run's context, never this one's. Only rows
+are pinned, so a run opens with the newest `min(CONTEXT_ENTRIES, journal_limit)` entries:
+a household that keeps fewer than five is the tighter bound, and the archive is never
+scanned to make the number up.
 
-Each pin holds the entry's sequence, its text digest and the digest of the document
-retention would archive it as, so a run that rolls its own pinned entry out mid-run still
-reads the identical bytes back from the file. A pinned entry that is neither a row nor its
-exact file leaves the run interrupted, exactly as missing pinned memory does; unrelated
-residents keep working.
+`memory_writable` in the same context says whether this run may write at all: the
+declaration allows it and this admission actually pinned the native tool surface a
+[memory tool](resident-memory.md) needs. A run without that surface still reads its
+journal and cannot add to it.
+
+Each pin names an entry by sequence and repeats what the run read: its writing run, its
+time and its text digest. The entry is found in `journal_entries` while it has a row and
+through its `journal_archives` row once retention rolls it out, and either way those three
+values must still match, so a run that rolls its own pinned entry out mid-run keeps
+reading the identical bytes. A pinned entry that is neither a row nor an archived
+reference, or one whose text, run or time changed, leaves that run interrupted, exactly as
+missing pinned memory does; unrelated residents keep working.
 
 `hearth_journal_write` is the run's own writer, offered to a run whose declaration says
 `memory_writable` (see [memory](resident-memory.md)). What a resident should write —
@@ -88,15 +103,16 @@ a client omits it, so the existing Townhall policy form cannot reset it.
 
 ## Backup evidence
 
-Current-schema backups preserve every journal entry, every archive reference and every
-archived file, including orphans. Verification refuses a changed entry (checksum or size),
-a changed or renamed archived file, an archive reference naming a document recorded for
-another sequence, run or time, an entry whose run belongs to another resident (archived or
-not), and unsafe paths, and it
-reads back every run's pinned journal from its rows and archived files.
+Current-schema backups preserve every journal entry, every archived reference and every
+archived file, including orphans. Verification refuses a changed entry (checksum or
+size), a changed, renamed or missing archived file, an archived document that disagrees
+with its row, an entry or archived reference whose run belongs to another resident, and
+unsafe paths, and it reads back every run's pinned journal from those same rows and
+files. Both halves of a journal are therefore tamper-evident in the same way.
 Restored copies read the journal and refuse writes.
 
 Synthetic tests cover write/replace within a run, refusal after settling or cancelling,
-concurrent writes from one run, a failed audit leaving only an orphan file, retention
-rollover keeping its files, newest-first paging, the household bound, archive symlink
-refusal, backup round trip and backup tampering.
+concurrent writes from one run, a failed audit leaving only an unreferenced file,
+retention rollover keeping its files, newest-first paging, the household bound, archive
+symlink refusal, backup round trip, and backup tampering with an entry, with an archived
+document and with either half's resident identity.

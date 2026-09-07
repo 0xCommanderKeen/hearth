@@ -51,32 +51,50 @@ concurrent operator edit is refused with `revision_conflict` and overwrites noth
 A run writes only the memory of the resident it runs for. A stated `resident_id` that
 is not that resident, or a pinned memory row naming another resident, is refused with
 `memory_run_mismatch`; an archived resident is refused with `resident_archived`. Only
-current work writes: the same cutoff that governs run context reads
-(`live_run`) refuses terminal, stopping, cancelled or superseded-declaration runs, and
-an explicitly revoked context credential refuses too, both as `run_context_unavailable`.
-Restored copies refuse every write.
+current work writes: `live_run` refuses terminal, stopping, cancelled or
+superseded-declaration runs, and `context_ended` refuses a run whose context credential
+expired or was revoked, both as `run_context_unavailable`. Reading and writing share
+that one credential cutoff, so a run that can no longer read its pinned context cannot
+write either; reissuing the credential restores both. A run that was issued no
+credential is not cut off by that rule — the in-process runtime and the management
+bridge never hold one — and `live_run` remains its cutoff. Restored copies refuse
+every write.
 
 Writes are idempotent on `operation_id` like management operations. The first call
 records a receipt (resident, revision, checksum, author, operation and run identity)
 in `memory_operations`; an identical retry replays it, reading the text back from the
-immutable file rather than storing memory content in SQLite. A different payload under
-the same `operation_id` is refused with `operation_conflict`. A refused attempt records
-nothing, so retrying it is a fresh attempt.
+immutable file rather than storing memory content in SQLite. A receipt is recorded
+state, not authority: a replay only ever returns the memory of the resident the
+authenticated run writes, and a receipt that names another resident, another author or
+a checksum the revision does not have is refused with
+`memory_operation_receipt_corrupt`. A different payload under the same `operation_id`
+is refused with `operation_conflict`. A refused attempt records nothing, so retrying it
+is a fresh attempt.
 
 ## The declared capability and its tools
 
 Writing memory from inside a run is a declared capability, not a management power.
-Each declaration revision carries `memory_writable`; the pinned context states it as
-`memory_writable` and the same declaration revision the run admitted with decides it.
-It is false for Reader and every ordinary resident, true for Karen. A manager may
-declare it on a resident it provisions or configures only with the `writable_memory`
-grant capability; provisioning or configuring one without that grant is refused with
-`management_memory_not_permitted`. An omitted flag in a declaration save, a
-configuration change or the CLI keeps the current value, so a form that never learned
-about the capability cannot withdraw it.
+Each declaration revision carries `memory_writable`, and the declaration revision the
+run admitted with decides it. It is false for Reader and every ordinary resident, true
+for Karen. A manager may declare it on a resident it provisions or configures only with
+the `writable_memory` grant capability; raising it without that grant is refused with
+`management_memory_not_permitted`, while resubmitting a value the resident already has
+is the ordinary preserve-what-you-read edit and is allowed. An omitted flag in a
+declaration save, a configuration change or the CLI keeps the current value, so a form
+that never learned about the capability cannot withdraw it.
 
-A run whose declaration says `memory_writable` is offered three native tools beside
-whatever management tools it holds — a resident that manages nothing still gets them:
+The tools live on the native tool surface, which a writable declaration reaches on its
+own: admission pins the surface for a writable declaration whether or not the resident
+holds a management grant (see *Remembering is not managing* below). Capabilities are what
+a grant does *not* have to hold either, so writing memory is a manager's privilege in
+neither direction. The pinned context reports `memory_writable` only when the declaration
+allows it *and* this admission pinned that surface; the flag is the run's actual authority
+to write, never an unkeepable promise. Mock runtimes have no native tool surface at all,
+so a writable resident there is still told it may write when nothing is offered — the one
+place the flag can still overpromise, and known remaining work.
+
+A run with the surface is offered three native tools, beside whatever management tools a
+grant permits when it also holds one:
 
 - `hearth_memory_read` returns the run's own pinned revision as bounded 32,000-character
   pages (`offset`, `text`, `next_offset`), like the configuration reader. The revision
@@ -158,9 +176,12 @@ back the current revision; do not automatically overwrite another edit.
 ## Backup evidence
 
 Current-schema backups preserve every memory revision with its author, every run
-reference and every file, including orphans. Verification refuses an operation receipt
-that disagrees with its run's resident or names a revision no longer recorded as
-run-written, so a consistently rehashed copy cannot relabel authorship. Layouts that
+reference and every file, including orphans. Verification checks run authorship in both
+directions: every operation receipt must decode and name its own run, its run's
+resident and a revision still recorded as run-written, and every run-written revision
+must keep the receipt that authored it. A consistently rehashed copy therefore cannot
+demote a run-written revision, promote an operator-written one, or break the check by
+truncating a receipt. Layouts that
 predate the `author` column are incompatible and refused, not upgraded. Verification rejects missing/corrupt content and references to
 another resident's memory. Nested paths are checked without following symlinks.
 Restore verifies before publishing a new held destination; new directory links are

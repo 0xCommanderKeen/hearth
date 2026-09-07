@@ -22,7 +22,13 @@ from hearth.inputs.selection import read_selection, run_inputs
 from hearth.integrations.mock.inline import decode_evidence
 from hearth.integrations.mock.process import read_request
 from hearth.management.authority import validate_management
-from hearth.residents.journal import JournalFiles, checked_entry, journal_path, run_journal
+from hearth.residents.journal import (
+    JournalFiles,
+    checked_entry,
+    journal_path,
+    read_archive,
+    run_journal,
+)
 from hearth.residents.memory import MemoryFiles, memory_path
 from hearth.residents.models import Refused, identifier
 from hearth.residents.provisioning import validate_provisioning
@@ -370,28 +376,44 @@ def _check_database(root: Path) -> dict:
             "WHERE m.resident_id != r.resident_id"
         ).fetchone():
             raise Refused("backup_references_invalid")
+        # Run authorship survives a copy only as a pair: every operation receipt names
+        # the authoring run's own resident and a revision recorded as run-written, and
+        # every run-written revision keeps the receipt that authored it. Checking one
+        # direction alone would let a rehashed copy promote or demote an author.
+        authored = set()
         for row in db.execute(
             "SELECT o.*,r.resident_id AS owner FROM memory_operations o JOIN runs r "
             "ON r.id=o.run_id"
         ):
-            # Run authorship survives a copy only if each receipt still names the
-            # authoring run's own resident and a revision recorded as run-written.
             try:
                 receipt = json.loads(row["receipt"])
-                matched = db.execute(
-                    "SELECT 1 FROM memory_revisions WHERE resident_id=? AND revision=? "
-                    "AND sha256=? AND author='run'",
-                    (receipt["resident_id"], receipt["revision"], receipt["sha256"]),
-                ).fetchone()
+                identity = receipt["resident_id"], receipt["revision"], receipt["sha256"]
+                # Check the shape before binding it: a receipt is untrusted copied bytes.
+                named = (
+                    isinstance(identity[0], str)
+                    and type(identity[1]) is int
+                    and isinstance(identity[2], str)
+                    and identity[0] == row["owner"]
+                    and receipt["run_id"] == row["run_id"]
+                    and receipt["operation_id"] == row["operation_id"]
+                    and receipt["author"] == "run"
+                )
             except ValueError, TypeError, KeyError:
                 raise Refused("backup_references_invalid") from None
             if (
-                receipt["run_id"] != row["run_id"]
-                or receipt["operation_id"] != row["operation_id"]
-                or receipt["resident_id"] != row["owner"]
-                or receipt["author"] != "run"
-                or matched is None
+                not named
+                or not db.execute(
+                    "SELECT 1 FROM memory_revisions WHERE resident_id=? AND revision=? "
+                    "AND sha256=? AND author='run'",
+                    identity,
+                ).fetchone()
             ):
+                raise Refused("backup_references_invalid")
+            authored.add(identity)
+        for row in db.execute(
+            "SELECT resident_id,revision,sha256 FROM memory_revisions WHERE author='run'"
+        ):
+            if tuple(row) not in authored:
                 raise Refused("backup_references_invalid")
         for entry in db.execute("SELECT * FROM journal_entries"):
             checked_entry(entry)
@@ -402,17 +424,15 @@ def _check_database(root: Path) -> dict:
                 "WHERE j.resident_id != r.resident_id"
             ).fetchone():
                 raise Refused("backup_references_invalid")
+        files = JournalFiles(root / "memory")
         for resident in db.execute("SELECT id FROM residents"):
-            # Archived entries outlive their rows; every kept file must still be exact.
-            JournalFiles(root / "memory").entries(resident["id"])
+            # Every kept file must be an exact document, including unreferenced orphans.
+            files.entries(resident["id"])
         for row in db.execute("SELECT * FROM journal_archives"):
-            # An archive reference must name the exact document it was recorded for.
-            archived = JournalFiles(root / "memory").entry(row["resident_id"], row["sha256"])
-            if any(archived[key] != row[key] for key in ("sequence", "run_id", "at")):
-                raise Refused("backup_references_invalid")
+            read_archive(files, row)
         for run in db.execute("SELECT DISTINCT run_id FROM run_journal"):
-            # A pinned journal must still read back, from its row or its archived file.
-            run_journal(db, JournalFiles(root / "memory"), run["run_id"])
+            # A pinned journal must still read back, from its rows or its archived files.
+            run_journal(db, files, run["run_id"])
         return {
             "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),

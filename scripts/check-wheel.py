@@ -37,19 +37,30 @@ with tempfile.TemporaryDirectory(prefix="hearth-release-") as folder:
     # owns a throwaway venv and installs hash-pinned exports into it, which the
     # project-level `uv sync` cannot express. A wrapper earlier on PATH may refuse
     # `uv pip` to steer people towards `uv add`, so take the first uv that answers.
+    # Probe the subcommand actually used, not bare `uv pip`: a wrapper that filters
+    # on the subcommand would let `uv pip --help` through and fail later regardless.
     def resolve_uv():
         for directory in os.get_exec_path():
             candidate = Path(directory) / "uv"
             if not candidate.is_file() or not os.access(candidate, os.X_OK):
                 continue
-            probe = subprocess.run(
-                (str(candidate), "pip", "--help"), capture_output=True, timeout=60
-            )
+            try:
+                probe = subprocess.run(
+                    (str(candidate), "pip", "install", "--help"),
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                    timeout=60,
+                )
+            except OSError, subprocess.SubprocessError:
+                continue
             if probe.returncode == 0:
                 return str(candidate)
         raise SystemExit("No uv providing the `uv pip` interface found on PATH")
 
     uv = resolve_uv()
+    # The Makefile builds the wheel with whichever uv comes first on PATH. Say which
+    # one installs it here, so a two-installation mismatch is diagnosable.
+    print("Release install uses uv at", uv, flush=True)
 
     run(
         uv,
