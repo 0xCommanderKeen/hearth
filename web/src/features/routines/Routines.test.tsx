@@ -44,17 +44,22 @@ it("saves the selected local schedule with an initial revision", async () => {
   render(
     <RoutinePanel client={client} snapshot={state} busy={false} act={act} />,
   );
+  fireEvent.change(screen.getByLabelText("The daily assignment"), {
+    target: { value: "Summarize the day." },
+  });
   fireEvent.change(screen.getByLabelText("Daily time"), {
     target: { value: "07:45" },
   });
   fireEvent.change(screen.getByLabelText("Timezone"), {
     target: { value: "UTC" },
   });
-  fireEvent.click(screen.getByText("Enable daily mock summary"));
+  fireEvent.click(screen.getByText("Schedule daily routine"));
   await waitFor(() =>
     expect(save).toHaveBeenCalledWith(
-      "reader-daily",
+      expect.any(String),
       expect.objectContaining({
+        resident_id: "reader",
+        instruction: "Summarize the day.",
         local_time: "07:45",
         timezone: "UTC",
         enabled: true,

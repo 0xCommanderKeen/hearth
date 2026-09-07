@@ -1,16 +1,12 @@
-"""Run an explicit, local-only mock demonstration: python -m hearth demo."""
+"""Operator maintenance commands for a Hearth data directory."""
 
 import argparse
 import json
-import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
-from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
@@ -20,7 +16,6 @@ def main() -> None:
     parser.add_argument(
         "command",
         choices=[
-            "demo",
             "backup",
             "verify-backup",
             "restore",
@@ -32,7 +27,7 @@ def main() -> None:
             "import-resident",
         ],
     )
-    parser.add_argument("--data", type=Path, default=Path(".hearth/demo"))
+    parser.add_argument("--data", type=Path, default=Path(".hearth"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--resident")
@@ -124,54 +119,21 @@ def main() -> None:
         except (Refused, OSError, TypeError, ValueError) as error:
             parser.error(str(error))
         return
-    if args.command != "demo":
-        from hearth.storage.backup import capture, restore, verify
+    from hearth.storage.backup import capture, restore, verify
 
-        if args.command == "backup":
-            if args.destination is None:
-                parser.error("backup requires --destination")
-            result = capture(args.data, args.destination)
-        elif args.command == "verify-backup":
-            if args.source is None:
-                parser.error("verify-backup requires --source")
-            result = verify(args.source)
-        else:
-            if args.source is None or args.destination is None:
-                parser.error("restore requires --source and --destination")
-            result = restore(args.source, args.destination)
-        print(json.dumps(result, indent=2))
-        return
-    db = Database(args.data / "hearth.db")
-    db.initialize(runtime_kind="inline_mock")
-    hearth = Hearth(db)
-    from hearth.inputs.demo import seed_reader
-
-    seed_reader(hearth)
-    receipt = hearth.submit(
-        str(uuid.uuid4()),
-        "reader",
-        "Produce a simulated daily summary.",
-        expires_at=int(time.time()) + 3600,
-    )
-    run = hearth.admit(receipt.task_id, reserve=10_000)
-    execution = Execution(hearth, Artifacts(args.data / "artifacts"))
-    executor = Executor(execution, MockRuntime(args.data / "mock-runtime"))
-    executor.step()
-    result = hearth.run(run.id)
-    print(
-        json.dumps(
-            {
-                "simulated": True,
-                "task": asdict(hearth.task(receipt.task_id)),
-                "status": result.status,
-                "synthetic_cost_microdollars": result.actual_cost,
-                "artifact_id": result.artifact_id,
-            },
-            indent=2,
-        )
-    )
-    if result.artifact_id:
-        print(execution.artifact(result.artifact_id)[1])
+    if args.command == "backup":
+        if args.destination is None:
+            parser.error("backup requires --destination")
+        result = capture(args.data, args.destination)
+    elif args.command == "verify-backup":
+        if args.source is None:
+            parser.error("verify-backup requires --source")
+        result = verify(args.source)
+    else:
+        if args.source is None or args.destination is None:
+            parser.error("restore requires --source and --destination")
+        result = restore(args.source, args.destination)
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

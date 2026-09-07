@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 
+from tests.support import seed_reader_via
+
 TOKEN = "synthetic-input-operator-token"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
@@ -114,7 +116,7 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
 
 def test_reader_explicit_seed_and_selection_survive_repeat_setup(tmp_path):
     with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
-        assert client.post("/api/demo/reader", headers=AUTH).status_code == 200
+        assert seed_reader_via(client)
         initial = client.get("/api/residents/reader/inputs", headers=AUTH)
         assert initial.status_code == 200
         assert initial.json()["input_sets"][0]["input_set_id"] == "synthetic-reader-notes"
@@ -124,7 +126,7 @@ def test_reader_explicit_seed_and_selection_survive_repeat_setup(tmp_path):
             json={"expected_revision": initial.json()["revision"], "input_sets": []},
         )
         assert empty.status_code == 200
-        assert client.post("/api/demo/reader", headers=AUTH).status_code == 200
+        assert seed_reader_via(client)
         assert client.get("/api/residents/reader/inputs", headers=AUTH).json()["input_sets"] == []
         assert len(client.get("/api/input-sets", headers=AUTH).json()) == 1
 

@@ -216,12 +216,6 @@ def create_app(
             )
         )
 
-    @app.post("/api/demo/reader")
-    def seed():
-        from hearth.inputs.demo import seed_reader
-
-        return asdict(seed_reader(hearth))
-
     @app.post("/api/tasks", status_code=201)
     def submit(body: TaskPost, idempotency_key: str = Header(min_length=1, max_length=128)):
         return asdict(
@@ -304,7 +298,7 @@ def create_app(
         return {
             "revision": revision,
             "enabled": body.enabled,
-            "simulated": True,
+            "simulated": database.runtime_kind() != "codex_subscription",
         }
 
     @app.post("/api/approvals", status_code=201)

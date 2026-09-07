@@ -268,7 +268,7 @@ def test_one_native_task_creates_validated_reporter_and_first_saved_result(tmp_p
             skill.status_code == 200
             and skill.json()["authoring"]["validation"]["status"] == "passed"
         )
-        refused = client.post("/api/demo/karen", headers=AUTH)
+        refused = client.post("/api/management/bootstrap", headers=AUTH)
         assert refused.status_code == 409 and refused.json()["error"] == "restored_copy_read_only"
 
 

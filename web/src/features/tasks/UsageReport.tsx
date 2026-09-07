@@ -21,10 +21,10 @@ export function UsageReport({
   } | null>(null);
   return (
     <details>
-      <summary>Reconcile missing mock usage</summary>
+      <summary>Reconcile missing usage</summary>
       <p>
-        Record an operator-reported mock amount and its evidence. This resolves
-        only this run’s accounting hold; other pauses remain.
+        Record an operator-reported amount and its evidence. This resolves only
+        this run’s accounting hold; other pauses remain.
       </p>
       <form
         onSubmit={(event) => {
@@ -46,7 +46,7 @@ export function UsageReport({
         }}
       >
         <label htmlFor={`usage-${runId}`}>
-          Mock cost in micro-USD (1 USD = 1,000,000)
+          Cost in micro-USD (1 USD = 1,000,000)
         </label>
         <input
           id={`usage-${runId}`}
@@ -59,9 +59,7 @@ export function UsageReport({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
-        <label htmlFor={`evidence-${runId}`}>
-          Evidence for this mock amount
-        </label>
+        <label htmlFor={`evidence-${runId}`}>Evidence for this amount</label>
         <textarea
           id={`evidence-${runId}`}
           required
@@ -71,7 +69,7 @@ export function UsageReport({
           onChange={(e) => setEvidence(e.target.value)}
         />
         <button disabled={busy}>
-          {pending.current ? "Retry usage report" : "Record mock usage"}
+          {pending.current ? "Retry usage report" : "Record usage"}
         </button>
       </form>
     </details>

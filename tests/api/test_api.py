@@ -8,6 +8,8 @@ from hearth.app import create_app
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Declaration
 
+from tests.support import seed_reader_via
+
 TOKEN = "synthetic-operator-token-for-tests"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
@@ -44,9 +46,9 @@ def test_authenticated_body_is_bounded(client):
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
 
-def test_seed_is_idempotent_and_snapshot_has_no_owner_token(client):
-    first = client.post("/api/demo/reader", headers=AUTH)
-    assert client.post("/api/demo/reader", headers=AUTH).json() == first.json()
+def test_snapshot_has_no_owner_token(client):
+    first = seed_reader_via(client)
+    assert seed_reader_via(client) == first
     receipt = task(client).json()
     assert (
         client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH).status_code == 200
@@ -61,7 +63,7 @@ def test_seed_is_idempotent_and_snapshot_has_no_owner_token(client):
 
 
 def test_lost_submission_response_is_reconcilable(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     body = {
         "resident_id": "reader",
         "instruction": "Synthetic summary.",
@@ -79,7 +81,7 @@ def test_lost_submission_response_is_reconcilable(client):
 
 
 def test_start_retry_has_stable_identity_and_result_can_be_read(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     receipt = task(client).json()
     path = "/api/tasks/" + receipt["task_id"] + "/start"
     first = client.post(path, headers=AUTH).json()
@@ -99,7 +101,7 @@ def test_start_retry_has_stable_identity_and_result_can_be_read(client):
 def test_cancellation_roundtrip_keeps_intent_separate_from_termination(tmp_path):
     app = create_app(tmp_path, TOKEN, scenario="hold", supervise=False)
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH)
+        seed_reader_via(client)
         receipt = task(client).json()
         run = client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH).json()
         app.state.executor.step()
@@ -114,7 +116,7 @@ def test_cursor_matches_transaction_and_epoch_requires_resync(client):
     first = client.get("/api/state", headers=AUTH).json()
     query = {"cursor": first["cursor"], "epoch": first["epoch"]}
     assert client.get("/api/state", params=query, headers=AUTH).status_code == 204
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     updated = client.get("/api/state", params=query, headers=AUTH)
     assert updated.status_code == 200
     assert updated.json()["cursor"] > first["cursor"]
@@ -126,7 +128,7 @@ def test_cursor_matches_transaction_and_epoch_requires_resync(client):
 def test_unknown_usage_is_visible_and_cannot_start_more_work(tmp_path):
     app = create_app(tmp_path, TOKEN, scenario="unknown_usage", supervise=False)
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH)
+        seed_reader_via(client)
         receipt = task(client).json()
         client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
         app.state.executor.step()
@@ -140,7 +142,7 @@ def test_unknown_usage_is_visible_and_cannot_start_more_work(tmp_path):
 
 
 def test_api_refuses_invalid_payload_without_creating_task(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     response = client.post(
         "/api/tasks",
         headers={**AUTH, "Idempotency-Key": "bad"},
@@ -161,7 +163,7 @@ def test_demo_requires_explicit_nontrivial_operator_token(tmp_path):
 
 
 def test_active_work_remains_visible_when_recent_history_is_full(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     hearth = client.app.state.hearth
     execution = client.app.state.execution
     tick = [1000]
@@ -183,7 +185,7 @@ def test_active_work_remains_visible_when_recent_history_is_full(client):
 
 
 def proposal(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     run = client.app.state.executor.step()[0]
@@ -265,7 +267,7 @@ def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
     now = [1_788_652_800]
     app.state.hearth.clock = lambda: now[0]
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH)
+        seed_reader_via(client)
         body = {
             "resident_id": "reader",
             "instruction": "Scheduled synthetic summary",
@@ -293,7 +295,7 @@ def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
 
 
 def test_notification_payload_and_delivery_are_authenticated_observation(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     client.app.state.executor.step()
@@ -307,7 +309,7 @@ def test_notification_payload_and_delivery_are_authenticated_observation(client)
 
 
 def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     receipt = task(client).json()
     route = "/api/residents/reader/pause"
     assert client.post(route, json={"paused": True, "expected_revision": 0}).status_code == 401
@@ -331,7 +333,7 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
 def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
     app = create_app(tmp_path, TOKEN, supervise=False, scenario="unknown_usage")
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH)
+        seed_reader_via(client)
         receipt = task(client).json()
         client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
         run = app.state.executor.step()[0]
@@ -350,7 +352,7 @@ def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
 
 
 def test_resident_bundle_export_and_import_over_http(client, tmp_path):
-    client.post("/api/demo/reader", headers=AUTH)
+    seed_reader_via(client)
     export = client.get("/api/residents/reader/export", headers=AUTH)
     assert export.status_code == 200
     assert export.headers["cache-control"] == "no-store"

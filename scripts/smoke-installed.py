@@ -14,12 +14,48 @@ from urllib.request import Request, urlopen
 import hearth
 import uvicorn
 from hearth.app import create_app
+from hearth.inputs.catalog import Inputs
+from hearth.inputs.selection import save_selection
 from hearth.residents.memory import Memory
+from hearth.residents.models import Declaration
 from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
 TOKEN = "synthetic-installed-release-token"
+
+
+def seed_reader(hearth_service) -> None:
+    """Create the synthetic Reader used by this smoke run; the release seeds nothing."""
+    with hearth_service.database.transaction(write=True) as db:
+        Inputs(hearth_service).save_in_transaction(
+            db,
+            "seed-synthetic-reader-notes",
+            input_set_id="synthetic-reader-notes",
+            name="Synthetic Reader example notes",
+            notes=["Synthetic note: exercise the installed release."],
+            actor="operator",
+        )
+        hearth_service.save_resident_in_transaction(
+            db,
+            "reader",
+            Declaration(
+                "Reader",
+                "A daily summary of synthetic notes. Read-only; no external actions.",
+                10_000_000,
+                budget_timezone="Europe/Ljubljana",
+            ),
+            expected_revision=0,
+        )
+        save_selection(
+            db,
+            "reader",
+            [{"input_set_id": "synthetic-reader-notes"}],
+            expected_revision=0,
+            command_id="seed-reader-inputs",
+            actor="operator",
+            now=int(hearth_service.clock()),
+        )
 
 
 @contextmanager
@@ -71,7 +107,7 @@ def check_application(runtime_kind):
         else:
             raise AssertionError("Installed API accepted an unauthenticated request")
         assert request(base, "/api/state")["residents"] == []
-        request(base, "/api/demo/reader", body={})
+        seed_reader(Hearth(Database(data / "hearth.db")))
         memory = Memory(Hearth(Database(data / "hearth.db")))
         saved = memory.save("reader", "# Synthetic release memory\n", expected_revision=0)
         body = {

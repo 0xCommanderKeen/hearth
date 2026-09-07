@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.residents.maintenance import LifecycleChange, Maintenance
 
+from tests.support import seed_reader_via
+
 TOKEN = "synthetic-maintenance-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
@@ -12,7 +14,7 @@ def test_archive_keeps_saved_result_and_refuses_future_work_across_restart(tmp_p
     app = create_app(tmp_path, TOKEN, supervise=False)
     app.state.hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         task = client.post(
             "/api/tasks",
             headers={**AUTH, "Idempotency-Key": "first"},
@@ -108,7 +110,7 @@ def test_archive_before_launch_and_during_unknown_execution_keep_truthful_holds(
     hearth = app.state.hearth
     hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         task = hearth.submit("never-started", "reader", "Read", expires_at=1_788_640_600)
         run = hearth.admit(task.task_id, reserve=10000)
         Maintenance(hearth).change_lifecycle(
@@ -131,7 +133,7 @@ def test_coherent_configuration_conflict_preserves_every_other_owned_revision(tm
 
     app = create_app(tmp_path, TOKEN, supervise=False)
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         route = "/api/residents/reader/configuration"
         original = client.get(route, headers=AUTH)
         assert original.status_code == 200
@@ -162,7 +164,7 @@ def test_profile_edits_inputs_skills_and_routine_with_owning_revision_guards(tmp
     app = create_app(tmp_path, TOKEN, supervise=False)
     app.state.hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         source = client.post(
             "/api/input-sets",
             headers={**AUTH, "Idempotency-Key": "source"},
@@ -328,10 +330,11 @@ def test_scoped_manager_edits_pauses_archives_and_operator_transfer_revokes_old_
 
 def test_archive_keeps_running_reservation_and_held_backup_refuses_damaged_lifecycle(tmp_path):
     import pytest
-    from hearth.inputs.demo import seed_reader
     from hearth.observation.snapshot import snapshot
     from hearth.residents.models import Refused
     from hearth.storage.backup import capture, restore
+
+    from tests.support import seed_reader
 
     app = create_app(tmp_path / "data", TOKEN, supervise=False, scenario="hold")
     hearth = app.state.hearth
@@ -372,7 +375,7 @@ def test_explicit_reader_profile_and_operator_transfer_are_manageable_without_in
 
     app, karen, _, _, call = managed_fixture(tmp_path)
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         profile = client.get("/api/residents/reader/profile", headers=AUTH)
         assert profile.status_code == 200
         assert profile.json()["creator"] == "operator"
@@ -450,8 +453,9 @@ def test_competing_manager_and_operator_configuration_has_one_winner(tmp_path):
 
 
 def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_path):
-    from hearth.inputs.demo import seed_reader
     from hearth.observation.snapshot import snapshot
+
+    from tests.support import seed_reader
 
     app = create_app(tmp_path, TOKEN, supervise=False, scenario="hold")
     hearth = app.state.hearth
@@ -479,7 +483,7 @@ def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_pat
 
 
 def test_unrelated_agent_and_forged_transfer_are_refused_without_changes(tmp_path):
-    from hearth.inputs.demo import seed_reader
+    from tests.support import seed_reader
 
     app, _, _, child, call = managed_fixture(tmp_path)
     seed_reader(app.state.hearth)
@@ -528,7 +532,7 @@ def test_configuration_accepts_legal_unicode_groups_and_rejects_transport_overfl
     import json
 
     with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
         route = "/api/residents/reader/configuration"
         before = client.get(route, headers=AUTH).json()
         body = {

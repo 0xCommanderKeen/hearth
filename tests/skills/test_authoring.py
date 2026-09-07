@@ -52,7 +52,7 @@ def authoring():
 def manager(tmp_path, *, capabilities=None):
     app = create_app(tmp_path, TOKEN, supervise=False)
     client = TestClient(app)
-    karen = client.post("/api/demo/karen", headers=AUTH).json()
+    karen = client.post("/api/management/bootstrap", headers=AUTH).json()
     if capabilities is not None:
         path = "/api/residents/" + karen["resident_id"] + "/management"
         grant = client.get(path, headers=AUTH).json()

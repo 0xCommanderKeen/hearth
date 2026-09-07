@@ -14,6 +14,8 @@ from hearth.residents.models import Refused
 from hearth.storage.backup import capture, restore, verify
 from hearth.storage.database import Database
 
+from tests.support import seed_reader_via
+
 TOKEN = "synthetic-process-store-token"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
@@ -30,7 +32,7 @@ def wait_for(read, accept, timeout=6):
 
 def task(app):
     with TestClient(app) as client:
-        client.post("/api/demo/reader", headers=AUTH).raise_for_status()
+        seed_reader_via(client)
     hearth = app.state.hearth
     receipt = hearth.submit(
         "summary", "reader", "Synthetic notes", expires_at=int(time.time()) + 300

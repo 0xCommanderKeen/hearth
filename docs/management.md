@@ -15,7 +15,7 @@ operator HTTP actions can change grants or household limits. Skill instructions
 and model output cannot do so.
 
 `GET /api/management` provides the operator catalog and the latest 30 durable
-operation receipts. `POST /api/demo/karen` performs explicit setup.
+operation receipts. `POST /api/management/bootstrap` performs explicit setup.
 `GET/PUT /api/residents/{id}/management` reads or replaces a grant; PUT requires
 its exact `expected_revision`. Conflicts retain the browser draft until explicit
 reload. Held restores expose this state read-only.
