@@ -778,3 +778,21 @@ Advancing its enabled routine to its due time in each state created no tasks, ru
 or occurrences; the saved report and hash stayed unchanged, and restart preserved
 archive state. These lifecycle calls were driven by the deterministic harness,
 not an authenticated model. The real four-run reporting acceptance remains pending.
+
+### First authenticated journey attempt and validation feedback
+
+The first explicitly approved attempt finished one manager run with known usage of
+150512 microdollars ($0.150512), and no authoring mutations. Both draft-save requests
+exceeded the four-phrase assertion limit; generic validation refusals hid the exact
+field and bound. The complete real journey remains unproven.
+
+Management schema refusals now give at most six schema-derived field hints, with
+bounded paths and a fresh-call-ID correction instruction, without echoing submitted
+values, arbitrary property names or exception messages. Existing rollback, recorded
+refusal replay and operation identity semantics remain intact. Tool/bootstrap
+guidance states the existing phrase/note limits and represents missing notes as an
+empty list. Two Bridge/temporary-SQLite regressions passed red-to-green: exact limit,
+unchanged catalog, same-call replay, corrected same-operation acceptance, and bounded
+many-error/private-value feedback. No authenticated retry was performed by this fix.
+Full `make check` passed 661 backend and 71 browser tests, lint/types/build, and both
+installed-wheel restart/held-restore journeys.

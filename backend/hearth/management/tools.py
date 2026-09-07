@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.authority.household import household_state
 from hearth.inputs.catalog import read_input
+from hearth.management.arguments import InvalidArguments
 from hearth.management.authority import digest
 from hearth.management.bridge import authorize_managed_resident
 from hearth.residents.lifecycle import read_lifecycle
@@ -368,5 +369,5 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
             return _provision(db, hearth, authority, body, payload)
         assert isinstance(body, AssignWork | StartWork)
         return _work(db, hearth, authority, body, payload)
-    except ValidationError:
-        raise Refused("management_invalid_arguments") from None
+    except ValidationError as error:
+        raise InvalidArguments(error, TOOL_MODELS[tool][0].model_json_schema()) from None

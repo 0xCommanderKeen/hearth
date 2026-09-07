@@ -58,11 +58,20 @@ checks delayed startup, worker death, spawn failure and invalid handoff.
 
 ## Remaining real acceptance
 
-The authenticated Mac Codex-subscription journey has not run. The concrete execution
-still requires the pending explicit approval after automatic review rejected the
-earlier standalone proof. The final integrated journey should establish the real
-creation, authoring and delivery gates together; the old standalone script is
-superseded.
+The first approved authenticated Mac Codex-subscription attempt finished with one
+fully accounted manager run costing 150512 microdollars ($0.150512), with no authoring
+mutations. Two draft-save requests supplied six required phrases where the schema
+permits four; the generic invalid-arguments reply did not identify that limit. This
+does not complete the creation, authoring or delivery gate.
+
+Schema validation refusals now retain their error code and include bounded field
+paths and schema limits, excluding submitted values and exception messages. A real
+Bridge/temporary-SQLite regression verifies rejection without catalog changes,
+durable refusal replay, and a corrected request using the same operation ID with a
+new call ID. Another checks bounded feedback with many errors and private values.
+Tool and bootstrap guidance state phrase/note limits and missing-input notation.
+This fix itself performs no provider retry; the standalone proof is superseded by
+the integrated journey.
 
 The prepared private harness fixes the reviewed release, existing selected CLI/model
 and login, one fresh data directory, fictional notes, three residents, concurrency

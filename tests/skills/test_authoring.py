@@ -709,3 +709,44 @@ def test_authoring_capability_alone_does_not_read_resident_assignments(tmp_path)
         "no-assignment-authority",
     )
     assert not ok and denied["error"] == "management_skill_authoring_not_permitted"
+
+
+def test_invalid_assertion_count_reports_exact_limit_and_allows_corrected_operation(tmp_path):
+    _, client, _, bridge = manager(tmp_path)
+    payload = candidate()
+    payload["authoring"]["examples"][0]["assertions"]["contains"] = [
+        "12 pears",
+        "Monday",
+        "3 trees",
+        "Tuesday",
+        "harvested",
+        "planted",
+    ]
+    before = client.get("/api/skills", headers=AUTH).json()
+    accepted, refusal = call(bridge, "hearth_skills_save", payload, "rejected")
+    assert not accepted and refusal["error"] == "management_invalid_arguments"
+    assert refusal["issues"] == [
+        {"path": "authoring.examples[0].assertions.contains", "rule": "maxItems", "limit": 4}
+    ]
+    assert "new call ID" in refusal["retry"]
+    assert client.get("/api/skills", headers=AUTH).json() == before
+    assert call(bridge, "hearth_skills_save", payload, "rejected") == (False, refusal)
+    payload["authoring"]["examples"][0]["assertions"]["contains"] = ["12 pears"]
+    accepted, saved = call(bridge, "hearth_skills_save", payload, "corrected")
+    assert accepted and saved["revision"] == 1 and saved["status"] == "draft", saved
+
+
+def test_invalid_arguments_bound_many_errors_without_echoing_private_values(tmp_path):
+    _, client, _, bridge = manager(tmp_path)
+    payload = candidate()
+    secret = "PRIVATE-SUBMITTED-TEXT"
+    payload["name"] = secret * 20
+    payload.update({secret + str(index): secret for index in range(30)})
+    before = client.get("/api/skills", headers=AUTH).json()
+    accepted, refusal = call(bridge, "hearth_skills_save", payload, "many-invalid")
+    assert not accepted and refusal["error"] == "management_invalid_arguments"
+    assert refusal["issues"][0] == {"path": "name", "rule": "maxLength", "limit": 120}
+    assert len(refusal["issues"]) <= 6 and refusal["truncated"] is True
+    assert secret not in json.dumps(refusal)
+    assert len(json.dumps(refusal)) < 2048
+    assert client.get("/api/skills", headers=AUTH).json() == before
