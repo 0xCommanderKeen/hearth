@@ -161,6 +161,10 @@ class Bridge:
                 or len(json.dumps(params, ensure_ascii=False).encode()) > argument_limit
             ):
                 raise Refused("management_arguments_invalid")
+            if params["tool"] == "hearth_skills_validation":
+                from hearth.skills.tools import wait_for_validation
+
+                wait_for_validation(self.hearth, self.bound, params)
             with self.hearth.database.transaction(write=True) as db:
                 now = int(self.hearth.clock())
                 authority = authorize(

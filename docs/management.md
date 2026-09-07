@@ -78,3 +78,45 @@ audit rollback, reuse and held backup. The worker callback test uses synthetic
 native events. These checks do not establish real provider or host isolation;
 the actual pinned binary probe and bounded real journey are recorded separately
 in the implementation checkpoint.
+
+## Shared skill authoring
+
+Karen receives the ordinary editable **Create good skills** library skill. The
+`author_skills` capability permits creating and revising her own skills, requesting
+bounded examples and publishing an exact passing candidate. `assign_skills` separately
+permits exact active-revision assignments to currently managed residents. Neither
+authoring authority alone nor a catalog read exposes a resident's assignment set.
+`hearth_skills_assignments` requires assignment authority and returns the complete
+ordered exact references and current assignment revision, so a manager can preserve
+human choices and recover from a conflict before replacing the set. Neither
+skill content nor an example grants capabilities. Humans use the same catalog and
+conflict-aware revisions; editing an authored skill creates a draft with fresh checks.
+Existing assignments retain their exact published revisions.
+
+Authoring permission includes one visible service evaluator and its named fictional
+case inputs. This narrowly scoped helper is created through ordinary provisioning,
+has the requesting resident as creator and the operator as manager, and receives no
+management grant, routine or general input selection. Its two cases use ordinary
+serial admissions, reservations, saved artifacts and known usage under all household
+limits. Only their durable trusted task bindings permit pinning the exact draft;
+there is no model-supplied draft override. Pending validation survives the requesting
+turn, but future admissions recheck the current authoring grant and ten-minute expiry.
+Revocation prevents new admissions; already admitted work preserves ordinary holds.
+Status waits last at most three seconds and release the database writer throughout.
+
+Fixed evaluator instructions and empty memory keep unrelated operator data out of
+examples. An operator edit that adds memory or changes that context pauses admission;
+ordinary repair to the required empty context resumes the same queued case identities.
+Budget changes and harmless declaration revisions do not permanently poison a helper.
+Unknown usage remains pending and never authorizes replacement execution.
+
+The structural checker verifies populated sections and two bounded examples. Normal
+and edge/adversarial cases execute the candidate using synthetic input revisions;
+allowlisted output-length, required-phrase and forbidden-phrase assertions inspect
+saved artifact bytes. Evidence distinguishes simulated runs from model execution and
+deterministic assertions from semantic assessment. There is no model grader or general
+quality guarantee. Publication binds the immutable candidate/content/example hashes,
+both successful case results, and a new active revision with identical instructions.
+Backup verifies this chain; held restores remain read-only. Townhall shows draft
+reasons, authorship, exact revisions, examples, accounted runs and publication proof,
+and refreshes external changes while preserving conflicting unsaved human drafts.

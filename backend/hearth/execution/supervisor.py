@@ -7,6 +7,7 @@ from typing import IO
 from hearth.execution.lifecycle import Executor
 from hearth.observation.notifications import Notifications
 from hearth.residents.models import Refused
+from hearth.skills.validation import Validation
 from hearth.work.routines import Routines
 
 
@@ -15,6 +16,7 @@ class Supervisor:
         self.executor = executor
         self.routines = routines
         self.notifications = notifications
+        self.validation = Validation(executor.execution.hearth)
         self._guard = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -23,6 +25,7 @@ class Supervisor:
             "executor_error": None,
             "scheduler_error": None,
             "notification_error": None,
+            "validation_error": None,
         }
 
     def health(self) -> dict:
@@ -49,6 +52,7 @@ class Supervisor:
                 executor_error=None,
                 scheduler_error=None,
                 notification_error=None,
+                validation_error=None,
             )
             self._thread = threading.Thread(
                 target=self._run, args=(lock,), name="hearth-supervisor"
@@ -89,6 +93,16 @@ class Supervisor:
                 except Exception as error:
                     self._set(
                         "scheduler_error",
+                        error.code if isinstance(error, Refused) else type(error).__name__,
+                    )
+                if self._stop.is_set():
+                    break
+                try:
+                    self.validation.step()
+                    self._set("validation_error", None)
+                except Exception as error:
+                    self._set(
+                        "validation_error",
                         error.code if isinstance(error, Refused) else type(error).__name__,
                     )
                 if self._stop.is_set():

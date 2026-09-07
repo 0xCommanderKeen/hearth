@@ -2,6 +2,35 @@
 """The complete schema for a fresh Hearth database; no historical upgrades."""
 
 SCHEMA = (
+    """CREATE TABLE skill_validations (
+        id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, candidate_revision INTEGER NOT NULL,
+        candidate_sha256 TEXT NOT NULL, manifest_sha256 TEXT NOT NULL,
+        evaluator_id TEXT REFERENCES residents(id), evaluator_revision INTEGER,
+        actor TEXT NOT NULL, originating_run_id TEXT REFERENCES runs(id), grant_revision INTEGER,
+        reserve INTEGER NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        request_sha256 TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
+        reason TEXT, UNIQUE(skill_id,candidate_revision),
+        FOREIGN KEY(skill_id,candidate_revision) REFERENCES skill_revisions(skill_id,revision)
+    )""",
+    """CREATE TABLE skill_validation_cases (
+        validation_id TEXT NOT NULL REFERENCES skill_validations(id), position INTEGER NOT NULL,
+        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id), run_id TEXT UNIQUE REFERENCES runs(id),
+        input_set_id TEXT NOT NULL, input_revision INTEGER NOT NULL, input_sha256 TEXT NOT NULL,
+        result TEXT, PRIMARY KEY(validation_id,position), CHECK(position IN (0,1)),
+        FOREIGN KEY(input_set_id,input_revision) REFERENCES input_revisions(input_set_id,revision)
+    )""",
+    """CREATE TABLE skill_publications (
+        skill_id TEXT NOT NULL, revision INTEGER NOT NULL, candidate_revision INTEGER NOT NULL,
+        validation_id TEXT NOT NULL UNIQUE REFERENCES skill_validations(id), sha256 TEXT NOT NULL,
+        PRIMARY KEY(skill_id,revision),
+        FOREIGN KEY(skill_id,revision) REFERENCES skill_revisions(skill_id,revision),
+        FOREIGN KEY(skill_id,candidate_revision) REFERENCES skill_revisions(skill_id,revision)
+    )""",
+    """CREATE TABLE skill_authoring_revisions (
+        skill_id TEXT NOT NULL, revision INTEGER NOT NULL, manifest TEXT NOT NULL,
+        sha256 TEXT NOT NULL, structure TEXT NOT NULL, PRIMARY KEY(skill_id,revision),
+        FOREIGN KEY(skill_id,revision) REFERENCES skill_revisions(skill_id,revision)
+    )""",
     """CREATE TABLE resident_lifecycle (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), revision INTEGER NOT NULL CHECK(revision>=0),
         FOREIGN KEY(resident_id,revision) REFERENCES resident_lifecycle_history(resident_id,revision)
@@ -117,7 +146,7 @@ SCHEMA = (
     """CREATE TABLE skill_revisions (
         skill_id TEXT NOT NULL REFERENCES skills(id), revision INTEGER NOT NULL CHECK(revision > 0),
         name TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('active','archived')),
+        status TEXT NOT NULL CHECK(status IN ('active','archived','draft')),
         edited_by TEXT NOT NULL, edited_at INTEGER NOT NULL, sha256 TEXT NOT NULL,
         PRIMARY KEY(skill_id, revision)
     )""",

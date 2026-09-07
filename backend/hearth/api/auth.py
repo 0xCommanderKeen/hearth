@@ -60,7 +60,8 @@ class OperatorAuth:
         if scope["method"] in {"POST", "PUT"} and re.fullmatch(
             r"/api/skills(?:/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})?", scope["path"]
         ):
-            body_limit = (120 + 2000 + 32000) * 6 + 1024
+            # Skill text plus two bounded authored synthetic examples/assertions.
+            body_limit = (120 + 2000 + 32000 + 2 * (4000 + 4 * 2000 + 8 * 200)) * 6 + 4096
         if scope["method"] in {"POST", "PUT"} and re.fullmatch(
             r"/api/input-sets(?:/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127})?", scope["path"]
         ):

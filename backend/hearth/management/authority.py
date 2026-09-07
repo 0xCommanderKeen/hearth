@@ -21,11 +21,12 @@ class GrantPolicy(BaseModel):
             "create_residents",
             "assign_work",
             "routines",
+            "author_skills",
             "update_residents",
             "manage_lifecycle",
             "assign_skills",
         ]
-    ] = Field(default_factory=list, max_length=6)
+    ] = Field(default_factory=list, max_length=7)
     max_residents: int = Field(default=5, ge=0, le=20)
     max_daily_limit: int = Field(default=1_000_000, ge=0, le=10_000_000)
     max_reserve: int = Field(default=500_000, ge=1, le=2_000_000)

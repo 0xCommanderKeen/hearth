@@ -5,6 +5,7 @@ import json
 import uuid
 
 from hearth.residents.models import Refused, bounded_text, identifier
+from hearth.skills.authoring import check_editor, decorate, manifest, read_authoring, record
 from hearth.work.service import Hearth, _audit
 
 
@@ -34,9 +35,9 @@ class Skills:
                 "ON r.skill_id=s.id AND r.revision=s.revision ORDER BY r.name COLLATE NOCASE, s.id"
             ).fetchall()
             return [
-                checked_revision(row)
+                decorate(db, checked_revision(row))
                 for row in rows
-                if (include_archived or row["status"] == "active")
+                if (include_archived or row["status"] != "archived")
                 and query.casefold() in (row["name"] + " " + row["description"]).casefold()
             ]
 
@@ -52,7 +53,7 @@ class Skills:
             ).fetchone()
             if row is None:
                 raise Refused("skill_not_found")
-            return checked_revision(row)
+            return decorate(db, checked_revision(row))
 
     def history(self, skill_id: str) -> list[dict]:
         identifier(skill_id)
@@ -64,7 +65,7 @@ class Skills:
             ).fetchall()
             if not rows:
                 raise Refused("skill_not_found")
-            return [checked_revision(row) for row in rows]
+            return [decorate(db, checked_revision(row)) for row in rows]
 
     def receipt(self, command_id: str) -> dict:
         identifier(command_id)
@@ -86,6 +87,7 @@ class Skills:
         actor: str,
         skill_id: str | None = None,
         expected_revision: int = 0,
+        authoring: dict | None = None,
     ) -> dict:
         bounded_text(name, 120, "invalid_skill_name")
         bounded_text(description, 2000, "invalid_skill_description")
@@ -96,6 +98,7 @@ class Skills:
             expected_revision,
             actor,
             {"name": name, "description": description, "instructions": instructions},
+            authoring=authoring,
         )
 
     def archive(
@@ -110,10 +113,12 @@ class Skills:
         expected_revision: int,
         actor: str,
         content: dict | None,
+        *,
+        authoring: dict | None = None,
     ) -> dict:
         with self.hearth.database.transaction(write=True) as db:
             return self.change_in_transaction(
-                db, command_id, skill_id, expected_revision, actor, content
+                db, command_id, skill_id, expected_revision, actor, content, authoring=authoring
             )
 
     def save_in_transaction(
@@ -127,6 +132,7 @@ class Skills:
         actor: str,
         skill_id: str | None = None,
         expected_revision: int = 0,
+        authoring: dict | None = None,
     ) -> dict:
         bounded_text(name, 120, "invalid_skill_name")
         bounded_text(description, 2000, "invalid_skill_description")
@@ -138,16 +144,65 @@ class Skills:
             expected_revision,
             actor,
             {"name": name, "description": description, "instructions": instructions},
+            authoring=authoring,
         )
 
-    def change_in_transaction(self, db, command_id, skill_id, expected_revision, actor, content):
+    def publish_in_transaction(
+        self, db, command_id, skill_id, expected_revision, validation_id, *, actor
+    ):
+        return self.change_in_transaction(
+            db,
+            command_id,
+            skill_id,
+            expected_revision,
+            actor,
+            None,
+            publication=validation_id,
+        )
+
+    def publish(self, command_id, skill_id, expected_revision, validation_id, *, actor="operator"):
+        with self.hearth.database.transaction(write=True) as db:
+            return self.publish_in_transaction(
+                db, command_id, skill_id, expected_revision, validation_id, actor=actor
+            )
+
+    def change_in_transaction(
+        self,
+        db,
+        command_id,
+        skill_id,
+        expected_revision,
+        actor,
+        content,
+        *,
+        authoring=None,
+        publication=None,
+    ):
         identifier(command_id)
         identifier(actor)
         if skill_id is not None:
             identifier(skill_id)
+            check_editor(db, skill_id, actor)
+        if authoring is not None:
+            authoring = manifest(authoring)
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_revision")
-        operation = "archive" if content is None else "create" if skill_id is None else "save"
+        if publication is not None:
+            from hearth.skills.validation import checked_publication
+
+            candidate = checked_publication(
+                db, self.hearth, skill_id, expected_revision, publication
+            )
+            content = {key: candidate[key] for key in ("name", "description", "instructions")}
+        operation = (
+            "publish"
+            if publication is not None
+            else "archive"
+            if content is None
+            else "create"
+            if skill_id is None
+            else "save"
+        )
         payload = {
             "operation": operation,
             "skill_id": skill_id,
@@ -155,6 +210,10 @@ class Skills:
             "actor": actor,
             "content": content,
         }
+        if authoring is not None:
+            payload["authoring"] = authoring
+        if publication is not None:
+            payload["validation_id"] = publication
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         previous = db.execute(
             "SELECT * FROM skill_operations WHERE command_id=?", (command_id,)
@@ -184,6 +243,10 @@ class Skills:
                 raise Refused("revision_conflict")
             if row["status"] == "archived":
                 raise Refused("skill_archived")
+            if authoring is None and operation != "archive":
+                previous_authoring = read_authoring(db, skill_id, current)
+                if previous_authoring is not None:
+                    authoring = {"examples": previous_authoring["examples"]}
             if content is None:
                 content = {key: row[key] for key in ("name", "description", "instructions")}
             db.execute("UPDATE skills SET revision=? WHERE id=?", (current + 1, skill_id))
@@ -196,12 +259,29 @@ class Skills:
                 content["name"],
                 content["description"],
                 content["instructions"],
-                "archived" if operation == "archive" else "active",
+                "archived"
+                if operation == "archive"
+                else "draft"
+                if authoring is not None and publication is None
+                else "active",
                 actor,
                 now,
                 content_digest(content),
             ),
         )
+        if authoring is not None:
+            record(db, skill_id, revision, content["instructions"], authoring)
+        if publication is not None:
+            db.execute(
+                "INSERT INTO skill_publications VALUES (?,?,?,?,?)",
+                (
+                    skill_id,
+                    revision,
+                    expected_revision,
+                    publication,
+                    content_digest(content),
+                ),
+            )
         receipt = {
             "command_id": command_id,
             "skill_id": skill_id,
