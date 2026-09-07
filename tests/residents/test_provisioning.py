@@ -267,3 +267,54 @@ def test_same_transaction_provisioning_records_active_resident_authority(tmp_pat
         service.create_in_transaction(
             connection, "bad-manager", request(), actor="manager", originating_run_id=run.id
         )
+
+
+def test_the_journal_etiquette_joins_a_writable_resident_without_displacing_its_skills(tmp_path):
+    """The wording lives in the library, so the skill is attached, never inlined."""
+    from hearth.app import create_app
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import journal_skill
+    from hearth.skills.catalog import Skills
+
+    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    hearth = app.state.hearth
+    service = Provisioning(hearth)
+    plain = service.create("plain", request(), actor="operator")
+    with hearth.database.transaction() as db:
+        assert read_assignments(db, plain["resident_id"])["skills"] == []
+
+    with hearth.database.transaction(write=True) as db:
+        etiquette = journal_skill(db, hearth)
+    other = Skills(hearth).save(
+        "another",
+        name="Another skill",
+        description="Unrelated",
+        instructions="Do the thing",
+        actor="operator",
+    )
+    writable = service.create(
+        "writable",
+        {
+            **request(),
+            "memory_writable": True,
+            "skills": [{"skill_id": other["skill_id"], "revision": other["revision"]}],
+        },
+        actor="operator",
+    )
+    with hearth.database.transaction() as db:
+        entries = read_assignments(db, writable["resident_id"])["skills"]
+    assert [item["skill_id"] for item in entries] == [other["skill_id"], etiquette["skill_id"]]
+    assert [item["name"] for item in entries] == ["Another skill", "Keep a journal"]
+
+    # An archived etiquette is not attached to anyone; provisioning still succeeds.
+    Skills(hearth).archive(
+        "archive-etiquette",
+        etiquette["skill_id"],
+        expected_revision=etiquette["revision"],
+        actor="operator",
+    )
+    archived = service.create(
+        "after-archive", {**request(), "memory_writable": True}, actor="operator"
+    )
+    with hearth.database.transaction() as db:
+        assert read_assignments(db, archived["resident_id"])["skills"] == []

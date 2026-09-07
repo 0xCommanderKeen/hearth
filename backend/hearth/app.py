@@ -38,6 +38,7 @@ from hearth.management.api import mount_management
 from hearth.observation.notifications import MockInbox, Notifications
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import PAGE, Journal
+from hearth.residents.memory import PAGE as MEMORY_PAGE
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
 from hearth.residents.provisioning import Provisioning, ProvisionRequest
@@ -204,6 +205,11 @@ def create_app(
     @app.put("/api/residents/{resident_id}/memory")
     def save_memory(resident_id: str, body: MemoryPost):
         return Memory(hearth).save(resident_id, body.text, expected_revision=body.expected_revision)
+
+    # Revisions with the author Hearth recorded; the text stays behind ?revision=N.
+    @app.get("/api/residents/{resident_id}/memory/history")
+    def memory_history(resident_id: str, limit: int = MEMORY_PAGE, offset: int = 0):
+        return Memory(hearth).history(resident_id, limit=limit, offset=offset)
 
     # The journal is what the resident wrote. There is no operator write route.
     @app.get("/api/residents/{resident_id}/journal")

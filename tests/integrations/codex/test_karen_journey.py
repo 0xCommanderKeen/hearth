@@ -190,7 +190,8 @@ def evidence(app, karen, task, runs):
         assert profile["originating_run_id"] == manager["id"]
         for table, count in {
             "residents": 3,
-            "skills": 3,
+            # Three bootstrap skills plus the reporting skill Karen authored.
+            "skills": 4,
             "tasks": 4,
             "runs": 4,
             "run_usage": 4,

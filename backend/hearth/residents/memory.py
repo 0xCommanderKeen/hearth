@@ -16,6 +16,8 @@ from hearth.storage.artifacts import sync_directory
 from hearth.work.service import Hearth, _audit
 
 MAX_MEMORY = 128 * 1024
+MAX_PAGE = 100
+PAGE = 20
 
 
 def memory_path(resident_id: str, digest: str) -> str:
@@ -117,6 +119,24 @@ def read_revision(
     return {"resident_id": resident_id, "revision": revision, "sha256": row["sha256"], "text": text}
 
 
+def run_memory_writes(db: sqlite3.Connection, run_id: str) -> list[int]:
+    """The memory revisions this run authored, oldest first, from its durable receipts."""
+    revisions = []
+    for row in db.execute("SELECT receipt FROM memory_operations WHERE run_id=?", (run_id,)):
+        revision = _receipt_revision(row["receipt"])
+        if revision is not None and revision not in revisions:
+            revisions.append(revision)
+    return sorted(revisions)
+
+
+def _receipt_revision(stored: str) -> int | None:
+    try:
+        revision = json.loads(stored)["revision"]
+    except ValueError, TypeError, KeyError:
+        return None
+    return revision if type(revision) is int and revision > 0 else None
+
+
 class Memory:
     def __init__(self, hearth: Hearth):
         self.hearth = hearth
@@ -135,6 +155,50 @@ class Memory:
                     (resident_id,),
                 ).fetchone()[0]
             return read_revision(db, self.files, resident_id, revision)
+
+    def history(self, resident_id: str, *, limit: int = PAGE, offset: int = 0) -> dict:
+        """Every revision of one note, newest first, with the author Hearth recorded.
+
+        Authorship comes from the revision row, never from the text. A run-authored
+        revision also names the run that wrote it, taken from that write's receipt.
+        """
+        identifier(resident_id)
+        if type(limit) is not int or not 1 <= limit <= MAX_PAGE:
+            raise Refused("invalid_memory_page")
+        if type(offset) is not int or not 0 <= offset <= 1_000_000:
+            raise Refused("invalid_memory_page")
+        with self.hearth.database.transaction() as db:
+            if not db.execute("SELECT 1 FROM residents WHERE id=?", (resident_id,)).fetchone():
+                raise Refused("resident_not_found")
+            total = db.execute(
+                "SELECT COUNT(*) FROM memory_revisions WHERE resident_id=?", (resident_id,)
+            ).fetchone()[0]
+            rows = db.execute(
+                "SELECT revision,sha256,size,created_at,author FROM memory_revisions "
+                "WHERE resident_id=? ORDER BY revision DESC LIMIT ? OFFSET ?",
+                (resident_id, limit, offset),
+            ).fetchall()
+            writers = self._writers(db, resident_id)
+            return {
+                "resident_id": resident_id,
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "revisions": [dict(row) | {"run_id": writers.get(row["revision"])} for row in rows],
+            }
+
+    def _writers(self, db, resident_id: str) -> dict[int, str]:
+        """Which run wrote each run-authored revision of this resident's note."""
+        writers = {}
+        for row in db.execute(
+            "SELECT o.run_id AS run_id, o.receipt AS receipt FROM memory_operations o "
+            "JOIN runs r ON r.id=o.run_id WHERE r.resident_id=?",
+            (resident_id,),
+        ):
+            revision = _receipt_revision(row["receipt"])
+            if revision is not None:
+                writers[revision] = row["run_id"]
+        return writers
 
     def save(self, resident_id: str, text: str, *, expected_revision: int) -> dict:
         with self.hearth.database.transaction(write=True) as db:

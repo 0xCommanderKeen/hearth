@@ -529,3 +529,37 @@ def test_backup_and_held_restore_keep_run_authorship_and_refuse_a_relabelled_cop
     with pytest.raises(Refused, match="backup_references_invalid"):
         restore(root / "backup", root / "relabelled")
     assert not (root / "relabelled").exists()
+
+
+def test_memory_history_reads_every_revision_with_its_author_and_writing_run(system):
+    app, memory, _ = system
+    memory.save("reader", TEXT, expected_revision=0)
+    run = admit(app)
+    written = run_save(app, run.id, "The run remembered", expected_revision=1, operation_id="note")
+    memory.save("reader", "A later operator note", expected_revision=2)
+    history = memory.history("reader")
+    assert history["total"] == 3 and history["offset"] == 0
+    assert [
+        (item["revision"], item["author"], item["run_id"]) for item in history["revisions"]
+    ] == [
+        (3, "operator", None),
+        (2, "run", run.id),
+        (1, "operator", None),
+    ]
+    assert history["revisions"][1]["sha256"] == written["sha256"]
+    # History is metadata: the note itself is still read one revision at a time.
+    assert all("text" not in item for item in history["revisions"])
+    page = memory.history("reader", limit=1, offset=1)
+    assert [item["revision"] for item in page["revisions"]] == [2] and page["total"] == 3
+    assert memory.history("other")["revisions"] == []
+    for arguments in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"limit": True}):
+        with pytest.raises(Refused, match="invalid_memory_page"):
+            memory.history("reader", **arguments)
+    with pytest.raises(Refused, match="resident_not_found"):
+        memory.history("missing")
+    with TestClient(app) as client:
+        headers = {"Authorization": "Bearer " + TOKEN}
+        result = client.get("/api/residents/reader/memory/history", headers=headers)
+        assert result.status_code == 200 and result.json()["total"] == 3
+        assert result.headers["cache-control"] == "no-store"
+        assert client.get("/api/residents/reader/memory/history").status_code == 401

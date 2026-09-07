@@ -291,6 +291,23 @@ class Journal:
         return self.files.entries(resident_id)
 
 
+def run_journal_summary(db, run_id: str) -> dict:
+    """What one run opened with and what it wrote, for the operator's run view."""
+    opened = [
+        row["sequence"]
+        for row in db.execute(
+            "SELECT sequence FROM run_journal WHERE run_id=? ORDER BY position", (run_id,)
+        )
+    ]
+    written = db.execute(
+        "SELECT sequence FROM journal_entries WHERE run_id=?", (run_id,)
+    ).fetchone()
+    return {
+        "journal_opened": opened,
+        "journal_written": written["sequence"] if written else None,
+    }
+
+
 def pin_journal(db, run_id: str, resident_id: str) -> None:
     """Admission records the exact entries the run opens with, newest first.
 

@@ -131,7 +131,8 @@ def test_scoped_save_is_a_visible_retryable_draft_in_the_normal_skill_catalog(tm
     refused = client.put(
         "/api/residents/" + karen["resident_id"] + "/skills",
         headers={**AUTH, "Idempotency-Key": "draft-assignment"},
-        json={"expected_revision": 2, "skills": [{"skill_id": skill["skill_id"], "revision": 1}]},
+        # Karen carries three bootstrap assignments, so hers is at revision 3.
+        json={"expected_revision": 3, "skills": [{"skill_id": skill["skill_id"], "revision": 1}]},
     )
     assert refused.status_code == 409 and refused.json()["error"] == "skill_not_active"
 

@@ -137,11 +137,13 @@ TOOL_MODELS = {
 }
 
 
-def tool_specs(*, memory: bool = False) -> list[dict]:
+def tool_specs(*, memory: bool = False, management: bool = True) -> list[dict]:
     """The exact declared tool set of one run; its digest joins the admission pins."""
     result = []
     for name, (model, description) in TOOL_MODELS.items():
         if name in MEMORY_TOOLS and not memory:
+            continue
+        if name not in MEMORY_TOOLS and not management:
             continue
         schema = model.model_json_schema()
         if name == "hearth_residents_provision":
@@ -402,6 +404,9 @@ def _memory(db, hearth, authority, body: MemoryRead | MemorySave | JournalWrite)
 
 def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
+        raise Refused("management_tool_not_permitted")
+    # A run admitted for its own memory holds no management authority and no management tool.
+    if tool not in MEMORY_TOOLS and not authority["grant"]["enabled"]:
         raise Refused("management_tool_not_permitted")
     if tool in MEMORY_TOOLS and not authority["memory_writable"]:
         raise Refused("memory_not_writable")

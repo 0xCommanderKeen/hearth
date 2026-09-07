@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 
 from hearth.management.arguments import InvalidArguments
-from hearth.management.authority import digest, read_grant
+from hearth.management.authority import GrantPolicy, digest, read_grant
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import Hearth, _audit
 
@@ -51,14 +51,23 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         raise Refused("management_not_granted_at_admission")
     if now >= pin["expires_at"]:
         raise Refused("management_access_expired")
-    grant = read_grant(db, run["resident_id"])
-    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
-    if (
-        not grant["enabled"]
-        or grant["revision"] != pin["grant_revision"]
-        or digest(policy) != pin["grant_sha256"]
-    ):
-        raise Refused("management_grant_changed_or_revoked")
+    if pin["grant_revision"] is None:
+        # Admitted for its own memory and journal alone. No management authority exists for
+        # this run, whatever the operator granted the resident after it was admitted.
+        if not declared[0]:
+            raise Refused("management_not_granted_at_admission")
+        grant = dict(resident_id=run["resident_id"], revision=0, **GrantPolicy().model_dump())
+    else:
+        grant = read_grant(db, run["resident_id"])
+        policy = {
+            key: value for key, value in grant.items() if key not in {"resident_id", "revision"}
+        }
+        if (
+            not grant["enabled"]
+            or grant["revision"] != pin["grant_revision"]
+            or digest(policy) != pin["grant_sha256"]
+        ):
+            raise Refused("management_grant_changed_or_revoked")
     if thread_id is not None and pin["thread_id"] != thread_id:
         raise Refused("management_thread_mismatch")
     if turn_id is not None and pin["turn_id"] != turn_id:

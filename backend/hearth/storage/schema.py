@@ -45,7 +45,7 @@ SCHEMA = (
     )""",
     """CREATE TABLE run_management (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
-        grant_revision INTEGER NOT NULL, grant_sha256 TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        grant_revision INTEGER, grant_sha256 TEXT, expires_at INTEGER NOT NULL,
         thread_id TEXT, turn_id TEXT, catalog_sha256 TEXT, tools_sha256 TEXT,
         FOREIGN KEY(resident_id,grant_revision) REFERENCES management_grant_revisions(resident_id,revision)
     )""",

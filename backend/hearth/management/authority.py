@@ -117,7 +117,13 @@ class Management:
         return result
 
 
-def pin_management(db, run_id: str, resident_id: str, now: int) -> None:
+def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
+    """A run reaches the native tools with a management grant, with writable memory, or not.
+
+    Both pin a row here, because both need the tool transport; only the granted one pins a
+    grant revision. A run pinned without one carries no management authority at all, whatever
+    the operator grants afterwards.
+    """
     grant = read_grant(db, resident_id)
     if grant["enabled"]:
         policy = {
@@ -126,6 +132,11 @@ def pin_management(db, run_id: str, resident_id: str, now: int) -> None:
         db.execute(
             "INSERT INTO run_management VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, grant["revision"], digest(policy), now + 600),
+        )
+    elif memory_writable:
+        db.execute(
+            "INSERT INTO run_management VALUES (?,?,NULL,NULL,?,NULL,NULL,NULL,NULL)",
+            (run_id, resident_id, now + 600),
         )
 
 
@@ -138,15 +149,20 @@ def validate_management(db) -> None:
         except ValueError, TypeError:
             raise Refused("management_grant_corrupt") from None
     for row in db.execute(
-        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256 FROM run_management p "
-        "JOIN runs r ON r.id=p.run_id LEFT JOIN management_grant_revisions g "
-        "ON g.resident_id=p.resident_id AND g.revision=p.grant_revision"
+        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256,d.memory_writable "
+        "FROM run_management p JOIN runs r ON r.id=p.run_id "
+        "LEFT JOIN management_grant_revisions g "
+        "ON g.resident_id=p.resident_id AND g.revision=p.grant_revision "
+        "LEFT JOIN declarations d ON d.resident_id=r.resident_id AND d.revision=r.resident_revision"
     ):
         if (
             row["resident_id"] != row["owner"]
             or row["grant_sha256"] != row["sha256"]
             or row["expires_at"] != row["created_at"] + 600
         ):
+            raise Refused("management_admission_changed")
+        # A pin without a grant revision exists only for a run that could write its own memory.
+        if row["grant_revision"] is None and not row["memory_writable"]:
             raise Refused("management_admission_changed")
 
 
@@ -156,7 +172,8 @@ def management_summary(db, identity: str, *, run: bool = False) -> dict | None:
             row = db.execute(
                 "SELECT grant_revision,expires_at FROM run_management WHERE run_id=?", (identity,)
             ).fetchone()
-            if row is None:
+            # A memory-only pin is not management authority and is never reported as any.
+            if row is None or row["grant_revision"] is None:
                 return None
             calls = db.execute(
                 "SELECT COUNT(*) FROM management_calls WHERE run_id=?", (identity,)
