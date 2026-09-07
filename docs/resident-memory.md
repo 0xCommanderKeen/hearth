@@ -1,7 +1,8 @@
 # Persistent resident memory
 
-Each resident has one operator-authored Markdown memory note. Reader can read its
-pinned copy but cannot write memory. This first workflow uses only synthetic text.
+Each resident has one Markdown memory note. An operator writes it; so can the
+resident's own live run (see *Run-authored revisions* below). Reader reads its
+pinned copy. This first workflow uses only synthetic text.
 
 `Memory.save(resident_id, text, expected_revision=N)` serializes with admission and
 other writes in Hearth's SQLite database. Revision zero means no prior memory.
@@ -36,6 +37,32 @@ usage; uncertain launch intent retains the existing recovery rules. MockRuntime
 stores only the input digest and emits a fixed fixture, so the demo does not prove
 model learning or useful memory-driven reasoning.
 
+## Run-authored revisions
+
+`Memory.save_from_run(db, run_id, text, expected_revision=N, operation_id=..., resident_id=...)`
+is the run writer. The caller owns the SQLite writer, so the revision, its operation
+receipt and its audit fact commit together. Authorship comes from the authenticated
+run, never from the text: the revision records `author='run'` and the `memory.saved`
+audit records `actor='run:<run id>'`. Operator saves record `operator` for both. The
+128 KiB bound, the immutable `memory/{resident_id}/{sha256}.md` layout and the
+`expected_revision` conflict rule are the operator ones; a run that loses a race with a
+concurrent operator edit is refused with `revision_conflict` and overwrites nothing.
+
+A run writes only the memory of the resident it runs for. A stated `resident_id` that
+is not that resident, or a pinned memory row naming another resident, is refused with
+`memory_run_mismatch`; an archived resident is refused with `resident_archived`. Only
+current work writes: the same cutoff that governs run context reads
+(`live_run`) refuses terminal, stopping, cancelled or superseded-declaration runs, and
+an explicitly revoked context credential refuses too, both as `run_context_unavailable`.
+Restored copies refuse every write.
+
+Writes are idempotent on `operation_id` like management operations. The first call
+records a receipt (resident, revision, checksum, author, operation and run identity)
+in `memory_operations`; an identical retry replays it, reading the text back from the
+immutable file rather than storing memory content in SQLite. A different payload under
+the same `operation_id` is refused with `operation_conflict`. A refused attempt records
+nothing, so retrying it is a fresh attempt.
+
 ## Operator workflow
 
 Townhall's **Memory** drawer explicitly loads the current note. Drafts survive
@@ -63,8 +90,11 @@ back the current revision; do not automatically overwrite another edit.
 
 ## Backup evidence
 
-Current-schema backups preserve every memory revision, run reference and file,
-including orphans. Verification rejects missing/corrupt content and references to
+Current-schema backups preserve every memory revision with its author, every run
+reference and every file, including orphans. Verification refuses an operation receipt
+that disagrees with its run's resident or names a revision no longer recorded as
+run-written, so a consistently rehashed copy cannot relabel authorship. Layouts that
+predate the `author` column are incompatible and refused, not upgraded. Verification rejects missing/corrupt content and references to
 another resident's memory. Nested paths are checked without following symlinks.
 Restore verifies before publishing a new held destination; new directory links are
 synced before publication.

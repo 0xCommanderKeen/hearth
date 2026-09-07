@@ -851,3 +851,34 @@ ADR 0010 bounds the departure from the no-transfer rule; `AGENTS.md` and the reb
 plan name the exception. Karen's live export is the checked-in fixture and imports as
 an ordinary resident with no authority. Verified: backend bundle and HTTP tests, web
 import/export tests, `make check`, and a browser round trip on the local mock store.
+
+## Run-authored memory revisions — issue #116
+
+Epic #126 asks that residents remember what their own runs learned. `Memory` gained
+`save_from_run(db, run_id, text, expected_revision, operation_id, resident_id)`: the
+same immutable file layout, 128 KiB bound and `expected_revision` conflict rule as the
+operator writer, with authorship taken from the authenticated run. Memory revisions
+carry a new `author` column (`operator` | `run`) and the `memory.saved` audit carries
+`actor` (`operator` or `run:<run id>`); both commit in the caller's transaction with the
+revision. `memory_operations` makes a run write idempotent on `operation_id` — an
+identical retry replays the original receipt, reading the text back from its immutable
+file so memory content still never enters SQLite, and a changed payload is refused with
+`operation_conflict`. Run liveness is the existing run-context cutoff, extracted as
+`run_access.live_run` and now shared by credential issuance and the memory writer, plus
+an explicit revoked-credential check. Backup verification checks each operation receipt
+against its run's resident and a revision still recorded as run-written.
+
+Verified with real temporary SQLite through the owning interfaces: a live run writes a
+bounded, private, audited revision; a run and a concurrent operator edit produce exactly
+one `revision_conflict` and the winner's bytes and author survive; an uncertain retry
+returns the original receipt while a changed payload conflicts; a run refuses to write
+another resident's memory (`memory_run_mismatch`) or an archived one; cancelled,
+finished and revoked runs are refused (`run_context_unavailable`); and held backup and
+restore keep both authorship and the operation receipt while a relabelled, consistently
+rehashed backup is refused. `make check` passes.
+
+Remaining for the epic: the journal (#117), the in-run memory/journal tools and the
+`memory.writable` capability that gates them (#118), and Townhall memory history with
+author plus ADR 0012 (#119). Nothing yet exposes `author` over HTTP or in the pinned
+run context, so the runtime context version is unchanged; #118/#119 own that surface.
+No real Codex run has exercised this path.

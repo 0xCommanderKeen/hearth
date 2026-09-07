@@ -343,6 +343,29 @@ def _check_database(root: Path) -> dict:
             "WHERE m.resident_id != r.resident_id"
         ).fetchone():
             raise Refused("backup_references_invalid")
+        for row in db.execute(
+            "SELECT o.*,r.resident_id AS owner FROM memory_operations o JOIN runs r "
+            "ON r.id=o.run_id"
+        ):
+            # Run authorship survives a copy only if each receipt still names the
+            # authoring run's own resident and a revision recorded as run-written.
+            try:
+                receipt = json.loads(row["receipt"])
+                matched = db.execute(
+                    "SELECT 1 FROM memory_revisions WHERE resident_id=? AND revision=? "
+                    "AND sha256=? AND author='run'",
+                    (receipt["resident_id"], receipt["revision"], receipt["sha256"]),
+                ).fetchone()
+            except ValueError, TypeError, KeyError:
+                raise Refused("backup_references_invalid") from None
+            if (
+                receipt["run_id"] != row["run_id"]
+                or receipt["operation_id"] != row["operation_id"]
+                or receipt["resident_id"] != row["owner"]
+                or receipt["author"] != "run"
+                or matched is None
+            ):
+                raise Refused("backup_references_invalid")
         return {
             "simulated": selected[0] != "codex_subscription",
             "artifacts": len(rows),
