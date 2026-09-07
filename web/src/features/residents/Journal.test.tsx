@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Journal } from "./Journal";
 import {
   Client,
@@ -44,6 +50,7 @@ const journal: ResidentJournal = {
     },
   ],
 };
+const openable = (runId: string) => runId !== "run-one";
 const act = async (operation: () => Promise<unknown>) => {
   try {
     await operation();
@@ -56,7 +63,13 @@ it("lists entries newest first, each linked to the run that wrote it", async () 
   const client = new Client("synthetic-test-token");
   const read = vi.spyOn(client, "journal").mockResolvedValue(journal);
   render(
-    <Journal client={client} resident={resident} busy={false} act={act} />,
+    <Journal
+      client={client}
+      resident={resident}
+      busy={false}
+      act={act}
+      openable={openable}
+    />,
   );
   expect(read).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Read journal"));
@@ -67,9 +80,13 @@ it("lists entries newest first, each linked to the run that wrote it", async () 
     "Day 2: reported the same synthetic pears.",
   );
   expect(entries[1].textContent).toContain("Entry 1");
+  // Only the run still on the page is linked; the older one is named, not offered.
   expect(
     [...list.querySelectorAll("a")].map((link) => link.getAttribute("href")),
-  ).toEqual(["#run-run-two", "#run-run-one"]);
+  ).toEqual(["#run-run-two"]);
+  expect(entries[1].textContent).toContain(
+    "Run run-one · no longer in this resident's recent work",
+  );
 });
 
 it("says a journal is empty rather than inventing an entry", async () => {
@@ -80,7 +97,13 @@ it("says a journal is empty rather than inventing an entry", async () => {
     entries: [],
   });
   render(
-    <Journal client={client} resident={resident} busy={false} act={act} />,
+    <Journal
+      client={client}
+      resident={resident}
+      busy={false}
+      act={act}
+      openable={openable}
+    />,
   );
   fireEvent.click(screen.getByText("Read journal"));
   expect(
@@ -89,16 +112,40 @@ it("says a journal is empty rather than inventing an entry", async () => {
   expect(screen.queryByLabelText("Journal for Reader")).toBeNull();
 });
 
-it("asks for the next page of older entries", async () => {
+it("pages by offset so entries past the first page stay reachable", async () => {
   const client = new Client("synthetic-test-token");
+  const older = {
+    resident_id: "reader",
+    sequence: 0,
+    run_id: "run-zero",
+    at: 1788400000,
+    text: "Day 0: the first report.",
+  };
   const read = vi
     .spyOn(client, "journal")
-    .mockResolvedValue({ ...journal, total: 30 });
+    .mockImplementation(async (_id, _limit, offset) =>
+      offset
+        ? { ...journal, total: 3, offset, entries: [older] }
+        : { ...journal, total: 3 },
+    );
   render(
-    <Journal client={client} resident={resident} busy={false} act={act} />,
+    <Journal
+      client={client}
+      resident={resident}
+      busy={false}
+      act={act}
+      openable={openable}
+    />,
   );
   fireEvent.click(screen.getByText("Read journal"));
   await screen.findByLabelText("Journal for Reader");
-  fireEvent.click(screen.getByText("Show older entries (28 more)"));
-  expect(read).toHaveBeenLastCalledWith("reader", 22);
+  expect(read).toHaveBeenLastCalledWith("reader", 20, 0);
+  fireEvent.click(screen.getByText("Show older entries (1 more)"));
+  await waitFor(() => expect(read).toHaveBeenLastCalledWith("reader", 20, 2));
+  const entries = screen
+    .getByLabelText("Journal for Reader")
+    .querySelectorAll("li");
+  expect(entries).toHaveLength(3);
+  expect(entries[2].textContent).toContain("Day 0: the first report.");
+  expect(screen.queryByText(/Show older entries/)).toBeNull();
 });

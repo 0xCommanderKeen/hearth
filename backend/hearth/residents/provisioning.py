@@ -108,10 +108,13 @@ def _with_journal_etiquette(db, body) -> list[dict]:
     """A resident that may write its own memory and journal starts with the etiquette.
 
     The wording lives in the shared "Keep a journal" skill, so an operator can edit it
-    in the library. It is appended only when the library holds it unarchived and the
-    requested set leaves room inside the eight-skill bound; the caller's own choices
-    and their order are never displaced.
+    in the library. It is appended only when the library holds it as an active revision
+    and the requested set leaves room inside both assignment bounds — eight skills and
+    128 KiB of instructions. A request that leaves no room gets its resident without the
+    etiquette rather than no resident at all, and the caller's own choices and their
+    order are never displaced.
     """
+    from hearth.skills.assignments import MAX_TEXT_BYTES, exact_skill
     from hearth.skills.bootstrap import current_journal_skill
 
     entries = [entry.model_dump() for entry in body.skills]
@@ -120,7 +123,15 @@ def _with_journal_etiquette(db, body) -> list[dict]:
     skill = current_journal_skill(db)
     if skill is None or any(entry["skill_id"] == skill["skill_id"] for entry in entries):
         return entries
-    return entries + [skill]
+    try:
+        text = sum(
+            len(exact_skill(db, entry["skill_id"], entry["revision"])["instructions"].encode())
+            for entry in entries + [skill]
+        )
+    except Refused:
+        # The caller's own set is what it is; save_assignments reports its own refusal.
+        return entries
+    return entries if text > MAX_TEXT_BYTES else entries + [skill]
 
 
 def _receipt(row) -> dict:

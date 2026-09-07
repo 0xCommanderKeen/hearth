@@ -95,8 +95,10 @@ shared **Keep a journal** skill in the library, editable like any other skill an
 granting nothing: one short dated entry per run about what it did and what a future it
 needs, only facts that will still be true next week saved to memory, and never an
 invented entry. Karen carries it, and so does a resident provisioned with writable
-memory when the library holds it unarchived and the requested set leaves room inside the
-eight-skill bound.
+memory when the library holds it as an active revision and the requested set leaves room
+inside both assignment bounds. A request that leaves no room, or an etiquette left as a
+draft by an operator revising it, gets its resident without the skill rather than no
+resident at all.
 
 ## The transport a writable resident reaches
 
@@ -106,7 +108,11 @@ Admission now pins a `run_management` row for a writable declaration too, with n
 revision and no grant digest. Such a run is offered exactly the three tools above and
 nothing else; every management tool is refused with `management_tool_not_permitted`, a
 grant made after admission cannot reach back into it, and the run view never reports it
-as management authority. Remembering is not managing.
+as management authority. The same holds when an operator revokes or edits a grant a
+writable run *did* hold: management refuses from that moment — every tool, a replayed
+call receipt included, with the existing `management_grant_changed_or_revoked` — while the
+memory and journal tools keep working, so the run can still close with the entry that says
+how its work ended. Remembering is not managing.
 [ADR 0012](adr/0012-run-authored-memory-and-journal.md) records the departure. Backup
 verification refuses a grantless pin whose declaration is not writable.
 
@@ -122,6 +128,9 @@ revision newest first, each with the author Hearth recorded, its size and digest
 to the run that wrote a run-authored one, and a line comparison against the revision
 before it. The comparison is bounded — beyond 400 differing lines it shows the changed
 block as removed then added rather than claiming a line match it did not compute. The
+panel pages by `offset`, because revisions are never deleted and a well-used note passes
+any single page, and it names a run it cannot open rather than offering a dead link: the
+run anchor lands on a row in Tasks & results, which holds only recent work. The
 run view says which memory revision the run opened with and which revisions it wrote.
 
 Authenticated `GET /api/residents/{id}/memory` accepts optional `?revision=N`.

@@ -125,7 +125,11 @@ def journal_skill(db, hearth) -> dict:
 
 
 def current_journal_skill(db) -> dict | None:
-    """The catalog's current revision of it, or nothing when it is absent or archived."""
+    """The catalog's current revision, or nothing unless that revision is active.
+
+    An operator editing the wording with examples leaves a draft current; a draft cannot
+    be assigned, so nobody receives it until the operator publishes again.
+    """
     row = db.execute("SELECT value FROM system_meta WHERE key='journal_skill'").fetchone()
     if row is None:
         return None
@@ -135,6 +139,6 @@ def current_journal_skill(db) -> dict | None:
         "JOIN skill_revisions r ON r.skill_id=s.id AND r.revision=s.revision WHERE s.id=?",
         (skill_id,),
     ).fetchone()
-    if current is None or current["status"] == "archived":
+    if current is None or current["status"] != "active":
         return None
     return {"skill_id": current["id"], "revision": current["revision"]}

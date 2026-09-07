@@ -18,6 +18,21 @@ class BoundRun:
     input_digest: str
 
 
+def check_management(authority: dict) -> None:
+    """A management path keeps the old refusal when a grant this run held was revoked.
+
+    Only the memory and journal tools outlive the grant, so everything else refuses here
+    before it can reach a replayed receipt or a capability check.
+    """
+    if authority["management_revoked"]:
+        raise Refused("management_grant_changed_or_revoked")
+
+
+def _no_authority(resident_id: str) -> dict:
+    """A grant that permits nothing, for a run that holds no management authority."""
+    return dict(resident_id=resident_id, revision=0, **GrantPolicy().model_dump())
+
+
 def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) -> dict:
     epoch = db.execute("SELECT value FROM system_meta WHERE key='epoch'").fetchone()
     run = db.execute("SELECT * FROM runs WHERE id=?", (bound.run_id,)).fetchone()
@@ -51,12 +66,13 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         raise Refused("management_not_granted_at_admission")
     if now >= pin["expires_at"]:
         raise Refused("management_access_expired")
+    revoked = False
     if pin["grant_revision"] is None:
         # Admitted for its own memory and journal alone. No management authority exists for
         # this run, whatever the operator granted the resident after it was admitted.
         if not declared[0]:
             raise Refused("management_not_granted_at_admission")
-        grant = dict(resident_id=run["resident_id"], revision=0, **GrantPolicy().model_dump())
+        grant = _no_authority(run["resident_id"])
     else:
         grant = read_grant(db, run["resident_id"])
         policy = {
@@ -67,7 +83,12 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
             or grant["revision"] != pin["grant_revision"]
             or digest(policy) != pin["grant_sha256"]
         ):
-            raise Refused("management_grant_changed_or_revoked")
+            # Management authority is gone. Writing its own memory and journal never was
+            # management, so a writable run keeps exactly those tools and loses the rest,
+            # and can still close with the entry that says how its work ended.
+            if not declared[0]:
+                raise Refused("management_grant_changed_or_revoked")
+            grant, revoked = _no_authority(run["resident_id"]), True
     if thread_id is not None and pin["thread_id"] != thread_id:
         raise Refused("management_thread_mismatch")
     if turn_id is not None and pin["turn_id"] != turn_id:
@@ -76,6 +97,8 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         "actor": run["resident_id"],
         "run_id": bound.run_id,
         "grant": grant,
+        # Management this run held and no longer holds; its memory tools are unaffected.
+        "management_revoked": revoked,
         "memory_writable": bool(declared[0]),
     }
 
@@ -192,6 +215,12 @@ class Bridge:
                 authority = authorize(
                     db, self.bound, now, thread_id=params["threadId"], turn_id=params["turnId"]
                 )
+                from hearth.management.tools import MEMORY_TOOLS
+
+                # A revoked grant refuses every management tool, replay included, exactly
+                # as it did before a writable run could outlive it.
+                if params["tool"] not in MEMORY_TOOLS:
+                    check_management(authority)
                 payload = digest(params)
                 previous = db.execute(
                     "SELECT * FROM management_calls WHERE run_id=? AND call_id=?",

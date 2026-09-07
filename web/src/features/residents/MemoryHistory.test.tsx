@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryHistory } from "./MemoryHistory";
 import {
   Client,
@@ -55,6 +61,7 @@ const history: History = {
     },
   ],
 };
+const openable = (runId: string) => runId === "run-two";
 const act = async (operation: () => Promise<unknown>) => {
   try {
     await operation();
@@ -79,6 +86,7 @@ function setup() {
       resident={resident}
       busy={false}
       act={act}
+      openable={openable}
     />,
   );
   return { client, revision };
@@ -136,9 +144,52 @@ it("reads nothing until the operator asks and reports an empty history", async (
       resident={resident}
       busy={false}
       act={act}
+      openable={openable}
     />,
   );
   expect(read).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Read memory history"));
   expect(await screen.findByText("No memory has been saved yet.")).toBeTruthy();
+});
+
+it("pages by offset so revisions past the first page stay reachable", async () => {
+  const client = new Client("synthetic-test-token");
+  const oldest = {
+    revision: 0,
+    sha256: "d".repeat(64),
+    size: 4,
+    created_at: 1788637000,
+    author: "run" as const,
+    run_id: "run-gone",
+  };
+  const read = vi
+    .spyOn(client, "memoryHistory")
+    .mockImplementation(async (_id, _limit, offset) =>
+      offset
+        ? { ...history, total: 4, offset, revisions: [oldest] }
+        : { ...history, total: 4 },
+    );
+  render(
+    <MemoryHistory
+      client={client}
+      resident={resident}
+      busy={false}
+      act={act}
+      openable={openable}
+    />,
+  );
+  fireEvent.click(screen.getByText("Read memory history"));
+  await screen.findByLabelText("Memory history for Reader");
+  expect(read).toHaveBeenLastCalledWith("reader", 20, 0);
+  fireEvent.click(screen.getByText("Show older revisions (1 more)"));
+  await waitFor(() => expect(read).toHaveBeenLastCalledWith("reader", 20, 3));
+  const items = screen
+    .getByLabelText("Memory history for Reader")
+    .querySelectorAll("li");
+  expect(items).toHaveLength(4);
+  // The run that wrote the oldest revision is long gone from the task list.
+  expect(items[3].textContent).toContain(
+    "Run run-gone · no longer in this resident's recent work",
+  );
+  expect(screen.queryByText(/Show older revisions/)).toBeNull();
 });

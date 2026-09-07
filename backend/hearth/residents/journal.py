@@ -271,6 +271,19 @@ class Journal:
                 "DELETE FROM journal_entries WHERE resident_id=? AND sequence=?",
                 (resident_id, entry["sequence"]),
             )
+            # The row moves with the text: an archived entry keeps a checked reference,
+            # so a file nothing points at is an orphan and never journal history.
+            db.execute(
+                "INSERT INTO journal_archives VALUES (?,?,?,?,?,?)",
+                (
+                    resident_id,
+                    entry["sequence"],
+                    entry["run_id"],
+                    entry["at"],
+                    digest,
+                    len(document),
+                ),
+            )
             _audit(
                 db,
                 "journal.archived",
@@ -292,7 +305,12 @@ class Journal:
 
 
 def run_journal_summary(db, run_id: str) -> dict:
-    """What one run opened with and what it wrote, for the operator's run view."""
+    """What one run opened with and what it wrote, for the operator's run view.
+
+    Retention deletes the row but never the entry, so an entry that has rolled out is
+    still read from its archive reference. `journal_written` is None only when the run
+    wrote nothing at all.
+    """
     opened = [
         row["sequence"]
         for row in db.execute(
@@ -300,7 +318,9 @@ def run_journal_summary(db, run_id: str) -> dict:
         )
     ]
     written = db.execute(
-        "SELECT sequence FROM journal_entries WHERE run_id=?", (run_id,)
+        "SELECT sequence FROM journal_entries WHERE run_id=? "
+        "UNION ALL SELECT sequence FROM journal_archives WHERE run_id=?",
+        (run_id, run_id),
     ).fetchone()
     return {
         "journal_opened": opened,

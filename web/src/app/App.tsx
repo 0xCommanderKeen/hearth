@@ -343,6 +343,14 @@ export function App() {
   const visibleTasks = (snapshot?.tasks ?? []).filter(
     (task) => view !== "resident" || task.resident_id === residentId,
   );
+  // A `#run-<id>` anchor lands on a row in Tasks & results, so it can only open a run
+  // whose task is still listed there. Older work is named rather than linked.
+  const openableRun = (runId: string) =>
+    (snapshot?.runs ?? []).some(
+      (run) =>
+        run.id === runId &&
+        visibleTasks.some((task) => task.id === run.task_id),
+    );
   const completed =
     snapshot?.runs.filter((r) => r.status === "succeeded").length ?? 0;
   const active =
@@ -1100,6 +1108,7 @@ export function App() {
                   resident={current}
                   busy={busy}
                   act={act}
+                  openable={openableRun}
                 />
                 <Journal
                   key={`journal:${snapshot.epoch}:${current.id}`}
@@ -1107,6 +1116,7 @@ export function App() {
                   resident={current}
                   busy={busy}
                   act={act}
+                  openable={openableRun}
                 />
                 {current.profile && (
                   <ProfileProvenance profile={current.profile} />

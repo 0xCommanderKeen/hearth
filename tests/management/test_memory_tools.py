@@ -372,3 +372,56 @@ def test_a_resident_that_neither_manages_nor_remembers_is_pinned_no_tools(tmp_pa
         assert (
             db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run.id,)).fetchone() is None
         )
+
+
+def test_revoking_a_grant_mid_run_leaves_memory_and_the_closing_entry_intact(tmp_path):
+    """Revoking management takes management away, not the entry that says how work ended."""
+    from hearth.management.bridge import authorize
+
+    app, hearth, karen = manager(tmp_path)
+    run, call = working_run(app, karen, "revoked")
+    assert call("catalog", "hearth_catalog", {"query": ""})[0]
+
+    grant = Management(hearth).read(karen)
+    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
+    Management(hearth).save(
+        karen, {**policy, "enabled": False, "expected_revision": grant["revision"]}
+    )
+    for tool, arguments in (
+        ("hearth_catalog", {"query": ""}),
+        (
+            "hearth_residents_provision",
+            {
+                "operation_id": "no",
+                "resident": {"name": "N", "purpose": "P", "creation_reason": "C"},
+            },
+        ),
+    ):
+        ok, refused = call(tool.removeprefix("hearth_"), tool, arguments)
+        assert not ok and refused["error"] == "management_grant_changed_or_revoked"
+
+    ok, pinned = call("read", "hearth_memory_read", {})
+    assert ok and pinned["revision"] == 1
+    ok, saved = call(
+        "save",
+        "hearth_memory_save",
+        {
+            "operation_id": "after-revocation",
+            "resident_id": karen,
+            "text": "The operator withdrew management while this run worked.",
+            "expected_revision": 1,
+        },
+    )
+    assert ok and saved["author"] == "run"
+    ok, entry = call("journal", "hearth_journal_write", {"text": "Ended unclear: grant revoked."})
+    assert ok and entry["sequence"] == 1
+    # The run is not torn down: the worker's liveness check still authorizes it.
+    with hearth.database.transaction() as db:
+        authority = authorize(db, run_bound(app, hearth, run), int(hearth.clock()))
+    assert authority["management_revoked"] and authority["memory_writable"] is True
+    assert authority["grant"]["capabilities"] == []
+    settle(app, run)
+
+
+def run_bound(app, hearth, run) -> BoundRun:
+    return BoundRun(run.id, run.owner_token, snapshot(hearth)["epoch"], run.input_digest)

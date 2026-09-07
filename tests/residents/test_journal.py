@@ -340,3 +340,50 @@ def test_operator_route_reads_the_journal_and_offers_no_write(system):
         credential = RunAccess(app.state.hearth).issue(run.id, run.owner_token)
         runtime = {"Authorization": "Bearer " + credential.token}
         assert client.get("/api/residents/reader/journal", headers=runtime).status_code == 401
+
+
+def test_a_run_still_reports_the_entry_it_wrote_after_retention_archives_it(system):
+    """Retention deletes the row, never the entry; the run view must not lose the fact."""
+    from hearth.observation.snapshot import snapshot
+    from hearth.residents.journal import run_journal_summary
+
+    app, journal, root = system
+    keep(app, journal, 1)
+    written = write_entries(app, journal, 3)
+    assert journal.read("reader")["total"] == 1
+    with app.state.hearth.database.transaction() as db:
+        rolled = [run_journal_summary(db, entry["run_id"])["journal_written"] for entry in written]
+        archived = [
+            dict(row) for row in db.execute("SELECT * FROM journal_archives ORDER BY sequence")
+        ]
+    assert rolled == [1, 2, 3]
+    assert [(row["sequence"], row["run_id"]) for row in archived] == [
+        (entry["sequence"], entry["run_id"]) for entry in written[:2]
+    ]
+    runs = {row["id"]: row for row in snapshot(app.state.hearth)["runs"]}
+    assert [runs[entry["run_id"]]["journal_written"] for entry in written] == [1, 2, 3]
+    # A run that wrote nothing still reports nothing.
+    quiet = start_run(app, "quiet")
+    assert snapshot(app.state.hearth)["runs"][0]["id"] == quiet.id
+    assert snapshot(app.state.hearth)["runs"][0]["journal_written"] is None
+    capture(root / "data", root / "backup")
+    restore(root / "backup", root / "held")
+    with Database(root / "held/hearth.db").transaction() as db:
+        assert run_journal_summary(db, written[0]["run_id"])["journal_written"] == 1
+
+
+def test_a_backup_whose_archive_reference_names_another_document_is_refused(system):
+    app, journal, root = system
+    keep(app, journal, 1)
+    write_entries(app, journal, 2)
+    capture(root / "data", root / "backup")
+    with sqlite3.connect(root / "backup/hearth.db") as db:
+        db.execute("UPDATE journal_archives SET sequence=9")
+    path = root / "backup/hearth.db"
+    manifest_path = root / "backup/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["hearth.db"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        restore(root / "backup", root / "relabelled")
+    assert not (root / "relabelled").exists()

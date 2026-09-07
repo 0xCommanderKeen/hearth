@@ -395,14 +395,21 @@ def _check_database(root: Path) -> dict:
                 raise Refused("backup_references_invalid")
         for entry in db.execute("SELECT * FROM journal_entries"):
             checked_entry(entry)
-        if db.execute(
-            "SELECT 1 FROM journal_entries j JOIN runs r ON r.id=j.run_id "
-            "WHERE j.resident_id != r.resident_id"
-        ).fetchone():
-            raise Refused("backup_references_invalid")
+        for table in ("journal_entries", "journal_archives"):
+            # An entry is what a run wrote, archived or not; neither half may cross residents.
+            if db.execute(
+                f"SELECT 1 FROM {table} j JOIN runs r ON r.id=j.run_id "
+                "WHERE j.resident_id != r.resident_id"
+            ).fetchone():
+                raise Refused("backup_references_invalid")
         for resident in db.execute("SELECT id FROM residents"):
             # Archived entries outlive their rows; every kept file must still be exact.
             JournalFiles(root / "memory").entries(resident["id"])
+        for row in db.execute("SELECT * FROM journal_archives"):
+            # An archive reference must name the exact document it was recorded for.
+            archived = JournalFiles(root / "memory").entry(row["resident_id"], row["sha256"])
+            if any(archived[key] != row[key] for key in ("sequence", "run_id", "at")):
+                raise Refused("backup_references_invalid")
         for run in db.execute("SELECT DISTINCT run_id FROM run_journal"):
             # A pinned journal must still read back, from its row or its archived file.
             run_journal(db, JournalFiles(root / "memory"), run["run_id"])

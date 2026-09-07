@@ -1041,3 +1041,52 @@ The context should read the pinned tool surface rather than the declaration. The
 with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
 imported resident starts unable to write. A household that never sets Karen up has no
 "Keep a journal" skill to attach.
+
+### Review corrections — 2026-09-07
+
+Review of the #119 PR found six issues; all are fixed on the same branch and the design
+the epic rests on is unchanged.
+
+`journal_written` went silently false once retention archived an entry: `_roll` deletes
+the row, the run stays on the page for another seventy runs, and Townhall then said "wrote
+no journal entry" about a run that wrote one — the exact claim the panel exists to make.
+Retention now records the reference it already had in files: `journal_archives` keeps the
+resident, sequence, run, time, digest and size of every rolled-out entry, written in the
+same transaction as the delete and its audit fact. `run_journal_summary` reads it, and
+backup verification refuses an archive reference whose document was recorded for another
+sequence, run or time, and refuses a cross-resident archived entry as it already did for a
+live one.
+
+`current_journal_skill` excluded archived revisions but not drafts, and `PUT /api/skills/{id}`
+accepts `authoring` — so an operator revising the etiquette with examples would have made
+every subsequent provision of a `memory_writable` resident fail with `skill_not_active`,
+naming a skill the caller never asked for. It now requires an *active* revision. The same
+guard grew the byte bound beside the eight-skill one: a caller's own set that already sits
+inside 128 KiB no longer loses its resident because the etiquette pushed it over.
+
+Revoking a management grant mid-run stripped a writable resident of `hearth_memory_save`
+and `hearth_journal_write` too, and the worker's liveness check tore the run down before it
+could close — losing precisely the "ended unclear" entry the etiquette asks for. A revoked
+grant now degrades to no authority rather than refusing outright when the declaration is
+writable: `check_management` refuses every management tool, replayed receipts and the
+bounded validation wait included, with the same `management_grant_changed_or_revoked` as
+before, while the memory tools keep working.
+
+Both panels paged by growing `limit` at offset zero, so everything past the hundredth
+entry or revision was unreachable and the affordance vanished without saying so — the
+household journal bound allows a thousand entries and memory revisions are never deleted.
+They page by `offset` now, keeping the sequences already shown so a retention roll between
+pages cannot repeat one. And a `#run-<id>` anchor only resolves against the recent task
+list, so both panels name a run they cannot open instead of rendering a link that does
+nothing.
+
+Verified: retention archiving three entries while each run still reports the entry it
+wrote, through the snapshot and through a held restore, and a backup whose archive
+reference names another document refused; an etiquette left as a draft, and a set that
+exactly fills the byte bound, each skipped rather than failing the provision; a revoked
+grant refusing `hearth_catalog` and `hearth_residents_provision` while the same run reads
+memory, saves a run-authored revision and writes its closing entry, with the liveness check
+still authorizing it; and both panels paging by offset and naming the runs they cannot
+open. `make check` passed on a plain developer PATH: ruff, ruff format, ty, 708 pytest
+tests, 90 browser tests, Prettier, the production build, packaged assets, the wheel and the
+installed-wheel check. The recorded real journey is unaffected and was not repeated.

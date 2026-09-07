@@ -212,7 +212,7 @@ def wait_for_validation(hearth, bound, params):
 
     from pydantic import ValidationError
 
-    from hearth.management.bridge import authorize
+    from hearth.management.bridge import authorize, check_management
     from hearth.skills.authoring import check_editor
     from hearth.skills.validation import read_validation
 
@@ -230,6 +230,7 @@ def wait_for_validation(hearth, bound, params):
                 thread_id=params["threadId"],
                 turn_id=params["turnId"],
             )
+            check_management(authority)
             if "author_skills" not in authority["grant"]["capabilities"]:
                 raise Refused("management_skill_authoring_not_permitted")
             if db.execute(

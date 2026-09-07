@@ -36,7 +36,10 @@ at: 1757203200
 The entry text, byte for byte.
 ```
 
-and is read back only if it re-serializes to itself under that resident's directory.
+and is read back only if it re-serializes to itself under that resident's directory. The
+row moves with the text: `journal_archives` keeps the resident, sequence, run, time,
+digest and size of every entry that rolled out, so the operator surfaces still know which
+run wrote it and a file nothing points at is an orphan rather than journal history.
 Existing identical content is reused; conflicting bytes under a hash are refused. A
 failed database commit can leave an unreferenced archived file, exactly as memory does;
 a later roll reuses it. Directory and file symlinks, nonregular files and unsafe
@@ -75,16 +78,21 @@ Authenticated `GET /api/residents/{id}/journal` accepts `limit` (1–100, defaul
 route: runtime credentials are refused like every other operator path. The resident page
 carries an explicitly loaded **Journal** panel — entries newest first, each with its
 sequence, its date and a link to the run that wrote it — and says plainly when a resident
-has none rather than filling the space. The run view says which entries a run opened with
-and which entry it wrote. The
+has none rather than filling the space. It pages by `offset`, so a journal longer than one
+page stays reachable, and it names a run it cannot open instead of offering a dead link:
+the run anchor lands on a row in Tasks & results, which holds only recent work. The run
+view says which entries a run opened with and which entry it wrote, reading an archived
+entry from `journal_archives` so a rolled-out entry never reads as "wrote none". The
 household `journal_limit` is settable through `PUT /api/household` and is preserved when
 a client omits it, so the existing Townhall policy form cannot reset it.
 
 ## Backup evidence
 
-Current-schema backups preserve every journal entry and every archived file, including
-orphans. Verification refuses a changed entry (checksum or size), a changed or renamed
-archived file, an entry whose run belongs to another resident, and unsafe paths, and it
+Current-schema backups preserve every journal entry, every archive reference and every
+archived file, including orphans. Verification refuses a changed entry (checksum or size),
+a changed or renamed archived file, an archive reference naming a document recorded for
+another sequence, run or time, an entry whose run belongs to another resident (archived or
+not), and unsafe paths, and it
 reads back every run's pinned journal from its rows and archived files.
 Restored copies read the journal and refuse writes.
 

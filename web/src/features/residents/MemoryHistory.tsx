@@ -1,16 +1,16 @@
 import { useState } from "react";
 import {
   Client,
-  type MemoryHistory as History,
   type MemoryRevision,
   type Resident,
 } from "../../shared/client";
 import { diffLines, type DiffLine } from "../../shared/diff";
+import { RunLink } from "./RunLink";
 
 const PAGE = 20;
-// The route bounds a page at 100 revisions; asking for more is refused, not truncated.
-const MAX_PAGE = 100;
 const stamp = (at: number) => new Date(at * 1000).toLocaleString();
+
+type Loaded = { revisions: MemoryRevision[]; total: number };
 
 export function authorLabel(revision: MemoryRevision) {
   return revision.author === "run"
@@ -23,21 +23,42 @@ export function MemoryHistory({
   resident,
   busy,
   act,
+  openable,
 }: {
   client: Client;
   resident: Resident;
   busy: boolean;
   act: (operation: () => Promise<unknown>) => Promise<void>;
+  openable: (runId: string) => boolean;
 }) {
-  const [history, setHistory] = useState<History | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [compared, setCompared] = useState<{
     revision: number;
     lines: DiffLine[];
   } | null>(null);
-  const load = (limit: number) =>
+  const read = () =>
     act(async () => {
-      setHistory(await client.memoryHistory(resident.id, limit));
+      const page = await client.memoryHistory(resident.id, PAGE, 0);
+      setLoaded({ revisions: page.revisions, total: page.total });
       setCompared(null);
+    });
+  // Revisions are never deleted, so a well-used note passes any single page. Paging
+  // moves the window by offset rather than growing the page past the route's bound.
+  const older = (from: Loaded) =>
+    act(async () => {
+      const page = await client.memoryHistory(
+        resident.id,
+        PAGE,
+        from.revisions.length,
+      );
+      const seen = new Set(from.revisions.map((item) => item.revision));
+      setLoaded({
+        revisions: [
+          ...from.revisions,
+          ...page.revisions.filter((item) => !seen.has(item.revision)),
+        ],
+        total: page.total,
+      });
     });
   const compare = (revision: number) =>
     act(async () => {
@@ -53,21 +74,21 @@ export function MemoryHistory({
         from the writer it authenticated, never from the text: an operator save
         reads operator, and a resident's own run reads run.
       </p>
-      <button disabled={busy} onClick={() => void load(PAGE)}>
-        {history ? "Reload memory history" : "Read memory history"}
+      <button disabled={busy} onClick={() => void read()}>
+        {loaded ? "Reload memory history" : "Read memory history"}
       </button>
-      {history && history.total === 0 && <p>No memory has been saved yet.</p>}
-      {history && history.total > 0 && (
+      {loaded && loaded.total === 0 && <p>No memory has been saved yet.</p>}
+      {loaded && loaded.total > 0 && (
         <ol
           className="memory-history"
           aria-label={`Memory history for ${resident.name}`}
         >
-          {history.revisions.map((item, index) => (
+          {loaded.revisions.map((item, index) => (
             <li key={item.revision}>
               <div className="memory-revision">
                 <strong>
                   Revision {item.revision}
-                  {index === 0 && history.offset === 0 ? " · current" : ""}
+                  {index === 0 ? " · current" : ""}
                 </strong>
                 <span className={`chip ${item.author}`}>
                   {authorLabel(item)}
@@ -76,9 +97,11 @@ export function MemoryHistory({
               </div>
               <div className="task-actions">
                 {item.run_id && (
-                  <a href={`#run-${encodeURIComponent(item.run_id)}`}>
-                    Open the run →
-                  </a>
+                  <RunLink
+                    runId={item.run_id}
+                    openable={openable(item.run_id)}
+                    label="Open the run →"
+                  />
                 )}
                 <button
                   disabled={busy}
@@ -117,19 +140,11 @@ export function MemoryHistory({
           ))}
         </ol>
       )}
-      {history &&
-        history.total > history.revisions.length &&
-        history.revisions.length < MAX_PAGE && (
-          <button
-            disabled={busy}
-            onClick={() =>
-              void load(Math.min(history.revisions.length + PAGE, MAX_PAGE))
-            }
-          >
-            Show older revisions ({history.total - history.revisions.length}{" "}
-            more)
-          </button>
-        )}
+      {loaded && loaded.total > loaded.revisions.length && (
+        <button disabled={busy} onClick={() => void older(loaded)}>
+          Show older revisions ({loaded.total - loaded.revisions.length} more)
+        </button>
+      )}
     </details>
   );
 }
