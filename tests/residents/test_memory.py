@@ -529,3 +529,93 @@ def test_backup_and_held_restore_keep_run_authorship_and_refuse_a_relabelled_cop
     with pytest.raises(Refused, match="backup_references_invalid"):
         restore(root / "backup", root / "relabelled")
     assert not (root / "relabelled").exists()
+
+
+def rehash(root, change):
+    """Rewrite the backup database and its manifest so only the content differs."""
+    path = root / "backup/hearth.db"
+    with sqlite3.connect(path) as db:
+        change(db)
+    manifest_path = root / "backup/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["hearth.db"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+
+
+@pytest.mark.parametrize("tamper", ["promote", "truncated_receipt", "unreadable_receipt"])
+def test_a_rehashed_backup_cannot_forge_or_break_run_authorship(system, tamper):
+    app, memory, root = system
+    run = admit(app)
+    run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
+    memory.save("reader", "A later operator note", expected_revision=1)
+    capture(root / "data", root / "backup")
+    if tamper == "promote":
+        # An operator revision relabelled as run-written keeps no authoring receipt.
+        rehash(root, lambda db: db.execute("UPDATE memory_revisions SET author='run'"))
+    elif tamper == "truncated_receipt":
+        # Valid JSON, but the authorship key the check depends on is gone.
+        rehash(
+            root,
+            lambda db: db.execute(
+                "UPDATE memory_operations SET receipt=?",
+                (json.dumps({"resident_id": "reader", "revision": 1, "sha256": "0" * 64}),),
+            ),
+        )
+    else:
+        rehash(root, lambda db: db.execute("UPDATE memory_operations SET receipt='not json'"))
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        restore(root / "backup", root / "invalid")
+    assert not (root / "invalid").exists()
+
+
+def test_a_replayed_receipt_never_returns_another_residents_memory(system):
+    app, memory, _ = system
+    run = admit(app)
+    run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
+    memory.save("other", "Another resident's private note", expected_revision=0)
+    with app.state.hearth.database.transaction(write=True) as db:
+        receipt = json.loads(db.execute("SELECT receipt FROM memory_operations").fetchone()[0])
+        db.execute(
+            "UPDATE memory_operations SET receipt=?",
+            (json.dumps({**receipt, "resident_id": "other"}, sort_keys=True),),
+        )
+    with pytest.raises(Refused, match="memory_operation_receipt_corrupt"):
+        run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
+    assert memory.read("other")["text"] == "Another resident's private note"
+
+
+def test_a_run_whose_context_credential_expired_can_no_longer_write_memory(system):
+    app, memory, _ = system
+    hearth = app.state.hearth
+    run = admit(app)
+    access = RunAccess(hearth)
+    credential = access.issue(run.id, run.owner_token, lifetime=60)
+    run_save(app, run.id, TEXT, expected_revision=0, operation_id="before")
+    hearth.clock = lambda: 1060
+    with pytest.raises(Refused, match="runtime_unauthorized"):
+        access.context(credential.token, run.id)
+    with pytest.raises(Refused, match="run_context_unavailable"):
+        run_save(app, run.id, "After expiry", expected_revision=1, operation_id="after")
+    # Reissuing restores exactly the same authority to read and to write.
+    reissued = access.issue(run.id, run.owner_token)
+    # The restored read is still the revision this run pinned, not what it later wrote.
+    assert access.context(reissued.token, run.id)["memory"]["revision"] == 0
+    fresh = run_save(app, run.id, "After reissue", expected_revision=1, operation_id="after")
+    assert fresh["revision"] == 2 and memory.read("reader")["text"] == "After reissue"
+
+
+def test_a_backup_receipt_of_any_shape_is_refused_rather_than_raised(system):
+    app, memory, root = system
+    run = admit(app)
+    run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
+    capture(root / "data", root / "backup")
+    for receipt in ('{"resident_id": "reader", "revision": [1], "sha256": "x"}', "[]", "null"):
+        rehash(
+            root,
+            lambda db, value=receipt: db.execute(
+                "UPDATE memory_operations SET receipt=?", (value,)
+            ),
+        )
+        with pytest.raises(Refused, match="backup_references_invalid"):
+            restore(root / "backup", root / "invalid")
+        assert not (root / "invalid").exists()

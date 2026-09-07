@@ -171,11 +171,11 @@ class Memory:
         owns the writer so the revision, its operation receipt and its audit commit
         together.
         """
-        from hearth.authority.run_access import context_revoked, live_run
+        from hearth.authority.run_access import context_ended, live_run
 
         identifier(operation_id)
         run = live_run(db, run_id)
-        if context_revoked(db, run_id):
+        if context_ended(db, run_id, int(self.hearth.clock())):
             raise Refused("run_context_unavailable")
         if resident_id is not None:
             identifier(resident_id)
@@ -201,7 +201,7 @@ class Memory:
         if previous is not None:
             if not hmac.compare_digest(previous["payload_digest"], payload):
                 raise Refused("operation_conflict")
-            return self._original_receipt(db, previous["receipt"])
+            return self._original_receipt(db, previous["receipt"], resident_id)
         saved = self._write(
             db,
             resident_id,
@@ -224,14 +224,24 @@ class Memory:
         )
         return {**receipt, "text": text}
 
-    def _original_receipt(self, db, stored: str) -> dict:
-        """A retry replays the recorded revision; memory text lives only in its file."""
+    def _original_receipt(self, db, stored: str, resident_id: str) -> dict:
+        """A retry replays the recorded revision; memory text lives only in its file.
+
+        A receipt is recorded state, not authority: it can only replay the memory of
+        the resident this run writes, which is the invariant backup verification
+        enforces on the same rows.
+        """
         try:
             receipt = json.loads(stored)
-            revision = read_revision(db, self.files, receipt["resident_id"], receipt["revision"])
+            recorded = receipt["resident_id"], receipt["revision"], receipt["sha256"]
+            author = receipt["author"]
         except ValueError, TypeError, KeyError:
             raise Refused("memory_operation_receipt_corrupt") from None
-        if revision["sha256"] != receipt["sha256"] or receipt["author"] != "run":
+        if recorded[0] != resident_id or author != "run" or type(recorded[1]) is not int:
+            raise Refused("memory_operation_receipt_corrupt")
+        # File-layer refusals keep their own codes; a bad file is not a bad receipt.
+        revision = read_revision(db, self.files, resident_id, recorded[1])
+        if revision["sha256"] != recorded[2]:
             raise Refused("memory_operation_receipt_corrupt")
         return {**receipt, "text": revision["text"]}
 
