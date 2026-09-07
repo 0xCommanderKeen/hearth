@@ -882,3 +882,38 @@ Remaining for the epic: the journal (#117), the in-run memory/journal tools and 
 author plus ADR 0012 (#119). Nothing yet exposes `author` over HTTP or in the pinned
 run context, so the runtime context version is unchanged; #118/#119 own that surface.
 No real Codex run has exercised this path.
+
+## Resident journal — 2026-09-07
+
+Issue #117 (epic #126) gives every resident a journal its own runs write:
+`journal_entries(resident_id, sequence, run_id, at, sha256, size, text)` with one entry
+per run, replaced in place when that run writes again, bounded to 4 KiB of non-blank
+UTF-8. `hearth.residents.journal` owns the writer, the newest-first paged reader and the
+retention roll; `GET /api/residents/{id}/journal` is the only operator surface and there
+is deliberately no operator write. The household policy carries the bound
+(`journal_limit`, default 30); entries beyond it are published as immutable
+`memory/{resident}/journal/{sha256}.md` documents before their row and audit fact commit
+together, so nothing is deleted. `docs/resident-journal.md` records the exact document
+form and refusals.
+
+Verified with real temporary SQLite through the owning interfaces: write then replace
+inside one run with `journal.written`/`journal.replaced` audit and no entry text in
+audit; refusal after the run settles, after cancellation, for another resident's run,
+for oversized and blank text; two concurrent writes from one run leaving one entry; a
+failed `journal.archived` audit leaving only an orphan file that a later roll reuses;
+retention rollover keeping its files across further writes; newest-first paging with
+`total`; the household bound including an omitted `journal_limit` surviving an ordinary
+policy save; refusal to follow an archive-directory symlink; held backup/restore of both
+entries and archived files, twice; and refusal of a tampered entry, a tampered archived
+file and a cross-resident entry in a backup. Backend `make check` passed 683 tests, lint,
+formatting and types, and the browser suite passed 76 tests with Prettier, the production
+build and packaged assets. Two `make check` steps could not run on this machine for
+reasons unrelated to this change: the root `pnpm --dir web` invocation resolves pnpm
+12.3.4, which the bundled corepack 0.34.0 cannot launch (running the same commands inside
+`web/` uses the pinned pnpm 11.22.0 and passes), and `scripts/check-wheel.py` calls
+`uv pip sync`, which uv 0.10.4 refuses as a removed legacy interface.
+
+Remaining for the epic: no model-facing tool writes an entry and no run context opens
+with the journal (#118); Townhall shows neither the journal nor the household journal
+bound (#119), so today the bound moves only through `PUT /api/household`. No real Codex
+run has written a journal entry.
