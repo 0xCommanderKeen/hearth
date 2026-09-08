@@ -524,9 +524,7 @@ def settle_letter(
         "SELECT run_id,written_at FROM letter_replies WHERE task_id=?", (task_id,)
     ).fetchone()
     state = "replied" if reply else ("unanswered" if status == "succeeded" else "failed")
-    db.execute(
-        "UPDATE letters SET state=?,settled_at=? WHERE task_id=?", (state, now, task_id)
-    )
+    db.execute("UPDATE letters SET state=?,settled_at=? WHERE task_id=?", (state, now, task_id))
     _audit(
         db,
         "letter." + state,

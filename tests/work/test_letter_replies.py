@@ -150,9 +150,7 @@ def native_terminal(pin, *, status="completed", text=REPORT) -> dict:
                         "id": turn,
                         "status": status,
                         "error": None if status == "completed" else "synthetic failure",
-                        "items": [
-                            {"type": "agentMessage", "text": text, "phase": "final_answer"}
-                        ],
+                        "items": [{"type": "agentMessage", "text": text, "phase": "final_answer"}],
                     },
                 },
             },

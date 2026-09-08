@@ -381,8 +381,11 @@ def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
             state = "failed"
         connection.execute(
             "UPDATE letters SET state=?,settled_at=? WHERE task_id=?",
-            (state, row["finished"] if row["finished"] is not None else row["expires_at"],
-             row["task_id"]),
+            (
+                state,
+                row["finished"] if row["finished"] is not None else row["expires_at"],
+                row["task_id"],
+            ),
         )
         settled += 1
     if settled:

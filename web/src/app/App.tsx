@@ -8,7 +8,7 @@ import {
 } from "../shared/client";
 import "./style.css";
 import { RoutinePanel } from "../features/routines/Routines";
-import { UsageReport } from "../features/tasks/UsageReport";
+import { UsageByOrigin, UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
 import { Journal } from "../features/residents/Journal";
@@ -860,6 +860,7 @@ export function App() {
                 )}
                 <section className="task-panel">
                   <h2>Tasks &amp; results</h2>
+                  <UsageByOrigin client={client} busy={busy} act={act} />
                   {!visibleTasks.length ? (
                     <div className="empty">
                       <h3>A quiet beginning.</h3>

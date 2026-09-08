@@ -383,3 +383,25 @@ def test_a_copy_whose_answer_no_longer_belongs_to_its_run_is_refused(tmp_path, c
         )
     with pytest.raises(Refused, match="backup_letters_invalid"):
         capture(root, tmp_path / "refused")
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        # An answer exists, so a copy cannot claim the question went unanswered.
+        "UPDATE letters SET state='unanswered'",
+        # Nor that it was never worked at all: this one had a run of its own.
+        "UPDATE letters SET state='expired'",
+        # Nor that it is still open while its task has already ended.
+        "UPDATE letters SET state='pending',settled_at=NULL",
+    ],
+)
+def test_a_copy_that_renames_what_became_of_a_letter_is_refused(tmp_path, tamper):
+    """The state is what the sender reads; a copy cannot say a kinder word than the rows."""
+    import sqlite3
+
+    hearth, receipt, _, _, root = answered(tmp_path)
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
+    with pytest.raises(Refused, match="backup_letters_invalid"):
+        capture(root, tmp_path / "refused")

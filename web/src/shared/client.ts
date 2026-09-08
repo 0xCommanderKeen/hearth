@@ -457,6 +457,27 @@ export type Snapshot = {
     at: number;
   }[];
 };
+export type UsageOrigin = {
+  root_task_id: string;
+  resident_id: string | null;
+  instruction: string;
+  created_at: number;
+  runs: number;
+  letters: number;
+  residents_involved: string[];
+  known_cost: number;
+  unknown_runs: number;
+  active_runs: number;
+  reserved: number;
+  started_at: number;
+  last_at: number;
+};
+export type UsageOrigins = {
+  limit: number;
+  offset: number;
+  truncated: boolean;
+  origins: UsageOrigin[];
+};
 export type PendingTask = {
   id: string;
   body: { resident_id: string; instruction: string; expires_at: number };
@@ -893,6 +914,11 @@ export class Client {
     return this.request(`/api/tasks/${encodeURIComponent(id)}/start`, {
       method: "POST",
     });
+  }
+  usageByOrigin(limit = 20, offset = 0) {
+    return this.request<UsageOrigins>(
+      `/api/usage/origins?limit=${limit}&offset=${offset}`,
+    );
   }
   reconcileUsage(
     id: string,

@@ -349,3 +349,33 @@ def test_resident_bundle_export_and_import_over_http(client, tmp_path):
         json={"bundle": bundle | {"resident": bundle["resident"] | {"memory": "m" * 100_000}}},
     )
     assert padded.status_code == 201
+
+
+def test_usage_by_origin_counts_each_run_once_and_leaves_unknown_usage_holding(tmp_path):
+    """What a question cost, gathered under the task its chain rolls up to.
+
+    A run appears at the one amount its own row records, whether the runtime settled it
+    or the operator reported it afterwards, so reconciling never counts a run twice; a
+    run whose usage is still unknown is reported as unknown and keeps its resident's hold.
+    """
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
+    with TestClient(app) as client:
+        seed_reader_via(client)
+        receipt = task(client).json()
+        client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
+        run = app.state.executor.step()[0]
+        assert client.get("/api/usage/origins").status_code == 401
+        origin = client.get("/api/usage/origins", headers=AUTH).json()["origins"][0]
+        assert origin["root_task_id"] == receipt["task_id"] and origin["runs"] == 1
+        assert (origin["unknown_runs"], origin["known_cost"], origin["letters"]) == (1, 0, 0)
+        assert origin["residents_involved"] == ["reader"]
+        state = client.get("/api/state", headers=AUTH).json()
+        assert state["residents"][0]["pause_reason"] == "usage_unknown"
+
+        client.post(
+            "/api/runs/" + run.id + "/usage",
+            headers={**AUTH, "Idempotency-Key": "report"},
+            json={"amount": 2000, "evidence": "Synthetic meter reading"},
+        )
+        origin = client.get("/api/usage/origins", headers=AUTH).json()["origins"][0]
+        assert (origin["runs"], origin["unknown_runs"], origin["known_cost"]) == (1, 0, 2000)

@@ -410,3 +410,20 @@ def test_a_run_answers_the_letter_it_works_and_no_other(household):
     with hearth.database.transaction() as db:
         assert db.execute("SELECT count(*) FROM letter_replies").fetchone()[0] == 0
     settle(hearth, reader)
+
+
+def test_a_sender_reads_its_own_letters_and_the_same_cursor_twice_says_nothing_new(household):
+    """The resident that asked can see what it asked and what came of it, without guessing."""
+    app, hearth, karen = household
+    opens_the_door(hearth)
+    writer, write = working_run(app, karen, "asks")
+    receipt = send(write)[1]
+    ok, post = write("post", "hearth_letters_read", {})
+    assert ok and [item["task_id"] for item in post["sent"]] == [receipt["task_id"]]
+    written = post["sent"][0]
+    assert written["state"] == "pending" and written["settled_at"] is None
+    assert written["recipient_resident_id"] == "reporter" and written["status"] == "queued"
+    assert post["received"] == [] and post["sent_truncated"] is False
+    # A cursor taken from that page hands the same page back no more.
+    assert write("again", "hearth_letters_read", {"since": written["created_at"]})[1]["sent"] == []
+    settle(hearth, writer)
