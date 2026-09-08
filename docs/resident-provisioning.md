@@ -17,9 +17,9 @@ each: the previous $0.10 default covered barely two of them, and Karen's own def
 reservation for work she assigns is 100,000, which spends such a day in one admission.
 A dollar covers a day of that work. The number is a proposal and not a floor: the
 operator edits the field before creating, and nothing refuses a smaller allowance.
-`daily_limit` remains
-required on the API — the default lives in the form, not in the backend — and the
-household allowance and the creating grant's `max_daily_limit` are what actually bound it.
+`daily_limit` remains required on the API — the default lives in the form, not in the
+backend — and the household allowance and the creating grant's `max_daily_limit` are what
+actually bound it.
 
 The authenticated operator contract is:
 
