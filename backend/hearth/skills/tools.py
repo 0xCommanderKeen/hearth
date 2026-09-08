@@ -66,16 +66,19 @@ SKILL_TOOLS = {
     "hearth_skills_validate": (
         SkillValidate,
         "Request one durable validation of your exact draft: structural checks and two serial "
-        "read-only example runs through the ordinary accounted executor. Returns pending; use "
-        "hearth_skills_validation to inspect saved results. Retry the same operation and revision; "
-        "Unknown usage never authorizes another run. The visible evaluator counts toward "
-        "household limits.",
+        "read-only example runs. The examples run as you, with your pinned declaration and "
+        "memory but no management tools, so they start only after this run ends and spend your "
+        "own allowance. Returns pending; finish your work and inspect the saved results with "
+        "hearth_skills_validation in a later run. Retry the same operation and revision; "
+        "unknown usage never authorizes another run.",
     ),
     "hearth_skills_validation": (
         ValidationRead,
         "Inspect a permitted skill validation's actual case run/artifact/usage evidence. Pending "
-        "means work or accounting is incomplete. Waits up to three seconds without blocking "
-        "execution. Use bounded repeated status calls; report the ID if manager time expires.",
+        "means work or accounting is incomplete, and stays pending for the whole run that "
+        "requested it, because the examples need the run slot this run is using. Waits up to "
+        "three seconds without blocking execution. Report the identity and end your work rather "
+        "than waiting for a result this run cannot reach.",
     ),
     "hearth_skills_publish": (
         SkillPublish,
@@ -200,7 +203,9 @@ def dispatch_skill(db, hearth, authority, tool, body):
         payload,
         result
         | {
-            "resident_id": result.get("resident_id", authority["actor"]),
+            # A structurally failed validation names no runner; the receipt is still
+            # the requester's, and the audit fact needs a resource either way.
+            "resident_id": result.get("resident_id") or authority["actor"],
             "resident_link": result.get("resident_link") or "/#skills/" + result["skill_id"],
         },
     )

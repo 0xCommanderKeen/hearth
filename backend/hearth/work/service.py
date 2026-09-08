@@ -346,15 +346,26 @@ class Hearth:
             tuple(asdict(run).values()),
         )
         pin_admission(db, now, run.id)
-        from hearth.management.authority import pin_management
+        from hearth.skills.evaluation import case_validation
 
-        pin_management(
-            db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
-        )
+        # A skill example is the resident's own work with none of its authority: it
+        # reaches no management tools at all, and carries the memory its request named
+        # rather than whatever the resident has written since.
+        example = case_validation(db, run.id)
+        if example is None:
+            from hearth.management.authority import pin_management
+
+            pin_management(
+                db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
+            )
         db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
-        memory = db.execute(
-            "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
-        ).fetchone()[0]
+        memory = (
+            example["memory_revision"]
+            if example is not None
+            else db.execute(
+                "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
+            ).fetchone()[0]
+        )
         if memory is not None:
             db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
         # The journal the run opens with is pinned beside its memory, in this transaction.

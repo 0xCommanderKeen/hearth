@@ -8,6 +8,11 @@ from hearth.residents.memory import MemoryFiles, read_revision
 from hearth.residents.models import Refused
 from hearth.skills.assignments import run_skills
 
+# The shape of the pinned context below. A run's `input_digest` covers it, so a release
+# that changes the shape cannot rebuild an older run's digest; what pinned this version
+# says so, and what pinned an older one is checked against its own pins instead.
+CONTEXT_VERSION = 7
+
 
 def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> dict:
     """Trusted internal read, not an authorization check or a credential issuer."""
@@ -30,7 +35,7 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     # A declaration alone cannot promise them, so the context states what this run can do.
     native = db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run_id,)).fetchone()
     return {
-        "context_version": 7,
+        "context_version": CONTEXT_VERSION,
         "skills": run_skills(db, run_id),
         "run_id": row["id"],
         "task_id": row["task_id"],

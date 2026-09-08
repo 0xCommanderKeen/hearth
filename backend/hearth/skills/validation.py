@@ -3,18 +3,16 @@
 import json
 import uuid
 
+from hearth.execution.context import CONTEXT_VERSION
 from hearth.inputs.catalog import Inputs
-from hearth.management.authority import read_grant
+from hearth.residents.lifecycle import check_ready
 from hearth.residents.models import Refused, identifier
-from hearth.residents.provisioning import Provisioning
 from hearth.skills.authoring import check_editor, digest, read_authoring
 from hearth.skills.evaluation import (
-    EVALUATOR_INSTRUCTIONS,
-    EVALUATOR_PURPOSE,
     REQUEST_FIELDS,
     check_request_authority,
     checked_validation,
-    evaluator_context,
+    request_context,
     result_for_case,
 )
 from hearth.storage.artifacts import Artifacts
@@ -42,50 +40,30 @@ def read_validation(db, validation_id):
     }
 
 
-def _evaluator(db, hearth, authority, reserve):
-    runtime = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
-    if authority is not None and runtime not in authority["grant"]["profiles"]:
-        raise Refused("management_profile_not_permitted")
-    previous = db.execute("SELECT value FROM system_meta WHERE key='skill_evaluator'").fetchone()
-    if previous is None:
-        daily_limit = (
-            min(2_000_000, authority["grant"]["max_daily_limit"]) if authority else 2_000_000
-        )
-        if daily_limit < reserve:
-            raise Refused("skill_evaluator_budget_insufficient")
-        # author_skills explicitly permits this one service-owned read-only resident.
-        # Ordinary provisioning still enforces the household resident count.
-        receipt = Provisioning(hearth).create_evaluator_in_transaction(
-            db,
-            dict(
-                name="Skill evaluator",
-                purpose=EVALUATOR_PURPOSE,
-                instructions=EVALUATOR_INSTRUCTIONS,
-                execution_profile=runtime,
-                daily_limit=daily_limit,
-                creation_reason=(
-                    "One visible read-only evaluator permitted by skill authoring policy; "
-                    "all runs count toward household limits."
-                ),
-            ),
-            actor=authority["actor"] if authority else "operator",
-            originating_run_id=authority["run_id"] if authority else None,
-        )
-        if receipt["status"] != "ready":
-            raise Refused(receipt["reason"])
-        evaluator_id = receipt["resident_id"]
-        db.execute("INSERT INTO system_meta VALUES ('skill_evaluator',?)", (evaluator_id,))
-    else:
-        evaluator_id = previous[0]
-    context = evaluator_context(db, evaluator_id)
-    if read_grant(db, evaluator_id)["enabled"]:
-        raise Refused("skill_evaluator_changed")
+def _runner(db, actor, resident_id, reserve):
+    """The resident whose examples these are: the one that asked, or the one named.
+
+    A resident validates its own draft and nobody else's, so its declaration, memory,
+    allowance and single run slot are what the examples actually cost. An operator has
+    none of those and says whose they are.
+    """
+    if actor != "operator":
+        if resident_id not in {None, actor}:
+            raise Refused("skill_validation_resident_out_of_scope")
+        resident_id = actor
+    if resident_id is None:
+        raise Refused("skill_validation_resident_required")
+    identifier(resident_id)
+    check_ready(db, resident_id)
+    context = request_context(db, resident_id)
     if context["daily_limit"] < reserve:
-        raise Refused("skill_evaluator_budget_insufficient")
-    return evaluator_id
+        raise Refused("skill_validation_budget_insufficient")
+    return resident_id, context
 
 
-def request_validation(db, hearth, skill_id, revision, reserve, *, actor, authority=None):
+def request_validation(
+    db, hearth, skill_id, revision, reserve, *, actor, resident_id=None, authority=None
+):
     from hearth.skills.assignments import exact_skill
 
     identifier(skill_id)
@@ -110,26 +88,28 @@ def request_validation(db, hearth, skill_id, revision, reserve, *, actor, author
     validation_id = str(uuid.uuid4())
     now = int(hearth.clock())
     passed = authored["structure"]["passed"]
-    evaluator_id = _evaluator(db, hearth, authority, reserve) if passed else None
+    runner, context = _runner(db, actor, resident_id, reserve) if passed else (None, {})
     value = dict(
         id=validation_id,
         skill_id=skill_id,
         candidate_revision=revision,
         candidate_sha256=candidate["sha256"],
         manifest_sha256=authored["manifest_sha256"],
-        evaluator_id=evaluator_id,
-        evaluator_revision=evaluator_context(db, evaluator_id)["resident_revision"]
-        if evaluator_id
-        else None,
+        resident_id=runner,
+        resident_revision=context.get("resident_revision"),
+        memory_revision=context.get("memory_revision"),
+        context_version=CONTEXT_VERSION if runner else None,
         actor=actor,
         originating_run_id=authority["run_id"] if authority else None,
         grant_revision=authority["grant"]["revision"] if authority else None,
         reserve=reserve,
         created_at=now,
-        expires_at=now + 600,
+        # The cases wait for the resident's own run to end, so the window is a day
+        # rather than the ten minutes a separate evaluator could always start within.
+        expires_at=now + 86400,
     )
     db.execute(
-        "INSERT INTO skill_validations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO skill_validations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         tuple(value[key] for key in REQUEST_FIELDS)
         + (
             digest(value),
@@ -138,7 +118,7 @@ def request_validation(db, hearth, skill_id, revision, reserve, *, actor, author
         ),
     )
     if passed:
-        assert evaluator_id is not None
+        assert runner is not None
         for position, example in enumerate(authored["examples"]):
             source = Inputs(hearth).save_in_transaction(
                 db,
@@ -152,7 +132,7 @@ def request_validation(db, hearth, skill_id, revision, reserve, *, actor, author
             source = read_input(db, source["input_set_id"], source["revision"])
             task_id = _queue_task(
                 db,
-                evaluator_id,
+                runner,
                 example["instruction"],
                 now,
                 {
@@ -210,9 +190,11 @@ class Validation:
         with self.hearth.database.transaction() as db:
             return read_validation(db, validation_id)
 
-    def request(self, skill_id, revision, reserve=100000, *, actor="operator"):
+    def request(self, skill_id, revision, reserve=100000, *, resident_id=None, actor="operator"):
         with self.hearth.database.transaction(write=True) as db:
-            return request_validation(db, self.hearth, skill_id, revision, reserve, actor=actor)
+            return request_validation(
+                db, self.hearth, skill_id, revision, reserve, actor=actor, resident_id=resident_id
+            )
 
     def step(self):
         with self.hearth.database.transaction() as db:
@@ -297,11 +279,10 @@ class Validation:
                 try:
                     check_request_authority(db, validation, int(self.hearth.clock()))
                 except Refused as error:
-                    if error.code in {
-                        "skill_evaluator_context_changed",
-                        "skill_evaluator_memory_not_empty",
-                        "skill_evaluator_must_be_read_only",
-                    }:
+                    # An edited declaration is repairable and the request outlives one
+                    # working day, so the queued case identities wait for the resident
+                    # they were promised rather than failing the draft outright.
+                    if error.code == "skill_validation_resident_changed":
                         self._state(db, validation_id, "pending", error.code)
                         return
                     raise
