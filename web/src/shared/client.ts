@@ -402,8 +402,9 @@ export type ResidentDeclaration = {
     daily_limit: number;
     budget_timezone: string;
     skill_text: string;
-    // The capabilities standing beside the declaration. A body may omit them, so a
-    // client that never asked about them cannot be made to read them back.
+    // The capabilities standing beside the declaration. Hearth always answers with both;
+    // they are optional here because a body that writes a declaration may omit them, and
+    // omitting one keeps what the resident has.
     memory_writable?: boolean;
     letters_accept?: boolean;
   };
