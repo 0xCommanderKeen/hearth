@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import {
   Client,
+  RequestError,
   type Letter,
   type LetterState,
   type Resident,
@@ -118,10 +119,12 @@ export function Letters({
   const [refusal, setRefusal] = useState("");
   const [written, setWritten] = useState("");
   // The command identity survives an uncertain response, so a retry replays the letter
-  // Hearth already accepted rather than writing a second one.
+  // Hearth already accepted rather than writing a second one. It is released as soon as
+  // Hearth has answered about this letter, because a refused letter writes nothing.
   const pending = useRef<{ id: string; title: string; detail: string } | null>(
     null,
   );
+  const [frozen, setFrozen] = useState(false);
   const accepts = !!resident.letters_accept;
   const read = () =>
     act(async () => setLoaded(await client.letters(resident.id, PAGE, 0)));
@@ -137,11 +140,20 @@ export function Letters({
         detail: draft.detail,
       });
       pending.current = null;
+      setFrozen(false);
       setTitle("");
       setDetail("");
       setWritten(`Letter queued as task ${receipt.task_id}.`);
       await read();
     } catch (error) {
+      // Hearth answering at all means it answered about this letter, and a refused
+      // letter writes nothing — there is no accepted command to replay, so the operator
+      // may correct the letter and write again. An answer that never arrived, or one
+      // the server itself failed on, leaves the command frozen: Hearth may be holding a
+      // letter this browser cannot see, and a second one would be a second letter.
+      const answered = error instanceof RequestError && error.status < 500;
+      if (answered) pending.current = null;
+      setFrozen(!answered);
       setRefusal(
         error instanceof Error ? error.message : "Something went wrong.",
       );
@@ -220,7 +232,7 @@ export function Letters({
           value={title}
           maxLength={200}
           required
-          disabled={busy || readOnly || !!pending.current}
+          disabled={busy || readOnly || frozen}
           onChange={(e) => setTitle(e.target.value)}
         />
         <label htmlFor="letter-detail">The request</label>
@@ -229,11 +241,11 @@ export function Letters({
           value={detail}
           maxLength={8000}
           required
-          disabled={busy || readOnly || !!pending.current}
+          disabled={busy || readOnly || frozen}
           onChange={(e) => setDetail(e.target.value)}
         />
         <button className="primary" disabled={busy || readOnly}>
-          {pending.current ? "Retry the letter" : "Send the letter"}
+          {frozen ? "Retry the letter" : "Send the letter"}
         </button>
       </form>
       {refusal && (

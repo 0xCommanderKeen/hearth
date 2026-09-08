@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Letters } from "./Letters";
 import { Lineage } from "./Lineage";
 import {
@@ -173,39 +167,69 @@ it("names the two states that quietly stop an answer: a shut door and a thin day
   );
 });
 
-it("writes one letter with the operator's own hand and keeps its command on a refusal", async () => {
+const receipt = {
+  command_id: "one",
+  resident_id: "reporter",
+  task_id: "queued-task",
+  sender: "operator",
+  root_task_id: "queued-task",
+  depth: 1,
+  expires_at: 1_788_726_400,
+  status: "queued",
+};
+
+function write(letter = "Name one fact about the orchard.") {
+  fireEvent.change(screen.getByLabelText("What it is about"), {
+    target: { value: "One question" },
+  });
+  fireEvent.change(screen.getByLabelText("The request"), {
+    target: { value: letter },
+  });
+  fireEvent.click(
+    screen.getByText(/^(Send the letter|Retry the letter)$/) as HTMLElement,
+  );
+}
+
+it("releases the command when Hearth refuses, because a refused letter writes nothing", async () => {
   const client = new Client("synthetic-test");
   vi.spyOn(client, "letters").mockResolvedValue(post);
   const send = vi
     .spyOn(client, "sendLetter")
     .mockRejectedValueOnce(new RequestError(409, "letters not accepted"))
-    .mockResolvedValueOnce({
-      command_id: "one",
-      resident_id: "reporter",
-      task_id: "queued-task",
-      sender: "operator",
-      root_task_id: "queued-task",
-      depth: 1,
-      expires_at: 1_788_726_400,
-      status: "queued",
-    });
+    .mockResolvedValueOnce(receipt);
   mount(reporter, client);
-  fireEvent.change(screen.getByLabelText("What it is about"), {
-    target: { value: "One question" },
-  });
-  fireEvent.change(screen.getByLabelText("The request"), {
-    target: { value: "Name one fact about the orchard." },
-  });
-  fireEvent.click(screen.getByText("Send the letter"));
+  write();
   const refusal = await screen.findByRole("alert");
   expect(refusal.textContent).toContain("letters not accepted");
   expect(refusal.textContent).toContain("Nothing was written.");
 
-  // The retry is the same letter, under the same command, never a second one.
+  // Hearth answered, so there is no accepted command to replay: the operator may
+  // correct the letter and write a new one.
+  expect(screen.getByText("Send the letter")).toBeTruthy();
+  write("Name one fact about Monday's pears.");
+  await screen.findByText(/Letter queued as task queued-task/);
+  expect(send.mock.calls[0][1]).not.toBe(send.mock.calls[1][1]);
+  expect(send.mock.calls[1][2]).toEqual({
+    title: "One question",
+    detail: "Name one fact about Monday's pears.",
+  });
+});
+
+it("freezes the command when no answer arrives, so a retry is never a second letter", async () => {
+  const client = new Client("synthetic-test");
+  vi.spyOn(client, "letters").mockResolvedValue(post);
+  const send = vi
+    .spyOn(client, "sendLetter")
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(receipt);
+  mount(reporter, client);
+  write();
+  await screen.findByRole("alert");
+  // Hearth may be holding this letter, so the same command is retried and the text it
+  // carried cannot be edited underneath it.
+  expect(screen.getByLabelText("The request")).toHaveProperty("disabled", true);
   fireEvent.click(screen.getByText("Retry the letter"));
-  await waitFor(() =>
-    expect(screen.getByRole("status").textContent).toContain("queued-task"),
-  );
+  await screen.findByText(/Letter queued as task queued-task/);
   expect(send.mock.calls[0][1]).toBe(send.mock.calls[1][1]);
   expect(send.mock.calls[1][2]).toEqual({
     title: "One question",
