@@ -20,6 +20,9 @@ MAX_DETAIL = 8_000
 # What one letter may reserve, matching the scheduler's own occurrence reservation: a
 # letter is an ordinary task and buys no more of the household's day than one does.
 LETTER_RESERVATION = 10_000
+# Refusals a delivery pass leaves for a later one. A letter that went stale between the
+# read and the write is one of them: the sweep owns closing it, not this pass.
+LETTER_WAITS = ADMISSION_WAITS | {"letter_expired"}
 # A reply is an answer, not a second run report: the sender reads this, and the full
 # artifact of the run that wrote it stays linked for the operator.
 MAX_REPLY = 4_000
@@ -681,9 +684,7 @@ def deliver_letters(hearth) -> list[str]:
             hearth.admit(task_id, reserve=LETTER_RESERVATION)
             delivered.append(task_id)
         except Refused as error:
-            # A letter that went stale between the read and the write is left to the
-            # sweep that owns closing it, like any other letter nobody started in time.
-            if error.code not in ADMISSION_WAITS | {"letter_expired"} and first_refusal is None:
+            if error.code not in LETTER_WAITS and first_refusal is None:
                 first_refusal = error
     if first_refusal is not None:
         raise first_refusal
