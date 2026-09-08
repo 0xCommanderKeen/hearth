@@ -137,3 +137,16 @@ def test_work_left_in_flight_by_a_removed_runtime_ends_with_its_usage_unknown(tm
     assert db.execute("SELECT reason FROM pauses").fetchone()[0] == "usage_unknown"
     detail = db.execute("SELECT detail FROM audit WHERE kind='run.cancelled'").fetchone()[0]
     assert json.loads(detail)["reason"] == "runtime_removed"
+
+
+def test_a_quarantined_copy_of_a_simulated_store_is_read_not_rewritten(tmp_path):
+    path = tmp_path / "hearth.db"
+    Database(path).initialize()
+    with sqlite3.connect(path, isolation_level=None) as db:
+        db.execute("UPDATE system_meta SET value='inline_mock' WHERE key='runtime_kind'")
+        db.execute("INSERT INTO system_meta VALUES ('restore_hold', 'held')")
+    before = path.read_bytes()
+    Database(path).initialize()
+    # A held copy exists to be read; adopting the one runtime would rewrite it.
+    assert path.read_bytes() == before
+    assert Database(path).runtime_kind() == "inline_mock"

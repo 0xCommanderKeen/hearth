@@ -223,7 +223,7 @@ def _check_database(root: Path) -> dict:
         for revision in db.execute("SELECT * FROM skill_revisions"):
             checked_revision(revision)
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-        if selected is None or selected[0] != RUNTIME_KIND:
+        if selected is None or selected[0] not in (RUNTIME_KIND, *HISTORICAL_RUNTIME_KINDS):
             raise Refused("backup_runtime_invalid")
         validate_management(db)
         verify_authoring_backup(db, root)
@@ -234,7 +234,7 @@ def _check_database(root: Path) -> dict:
                 r"[0-9a-f]{64}", run["input_digest"]
             ):
                 raise Refused("backup_runtime_invalid")
-            if run["runtime_kind"] != selected[0]:
+            if run["runtime_kind"] != RUNTIME_KIND:
                 # A runtime this release no longer ships took its evidence with it.
                 # Such a run is finished history; nothing here can reinterpret it.
                 if (

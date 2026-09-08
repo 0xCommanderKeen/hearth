@@ -119,10 +119,16 @@ class Database:
             stored = connection.execute(
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
             ).fetchone()
+            quarantined = connection.execute(
+                "SELECT 1 FROM system_meta WHERE key='restore_hold'"
+            ).fetchone()
             if stored is not None and stored[0] in HISTORICAL_RUNTIME_KINDS:
-                _adopt_the_one_runtime(connection, stored[0])
-                stored = (RUNTIME_KIND,)
-            if stored is None or stored[0] != RUNTIME_KIND:
+                # A quarantined copy is opened to be read, never rewritten; it keeps
+                # the runtime it recorded and can start no work with it.
+                if quarantined is None:
+                    _adopt_the_one_runtime(connection, stored[0])
+                    stored = (RUNTIME_KIND,)
+            elif stored is None or stored[0] != RUNTIME_KIND:
                 raise Refused("runtime_configuration_invalid")
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Database contains invalid references")
@@ -145,9 +151,10 @@ class Database:
             upgrade(self.path, from_version=version, to_version=SCHEMA_VERSION)
 
     def runtime_kind(self) -> str:
+        """The runtime this store records. Only a quarantined copy can name an old one."""
         with self.transaction() as db:
             row = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-            if row is None or row[0] != RUNTIME_KIND:
+            if row is None or row[0] not in (RUNTIME_KIND, *HISTORICAL_RUNTIME_KINDS):
                 raise Refused("runtime_configuration_invalid")
             return row[0]
 
