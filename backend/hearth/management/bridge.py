@@ -60,6 +60,12 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
     ).fetchone()
     if declared is None:
         raise Refused("management_declaration_changed")
+    # A run working a letter reaches the native surface for the answer it owes, whatever
+    # else it was granted. Answering the question one was handed is not management.
+    letter = (
+        db.execute("SELECT 1 FROM letters WHERE task_id=?", (run["task_id"],)).fetchone()
+        is not None
+    )
     pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
     if pin is None or pin["resident_id"] != run["resident_id"]:
         raise Refused("management_not_granted_at_admission")
@@ -67,9 +73,10 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         raise Refused("management_access_expired")
     revoked = False
     if pin["grant_revision"] is None:
-        # Admitted for its own memory and journal alone. No management authority exists for
-        # this run, whatever the operator granted the resident after it was admitted.
-        if not declared[0]:
+        # Admitted for its own memory and journal, or for the letter it works, alone. No
+        # management authority exists for this run, whatever the operator granted the
+        # resident after it was admitted.
+        if not declared[0] and not letter:
             raise Refused("management_not_granted_at_admission")
         grant = _no_authority(run["resident_id"])
     else:
@@ -83,9 +90,10 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
             or digest(policy) != pin["grant_sha256"]
         ):
             # Management authority is gone. Writing its own memory and journal never was
-            # management, so a writable run keeps exactly those tools and loses the rest,
-            # and can still close with the entry that says how its work ended.
-            if not declared[0]:
+            # management, and neither was answering a letter, so such a run keeps exactly
+            # those tools and loses the rest, and can still close with the entry that says
+            # how its work ended.
+            if not declared[0] and not letter:
                 raise Refused("management_grant_changed_or_revoked")
             grant, revoked = _no_authority(run["resident_id"]), True
     if thread_id is not None and pin["thread_id"] != thread_id:
@@ -99,6 +107,8 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         # Management this run held and no longer holds; its memory tools are unaffected.
         "management_revoked": revoked,
         "memory_writable": bool(declared[0]),
+        # Whether this run is working a letter, and so owes an answer to its sender.
+        "letter": letter,
     }
 
 
@@ -214,11 +224,12 @@ class Bridge:
                 authority = authorize(
                     db, self.bound, now, thread_id=params["threadId"], turn_id=params["turnId"]
                 )
-                from hearth.management.tools import MEMORY_TOOLS
+                from hearth.management.tools import LETTER_RECEIVER_TOOLS, MEMORY_TOOLS
 
                 # A revoked grant refuses every management tool, replay included, exactly
-                # as it did before a writable run could outlive it.
-                if params["tool"] not in MEMORY_TOOLS:
+                # as it did before a writable run could outlive it. Reading one's own post
+                # and answering the letter one was handed were never management.
+                if params["tool"] not in set(MEMORY_TOOLS) | LETTER_RECEIVER_TOOLS:
                     check_management(authority)
                 payload = digest(params)
                 previous = db.execute(

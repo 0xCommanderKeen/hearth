@@ -1,11 +1,6 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 6, before letter replies; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -211,28 +206,16 @@ SCHEMA = (
     # A letter is an ordinary task with an address: who sent it, from which run and task,
     # the root the chain rolls up to, how many hops in it is, and when it goes stale.
     # The receiver is the task's own resident; there is no second copy of that fact.
-    # An operator writing on Hearth's own behalf has no resident and no run behind it,
-    # so both sender columns are empty together or not at all.
     """CREATE TABLE letters (
         task_id TEXT PRIMARY KEY REFERENCES tasks(id),
-        sender_resident_id TEXT REFERENCES residents(id),
-        sender_run_id TEXT REFERENCES runs(id),
+        sender_resident_id TEXT NOT NULL REFERENCES residents(id),
+        sender_run_id TEXT NOT NULL REFERENCES runs(id),
         parent_task_id TEXT REFERENCES tasks(id),
         root_task_id TEXT NOT NULL REFERENCES tasks(id),
         depth INTEGER NOT NULL CHECK (depth > 0),
         title TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL,
-        CHECK ((sender_resident_id IS NULL) = (sender_run_id IS NULL))
-    )""",
-    # The answer the sender reads. One per letter, written by the run that worked it;
-    # the full run artifact stays linked for the operator.
-    """CREATE TABLE letter_replies (
-        task_id TEXT PRIMARY KEY REFERENCES letters(task_id),
-        run_id TEXT NOT NULL REFERENCES runs(id),
-        resident_id TEXT NOT NULL REFERENCES residents(id),
-        text TEXT NOT NULL,
-        written_at INTEGER NOT NULL
+        expires_at INTEGER NOT NULL
     )""",
     """CREATE TABLE notifications (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, resource_id TEXT NOT NULL,

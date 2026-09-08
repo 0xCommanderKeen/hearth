@@ -15,6 +15,7 @@ from tests.fixtures.schema_v2_pre_simulated import SCHEMA as SCHEMA_V2
 from tests.fixtures.schema_v3_pre_inbox import SCHEMA as SCHEMA_V3
 from tests.fixtures.schema_v4_pre_examples import SCHEMA as SCHEMA_V4
 from tests.fixtures.schema_v5_pre_letters import SCHEMA as SCHEMA_V5
+from tests.fixtures.schema_v6_pre_replies import SCHEMA as SCHEMA_V6
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -761,3 +762,64 @@ def test_a_grant_edited_in_the_file_refuses_the_letters_upgrade(tmp_path):
     with pytest.raises(UpgradeError, match="was changed in the file"):
         Database(path).initialize()
     assert path.read_bytes() == before
+
+
+def version_6_store(path):
+    """A version-6 store holding one letter a resident wrote, before anyone could answer."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V6:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    for resident, name in (("karen", "Karen"), ("orchard", "Orchard")):
+        db.execute("INSERT INTO residents VALUES (?, 1)", (resident,))
+        db.execute(
+            "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+            " created_at, letters_accept) VALUES (?, 1, ?, 'Synthetic', 1000000, 1, ?)",
+            (resident, name, resident == "orchard"),
+        )
+        _lifecycle(db, resident, 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, ?)",
+        (86400,),
+    )
+    db.execute(
+        "INSERT INTO tasks VALUES ('t', 'karen', 'Answer the orchard question', 'running', 1)"
+    )
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, usage_known, launch_attempted, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'running', 2000, '2026-09-08', 1, 1, 1, "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    db.execute("INSERT INTO tasks VALUES ('l', 'orchard', 'Letter from karen: One', 'queued', 2)")
+    db.execute("INSERT INTO letters VALUES ('l','karen','r','t','t',1,'One',2,86402)")
+    db.execute("PRAGMA user_version = 6")
+    db.commit()
+    db.close()
+
+
+def test_the_version_6_store_gains_replies_and_keeps_every_letter(tmp_path):
+    from hearth.work.letters import validate_letters
+
+    path = tmp_path / "hearth.db"
+    version_6_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    letter = db.execute("SELECT * FROM letters").fetchone()
+    assert (letter["task_id"], letter["sender_resident_id"], letter["sender_run_id"]) == (
+        "l",
+        "karen",
+        "r",
+    )
+    assert (letter["root_task_id"], letter["depth"], letter["expires_at"]) == ("t", 1, 86402)
+    # Nobody has answered anything, and the upgrade invents no answer.
+    assert db.execute("SELECT count(*) FROM letter_replies").fetchone()[0] == 0
+    validate_letters(db)

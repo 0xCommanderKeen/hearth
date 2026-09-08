@@ -306,3 +306,80 @@ def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(tmp_path, tamper):
         db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
     with pytest.raises(Refused, match="backup_letters_invalid"):
         capture(root, tmp_path / "refused")
+
+
+def answered(tmp_path):
+    """The neighbour works the letter and writes the one answer the sender will read.
+
+    The receiver holds no grant; the letter itself is what puts it on the native surface,
+    so its run settles through the same native receipt as any other.
+    """
+    from dataclasses import asdict
+
+    from hearth.execution.lifecycle import Execution
+    from hearth.execution.usage import binding
+    from hearth.integrations.codex.subscription import KIND
+    from hearth.integrations.interface import encode_receipt
+    from hearth.management.bridge import BoundRun, Bridge
+    from hearth.observation.snapshot import snapshot
+    from hearth.storage.artifacts import Artifacts
+
+    from tests.management.test_runtime import native_terminal
+
+    hearth, letter, sender, root = posted(tmp_path)
+    run = hearth.admit(letter["task_id"], reserve=100_000)
+    execution = Execution(hearth, Artifacts(root / "artifacts"))
+    execution.prepare_start(run.id, run.owner_token)
+    bridge = Bridge(
+        hearth, BoundRun(run.id, run.owner_token, snapshot(hearth)["epoch"], run.input_digest)
+    )
+    bridge.bind_thread("thread")
+    bridge.bind_turn("thread", "turn")
+    with hearth.database.transaction(write=True) as db:
+        hearth.reply_to_letter_in_transaction(
+            db, run.id, letter["task_id"], "The orchard has 412 pear trees.", "answer-1"
+        )
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=?,tools_sha256=? WHERE run_id=?",
+            ("b" * 64, "c" * 64, run.id),
+        )
+        bound = binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+    native = {
+        "kind": KIND,
+        "protocol": "management",
+        "binding": asdict(bound),
+        "binary": "a" * 64,
+        "terminal": native_terminal(),
+    }
+    execution.finish(
+        run.id, run.owner_token, encode_receipt(native, bound)[2], _usage_receipt=native
+    )
+    return hearth, letter, run, sender, root
+
+
+def test_a_backup_round_trip_keeps_the_answer_the_sender_will_read(tmp_path):
+    hearth, receipt, answering, _, root = answered(tmp_path)
+    capture(root, tmp_path / "backup")
+    restore(tmp_path / "backup", tmp_path / "restored")
+    copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
+    assert copy.letters("orchard")["inbox"][0]["reply"] == {
+        "resident_id": "orchard",
+        "run_id": answering.id,
+        "written_at": int(hearth.clock()),
+        "text": "The orchard has 412 pear trees.",
+    }
+
+
+@pytest.mark.parametrize("column", ["run_id", "resident_id"])
+def test_a_copy_whose_answer_no_longer_belongs_to_its_run_is_refused(tmp_path, column):
+    """Moving the answer onto the sender's own run would make it the sender's own words."""
+    import sqlite3
+
+    hearth, receipt, _, sender, root = answered(tmp_path)
+    moved = {"run_id": sender.id, "resident_id": sender.resident_id}[column]
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute(
+            f"UPDATE letter_replies SET {column}=? WHERE task_id=?", (moved, receipt["task_id"])
+        )
+    with pytest.raises(Refused, match="backup_letters_invalid"):
+        capture(root, tmp_path / "refused")

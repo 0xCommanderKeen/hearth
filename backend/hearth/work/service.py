@@ -104,6 +104,40 @@ class Hearth:
             expires_at=expires_at,
         )
 
+    def send_operator_letter(
+        self, command_id: str, to: str, title: str, detail: str, *, expires_at: int | None = None
+    ) -> dict:
+        """Queue one letter the operator wrote, under the receiver's own door and rules."""
+        from hearth.work.letters import send_operator_letter
+
+        with self.database.transaction(write=True) as db:
+            return send_operator_letter(
+                db,
+                self,
+                command_id=command_id,
+                to=to,
+                title=title,
+                detail=detail,
+                expires_at=expires_at,
+            )
+
+    def reply_to_letter_in_transaction(
+        self, db, run_id: str, letter_id: str, text: str, operation_id: str
+    ) -> dict:
+        """Record one run's single answer to the letter it is working."""
+        from hearth.work.letters import reply_to_letter
+
+        return reply_to_letter(
+            db, self, run_id=run_id, letter_id=letter_id, text=text, operation_id=operation_id
+        )
+
+    def letters(self, resident_id: str, *, limit: int = 30, offset: int = 0) -> dict:
+        """One resident's inbox and everything it has written, for the operator."""
+        from hearth.work.letters import operator_letters
+
+        with self.database.transaction() as db:
+            return operator_letters(db, resident_id, limit=limit, offset=offset)
+
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
     ) -> Resident:

@@ -2,6 +2,23 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Letters can now be written, read and answered (schema 7). A run holding the grant
+  capability `send_letters` is offered `hearth_letters_send`; the run working a letter —
+  and only that run — is offered `hearth_letters_reply`, which records the one answer its
+  sender will read, replays its receipt on a retry and refuses a second; both ends read
+  their own post with `hearth_letters_read`. A resident is never shown a tool it may not
+  use: the offered set follows the grant the run was admitted with and the letter it is
+  working, and joins the admission's tool digest. Working a letter puts a run on the
+  native surface even when it is granted nothing at all, and answering one outlives a
+  grant revoked mid-run, because answering the question one was handed was never
+  management. The operator writes with its own hand over
+  `POST /api/residents/{id}/letters` — no grant, because there is no resident whose
+  authority it could escalate, but the receiver's door, its archive state, the
+  household's reach and the shelf life all hold, and the letter has no sender resident
+  and no run behind it — and reads any resident's inbox and sent letters, each with its
+  answer, over `GET /api/residents/{id}/letters`. Backups carry replies and refuse a copy
+  whose answer no longer belongs to the run that wrote it.
+
 - A letter is a first-class fact (schema 6), and only a fact so far: nothing a resident or
   an operator can reach sends one yet. An ordinary task addressed to one resident
   by another, carrying its sender, that sender's run and task, the root the chain rolls

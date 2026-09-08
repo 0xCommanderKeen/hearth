@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hearth.work.letters import MAX_DETAIL, MAX_TITLE
+
 
 class TaskPost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -22,6 +24,16 @@ class DeclarationPost(BaseModel):
     # Omitted keeps the resident's current letters.accept door.
     letters_accept: bool | None = None
     expected_revision: int = Field(ge=0)
+
+
+class LetterPost(BaseModel):
+    """One letter the operator writes to a resident; the operator is its sender."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+    detail: str = Field(min_length=1, max_length=MAX_DETAIL)
+    # Omitted takes the household's own shelf life; a shorter one may be asked for.
+    expires_at: int | None = Field(default=None, ge=0)
 
 
 class MemoryPost(BaseModel):

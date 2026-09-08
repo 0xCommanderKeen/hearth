@@ -18,6 +18,14 @@ from hearth.residents.provisioning import Provisioning, ProvisionRequest, profil
 from hearth.skills.authoring import decorate
 from hearth.skills.catalog import checked_revision
 from hearth.skills.tools import SKILL_TOOLS, dispatch_skill
+from hearth.work.letters import (
+    MAX_DETAIL,
+    MAX_PAGE,
+    MAX_REPLY,
+    MAX_TITLE,
+    read_letters,
+    run_letter_scope,
+)
 from hearth.work.routines import ROUTINE_RESERVATION
 from hearth.work.service import _audit, _queue_task
 
@@ -75,6 +83,25 @@ class JournalWrite(Strict):
     text: str = Field(min_length=1, max_length=MAX_ENTRY)
 
 
+class SendLetter(Operation):
+    to: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+    detail: str = Field(min_length=1, max_length=MAX_DETAIL)
+    # A sender may make its own letter go stale sooner than the household would.
+    expires_at: int | None = Field(default=None, ge=0)
+
+
+class ReadLetters(Strict):
+    since: int = Field(default=0, ge=0)
+    limit: int = Field(default=MAX_PAGE, ge=1, le=MAX_PAGE)
+    offset: int = Field(default=0, ge=0)
+
+
+class ReplyLetter(Operation):
+    letter_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=MAX_REPLY)
+
+
 # Remembering is not managing: these belong to any granted runtime whose resident
 # declares memory.writable, whatever management capabilities it holds.
 MEMORY_TOOLS = {
@@ -100,8 +127,39 @@ MEMORY_TOOLS = {
 }
 
 
+# Writing to a colleague is management: it spends the household's money on a resident
+# the sender does not own, so it needs the operator's grant. Reading one's own post and
+# answering the letter one was handed are not, and outlive a grant exactly as the memory
+# tools do — a resident asked a question must still be able to answer it.
+LETTER_TOOLS = {
+    "hearth_letters_send": (
+        SendLetter,
+        "Ask another resident one bounded question by letter. It becomes that resident's own "
+        "task, worked under its own skill text and limits, and answered on its next run; there "
+        "is no live conversation and no reply before then. Retain operation_id and identical "
+        "arguments for uncertain retries.",
+    ),
+    "hearth_letters_read": (
+        ReadLetters,
+        "Read the letters this resident was sent and the replies its own letters received, "
+        "newest first. Pass since to see only what is newer than a time you already read. A "
+        "truncated flag means there is an older page: ask again with offset raised by limit.",
+    ),
+    "hearth_letters_reply": (
+        ReplyLetter,
+        "Answer the letter this run is working, once. The reply is what the sender reads, so "
+        "put the answer in it rather than pointing at this run. Retain operation_id and "
+        "identical arguments for uncertain retries.",
+    ),
+}
+# Neither of these is management: a run reads its own post and answers the letter it was
+# handed, so both outlive a grant revoked mid-run exactly as the memory tools do.
+LETTER_RECEIVER_TOOLS = {"hearth_letters_read", "hearth_letters_reply"}
+
+
 TOOL_MODELS = {
     **MEMORY_TOOLS,
+    **LETTER_TOOLS,
     **SKILL_TOOLS,
     **MAINTENANCE_TOOLS,
     "hearth_catalog": (
@@ -137,13 +195,31 @@ TOOL_MODELS = {
 }
 
 
-def tool_specs(*, memory: bool = False, management: bool = True) -> list[dict]:
-    """The exact declared tool set of one run; its digest joins the admission pins."""
+def tool_specs(
+    *,
+    memory: bool = False,
+    management: bool = True,
+    send_letters: bool = False,
+    reply_letter: bool = False,
+    read_post: bool = False,
+) -> list[dict]:
+    """The exact declared tool set of one run; its digest joins the admission pins.
+
+    A resident is never shown a tool it may not use: writing a letter appears only under
+    a grant that carries `send_letters`, answering one only in the run working that
+    letter, and the post is read only by a resident that has an end of one.
+    """
     result = []
     for name, (model, description) in TOOL_MODELS.items():
         if name in MEMORY_TOOLS and not memory:
             continue
-        if name not in MEMORY_TOOLS and not management:
+        if name == "hearth_letters_send" and not send_letters:
+            continue
+        if name == "hearth_letters_reply" and not reply_letter:
+            continue
+        if name == "hearth_letters_read" and not read_post:
+            continue
+        if name not in MEMORY_TOOLS and name not in LETTER_TOOLS and not management:
             continue
         schema = model.model_json_schema()
         if name == "hearth_residents_provision":
@@ -402,11 +478,47 @@ def _memory(db, hearth, authority, body: MemoryRead | MemorySave | JournalWrite)
     return {key: entry[key] for key in ("resident_id", "sequence", "run_id", "at", "archived")}
 
 
+def _letters(db, hearth, authority, body: SendLetter | ReadLetters | ReplyLetter) -> dict:
+    """The post of the resident this run belongs to; Hearth arbitrates every letter."""
+    if isinstance(body, ReadLetters):
+        return read_letters(
+            db, authority["actor"], since=body.since, limit=body.limit, offset=body.offset
+        )
+    if isinstance(body, SendLetter):
+        return hearth.send_letter_in_transaction(
+            db,
+            authority["run_id"],
+            body.to,
+            body.title,
+            body.detail,
+            body.operation_id,
+            expires_at=body.expires_at,
+        )
+    return hearth.reply_to_letter_in_transaction(
+        db, authority["run_id"], body.letter_id, body.text, body.operation_id
+    )
+
+
 def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
         raise Refused("management_tool_not_permitted")
+    if tool in LETTER_TOOLS:
+        # The post is the run's own. Writing is deliberately let through to the send
+        # itself, which checks the grant this run was admitted with and names why it may
+        # not write, rather than answering a permitted question with "no such tool".
+        # Answering belongs to the run working that letter and reading to a resident with
+        # an end of one; a run with neither is refused as it would be a tool it was never
+        # offered.
+        scope = run_letter_scope(db, authority["run_id"], int(hearth.clock()))
+        permitted = {
+            "hearth_letters_send": True,
+            "hearth_letters_read": scope["post"],
+            "hearth_letters_reply": scope["reply"],
+        }
+        if not permitted[tool]:
+            raise Refused("management_tool_not_permitted")
     # A run admitted for its own memory holds no management authority and no management tool.
-    if tool not in MEMORY_TOOLS and not authority["grant"]["enabled"]:
+    elif tool not in MEMORY_TOOLS and not authority["grant"]["enabled"]:
         raise Refused("management_tool_not_permitted")
     if tool in MEMORY_TOOLS and not authority["memory_writable"]:
         raise Refused("memory_not_writable")
@@ -417,6 +529,8 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
         body = model.model_validate(arguments)
         if isinstance(body, MemoryRead | MemorySave | JournalWrite):
             return _memory(db, hearth, authority, body)
+        if isinstance(body, SendLetter | ReadLetters | ReplyLetter):
+            return _letters(db, hearth, authority, body)
         if tool in SKILL_TOOLS:
             return dispatch_skill(db, hearth, authority, tool, body)
         if isinstance(body, Catalog):
