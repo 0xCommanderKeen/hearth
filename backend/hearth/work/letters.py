@@ -475,31 +475,41 @@ _LETTERS = (
 _ANSWERED = _LETTERS.replace("LEFT JOIN letter_replies", "JOIN letter_replies")
 
 
-def read_letters(db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE) -> dict:
+def read_letters(
+    db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE, offset: int = 0
+) -> dict:
     """What one resident has been sent, and what its own letters were answered with.
 
-    Bounded on both sides and filtered by time, so a resident that has been writing for
-    weeks reads the newest of each and asks again with an earlier `since` for more. A
-    reply belongs to the resident that asked the question, never to the run that wrote
-    it: that run already has an artifact of its own.
+    Bounded on both sides, newest first, filtered by time: a resident reads what is newer
+    than the last time it looked, and a truncated page is reached by asking again one
+    page further back. A reply belongs to the resident that asked the question, never to
+    the run that wrote it — that run already has an artifact of its own.
     """
     identifier(resident_id)
-    if type(since) is not int or since < 0 or type(limit) is not int or not 1 <= limit <= MAX_PAGE:
+    if (
+        type(since) is not int
+        or since < 0
+        or type(limit) is not int
+        or not 1 <= limit <= MAX_PAGE
+        or type(offset) is not int
+        or offset < 0
+    ):
         raise Refused("invalid_letter_page")
     received = db.execute(
         _LETTERS + "WHERE t.resident_id=? AND l.created_at>=? "
-        "ORDER BY l.created_at DESC,l.task_id DESC LIMIT ?",
-        (resident_id, since, limit + 1),
+        "ORDER BY l.created_at DESC,l.task_id DESC LIMIT ? OFFSET ?",
+        (resident_id, since, limit + 1, offset),
     ).fetchall()
     replies = db.execute(
         _ANSWERED + "WHERE l.sender_resident_id=? AND p.written_at>=? "
-        "ORDER BY p.written_at DESC,l.task_id DESC LIMIT ?",
-        (resident_id, since, limit + 1),
+        "ORDER BY p.written_at DESC,l.task_id DESC LIMIT ? OFFSET ?",
+        (resident_id, since, limit + 1, offset),
     ).fetchall()
     return {
         "resident_id": resident_id,
         "since": since,
         "limit": limit,
+        "offset": offset,
         "received": [_view(row) for row in received[:limit]],
         "received_truncated": len(received) > limit,
         "replies": [

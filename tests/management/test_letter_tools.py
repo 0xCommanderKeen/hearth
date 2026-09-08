@@ -218,6 +218,26 @@ def test_the_letter_call_is_recorded_as_this_run_s_tool_evidence(household):
         assert db.execute("SELECT count(*) FROM letters").fetchone()[0] == 1
 
 
+def test_a_full_page_of_post_says_so_and_the_older_one_is_a_page_further_back(household):
+    app, hearth, karen = household
+    opens_the_door(hearth)
+    writer, write = working_run(app, karen, "asks")
+    first = send(write)[1]
+    second = send(write, operation_id="letter-2", title="Another question")[1]
+    settle(hearth, writer)
+
+    reader, read = letter_run(app, first["task_id"], "reads")
+    ok, page = read("one", "hearth_letters_read", {"limit": 1})
+    assert ok and page["received_truncated"] and len(page["received"]) == 1
+    older = read("two", "hearth_letters_read", {"limit": 1, "offset": 1})[1]
+    assert not older["received_truncated"]
+    assert {page["received"][0]["task_id"], older["received"][0]["task_id"]} == {
+        first["task_id"],
+        second["task_id"],
+    }
+    settle(hearth, reader)
+
+
 def test_the_letter_is_answered_once_and_the_sender_reads_the_reply(household):
     app, hearth, karen = household
     opens_the_door(hearth)

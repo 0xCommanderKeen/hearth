@@ -94,6 +94,7 @@ class SendLetter(Operation):
 class ReadLetters(Strict):
     since: int = Field(default=0, ge=0)
     limit: int = Field(default=MAX_PAGE, ge=1, le=MAX_PAGE)
+    offset: int = Field(default=0, ge=0)
 
 
 class ReplyLetter(Operation):
@@ -141,8 +142,8 @@ LETTER_TOOLS = {
     "hearth_letters_read": (
         ReadLetters,
         "Read the letters this resident was sent and the replies its own letters received, "
-        "newest first. Pass since to see only what is newer than a time you already read; a "
-        "truncated flag means there is more behind an earlier since.",
+        "newest first. Pass since to see only what is newer than a time you already read. A "
+        "truncated flag means there is an older page: ask again with offset raised by limit.",
     ),
     "hearth_letters_reply": (
         ReplyLetter,
@@ -479,7 +480,9 @@ def _memory(db, hearth, authority, body: MemoryRead | MemorySave | JournalWrite)
 def _letters(db, hearth, authority, body: SendLetter | ReadLetters | ReplyLetter) -> dict:
     """The post of the resident this run belongs to; Hearth arbitrates every letter."""
     if isinstance(body, ReadLetters):
-        return read_letters(db, authority["actor"], since=body.since, limit=body.limit)
+        return read_letters(
+            db, authority["actor"], since=body.since, limit=body.limit, offset=body.offset
+        )
     if isinstance(body, SendLetter):
         return hearth.send_letter_in_transaction(
             db,
