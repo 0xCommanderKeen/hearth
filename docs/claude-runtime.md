@@ -246,6 +246,15 @@ A store configured for Claude now admits, dispatches and settles work. A run is 
 detached worker holding an inherited flock over its own folder; it launches the CLI once
 and never again, keeps the CLI's original stream-json as the receipt, and settles from
 it under the pinned schedule above. Cancellation signals the worker's own process group
-and claims zero usage only when the launch provably never happened. The management
-tools a run can reach over Hearth's own bridge are still #147, so every session runs
-with `--tools ""`.
+and claims zero usage only when the launch provably never happened.
+
+**What a Claude store cannot run yet.** Every session runs with `--tools ""`, because
+the bridge that carries Hearth's own `mcp__hearth__*` tools into one is #147. A run that
+was pinned to reach those tools — its resident holds an enabled grant, declares
+`memory_writable`, works a letter or holds post — is therefore refused
+`run_management_unsupported` **at admission**, before anything is launched or billed.
+Launching it anyway would spend the resident's allowance on a session holding none of
+the authority its declaration promised, and leave a receipt no settlement could accept.
+So on a Claude store today: residents that only read and answer run; residents that
+write memory, hold a grant or exchange letters wait for #147. Karen holds a grant, so a
+household bootstrapped on Claude cannot run Karen until then.

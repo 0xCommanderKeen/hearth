@@ -58,21 +58,32 @@ def test_only_a_receipted_kind_is_priced():
         assert pricing_pin(kind) is None
 
 
-def test_a_stored_price_pin_is_read_by_the_schedule_that_wrote_it():
+def test_a_stored_price_pin_is_read_by_the_runtime_that_wrote_it():
     from hearth.integrations.interface import validate_pricing
 
+    pins = {}
     for kind in ("codex_subscription", "claude_subscription"):
         pin = pricing_pin(kind)
         assert pin is not None
-        validate_pricing({key: pin[key] for key in ("model", "mode", "schedule")})
-    # A pin that mixes the two runtimes' schedules belongs to neither.
-    crossed = {
-        "model": "gpt-6-astra",
-        "mode": "standard",
-        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
-    }
+        pins[kind] = {key: pin[key] for key in ("model", "mode", "schedule")}
+        validate_pricing(pins[kind], kind)
+    # Neither runtime's pin settles the other's run, and a kind with no schedule at
+    # all reads no pin.
     with pytest.raises(Refused, match="run_pricing_invalid"):
-        validate_pricing(crossed)
+        validate_pricing(pins["codex_subscription"], "claude_subscription")
+    with pytest.raises(Refused, match="run_pricing_invalid"):
+        validate_pricing(pins["claude_subscription"], "codex_subscription")
+    with pytest.raises(Refused, match="run_pricing_invalid"):
+        validate_pricing(pins["codex_subscription"], "codex_mock")
+
+
+def test_only_a_runtime_that_carries_hearth_s_tools_says_so():
+    from hearth.integrations.interface import manages_tools
+
+    assert manages_tools("codex_subscription") is True
+    # The Claude bridge is #147; until then the kind admits no run pinned to it.
+    assert manages_tools("claude_subscription") is False
+    assert manages_tools("nothing_hearth_ships") is False
 
 
 def test_an_unknown_kind_is_answered_as_nothing_rather_than_as_the_one_that_ships():

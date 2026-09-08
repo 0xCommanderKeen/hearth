@@ -48,6 +48,11 @@ from hearth.work.service import Hearth, _audit
 RECEIPT = {"kind", "binding", "binary", "stdout", "exit_code", "cancelled", "launched"}
 
 
+def serialized(receipt: dict) -> str:
+    """The exact copy that commits, and the one whose size the bound is measured on."""
+    return json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+
+
 def transcript_of(receipt: dict) -> Transcript:
     """Re-read the receipt's own stream. The receipt is the evidence; this is a view."""
     parser = ClaudeEvents()
@@ -100,7 +105,7 @@ def encode(receipt, expected):
         or receipt["binding"] != asdict(expected)
     ):
         raise Refused("run_usage_invalid")
-    raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+    raw = serialized(receipt)
     if (
         not isinstance(receipt["stdout"], str)
         or (receipt["exit_code"] is not None and type(receipt["exit_code"]) is not int)
@@ -173,6 +178,10 @@ class ClaudeLiveRuntime:
             return subprocess.check_output(
                 [str(self.binary), *arguments],
                 env=environment(self.config_dir),
+                # The login answer names the account. Nothing the CLI says on either
+                # stream is kept, logged or passed on, so its diagnostics are discarded
+                # rather than inherited onto Hearth's own stderr.
+                stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=PROBE_TIMEOUT,
             )
@@ -397,6 +406,14 @@ def worker(folder, inherited_fd=None):
             "cancelled": cancelled,
             "launched": child is not None,
         }
+        # The receipt has to fit the bound `encode` validates. Replacement characters
+        # and JSON escaping can both inflate what was read, so a stream that was within
+        # the read cap can still serialize past it. Dropping the tail leaves a
+        # transcript that cannot be read — failed, usage unknown — which is truthful;
+        # exiting here instead would leave the run with no receipt at all and no way to
+        # ever settle.
+        while len(serialized(receipt).encode()) > MAX_STREAM and receipt["stdout"]:
+            receipt["stdout"] = receipt["stdout"][: len(receipt["stdout"]) // 2]
         encode(receipt, UsageBinding(**request["binding"]))
         publish(folder / "receipt.json", receipt)
 

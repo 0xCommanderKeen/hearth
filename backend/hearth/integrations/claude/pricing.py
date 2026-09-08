@@ -24,14 +24,17 @@ the Codex one (`docs/claude-runtime.md`):
 
 from dataclasses import dataclass
 
-from hearth.integrations.claude.events import MAX_TOKENS, TokenUsage
+from hearth.integrations.claude.events import MAX_MESSAGES, MAX_MODELS, MAX_TOKENS, TokenUsage
 
 PRICE_SCHEDULE = "claude-opus-5-api-equivalent-2026-09-07"
 MODEL = "claude-opus-5"
 # The CLI's own housekeeping model, billed alongside the pinned one in every session.
 SECONDARY_MODEL = "claude-haiku-4-5"
 SOURCE = "https://platform.claude.com/docs/en/about-claude/pricing"
-MAX_REQUESTS = 128
+# Every row the stream can produce: one per reported request of the pinned model, plus
+# one per other model the session billed. A bound below that would price a long but
+# perfectly readable session as unknown.
+MAX_REQUESTS = MAX_MESSAGES + MAX_MODELS
 
 
 @dataclass(frozen=True)

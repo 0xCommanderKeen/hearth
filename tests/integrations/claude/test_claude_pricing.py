@@ -102,6 +102,15 @@ def test_a_session_that_never_names_the_pinned_model_is_not_priced():
     )
 
 
+def test_the_bound_admits_every_row_the_stream_can_produce():
+    """A long but perfectly readable session must not price as unknown."""
+    from hearth.integrations.claude.events import MAX_MESSAGES, MAX_MODELS
+
+    assert MAX_REQUESTS >= MAX_MESSAGES + MAX_MODELS
+    rows = [TURN] * MAX_MESSAGES + [HOUSEKEEPING] * (MAX_MODELS - 1)
+    assert estimate(*rows).microdollars is not None
+
+
 def test_unknown_coverage_or_service_mode_refuses():
     assert estimate().microdollars is None
     assert estimate_api_equivalent(None, model=MODEL, mode="standard").microdollars is None

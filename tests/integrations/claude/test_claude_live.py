@@ -387,6 +387,48 @@ def test_usage_the_stream_contradicts_keeps_the_answer_and_holds_the_resident(tm
         hearth.admit(task.task_id, reserve=10_000)
 
 
+def test_a_stream_too_large_to_commit_still_leaves_a_receipt_to_settle_on(tmp_path, monkeypatch):
+    """A run with no receipt could never settle, so the tail is dropped, not the run."""
+    from hearth.integrations.claude import subscription
+
+    runtime, _, run, _ = prepared(tmp_path)
+    # Small enough that the recorded session's own stream overflows it.
+    monkeypatch.setattr(subscription, "MAX_STREAM", 1024)
+    worker(runtime.folder(run.id))
+    published = runtime.receipt(run.id)
+    assert len(json.dumps(published, sort_keys=True, separators=(",", ":"))) <= 1024
+    assert published["launched"] is True and published["cancelled"] is False
+    evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+    # A transcript nobody can read settles nothing and claims nothing.
+    assert evidence.status == "failed" and evidence.cost is None
+
+
+def test_the_probe_never_lets_the_cli_speak_on_hearth_s_own_error_stream(tmp_path, capfd):
+    """`auth status` names the account; none of what it says reaches Hearth."""
+    data = tmp_path / "data"
+    config_dir = tmp_path / "private-claude-config"
+    config_dir.mkdir()
+    binary = tmp_path / "claude"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        f"if '--version' in sys.argv:\n print({VERSION!r})\n sys.exit()\n"
+        "sys.stderr.write('account: someone@example.invalid, plan: max\\n')\n"
+        "print(json.dumps({'loggedIn': True, 'authMethod': 'claude.ai'}))\n"
+    )
+    binary.chmod(0o700)
+    from hearth.storage.database import Database
+
+    database = Database(data / "hearth.db")
+    database.initialize()
+    with database.transaction(write=True) as db:
+        db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (KIND,))
+    capfd.readouterr()
+    ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir)
+    captured = capfd.readouterr()
+    assert "example.invalid" not in captured.err and "example.invalid" not in captured.out
+
+
 def test_the_operator_sees_the_individual_requests_the_session_reported(tmp_path):
     from hearth.integrations.interface import receipt_requests
 

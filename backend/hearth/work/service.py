@@ -476,6 +476,17 @@ class Hearth:
             pin_management(
                 db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
             )
+            from hearth.integrations.interface import manages_tools
+
+            # A run pinned to reach Hearth's own tools can only be worked by a runtime
+            # that carries them. Launching it on one that cannot would spend the
+            # resident's money on a session holding none of the authority its
+            # declaration promised, and leave a receipt no settlement can accept.
+            if (
+                not manages_tools(run.runtime_kind)
+                and db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+            ):
+                raise Refused("run_management_unsupported")
         db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
         memory = (
             example["memory_revision"]

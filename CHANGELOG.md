@@ -21,6 +21,13 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   mid-stream snapshot, and there is no long-context tier on this schedule — confirmed
   from the Anthropic pricing page, which is also why the second model a session really
   spends, `claude-haiku-4-5`, is priced at its own published rates rather than ignored.
+  One thing a Claude store cannot do yet: a run pinned to reach Hearth's own management
+  tools — its resident holds a grant, declares `memory_writable`, works a letter or holds
+  post — is refused `run_management_unsupported` at admission, because the bridge that
+  carries those tools into a Claude session has not landed. It is refused where nothing
+  has been spent rather than launched into a session holding none of the authority its
+  declaration promised. A stored price pin is also now read by the runtime the run was
+  pinned to, instead of by whichever schedule happens to recognise it.
 
 - Hearth knows a second live runtime kind. One registry in
   `integrations/interface.py` now answers every question about a runtime kind — what is
