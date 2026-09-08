@@ -125,9 +125,47 @@ export function Letters({
     null,
   );
   const [frozen, setFrozen] = useState(false);
-  const accepts = !!resident.letters_accept;
+  // The door Hearth last answered with, and the declaration revision it named. The
+  // snapshot is the truth, so this stands in only until the snapshot has caught up to
+  // that revision: a save that succeeded never reads as unchanged, and a change made
+  // somewhere else, which arrives on a later revision, wins over a stale answer here.
+  const [door, setDoor] = useState<{
+    revision: number;
+    accepts: boolean;
+  } | null>(null);
+  const [doorRefusal, setDoorRefusal] = useState("");
+  const accepts =
+    door && door.revision >= resident.revision
+      ? door.accepts
+      : !!resident.letters_accept;
   const read = () =>
     act(async () => setLoaded(await client.letters(resident.id, PAGE, 0)));
+  /** Open or shut the declared door, which is one declaration revision and nothing else.
+   *  The request carries the door and the revision this page saw, so a purpose or a skill
+   *  text this panel never read cannot be overwritten by turning a door, and a save that
+   *  raced a change to the declaration is refused rather than applied to something else.
+   *  A refusal is shown here, where it was written, not as a door that quietly did not
+   *  move. */
+  async function turn(open: boolean) {
+    setDoorRefusal("");
+    await act(async () => {
+      try {
+        const saved = await client.setLettersDoor(
+          resident.id,
+          open,
+          resident.revision,
+        );
+        setDoor({
+          revision: saved.revision,
+          accepts: saved.declaration.letters_accept ?? open,
+        });
+      } catch (error) {
+        setDoorRefusal(
+          error instanceof Error ? error.message : "Something went wrong.",
+        );
+      }
+    });
+  }
   async function send(event: FormEvent) {
     event.preventDefault();
     pending.current ??= { id: crypto.randomUUID(), title, detail };
@@ -178,6 +216,32 @@ export function Letters({
         under it, so a limit below one run's cost refuses the answer at
         allocation and leaves the letter unanswered.
       </p>
+      <div
+        className="letters-door"
+        aria-label={`The letters door for ${resident.name}`}
+      >
+        <button disabled={busy || readOnly} onClick={() => void turn(!accepts)}>
+          {accepts ? "Shut the door" : "Open the door"}
+        </button>
+        <small>
+          {accepts
+            ? `Shutting it refuses every letter written to ${resident.name} from the next revision on. Letters already queued keep their place.`
+            : `Opening it lets a letter be queued here. It grants ${resident.name} nothing, and it grants nobody the right to write.`}
+        </small>
+      </div>
+      {doorRefusal && (
+        <p className="notice error" role="alert">
+          The door did not move · {doorRefusal}. It stands as it did.
+        </p>
+      )}
+      {door && (
+        <p className="notice" role="status">
+          {door.accepts
+            ? `${resident.name} accepts letters, at declaration revision ${door.revision}.`
+            : `${resident.name} accepts no letters, at declaration revision ${door.revision}.`}{" "}
+          Runs already admitted keep the revision they were pinned to.
+        </p>
+      )}
       <button disabled={busy} onClick={() => void read()}>
         {loaded ? "Reload letters" : "Read letters"}
       </button>

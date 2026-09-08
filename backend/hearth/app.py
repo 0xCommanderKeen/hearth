@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from hearth.api.auth import OperatorAuth
 from hearth.api.requests import (
+    DECLARATION_FIELDS,
     DeclarationPost,
     HouseholdPost,
     LetterPost,
@@ -232,13 +233,26 @@ def create_app(
             raise Refused("use_resident_provisioning")
         with hearth.database.transaction(write=True) as db:
             values = body.model_dump(exclude={"expected_revision"})
+            declared = {field for field in DECLARATION_FIELDS if values[field] is not None}
+            # What a resident is changes whole or not at all: a body that says some of the
+            # declaration and not the rest is refused rather than quietly merged.
+            if declared and declared != DECLARATION_FIELDS:
+                raise Refused("declaration_fields_invalid")
+            current = hearth.declared_declaration(db, resident_id)
+            if not declared:
+                # Only the capabilities travelled. The resident stays exactly what it
+                # declares now, read in this same transaction; the expected revision still
+                # refuses a save that raced a change to any of it.
+                if current is None:
+                    raise Refused("revision_conflict")
+                values |= {field: getattr(current, field) for field in DECLARATION_FIELDS}
             # An omitted memory.writable keeps what the operator granted; the
             # expected revision still refuses a save that raced a change to it.
             if values["memory_writable"] is None:
-                values["memory_writable"] = hearth.declared_memory_writable(db, resident_id)
+                values["memory_writable"] = current is not None and current.memory_writable
             # An omitted letters.accept likewise keeps the door exactly as it stands.
             if values["letters_accept"] is None:
-                values["letters_accept"] = hearth.declared_letters_accept(db, resident_id)
+                values["letters_accept"] = current is not None and current.letters_accept
             return asdict(
                 hearth.save_resident_in_transaction(
                     db,

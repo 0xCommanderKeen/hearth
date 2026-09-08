@@ -402,6 +402,10 @@ export type ResidentDeclaration = {
     daily_limit: number;
     budget_timezone: string;
     skill_text: string;
+    // The capabilities standing beside the declaration. A body may omit them, so a
+    // client that never asked about them cannot be made to read them back.
+    memory_writable?: boolean;
+    letters_accept?: boolean;
   };
 };
 /** What a letter came to. A letter still open is `pending` and nothing else. */
@@ -983,6 +987,22 @@ export class Client {
         method: "POST",
         headers: { "Idempotency-Key": command },
         body: JSON.stringify(letter),
+      },
+    );
+  }
+  // Open or shut the declared letters.accept door and nothing else. The body carries the
+  // door alone, so a control that never read this resident's purpose or skill text
+  // cannot overwrite them, and the revision it saw refuses a save that raced a change to
+  // any of the declaration. The answer is the declaration that now stands.
+  setLettersDoor(id: string, accept: boolean, revision: number) {
+    return this.request<ResidentDeclaration>(
+      `/api/residents/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          letters_accept: accept,
+          expected_revision: revision,
+        }),
       },
     );
   }

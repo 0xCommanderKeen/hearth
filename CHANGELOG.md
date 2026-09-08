@@ -2,6 +2,17 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- The letters door is turned from Townhall. The Letters section on a resident's page
+  carries one control that opens or shuts the declared `letters.accept` door, names the
+  declaration revision that now carries it, and shows a refusal where it was written
+  rather than as a door that quietly did not move; a restored copy cannot turn one. The
+  door travels alone: `PUT /api/residents/{id}` now takes a body carrying only
+  `letters_accept` and `expected_revision`, so a control that never read a purpose or a
+  skill text cannot overwrite one. What a resident *is* still changes whole or not at all
+  — a body saying some of the five declaration fields and not the rest is refused as
+  `declaration_fields_invalid` instead of merged into what stands. The API and CLI paths
+  for the door are unchanged.
+
 - Letters are written down. `docs/letters.md` is the contract — the grant and the door
   that both have to be open, what Hearth arbitrates and the refusal each guard leaves,
   delivery by ordinary admission, the four states a letter ends in, cost by origin, the

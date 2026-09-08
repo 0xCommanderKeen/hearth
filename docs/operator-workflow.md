@@ -19,6 +19,15 @@ allows a fresh submission. Start retries resolve to the same run. Acceptance is
 displayed separately from runtime completion, and cancellation remains stopping
 until runtime evidence confirms a terminal outcome.
 
+A declaration is saved whole: `PUT /api/residents/{id}` carries all five declaration
+fields or none of them, and refuses half of one rather than merging it into what stands.
+The capabilities beside it travel separately, so a control that changes one capability
+never restates a resident to do it. That is how Townhall's Letters section opens and
+shuts a resident's `letters.accept` door: the request carries the door and the revision
+the page read, the answer names the declaration revision that now carries it, and a save
+that raced a change to the declaration is refused and shown where it was written. The
+API and CLI paths stay exactly as they were (`docs/letters.md`).
+
 State and audit cursor are read in one SQLite transaction. Database epoch plus
 cursor identify the snapshot; reconnect fetches a complete snapshot, and SSE sends
 complete snapshots or explicit resets. The client rejects an unsupported snapshot

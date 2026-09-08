@@ -167,6 +167,81 @@ it("names the two states that quietly stop an answer: a shut door and a thin day
   );
 });
 
+it("opens a shut door and says which declaration revision now carries it", async () => {
+  const client = new Client("synthetic-test");
+  vi.spyOn(client, "letters").mockResolvedValue(post);
+  const turn = vi.spyOn(client, "setLettersDoor").mockResolvedValue({
+    id: "karen",
+    revision: 2,
+    declaration: {
+      name: "Karen",
+      purpose: "Runs the household",
+      daily_limit: 5_000_000,
+      budget_timezone: "UTC",
+      skill_text: "# Karen",
+      letters_accept: true,
+    },
+  });
+  mount(karen, client);
+  expect(
+    screen.getByLabelText("Whether Karen can be written to").textContent,
+  ).toContain("Karen accepts no letters");
+
+  fireEvent.click(screen.getByText("Open the door"));
+
+  // The door alone travels, at the revision this page saw: nothing else is restated.
+  await screen.findByText(/declaration revision 2/);
+  expect(turn.mock.calls[0]).toEqual(["karen", true, 1]);
+  expect(
+    screen.getByLabelText("Whether Karen can be written to").textContent,
+  ).toContain("Karen accepts letters.");
+  expect(screen.getByRole("status").textContent).toContain(
+    "Karen accepts letters, at declaration revision 2.",
+  );
+  // The same control now shuts it again.
+  expect(screen.getByText("Shut the door")).toBeTruthy();
+});
+
+it("shows a refused door where it was written rather than as a door that did not move", async () => {
+  const client = new Client("synthetic-test");
+  vi.spyOn(client, "letters").mockResolvedValue(post);
+  vi.spyOn(client, "setLettersDoor").mockRejectedValue(
+    new RequestError(409, "revision conflict"),
+  );
+  mount(karen, client);
+  fireEvent.click(screen.getByText("Open the door"));
+
+  const refusal = await screen.findByRole("alert");
+  expect(refusal.textContent).toContain("revision conflict");
+  expect(refusal.textContent).toContain("It stands as it did.");
+  // The door reads exactly as it did, and no revision is claimed.
+  expect(
+    screen.getByLabelText("Whether Karen can be written to").textContent,
+  ).toContain("Karen accepts no letters");
+  expect(screen.getByText("Open the door")).toBeTruthy();
+  expect(screen.queryByText(/declaration revision/)).toBeNull();
+});
+
+it("cannot turn a door on a restored copy", () => {
+  const client = new Client("synthetic-test");
+  const turn = vi.spyOn(client, "setLettersDoor");
+  render(
+    <Letters
+      client={client}
+      resident={karen}
+      residents={[reporter, karen]}
+      busy={false}
+      readOnly
+      act={act}
+      openable={openable}
+    />,
+  );
+  const button = screen.getByText("Open the door") as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(turn).not.toHaveBeenCalled();
+});
+
 const receipt = {
   command_id: "one",
   resident_id: "reporter",

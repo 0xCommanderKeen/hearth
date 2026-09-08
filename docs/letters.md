@@ -22,10 +22,9 @@ Two independent permissions have to meet, and neither side can waive the other.
   money on a resident the sender does not own.
 - **Receiving** needs the declared door `letters.accept` on the receiver's declaration
   revision. It is **false by default**, is not part of provisioning, and is opened by the
-  operator with `PUT /api/residents/{id}` (`letters_accept: true`) or `python -m hearth
-  save-resident`. Townhall names a shut door where it matters but has no control that
-  opens one yet. A sender's grant cannot open it, and opening it grants nobody the right
-  to send.
+  operator: from the **Letters** section of Townhall's resident page, with `PUT
+  /api/residents/{id}` (`letters_accept: true`), or with `python -m hearth save-resident`.
+  A sender's grant cannot open it, and opening it grants nobody the right to send.
 
 Authority is the grant the **sending run was admitted with**, not whatever the operator
 has granted since: a run admitted without `send_letters` never gains it mid-flight, and a
@@ -151,8 +150,14 @@ covered by the run's `tools_sha256`.
 - `GET /api/residents/{id}/letters` reads any resident's inbox and sent letters, each with
   its answer.
 - `PUT /api/residents/{id}` with `letters_accept`, or `python -m hearth save-resident`,
-  opens or shuts the door; an omitted field keeps the door exactly as it stands. This is
-  the only way to open one — the browser reads the door but does not write it.
+  opens or shuts the door; an omitted field keeps the door exactly as it stands. The door
+  may travel **alone**: a body that carries `letters_accept` and `expected_revision` and
+  none of the declaration turns the door without restating what the resident is, so a
+  control that never read a purpose or a skill text cannot overwrite one. What a resident
+  *is* still changes whole or not at all — a body saying some of `name`, `purpose`,
+  `daily_limit`, `budget_timezone` and `skill_text` and not the rest is refused as
+  `declaration_fields_invalid` rather than merged into what stands. The `expected_revision`
+  refuses a save that raced a change to any of it either way.
 - `GET/PUT /api/household` carries `max_letter_depth` (default **2**, `0` shuts the post
   household-wide, maximum 5), `letter_ttl_seconds` (default one day, 60 s to 7 days) and
   `letter_daily_limit` (default 5, `0` shuts the post, maximum 100 — counted in the
@@ -161,7 +166,10 @@ covered by the run's `tools_sha256`.
 - Townhall's resident page carries a **Letters** section: everything that reached the
   resident and everything it wrote, each in one named state, with the answer's text and a
   link to the run that wrote it, beside the two things that quietly stop an answer — a
-  shut door and the daily limit. A task that is a letter shows its chain, root first;
+  shut door and the daily limit. The door is **turned from there**: one control opens or
+  shuts it, names the declaration revision that now carries it, and shows a refusal where
+  it was written rather than as a door that quietly did not move. A restored copy is
+  read-only and cannot turn one. A task that is a letter shows its chain, root first;
   Hamlet walks a villager to the neighbour's door from real `letter_sent` and
   `letter_replied` events and from nothing else.
 
@@ -175,9 +183,9 @@ The real journey found both, and an operator setting letters up hits both first:
 
 1. **The receiver's door is closed by default and provisioning does not open it.** A
    resident created through Karen or through provisioning has `letters.accept` false; the
-   operator opens it explicitly afterwards, over the API or the CLI, since Townhall has no
-   control for it. Until then every letter to it is refused with `letters_not_accepted`,
-   at the sender, writing nothing.
+   operator opens it explicitly afterwards, from the Letters section of that resident's
+   Townhall page or over the API or the CLI. Until then every letter to it is refused with
+   `letters_not_accepted`, at the sender, writing nothing.
 2. **The receiver's daily limit must cover a whole answering run**, letter reservation
    included. Delivery is admission: a receiver whose allocation cannot fit the run keeps
    the letter queued until it can, and if that never happens the letter expires. A limit
