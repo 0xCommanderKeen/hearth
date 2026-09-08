@@ -36,22 +36,20 @@ not overwrite live state or remove its source.
 Restoring verifies again while copying, sets a durable `restore_hold`, and changes
 the observation epoch. All ordinary database mutations refuse while this hold
 exists. Executor entry refuses before inspecting/stopping/starting runtime work;
-the API disables its supervision loop on restored data. Browser reads and exact
-artifact/approval previews remain available, and the client refuses mutation calls.
+the API disables its supervision loop on restored data. Browser reads, exact artifact
+previews and the inbox remain available, and the client refuses mutation calls —
+including marking a notification read.
 There is intentionally no activation command or automatic hold removal.
 
 The restored database retains runs (including active/unknown ownership), command
-receipts, approvals, actions, occurrence identities, usage and queues. This preserves
+receipts, occurrence identities, usage and the inbox as it stood. This preserves
 information for reconciliation without claiming that copied execution is
-authoritative. What a local development adapter left on disk beside the data is not
-copied, so a restored copy carries the durable record of an uncertain publication
-without the adapter evidence to reconcile it against — and it may not execute anyway.
-The backup format does not include runtime credentials.
+authoritative. The backup format does not include runtime credentials.
 Production restore requires an ownership reconciliation plan and actual host checks
 before activation.
 
-Verification includes completed/active/uncertain-action restores, matching artifacts
-and command receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
+Verification includes completed and active restores, matching artifacts and command
+receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
 artifacts, extra files, symlinks, FIFOs, traversal, busy workers and overwrite refusal.
 An actual CLI demo → backup → restore rehearsal ran on synthetic data on 2026-09-06
 under `/private/tmp/hearth-restore-rehearsal-{source,backup,copy}`. The copy has a new
