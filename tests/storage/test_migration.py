@@ -12,6 +12,7 @@ from hearth.storage.migration import UpgradeError
 from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
 from tests.fixtures.schema_v2_pre_simulated import SCHEMA as SCHEMA_V2
 from tests.fixtures.schema_v3_pre_inbox import SCHEMA as SCHEMA_V3
+from tests.fixtures.schema_v4_pre_examples import SCHEMA as SCHEMA_V4
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -240,6 +241,25 @@ def test_a_stored_case_result_loses_the_key_the_evaluator_no_longer_produces(tmp
     assert result == {"passed": True, "actual_cost": 2000}
 
 
+def test_a_finished_validation_keeps_its_runner_under_the_column_that_names_it(tmp_path):
+    from hearth.skills.authoring import digest
+    from hearth.skills.evaluation import REQUEST_FIELDS
+
+    path = tmp_path / "hearth.db"
+    settled_store(path)
+    Database(path).initialize()
+    with Database(path).transaction() as db:
+        row = db.execute("SELECT * FROM skill_validations").fetchone()
+        # The examples really did run on that resident; only the column's name changes.
+        assert row["resident_id"] == "karen" and row["resident_revision"] == 1
+        # Nothing recorded which memory or context version they carried, and the
+        # upgrade does not invent one.
+        assert row["memory_revision"] is None and row["context_version"] is None
+        # The rename moved what the request digest covers, so it is recomputed and
+        # the row still verifies against the fields this release pins.
+        assert digest({key: row[key] for key in REQUEST_FIELDS}) == row["request_sha256"]
+
+
 def version_2_store(path, *, unlaunched=False):
     """A store shaped exactly as the release before this one wrote it."""
     db = sqlite3.connect(path, isolation_level=None)
@@ -422,6 +442,108 @@ def test_the_inbox_keeps_its_run_history_and_forgets_the_reviews(tmp_path):
     assert json.loads(rows[0]["payload"])["link"] == "/#run-r"
     detail = db.execute("SELECT detail FROM audit WHERE kind='notifications_removed'").fetchone()[0]
     assert json.loads(detail) == {"count": 1, "reason": "approvals_removed"}
+
+
+def _lifecycle(db, resident_id, revision, state, *, manager="operator"):
+    import hashlib
+
+    content = {
+        "resident_id": resident_id,
+        "revision": revision,
+        "state": state,
+        "manager": manager,
+        "actor": "operator",
+        "originating_run_id": None,
+        "updated_at": 1,
+    }
+    db.execute(
+        "INSERT INTO resident_lifecycle_history VALUES (?,?,?,?)",
+        (
+            resident_id,
+            revision,
+            json.dumps(content, sort_keys=True),
+            hashlib.sha256(
+                json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+        ),
+    )
+    db.execute(
+        "INSERT INTO resident_lifecycle VALUES (?,?) ON CONFLICT(resident_id) "
+        "DO UPDATE SET revision=excluded.revision",
+        (resident_id, revision),
+    )
+
+
+def version_4_store(path):
+    """A version-4 store with the service evaluator and a validation waiting on it."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    for statement in SCHEMA_V4:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    db.execute("INSERT INTO system_meta VALUES ('skill_evaluator', 'evaluator')")
+    for resident, name in (("karen", "Karen"), ("evaluator", "Skill evaluator")):
+        db.execute("INSERT INTO residents VALUES (?, 1)", (resident,))
+        db.execute(
+            "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+            " created_at) VALUES (?, 1, ?, 'Reads notes', 1000000, 1)",
+            (resident, name),
+        )
+        _lifecycle(db, resident, 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30)"
+    )
+    db.execute("INSERT INTO skills VALUES ('reports', 1, 'karen', 1)")
+    db.execute(
+        "INSERT INTO skill_revisions VALUES "
+        "('reports', 1, 'Reports', 'Writes reports', 'Write one', 'draft', 'karen', 1, ?)",
+        ("d" * 64,),
+    )
+    db.execute(
+        "INSERT INTO skill_validations VALUES "
+        "('v', 'reports', 1, ?, ?, 'evaluator', 1, 'karen', NULL, 1, 10000, 1, 601, ?, "
+        "'pending', NULL)",
+        ("d" * 64, "f" * 64, "0" * 64),
+    )
+    db.execute("PRAGMA user_version = 4")
+    db.commit()
+    db.close()
+
+
+def test_the_version_4_store_retires_the_evaluator_and_the_work_it_owned(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_4_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    assert db.execute("SELECT 1 FROM system_meta WHERE key='skill_evaluator'").fetchone() is None
+    # The resident stays, with its history; nothing may be admitted on it again.
+    lifecycle = json.loads(
+        db.execute(
+            "SELECT content FROM resident_lifecycle_history WHERE resident_id='evaluator' "
+            "ORDER BY revision DESC LIMIT 1"
+        ).fetchone()[0]
+    )
+    assert lifecycle["state"] == "archived" and lifecycle["revision"] == 1
+    assert (
+        db.execute(
+            "SELECT revision FROM resident_lifecycle WHERE resident_id='evaluator'"
+        ).fetchone()[0]
+        == 1
+    )
+    # Its unfinished validation can never get a case now, so it is failed with a reason
+    # rather than left pending on a resident nothing will run.
+    row = db.execute("SELECT * FROM skill_validations").fetchone()
+    assert (row["status"], row["reason"]) == ("failed", "skill_evaluator_removed")
+    assert row["resident_id"] == "evaluator"
+    detail = db.execute("SELECT detail FROM audit WHERE kind='resident.archived'").fetchone()[0]
+    assert json.loads(detail) == {
+        "reason": "skill_evaluator_removed",
+        "failed_validations": 1,
+    }
 
 
 def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):

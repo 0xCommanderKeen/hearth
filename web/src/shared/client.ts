@@ -175,7 +175,8 @@ export type SkillValidation = {
   skill_id: string;
   candidate_revision: number;
   candidate_sha256: string;
-  evaluator_id: string | null;
+  resident_id: string | null;
+  memory_revision: number | null;
   status: "pending" | "passed" | "failed";
   reason: string | null;
   assessment: string;
@@ -783,12 +784,17 @@ export class Client {
       `/api/skill-validations/${encodeURIComponent(id)}`,
     );
   }
-  validateSkill(skillId: string, revision: number, reserve: number) {
+  validateSkill(
+    skillId: string,
+    revision: number,
+    reserve: number,
+    residentId: string,
+  ) {
     return this.request<SkillValidation>(
       `/api/skills/${encodeURIComponent(skillId)}/validations`,
       {
         method: "POST",
-        body: JSON.stringify({ revision, reserve }),
+        body: JSON.stringify({ revision, reserve, resident_id: residentId }),
       },
     );
   }

@@ -297,9 +297,12 @@ def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp
         with app.state.hearth.database.transaction() as db:
             # Karen manages residents; the run that tried her draft could not. An
             # example is admitted with no management pin at all.
-            assert db.execute(
-                "SELECT resident_id FROM runs WHERE id=?", (case["run_id"],)
-            ).fetchone()[0] == karen["resident_id"]
+            assert (
+                db.execute("SELECT resident_id FROM runs WHERE id=?", (case["run_id"],)).fetchone()[
+                    0
+                ]
+                == karen["resident_id"]
+            )
             assert not db.execute(
                 "SELECT 1 FROM run_management WHERE run_id=?", (case["run_id"],)
             ).fetchone()
@@ -553,9 +556,12 @@ def test_declaration_edit_blocks_admission_and_restored_text_reuses_cases(tmp_pa
         case["task_id"] for case in pending["cases"]
     ]
     with app.state.hearth.database.transaction() as db:
-        assert db.execute(
-            "SELECT revision FROM run_memory WHERE run_id=?", (resumed["cases"][0]["run_id"],)
-        ).fetchone()[0] == pending["memory_revision"]
+        assert (
+            db.execute(
+                "SELECT revision FROM run_memory WHERE run_id=?", (resumed["cases"][0]["run_id"],)
+            ).fetchone()[0]
+            == pending["memory_revision"]
+        )
 
 
 def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path):

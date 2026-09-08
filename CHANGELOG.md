@@ -2,6 +2,15 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Skill examples run as the resident that asked for them (schema 5): the Skill evaluator
+  service resident, its empty-memory rule and its provisioning escape hatch are gone. A
+  validation pins the requesting resident, its declaration and memory revisions and the
+  context version, and its two cases are admitted on that resident with no management
+  tools. They need the run slot the requesting turn is holding, so a resident asks, ends
+  its turn and reads the evidence in a later one; an operator names whose examples these
+  are. Upgrading renames the stored runner, archives any evaluator with an audit fact and
+  fails the validations that were still waiting on it.
+
 - Approvals and publication are gone (schema 4): no grants, requests, decisions, broker
   or noticeboard until a real approval-gated effect needs them. The inbox becomes the
   feature they were attached to: every notification is written with the work it reports,

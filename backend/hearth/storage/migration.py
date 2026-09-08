@@ -187,9 +187,7 @@ def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
         "UPDATE skill_validations SET status='failed', reason='skill_evaluator_removed' "
         "WHERE status='pending'"
     ).rowcount
-    row = connection.execute(
-        "SELECT value FROM system_meta WHERE key='skill_evaluator'"
-    ).fetchone()
+    row = connection.execute("SELECT value FROM system_meta WHERE key='skill_evaluator'").fetchone()
     if row is None:
         if pending:
             _fact(connection, "skill.validations_failed", "skill_evaluator_removed", now, pending)
@@ -352,9 +350,7 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                     else:
                         continue
                     insert.append(f'"{name}"')
-                moved = {
-                    previous for (owner, _), previous in renames.items() if owner == table
-                }
+                moved = {previous for (owner, _), previous in renames.items() if owner == table}
                 dropped = {
                     name
                     for name in old_columns - {row["name"] for row in _columns(new, table)} - moved

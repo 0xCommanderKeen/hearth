@@ -70,8 +70,13 @@ def request_validation(
     check_editor(db, skill_id, actor)
     if type(reserve) is not int or not 1 <= reserve <= 500_000:
         raise Refused("skill_evaluation_reservation_invalid")
-    if authority is not None and reserve > authority["grant"]["max_reserve"]:
-        raise Refused("management_reservation_limit")
+    if authority is not None:
+        if reserve > authority["grant"]["max_reserve"]:
+            raise Refused("management_reservation_limit")
+        # Admission rechecks this; refusing here says so before the request is durable.
+        runtime = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+        if runtime not in authority["grant"]["profiles"]:
+            raise Refused("management_profile_not_permitted")
     candidate = exact_skill(db, skill_id, revision)
     authored = read_authoring(db, skill_id, revision)
     if candidate["status"] != "draft" or authored is None:

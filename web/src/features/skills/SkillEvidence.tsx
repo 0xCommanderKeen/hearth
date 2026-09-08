@@ -3,6 +3,7 @@ import {
   Client,
   RequestError,
   type CatalogSkill,
+  type Resident,
   type SkillValidation,
 } from "../../shared/client";
 
@@ -11,6 +12,7 @@ const readable = (reason: string) => reason.replaceAll("_", " ");
 export function SkillEvidence({
   client,
   skill,
+  residents,
   readOnly,
   dirty,
   onPublished,
@@ -18,6 +20,7 @@ export function SkillEvidence({
 }: {
   client: Client;
   skill: CatalogSkill;
+  residents: Resident[];
   readOnly: boolean;
   dirty: boolean;
   onPublished: () => void;
@@ -31,6 +34,15 @@ export function SkillEvidence({
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(false);
   const [reserve, setReserve] = useState(100000);
+  // The examples are a resident's own runs, so somebody has to be named. An operator
+  // is not a resident and cannot lend one an allowance or a run slot.
+  const eligible = residents.filter(
+    (resident) => resident.lifecycle?.state !== "archived",
+  );
+  const [runner, setRunner] = useState("");
+  const chosen = eligible.some((resident) => resident.id === runner)
+    ? runner
+    : (eligible[0]?.id ?? "");
   const pending = useRef<Parameters<Client["publishSkill"]>[0] | null>(null);
   const live = useRef(true);
   useEffect(() => {
@@ -75,7 +87,7 @@ export function SkillEvidence({
   }, [client, validation?.validation_id, validation?.status, readOnly]);
 
   async function validate() {
-    if (busy || dirty || readOnly) return;
+    if (busy || dirty || readOnly || !chosen) return;
     setBusy(true);
     setError("");
     try {
@@ -83,6 +95,7 @@ export function SkillEvidence({
         skill.skill_id,
         skill.revision,
         reserve,
+        chosen,
       );
       if (live.current) setValidation(result);
     } catch (e) {
@@ -179,11 +192,11 @@ export function SkillEvidence({
           <p>
             {validation
               ? "Model runs · deterministic output checks over saved artifacts. No model grading or general quality guarantee."
-              : "A visible read-only evaluator runs normal and edge examples serially. Both runs use the household allowance."}
+              : "The resident you choose runs the normal and edge examples serially, with its own declaration and pinned memory but none of its tools. They wait for its next free run slot and spend its allowance."}
           </p>
-          {validation?.evaluator_id && (
-            <a href={`#residents/${validation.evaluator_id}`}>
-              Open evaluator →
+          {validation?.resident_id && (
+            <a href={`#residents/${validation.resident_id}`}>
+              Open the resident that runs them →
             </a>
           )}
         </div>
@@ -270,6 +283,20 @@ export function SkillEvidence({
       {!readOnly && skill.status === "draft" && !validation && (
         <div className="skill-validation-actions">
           <label>
+            Resident that runs the examples
+            <select
+              value={chosen}
+              onChange={(e) => setRunner(e.target.value)}
+              disabled={busy || dirty || !eligible.length}
+            >
+              {eligible.map((resident) => (
+                <option key={resident.id} value={resident.id}>
+                  {resident.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Reservation per example (USD)
             <input
               type="number"
@@ -288,6 +315,7 @@ export function SkillEvidence({
             disabled={
               busy ||
               dirty ||
+              !chosen ||
               !evidence.structure.passed ||
               reserve < 1 ||
               reserve > 500000

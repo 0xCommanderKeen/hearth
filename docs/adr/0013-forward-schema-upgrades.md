@@ -39,6 +39,15 @@ meaningless is deleted by an explicit versioned step (`_drop_approval_notificati
 in the same rebuild, with an audit fact naming what went and why — never silently
 through a table the copy loop happens to skip.
 
+**Amended 2026-09-08** (mock-removal slice #156). A column, like a table, sometimes has
+to earn a truthful name, and a rename is not a drop: the values move. A rebuild now reads
+a column from the name it had when `storage/migration.COLUMN_RENAMES` says a later version
+renamed it — version-scoped exactly like `RENAMES` — and does not count the old name as a
+dropped column. Where a rename moves what a stored digest covers, the versioned step that
+performs the release's other repairs recomputes it, over a field list frozen in
+`migration.py` so a later edit to the live definition cannot silently change what an old
+store is rebuilt into.
+
 **Also decided.** A store's runtime kind may change on start when no run is unfinished;
 finished runs keep the runtime pins they were admitted with. The container process
 boundary stays immutable. The requirement to update `docs/implementation.md` at every

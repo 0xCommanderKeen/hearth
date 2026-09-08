@@ -715,6 +715,7 @@ export function App() {
               <SkillCatalog
                 key={snapshot.epoch}
                 client={client}
+                residents={snapshot.residents}
                 readOnly={snapshot.restore_hold === true}
               />
             )}
