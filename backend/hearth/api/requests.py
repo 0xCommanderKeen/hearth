@@ -82,3 +82,5 @@ class HouseholdPost(BaseModel):
     # answering. Omitted by a client that does not govern them; the stored values stay.
     max_letter_depth: int | None = Field(default=None, ge=0, le=5)
     letter_ttl_seconds: int | None = Field(default=None, ge=60, le=604_800)
+    # How many letters one resident may be handed in its own day; 0 shuts the post.
+    letter_daily_limit: int | None = Field(default=None, ge=0, le=100)

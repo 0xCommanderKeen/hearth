@@ -27,6 +27,25 @@ from hearth.storage.database import Database
 
 COMMAND_LIFETIME = 30 * 24 * 60 * 60
 ACTIVE_RUNS = "('starting', 'running', 'stopping', 'interrupted')"
+# Refusals that mean "not now", not "not ever": a bounded admission pass leaves the task
+# queued for a later one rather than reporting a fault. Anything else is a real integrity
+# or policy failure and reaches the caller.
+ADMISSION_WAITS = frozenset(
+    {
+        "resident_busy",
+        "resident_paused",
+        "resident_archived",
+        # A resident whose setup never finished can still be retried into being ready.
+        # Reporting it every pass would hold an error open for as long as the work is
+        # queued and hide any real fault the same pass hits.
+        "resident_setup_incomplete",
+        "capacity_exhausted",
+        "budget_exhausted",
+        "household_budget_exhausted",
+        "household_concurrency_limit",
+        "task_already_admitted",
+    }
+)
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:

@@ -1,11 +1,6 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 7, before the daily letter cap; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -174,8 +169,7 @@ SCHEMA = (
         concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100),
         journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000),
         max_letter_depth INTEGER NOT NULL CHECK(max_letter_depth BETWEEN 0 AND 5),
-        letter_ttl_seconds INTEGER NOT NULL CHECK(letter_ttl_seconds BETWEEN 60 AND 604800),
-        letter_daily_limit INTEGER NOT NULL CHECK(letter_daily_limit BETWEEN 0 AND 100)
+        letter_ttl_seconds INTEGER NOT NULL CHECK(letter_ttl_seconds BETWEEN 60 AND 604800)
     )""",
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),

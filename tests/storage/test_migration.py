@@ -16,6 +16,7 @@ from tests.fixtures.schema_v3_pre_inbox import SCHEMA as SCHEMA_V3
 from tests.fixtures.schema_v4_pre_examples import SCHEMA as SCHEMA_V4
 from tests.fixtures.schema_v5_pre_letters import SCHEMA as SCHEMA_V5
 from tests.fixtures.schema_v6_pre_replies import SCHEMA as SCHEMA_V6
+from tests.fixtures.schema_v7_pre_letter_cap import SCHEMA as SCHEMA_V7
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -823,3 +824,71 @@ def test_the_version_6_store_gains_replies_and_keeps_every_letter(tmp_path):
     # Nobody has answered anything, and the upgrade invents no answer.
     assert db.execute("SELECT count(*) FROM letter_replies").fetchone()[0] == 0
     validate_letters(db)
+
+
+def version_7_store(path):
+    """A version-7 store with a letter waiting and a run admitted before the cap existed."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V7:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    for resident, name in (("karen", "Karen"), ("orchard", "Orchard")):
+        db.execute("INSERT INTO residents VALUES (?, 1)", (resident,))
+        db.execute(
+            "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+            " created_at, letters_accept) VALUES (?, 1, ?, 'Synthetic', 1000000, 1, ?)",
+            (resident, name, resident == "orchard"),
+        )
+        _lifecycle(db, resident, 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, ?)",
+        (86400,),
+    )
+    db.execute(
+        "INSERT INTO tasks VALUES ('t', 'karen', 'Answer the orchard question', 'starting', 1)"
+    )
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, usage_known, launch_attempted, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'starting', 2000, '2026-09-08', 1, 0, 0, "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    db.execute("INSERT INTO tasks VALUES ('l', 'orchard', 'One question', 'queued', 2)")
+    db.execute("INSERT INTO letters VALUES ('l','karen','r','t','t',1,'One',2,86402)")
+    db.execute("PRAGMA user_version = 7")
+    db.commit()
+    db.close()
+
+
+def test_the_version_7_store_gains_the_daily_cap_and_keeps_its_waiting_letter(tmp_path):
+    from hearth.work.letters import validate_letters
+
+    path = tmp_path / "hearth.db"
+    version_7_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    # The household that never had the cap gets the shipped one, and nothing else moves.
+    policy = db.execute("SELECT * FROM household_policy").fetchone()
+    assert policy["letter_daily_limit"] == 5
+    assert (policy["max_letter_depth"], policy["letter_ttl_seconds"]) == (2, 86400)
+    # The letter is still waiting to be worked, and the upgrade neither closes nor
+    # delivers it; the tick that owns delivery does that on the store it is given.
+    assert db.execute("SELECT status FROM tasks WHERE id='l'").fetchone()[0] == "queued"
+    validate_letters(db)
+    # This release renders a letter into the run context, so a run admitted against the
+    # older shape can no longer be launched with the bytes it reserved against, and is
+    # asked to end through the ordinary executor path instead.
+    run = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r'").fetchone()
+    assert (run["status"], run["cancellation_requested"]) == ("stopping", 1)
+    assert db.execute("SELECT status FROM tasks WHERE id='t'").fetchone()[0] == "stopping"
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='run.cancel_requested'").fetchone()[0]
+    ) == {"task_id": "t", "reason": "context_format_changed"}

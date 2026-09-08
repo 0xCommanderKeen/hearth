@@ -11,12 +11,18 @@ says about a parent is trusted, so a forged or omitted parent cannot lengthen a 
 revisit a resident or attribute cost to the wrong origin.
 """
 
-from hearth.authority.household import read_letter_policy
+from hearth.authority.household import _day_window, read_letter_policy
 from hearth.residents.models import Refused, bounded_text, identifier
-from hearth.work.service import _audit, _queue_task
+from hearth.work.service import ADMISSION_WAITS, _audit, _queue_task
 
 MAX_TITLE = 200
 MAX_DETAIL = 8_000
+# What one letter may reserve, matching the scheduler's own occurrence reservation: a
+# letter is an ordinary task and buys no more of the household's day than one does.
+LETTER_RESERVATION = 10_000
+# Refusals a delivery pass leaves for a later one. A letter that went stale between the
+# read and the write is one of them: the sweep owns closing it, not this pass.
+LETTER_WAITS = ADMISSION_WAITS | {"letter_expired"}
 # A reply is an answer, not a second run report: the sender reads this, and the full
 # artifact of the run that wrote it stays linked for the operator.
 MAX_REPLY = 4_000
@@ -122,14 +128,49 @@ def _check_recipient(db, to: str) -> None:
         raise Refused("recipient_archived")
 
 
+def _check_daily_cap(db, to: str, now: int, policy: dict) -> None:
+    """What one resident may be handed in a day, counted in that resident's own day.
+
+    A letter is worked as an ordinary task, so every one of them spends the receiver's
+    time and the household's money. The cap is the receiver's, not the sender's: it
+    counts every letter that reached this resident today whoever wrote it, so no number
+    of chatty colleagues — or of operator letters — adds up to a day nobody planned.
+    A letter already sent counts whatever became of it; closing one does not buy another.
+    """
+    limit = policy["letter_daily_limit"]
+    timezone = db.execute(
+        "SELECT d.budget_timezone FROM declarations d JOIN residents r "
+        "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+        (to,),
+    ).fetchone()["budget_timezone"]
+    window = _day_window(now, timezone)
+    received = db.execute(
+        "SELECT COUNT(*) FROM letters l JOIN tasks t ON t.id=l.task_id "
+        "WHERE t.resident_id=? AND l.created_at>=? AND l.created_at<?",
+        (to, window["starts_at"], window["ends_at"]),
+    ).fetchone()[0]
+    if received >= limit:
+        raise Refused(
+            "letter_daily_limit_reached",
+            {"received_today": received, "letter_daily_limit": limit},
+        )
+
+
 def run_letter_scope(db, run_id: str, now: int) -> dict:
     """Which letter tools one run is offered, and the letter a reply would answer.
 
     Sending is the grant this run was admitted with; replying is the letter this run is
-    actually working; reading is having an end of any letter at all. A resident never
-    sees a tool it may not use, and never loses sight of an answer to a question it
-    already asked: an operator who narrows the grant stops the next letter, not the
-    reply to the last one.
+    actually working; reading is having an end of a letter this run already had when it
+    was admitted. A resident never sees a tool it may not use, and never loses sight of
+    an answer to a question it already asked: an operator who narrows the grant stops the
+    next letter, not the reply to the last one.
+
+    The post a run may read is the post that existed when it was admitted. A letter
+    arriving for the resident while one of its runs is starting is a write by somebody
+    else, and this answer is compared against itself across a launch: without the bound,
+    a colleague's letter landing in that window would change the tool set a starting run
+    was pinned and end it as changed configuration. A run that gains its first letter
+    mid-flight reads it on its next run, which is when it was offered the tool.
     """
     run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     if run is None:
@@ -138,8 +179,8 @@ def run_letter_scope(db, run_id: str, now: int) -> dict:
     send = _sending_grant(db, run, now) is not None
     post = db.execute(
         "SELECT 1 FROM letters l JOIN tasks t ON t.id=l.task_id "
-        "WHERE t.resident_id=? OR l.sender_resident_id=? LIMIT 1",
-        (run["resident_id"], run["resident_id"]),
+        "WHERE (t.resident_id=? OR l.sender_resident_id=?) AND l.created_at<=? LIMIT 1",
+        (run["resident_id"], run["resident_id"], run["created_at"]),
     ).fetchone()
     return {
         "send": send,
@@ -210,12 +251,17 @@ def send_letter(
     chain = _chain(db, parent_task_id)
     if to in chain:
         raise Refused("letter_cycle", {"chain": chain + [to]})
+    _check_daily_cap(db, to, now, policy)
 
     deadline = _deadline(now, policy, expires_at)
+    # The task instruction is the letter's own text and nothing else. Who wrote it and
+    # what it is called are structured facts on the letter row, read back by the context
+    # builder, so a sender cannot write a heading into its detail and have the receiver
+    # read it as Hearth's own.
     task_id = _queue_task(
         db,
         to,
-        f"Letter from {sender}: {title}\n\n{detail}",
+        detail,
         now,
         {"letter_operation": operation_id, "originating_run_id": sender_run},
     )
@@ -315,14 +361,9 @@ def send_operator_letter(
             "max_letter_depth_exceeded",
             {"depth": 1, "max_letter_depth": policy["max_letter_depth"]},
         )
+    _check_daily_cap(db, to, now, policy)
     deadline = _deadline(now, policy, expires_at)
-    task_id = _queue_task(
-        db,
-        to,
-        f"Letter from the operator: {title}\n\n{detail}",
-        now,
-        {"letter_command": command_id, "sender": OPERATOR},
-    )
+    task_id = _queue_task(db, to, detail, now, {"letter_command": command_id, "sender": OPERATOR})
     db.execute(
         "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?)",
         (task_id, None, None, None, task_id, 1, title, now, deadline),
@@ -617,6 +658,44 @@ def expire_letters(hearth) -> list[str]:
             )
             expired.append(row["task_id"])
     return expired
+
+
+def deliver_letters(hearth) -> list[str]:
+    """Admit the letters waiting on a resident that can work one now, oldest first.
+
+    A letter is delivered by being worked, and this is the whole of the delivery: no
+    watcher, no poller, no inbox to drain. The supervision tick that admits routine
+    occurrences admits letter tasks the same way and through the same operation, so a
+    letter is bounded by the receiver's allocation, the shared household allowance and
+    the receiver's own pause and archive state — never by anything its sender holds.
+
+    A receiver that is paused, busy, archived or out of allowance keeps its letter
+    queued for a later pass, exactly as a routine occurrence waits; the letter's own
+    shelf life is what eventually closes it. Any other refusal is a real fault and is
+    raised once the bounded pass is done, so one broken resident cannot starve the rest.
+    """
+    with hearth.database.transaction() as db:
+        waiting = [
+            row[0]
+            for row in db.execute(
+                "SELECT l.task_id FROM letters l JOIN tasks t ON t.id=l.task_id "
+                "WHERE t.status='queued' AND l.expires_at>? "
+                "ORDER BY l.created_at,l.task_id LIMIT 100",
+                (int(hearth.clock()),),
+            )
+        ]
+    delivered: list[str] = []
+    first_refusal = None
+    for task_id in waiting:
+        try:
+            hearth.admit(task_id, reserve=LETTER_RESERVATION)
+            delivered.append(task_id)
+        except Refused as error:
+            if error.code not in LETTER_WAITS and first_refusal is None:
+                first_refusal = error
+    if first_refusal is not None:
+        raise first_refusal
+    return delivered
 
 
 def validate_letters(db) -> None:

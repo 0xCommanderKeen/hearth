@@ -7,7 +7,7 @@ from typing import IO
 from hearth.execution.lifecycle import Executor
 from hearth.residents.models import Refused
 from hearth.skills.validation import Validation
-from hearth.work.letters import expire_letters
+from hearth.work.letters import deliver_letters, expire_letters
 from hearth.work.routines import Routines
 
 
@@ -84,10 +84,13 @@ class Supervisor:
         try:
             while not self._stop.is_set():
                 # A stale letter is closed before anything can admit it, so no money is
-                # spent answering a question that already went cold. It owns its own
-                # failure: a sweep that cannot run must not stall the whole schedule.
+                # spent answering a question that already went cold, and the letters
+                # still worth working are admitted in the same pass — delivery is the
+                # receiver working the task, and this tick is all there is to it. The
+                # lane owns its own failure: it must not stall the whole schedule.
                 try:
                     expire_letters(self.executor.execution.hearth)
+                    deliver_letters(self.executor.execution.hearth)
                     self._set("letters_error", None)
                 except Exception as error:
                     self._set(

@@ -61,6 +61,7 @@ def test_staging_pins_context_and_excludes_authority_and_other_residents(system)
         "journal",
         "journal_usage",
         "instruction",
+        "letter",
         "notes",
         "inputs",
         "input_state",
