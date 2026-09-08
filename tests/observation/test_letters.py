@@ -234,6 +234,28 @@ def test_a_refused_send_carries_the_numbers_the_refusal_named(household):
     ]
 
 
+def test_a_refusal_whose_answer_is_not_an_object_is_left_out_rather_than_raised(household):
+    app, hearth, karen = household
+    # The reporter's door is shut, so this send is refused and leaves tool evidence.
+    run, write = working_run(app, karen, "asks")
+    ok, refusal = send(write)
+    assert not ok and refusal["error"] == "letters_not_accepted"
+
+    # A response that parses to a list, a bare string or a number is a shape this reader
+    # has no reading of. It is left out, and the rest of the projection — every resident,
+    # task and run the operator watches — still answers.
+    for text in ("[]", '"letters_not_accepted"', "7", "null"):
+        with hearth.database.transaction(write=True) as db:
+            db.execute(
+                "UPDATE management_calls SET response=? WHERE run_id=?",
+                (json.dumps({"contentItems": [{"text": text}]}), run.id),
+            )
+        state = snapshot(hearth)
+        evidence = [item for item in state["runs"] if item["id"] == run.id][0]
+        assert evidence["letters_refused"] == []
+        assert [item["id"] for item in state["residents"]] != []
+
+
 def test_a_shut_door_is_visible_on_the_resident_it_belongs_to(household):
     app, hearth, karen = household
     residents = {r["id"]: r for r in snapshot(hearth)["residents"]}

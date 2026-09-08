@@ -1059,9 +1059,13 @@ def refused_sends(db, run_ids) -> dict[str, list[dict]]:
     for row in db.execute(query, run_ids):
         try:
             reason = json.loads(json.loads(row["response"])["contentItems"][0]["text"])
-            code = reason.pop("error")
         except ValueError, TypeError, LookupError:
             continue
+        # A response that parses to something other than an object naming an error is a
+        # shape this reader has no reading of; it is left out rather than reported.
+        if not isinstance(reason, dict) or "error" not in reason:
+            continue
+        code = reason.pop("error")
         found.setdefault(row["run_id"], []).append(
             {"at": row["at"], "reason": code, "details": reason}
         )

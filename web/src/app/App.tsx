@@ -1087,8 +1087,14 @@ export function App() {
                   act={act}
                   openable={openableRun}
                 />
+                {/* Keyed on the resident alone, unlike its neighbours above: the
+                    others hold only server data a remount refetches, while Letters
+                    holds an unsent draft and the frozen identity of a command whose
+                    answer never arrived. Dropping those on a store swap would hand the
+                    operator a fresh command id for a letter Hearth may already hold.
+                    Its list is read on demand and reloaded by the same button. */}
                 <Letters
-                  key={`letters:${snapshot.epoch}:${current.id}`}
+                  key={`letters:${current.id}`}
                   client={client}
                   resident={current}
                   residents={residents}

@@ -766,6 +766,75 @@ it("shows a refused letter in the run's own evidence, with the reason and nothin
   expect(evidence.textContent).toContain("nothing was written");
 });
 
+it("keeps the letters panel whole when the store's epoch changes under it", async () => {
+  addReader();
+  state.residents[0].letters_accept = 1;
+  vi.spyOn(Client.prototype, "letters").mockResolvedValue({
+    resident_id: "reader",
+    limit: 20,
+    offset: 0,
+    inbox: [
+      {
+        task_id: "letter-task",
+        title: "One question",
+        sender: "operator",
+        sender_resident_id: null,
+        sender_run_id: null,
+        recipient_resident_id: "reader",
+        parent_task_id: null,
+        root_task_id: "letter-task",
+        depth: 1,
+        created_at: 1_788_640_000,
+        expires_at: 1_788_726_400,
+        status: "queued",
+        state: "pending",
+        settled_at: null,
+        instruction: "Name one fact about the orchard.",
+        instruction_truncated: false,
+        reply: null,
+      },
+    ],
+    sent: [],
+  });
+  const send = vi
+    .spyOn(Client.prototype, "sendLetter")
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce({
+      command_id: "one",
+      resident_id: "reader",
+      task_id: "queued-task",
+      sender: "operator",
+      root_task_id: "queued-task",
+      depth: 1,
+      expires_at: 1_788_726_400,
+      status: "queued",
+    });
+  await login();
+  fireEvent.click(screen.getByText("Read letters"));
+  await screen.findByLabelText("Letters to Reader");
+  fireEvent.change(screen.getByLabelText("What it is about"), {
+    target: { value: "One question" },
+  });
+  fireEvent.change(screen.getByLabelText("The request"), {
+    target: { value: "Name one fact about the orchard." },
+  });
+  fireEvent.click(screen.getByText("Send the letter"));
+  // No answer arrived, so the command is frozen: Hearth may be holding this letter.
+  await screen.findByText("Retry the letter");
+
+  state.epoch = "restored-store";
+  await act(async () => publish(structuredClone(state)));
+
+  // A new store does not remount the panel out from under the operator: the list stays
+  // read and the frozen command keeps its identity, so the retry replays the letter
+  // Hearth may already hold rather than writing a second one.
+  expect(screen.getByLabelText("Letters to Reader")).toBeTruthy();
+  expect(screen.getByLabelText("The request")).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByText("Retry the letter"));
+  await screen.findByText(/Letter queued as task queued-task/);
+  expect(send.mock.calls[0][1]).toBe(send.mock.calls[1][1]);
+});
+
 it("walks only the letters the snapshot reported, both ends named", async () => {
   addReader();
   state.letters = [
