@@ -5,11 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from hearth.authority.permissions import Authority
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def system(tmp_path):
     artifacts = Artifacts(tmp_path / "artifacts")
     task = hearth.submit("summary", "reader", "Synthetic summary", expires_at=now[0] + 600)
     run = hearth.admit(task.task_id, reserve=5_000)
-    Executor(Execution(hearth, artifacts), MockRuntime(tmp_path / "runtime")).step()
+    Executor(Execution(hearth, artifacts), FakeRuntime(tmp_path)).step()
     authority = Authority(hearth, artifacts)
     return authority, run.id, now
 

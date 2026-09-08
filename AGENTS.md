@@ -20,11 +20,13 @@ for the current acceptance gate.
   data directory for a Hearth version change (`docs/adr/0013-forward-schema-upgrades.md`).
   Do not import from other systems; definition-only resident bundles
   (`docs/adr/0010-portable-resident-bundles.md`) are the one cross-system path.
-- A quiet store (no unfinished run) may change runtime kind on start; finished runs
-  keep their own pins.
+- One runtime ships: the Codex subscription. Hearth writes only that kind; a store
+  recorded against a removed runtime adopts it on start, and finished runs keep their
+  own pin because that is where the work happened. Tests and the installed-wheel
+  smoke inject `tests/fake_runtime.py`; it is never packaged.
 - Live data and credentials stay outside the repository. Use synthetic notes until
   real testing is explicitly selected; obtain concrete runtime/source decisions first.
 - Record decisions that change scope, persistence or authority in an ADR and add a
   line to `CHANGELOG.md` per PR. `docs/implementation.md` is a checkpoint, not a
-  per-PR ledger; update it only when a delivery gate changes. Mock checks do not
-  complete real-host or daily-observation gates.
+  per-PR ledger; update it only when a delivery gate changes. Fake-runtime checks do
+  not complete real-host or daily-observation gates.

@@ -5,9 +5,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
-from hearth.integrations.interface import Evidence
 from hearth.residents.models import Declaration
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 TOKEN = "synthetic-operator-token-for-tests"
@@ -16,7 +16,7 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         yield client
 
 
@@ -36,7 +36,7 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
     assert client.get("/api/state").status_code == 401
     assert client.post("/api/tasks", content="broken json").status_code == 401
     assert client.get("/api/state", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.get("/health").json() == {"service": "hearth", "simulated": True}
+    assert client.get("/health").json() == {"service": "hearth", "simulated": False}
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
 
@@ -56,10 +56,11 @@ def test_snapshot_has_no_owner_token(client):
     state = client.get("/api/state", headers=AUTH)
     assert state.headers["cache-control"] == "no-store"
     body = state.json()
-    assert body["simulated"] and body["schema_version"] == 1
+    assert body["simulated"] is False and body["schema_version"] == 1
     assert body["residents"][0]["presence"] == "starting"
     assert "owner_token" not in state.text and TOKEN not in state.text
-    assert body["cursor"] == 5
+    # The cursor is the audit sequence, and the runtime records its own configuration.
+    assert body["cursor"] == len(body["activity"]) == 6
 
 
 def test_lost_submission_response_is_reconcilable(client):
@@ -93,13 +94,13 @@ def test_start_retry_has_stable_identity_and_result_can_be_read(client):
     assert client.post(path, headers=AUTH).json()["run_id"] == first["run_id"]
     output = client.get("/api/artifacts/" + run["artifact_id"], headers=AUTH)
     assert output.status_code == 200
-    assert output.json()["artifact"]["simulated"]
-    assert "No model was called" in output.json()["content"]
+    assert output.json()["artifact"]["simulated"] is False
+    assert "Synthetic note: drafted the Hearth foundation." in output.json()["content"]
     assert client.get("/api/artifacts/" + run["artifact_id"]).status_code == 401
 
 
 def test_cancellation_roundtrip_keeps_intent_separate_from_termination(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="hold", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("hold"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -126,7 +127,7 @@ def test_cursor_matches_transaction_and_epoch_requires_resync(client):
 
 
 def test_unknown_usage_is_visible_and_cannot_start_more_work(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="unknown_usage", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("unknown_usage"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -159,25 +160,27 @@ def test_api_refuses_invalid_payload_without_creating_task(client):
 
 def test_demo_requires_explicit_nontrivial_operator_token(tmp_path):
     with pytest.raises(ValueError, match="operator token"):
-        create_app(tmp_path, "")
+        create_app(tmp_path, "", runtime=fake_runtime())
 
 
 def test_active_work_remains_visible_when_recent_history_is_full(client):
     seed_reader_via(client)
     hearth = client.app.state.hearth
-    execution = client.app.state.execution
+    executor = client.app.state.executor
     tick = [1000]
     hearth.clock = lambda: tick[0]
-    old = hearth.submit("old", "reader", "Still active", expires_at=5000)
-    active = hearth.admit(old.task_id, reserve=1)
     hearth.save_resident(
         "other", Declaration("Other", "Synthetic work", 1_000_000), expected_revision=0
     )
     for index in range(101):
         tick[0] += 1
         receipt = hearth.submit("new-" + str(index), "other", "Recent work", expires_at=5000)
-        run = hearth.admit(receipt.task_id, reserve=1)
-        execution.finish(run.id, run.owner_token, Evidence("failed", cost=1))
+        hearth.admit(receipt.task_id, reserve=10_000)
+        executor.step()
+    # Stamped before all of that history, so recency alone would drop it from the window.
+    tick[0] = 1000
+    old = hearth.submit("old", "reader", "Still active", expires_at=5000)
+    active = hearth.admit(old.task_id, reserve=10_000)
     state = client.get("/api/state", headers=AUTH).json()
     assert len(state["runs"]) == len(state["tasks"]) == 100
     assert any(run["id"] == active.id for run in state["runs"])
@@ -205,7 +208,7 @@ def proposal(client):
     return response.json()
 
 
-def test_mock_approval_operator_journey(client):
+def test_approval_operator_journey(client):
     request = proposal(client)
     route = "/api/approvals/" + request["id"]
     assert client.get(route).status_code == 401
@@ -213,7 +216,7 @@ def test_mock_approval_operator_journey(client):
     assert client.post(route + "/execute").status_code == 401
     preview = client.get(route, headers=AUTH).json()
     assert preview["approval"] == request
-    assert "No model was called" in preview["content"]
+    assert "Synthetic note: drafted the Hearth foundation." in preview["content"]
     assert client.post(route + "/execute", headers=AUTH).status_code == 409
     decision = {"reviewed_digest": request["digest"], "approve": True}
     assert (
@@ -228,7 +231,7 @@ def test_mock_approval_operator_journey(client):
     assert state["publication_policies"][0]["enabled"] == 1
 
 
-def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
+def test_api_denied_and_revoked_permission_cannot_publish(client):
     request = proposal(client)
     route = "/api/approvals/" + request["id"]
     decision = {"reviewed_digest": request["digest"], "approve": False}
@@ -242,7 +245,7 @@ def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
     assert client.post(route + "/execute", headers=AUTH).status_code == 409
 
 
-def test_mock_api_strict_policy_and_decision_payload(client):
+def test_api_strict_policy_and_decision_payload(client):
     request = proposal(client)
     assert (
         client.post(
@@ -262,8 +265,8 @@ def test_mock_api_strict_policy_and_decision_payload(client):
     )
 
 
-def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
-    app = create_app(tmp_path, TOKEN)
+def test_daily_routine_api_runs_through_background_executor(tmp_path):
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime())
     now = [1_788_652_800]
     app.state.hearth.clock = lambda: now[0]
     with TestClient(app) as client:
@@ -330,8 +333,8 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
     assert client.post(start, headers=AUTH).status_code == 200
 
 
-def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False, scenario="unknown_usage")
+def test_operator_reports_usage_and_snapshot_labels_source(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()

@@ -1,4 +1,4 @@
-"""Resolve missing mock accounting with an explicit immutable operator report."""
+"""Resolve missing provider accounting with an explicit immutable operator report."""
 
 import hashlib
 import json

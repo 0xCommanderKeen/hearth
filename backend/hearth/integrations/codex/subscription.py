@@ -15,11 +15,11 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.integrations.codex.container import container_lock
 from hearth.integrations.codex.events import MAX_STREAM, CodexEvents
 from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
 from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.interface import Evidence
-from hearth.integrations.mock.container import container_lock
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database

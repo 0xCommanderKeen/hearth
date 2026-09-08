@@ -1,4 +1,4 @@
-"""Consistent mock state, checksummed files, and a restore that cannot execute."""
+"""Consistent state, checksummed files, and a restore that cannot execute."""
 
 import fcntl
 import json
@@ -7,12 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.backup import capture, restore, verify
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime, fake_runtime
 
 
 @pytest.fixture
@@ -26,9 +27,7 @@ def system(tmp_path):
     )
     receipt = hearth.submit("summary", "reader", "Synthetic", expires_at=1_788_640_600)
     run = hearth.admit(receipt.task_id, reserve=10_000)
-    executor = Executor(
-        Execution(hearth, Artifacts(root / "artifacts")), MockRuntime(root / "mock-runtime")
-    )
+    executor = Executor(Execution(hearth, Artifacts(root / "artifacts")), FakeRuntime(root))
     return hearth, executor, run, root
 
 
@@ -50,24 +49,45 @@ def test_complete_backup_restores_results_receipts_and_quarantines_mutations(sys
     with pytest.raises(Refused, match="restored_copy_read_only"):
         copy.submit("another", "reader", "Synthetic", expires_at=1_788_640_600)
     with pytest.raises(Refused, match="restored_copy_read_only"):
-        Executor(execution, MockRuntime(restored / "mock-runtime")).step()
+        Executor(execution, FakeRuntime(restored)).step()
     assert not hearth.database.restored()
 
 
-def test_active_cancellation_cannot_touch_restored_runtime(system, tmp_path):
+def test_unsettled_cancellation_is_never_copied_and_the_copy_cannot_execute(system, tmp_path):
     hearth, executor, run, root = system
     executor.runtime.scenario = "hold"
     executor.step()
     executor.execution.cancel(run.id)
+    # Priced work still in flight has no settled provider evidence to copy.
+    with pytest.raises(Refused, match="backup_priced_run_unsettled"):
+        capture(root, tmp_path / "refused")
+    assert executor.step()[0].status == "cancelled"
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"))
-    runtime = MockRuntime(tmp_path / "restored/mock-runtime")
-    assert runtime.inspect(run.id).status == "running"
+    runtime = FakeRuntime(tmp_path / "restored")
     with pytest.raises(Refused, match="restored_copy_read_only"):
         Executor(Execution(copy, Artifacts(tmp_path / "restored/artifacts")), runtime).step()
-    assert runtime.inspect(run.id).status == "running"
-    assert hearth.run(run.id).status == "stopping"
+    assert copy.run(run.id).status == "cancelled"
+    assert hearth.run(run.id).status == "cancelled"
+
+
+def test_simulated_history_is_kept_but_cannot_borrow_the_current_runtime(system, tmp_path):
+    import sqlite3
+
+    hearth, executor, run, root = system
+    executor.step()
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute("DELETE FROM run_usage WHERE run_id=?", (run.id,))
+        db.execute("DELETE FROM run_pricing WHERE run_id=?", (run.id,))
+        db.execute("UPDATE runs SET runtime_kind='inline_mock' WHERE id=?", (run.id,))
+    # A run pinned to a runtime this release no longer ships is finished history.
+    assert capture(root, tmp_path / "backup")["verified"]["runs"] == 1
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute("UPDATE runs SET runtime_kind='codex_subscription' WHERE id=?", (run.id,))
+    # Claiming the current runtime means producing that runtime's receipt.
+    with pytest.raises(Refused):
+        capture(root, tmp_path / "second")
 
 
 def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_path):
@@ -76,7 +96,9 @@ def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_p
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     token = "synthetic-operator-token"
-    with TestClient(create_app(tmp_path / "restored", token, supervise=True)) as client:
+    with TestClient(
+        create_app(tmp_path / "restored", token, supervise=True, runtime=fake_runtime())
+    ) as client:
         headers = {"Authorization": "Bearer " + token}
         state = client.get("/api/state", headers=headers).json()
         assert state["restore_hold"] is True
@@ -205,8 +227,10 @@ def test_uncertain_action_and_receipt_survive_restore_without_consumption(
 
 @pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=12"])
 def test_incompatible_database_cannot_be_published_as_a_current_backup(system, tmp_path, change):
-    hearth, _, _, root = system
+    hearth, executor, _, root = system
     import sqlite3
+
+    executor.step()
 
     with sqlite3.connect(hearth.database.path) as db:
         db.execute(change)

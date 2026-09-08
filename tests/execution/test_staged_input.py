@@ -43,7 +43,7 @@ def test_staging_pins_context_and_excludes_authority_and_other_residents(system)
     context = json.loads(raw)
     assert context["memory"]["text"] == "Pinned ž memory"
     assert context["purpose"] == "Synthetic purpose reader"
-    assert context["notes"] == [] and context["simulated"] is True
+    assert context["notes"] == [] and context["simulated"] is False
     assert hashlib.sha256(raw).hexdigest() == run.input_digest
     for secret in ("Other private memory", "Later memory", run.owner_token):
         assert secret not in raw.decode()

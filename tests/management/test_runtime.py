@@ -72,7 +72,7 @@ def native_terminal():
 
 def manager_run(tmp_path):
     db = Database(tmp_path / "data/hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     hearth = Hearth(db)
     karen = bootstrap(hearth)
     with db.transaction(write=True) as connection:
@@ -157,7 +157,7 @@ def test_subscription_worker_routes_granted_run_through_actual_structured_callba
 
     data = tmp_path / "data"
     db = Database(data / "hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     auth = tmp_path / "auth"
     auth.mkdir()
     (auth / "auth.json").write_text("synthetic-only")

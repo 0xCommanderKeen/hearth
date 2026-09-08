@@ -25,13 +25,12 @@ class Runtime(Protocol):
 
 
 def pricing_pin(kind: str, mode: str | None = None) -> dict | None:
-    if kind in {"codex_mock", "codex_subscription"} or mode is not None:
-        from hearth.integrations.codex.receipts import pricing_pin
+    """The subscription bills at the standard tier; a requested mode cannot change it."""
+    if kind != "codex_subscription":
+        return None
+    from hearth.integrations.codex.receipts import pricing_pin
 
-        return pricing_pin(
-            "standard" if kind in {"codex_mock", "codex_subscription"} else (mode or "standard")
-        )
-    return None
+    return pricing_pin("standard")
 
 
 def validate_pricing(value: dict) -> None:
@@ -59,19 +58,10 @@ def validate_receipt_pins(kind: str, receipt, pins: dict, *, cancelled: bool) ->
     return validate_receipt_pins(kind, receipt, pins, cancelled=cancelled)
 
 
-def uses_receipts(kind: str) -> bool:
-    return kind in {"codex_mock", "codex_subscription"}
-
-
 def cancellation_receipt(kind: str, binding, pins: dict) -> dict:
     from hearth.integrations.codex.receipts import cancellation_receipt
 
     return cancellation_receipt(kind, binding, pins)
-
-
-def may_start(kind: str, *, status: str, launch_attempted: bool) -> bool:
-    # Subscription has no safe detached-start replay after a lost launch reply.
-    return not launch_attempted if kind == "codex_subscription" else status == "starting"
 
 
 class ReceiptedRuntime(Runtime, Protocol):
@@ -89,12 +79,7 @@ def simulated(kind: str) -> bool:
 
 
 def supports_dispatch(kind: str, version: int) -> bool:
-    return version == 1 and kind in {
-        "inline_mock",
-        "process_mock",
-        "codex_mock",
-        "codex_subscription",
-    }
+    return version == 1 and kind == "codex_subscription"
 
 
 def receipt_requests(raw: str) -> list:

@@ -16,13 +16,15 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-operator-token"
 SKILL = "# Reading\n\nPreserve ž, blank lines and `code`.\n"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1000
     declaration = Declaration("Reader", "Synthetic purpose", 10000, "Europe/Ljubljana", SKILL)
@@ -128,9 +130,12 @@ def test_operator_routes_preserve_other_fields_exclude_ambient_text_and_reject_r
         runtime = {"Authorization": "Bearer " + credential.token}
         assert client.put("/api/residents/reader", headers=runtime, json=body).status_code == 401
         assert client.get("/api/residents/reader", headers=runtime).status_code == 401
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
-    with TestClient(create_app(root / "restored", TOKEN, supervise=False)) as client:
+    with TestClient(
+        create_app(root / "restored", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as client:
         assert client.get("/api/residents/reader", headers=headers).status_code == 200
         assert (
             client.put(

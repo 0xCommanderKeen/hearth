@@ -5,16 +5,17 @@ and enforced permissions. Hamlet shows their real activity; Townhall provides
 operator controls in the same application.
 
 Hearth is a standalone project, starting with a new read-only daily-summary
-Reader and fresh data. Development currently uses mocks and synthetic notes.
+Reader and fresh data. Residents run on a real Codex subscription; the notes they
+read are synthetic.
 
 ## Current implementation
 
 The Python core persists resident revisions, deduplicated task commands, run
 admission, and budget reservations. Each change commits with its audit record in
-one SQLite transaction. A deterministic mock runtime produces a simulated summary
-and exercises recovery, cancellation, and accounting. No real agents, model calls,
-or live source files are used. Hamlet and Townhall share one browser application,
-an authenticated client, and the authoritative snapshot stream.
+one SQLite transaction. One runtime executes work: a bounded, read-only Codex
+subscription run whose provider receipt settles the run's cost and output. No live
+source files are used. Hamlet and Townhall share one browser application, an
+authenticated client, and the authoritative snapshot stream.
 
 ```sh
 uv sync --frozen
@@ -32,16 +33,15 @@ not a provider-enforced billing ceiling.
 Hearth stores its local state in ignored `.hearth`. Use `HEARTH_DATA=/some/path`
 for a separate instance. A store from an older Hearth release is upgraded on start
 and the original is kept beside it as `hearth.db.before-v<N>`; a file that is not a
-Hearth store is refused untouched.
-Under a mock runtime every output and cost is labeled simulated; the mock returns a
-fixed synthetic summary and does not interpret arbitrary instructions.
-Runtime scenarios include success, held execution, failure, and unknown usage for
-deterministic recovery tests.
+Hearth store is refused untouched. A store recorded against a runtime this release
+no longer ships adopts the one runtime on start; its finished runs keep their own
+pin, and work a removed runtime left in flight ends as cancelled with usage unknown.
 
 ## Open the application
 
 Build with `make check`, set `HEARTH_OPERATOR_TOKEN` to a local operator credential
-of at least 16 characters, then start:
+of at least 16 characters, point `HEARTH_CODEX_BINARY` at the pinned Codex CLI and
+`HEARTH_CODEX_AUTH_HOME` at its logged-in `CODEX_HOME`, then start:
 
 ```sh
 uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
@@ -51,19 +51,10 @@ Open `http://127.0.0.1:8766` and enter that token. Hearth starts empty and ships
 sample data: create a resident, assign it a task, and open its summary. The
 credential stays in browser memory for the session.
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
-Set `HEARTH_MOCK_SCENARIO=hold` before starting a separate mock instance to exercise cancellation.
-Other scenarios are `success`, `failure`, and `unknown_usage`. These are simulations,
-not runtime/provider selectors. For browser development, `pnpm dev` from `web/`
-proxies its `/api` requests to the same local backend.
-
-For a fresh process-backed simulation, set `HEARTH_MOCK_RUNTIME=process_mock` and
-`HEARTH_DATA` to a new directory before starting the browser application. Reopening
-that store without the selector uses its recorded runtime; a different selector
-switches a quiet store and is refused while a run is unfinished. Both modes remain
-simulations. See [process recovery](docs/process-mock.md).
+For browser development, `pnpm dev` from `web/` proxies its `/api` requests to the
+same local backend. Continuous integration has no subscription, so the test suite
+and the installed-wheel smoke inject the fake runtime in `tests/fake_runtime.py`;
+it is never packaged.
 
 See the [implementation gates](docs/implementation.md),
 [project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).
-
-For the opt-in contained synthetic worker on the selected Mac, see
-[container setup and recovery](docs/container-worker.md).

@@ -105,6 +105,6 @@ class Run:
     cancellation_requested: bool = False
     launch_attempted: bool = False
     budget_timezone: str = "UTC"
-    runtime_kind: str = "inline_mock"
+    runtime_kind: str = "codex_subscription"
     runtime_version: int = 1
     input_digest: str = ""

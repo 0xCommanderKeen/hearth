@@ -6,6 +6,8 @@ from hearth.residents.models import Declaration, Refused
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 
 def test_concurrent_residents_share_one_allowance(tmp_path):
     database = Database(tmp_path / "hearth.db")
@@ -55,7 +57,9 @@ def test_api_policy_is_operator_only_and_conflict_aware(tmp_path):
     from fastapi.testclient import TestClient
     from hearth.app import create_app
 
-    with TestClient(create_app(tmp_path, "synthetic-operator-token", supervise=False)) as client:
+    with TestClient(
+        create_app(tmp_path, "synthetic-operator-token", supervise=False, runtime=fake_runtime())
+    ) as client:
         body = dict(
             daily_limit=8_000_000,
             timezone="Europe/Ljubljana",
@@ -76,8 +80,9 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
     from datetime import datetime
 
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.storage.artifacts import Artifacts
+
+    from tests.fake_runtime import FakeRuntime
 
     now = [int(datetime.fromisoformat("2026-09-06T00:30:00+02:00").timestamp())]
     db = Database(tmp_path / "hearth.db")
@@ -86,9 +91,7 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
     hearth.save_resident("one", Declaration("One", "Synthetic", 10_000_000), expected_revision=0)
     task = hearth.submit("one", "one", "Summarize", expires_at=now[0] + 600)
     hearth.admit(task.task_id, reserve=10_000)
-    Executor(
-        Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-    ).step()
+    Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)).step()
     assert Household(hearth).read()["spent"] > 0
     now[0] += 3 * 3600  # UTC crosses midnight; the original Ljubljana day is still current.
     amount = Household(hearth).read()["spent"]
@@ -106,9 +109,10 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
 def test_unknown_and_cancellation_hold_survive_restart_and_restore(tmp_path, scenario):
     from hearth.execution.accounting import Accounting
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture, restore
+
+    from tests.fake_runtime import FakeRuntime
 
     root = tmp_path / "original"
     db = Database(root / "hearth.db")
@@ -127,14 +131,15 @@ def test_unknown_and_cancellation_hold_survive_restart_and_restore(tmp_path, sce
     run = hearth.admit(task.task_id, reserve=40_000)
     executor = Executor(
         Execution(hearth, Artifacts(root / "artifacts")),
-        MockRuntime(root / "runtime", scenario=scenario),
+        FakeRuntime(root, scenario=scenario),
     )
     executor.step()
     if scenario == "hold":
         executor.execution.cancel(run.id)
         assert Household(hearth).read()["reserved"] == 40_000
-    else:
-        assert Household(hearth).read()["unknown"] == 40_000
+        # A stopped provider proves no turn, so the cancellation settles unknown too.
+        assert executor.step()[0].status == "cancelled"
+    assert Household(hearth).read()["unknown"] == 40_000
     now[0] += 86400
     restarted = Hearth(Database(db.path), clock=hearth.clock)
     assert Household(restarted).read()["remaining"] == 10_000
@@ -189,15 +194,22 @@ def test_concurrent_creation_cannot_exceed_household_limit(tmp_path):
 
 
 def test_missing_accounting_pin_refuses_admission_and_backup(tmp_path):
+    from hearth.execution.lifecycle import Execution, Executor
+    from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture
 
-    db = Database(tmp_path / "data/hearth.db")
+    from tests.fake_runtime import FakeRuntime
+
+    data = tmp_path / "data"
+    db = Database(data / "hearth.db")
     db.initialize()
     hearth = Hearth(db)
     for name in ("one", "two"):
         hearth.save_resident(name, Declaration(name, "Synthetic", 10000), expected_revision=0)
     task = hearth.submit("one", "one", "Summarize", expires_at=int(hearth.clock()) + 600)
     hearth.admit(task.task_id, reserve=1)
+    # Settle the run so the backup reaches the accounting check it is about.
+    Executor(Execution(hearth, Artifacts(data / "artifacts")), FakeRuntime(data)).step()
     with db.transaction(write=True) as connection:
         connection.execute("DELETE FROM run_household_windows")
     task = hearth.submit("two", "two", "Summarize", expires_at=int(hearth.clock()) + 600)

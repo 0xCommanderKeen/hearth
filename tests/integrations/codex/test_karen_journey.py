@@ -21,6 +21,8 @@ from hearth.skills.assignments import read_assignments, run_skills
 from hearth.skills.validation import read_validation
 from hearth.storage.backup import capture, restore, verify
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-karen-journey-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 NOTES = ["Harvested 12 pears Monday", "Planted 3 trees Tuesday"]
@@ -37,7 +39,6 @@ def reopen(tmp_path):
         tmp_path / "data",
         TOKEN,
         supervise=False,
-        runtime_kind="codex_subscription",
         codex_binary=tmp_path / "synthetic-codex",
         codex_auth_home=tmp_path / "synthetic-auth",
     )
@@ -258,7 +259,7 @@ def test_one_native_task_creates_validated_reporter_and_first_saved_result(tmp_p
         for name in manifest["files"]
     )
     restore(tmp_path / "backup", tmp_path / "held")
-    held = create_app(tmp_path / "held", TOKEN, supervise=False)
+    held = create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime())
     assert held.state.hearth.database.restored()
     assert evidence(held, karen, task, runs) == recorded
     with TestClient(held) as client:
@@ -290,7 +291,7 @@ def test_unknown_manager_usage_preserves_complete_chain_and_never_relaunches(tmp
     assert evidence(app, karen, task, runs) == recorded
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    held = create_app(tmp_path / "held", TOKEN, supervise=False)
+    held = create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime())
     assert evidence(held, karen, task, runs) == recorded
     with TestClient(held) as client:
         state = client.get("/api/state", headers=AUTH)

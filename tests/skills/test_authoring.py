@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.management.bridge import BoundRun, Bridge
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-skill-authoring-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 INSTRUCTIONS = """# When to use
@@ -41,7 +43,7 @@ def authoring():
                 "notes": [],
                 "assertions": {
                     "max_characters": 1000,
-                    "contains": ["No synthetic inputs"],
+                    "contains": ["No notes were supplied"],
                     "excludes": ["PRIVATE_SENTINEL"],
                 },
             },
@@ -50,7 +52,7 @@ def authoring():
 
 
 def manager(tmp_path, *, capabilities=None):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     karen = client.post("/api/management/bootstrap", headers=AUTH).json()
     if capabilities is not None:
@@ -91,6 +93,63 @@ def manager(tmp_path, *, capabilities=None):
     runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
     runtime.scenario = "success"
     return app, client, karen, bridge
+
+
+def settle_karen(app, bridge):
+    """Karen's own run is a management run, so only a native management receipt settles it.
+
+    Cancelling a launched turn leaves the usage counters unknown, exactly as a killed
+    provider would; the point here is a store with no unfinished priced run left in it.
+    """
+    from dataclasses import asdict
+
+    from hearth.execution.usage import binding
+    from hearth.integrations.codex.app_server import PROTOCOL
+    from hearth.integrations.codex.pricing import MODEL
+    from hearth.integrations.codex.subscription import KIND
+    from hearth.integrations.interface import encode_receipt
+
+    from tests.fake_runtime import BINARY
+
+    hearth = app.state.hearth
+    run = hearth.run(bridge.bound.run_id)
+    # Stands in for the digests a real launch pins from the binary's own catalog.
+    catalog, tools = "b" * 64, "c" * 64
+    with hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=?,tools_sha256=? WHERE run_id=?",
+            (catalog, tools, run.id),
+        )
+        bound = binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+    receipt = {
+        "kind": KIND,
+        "protocol": "management",
+        "binding": asdict(bound),
+        "binary": BINARY,
+        "terminal": {
+            "protocol": PROTOCOL,
+            "launched": True,
+            "cancelled": True,
+            "error": None,
+            "exit_code": -15,
+            "catalog_sha256": catalog,
+            "tools_sha256": tools,
+            "events": [
+                {
+                    "method": "thread/started",
+                    "params": {"thread": {"id": "thread", "model": MODEL}},
+                },
+                {
+                    "method": "turn/started",
+                    "params": {"threadId": "thread", "turn": {"id": "turn"}},
+                },
+            ],
+        },
+    }
+    app.state.execution.cancel(run.id)
+    return app.state.execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
 
 
 def call(bridge, tool, arguments, call_id):
@@ -182,7 +241,7 @@ def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp
         app.state.supervisor.stop()
     assert validation["status"] == "passed", validation
     assert len(validation["cases"]) == 2
-    assert validation["assessment"] == "deterministic_assertions_on_simulated_runs"
+    assert validation["assessment"] == "deterministic_assertions_on_model_runs"
     for case in validation["cases"]:
         assert case["result"]["passed"] and case["result"]["actual_cost"] == 2000
         run = client.get("/api/runs/" + case["run_id"], headers=AUTH).json()
@@ -245,7 +304,7 @@ def test_assignment_and_revision_authority_are_enforced_by_catalog_owners(tmp_pa
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Use an exact reusable skill",
             },
@@ -434,11 +493,10 @@ def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path)
     finally:
         app.state.supervisor.stop()
     assert result["status"] == "passed"
-    app.state.execution.cancel(bridge.bound.run_id)
-    app.state.executor.step()
+    assert settle_karen(app, bridge).status == "cancelled"
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False))
+    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime()))
     assert (
         held.get("/api/skill-validations/" + pending["validation_id"], headers=AUTH).json()
         == result
@@ -632,7 +690,7 @@ def test_scoped_assignment_read_recovers_human_edits_and_preserves_order(tmp_pat
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Preserve existing assignments",
             },

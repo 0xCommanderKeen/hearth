@@ -8,7 +8,7 @@ import sys
 import pytest
 from hearth.execution.context import read_context
 from hearth.execution.lifecycle import Execution
-from hearth.integrations.codex.subscription import KIND, CodexLiveRuntime
+from hearth.integrations.codex.subscription import CodexLiveRuntime
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration
 from hearth.storage.artifacts import Artifacts
@@ -29,7 +29,7 @@ def configured(tmp_path):
     (auth / "auth.json").write_text("{}")
     data = tmp_path / "data"
     database = Database(data / "hearth.db")
-    database.initialize(runtime_kind=KIND)
+    database.initialize()
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth)
     observer = CodexLiveRuntime(data, binary=binary, auth_home=auth)
     hearth = Hearth(database)

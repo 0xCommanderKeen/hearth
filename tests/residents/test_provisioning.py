@@ -4,6 +4,8 @@ from hearth.residents.provisioning import Provisioning
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 
 def request():
     return dict(
@@ -12,7 +14,7 @@ def request():
         instructions="Be concise",
         initial_memory="Remember: use bullets",
         skills=[],
-        execution_profile="inline_mock",
+        execution_profile="codex_subscription",
         input_sets=[],
         daily_limit=100000,
         budget_timezone="Europe/Ljubljana",
@@ -65,7 +67,9 @@ def test_provisioning_api_replay_profile_and_input_choices(tmp_path):
     from hearth.app import create_app
 
     auth = {"Authorization": "Bearer synthetic-provision-token", "Idempotency-Key": "setup"}
-    with TestClient(create_app(tmp_path, "synthetic-provision-token", supervise=False)) as client:
+    with TestClient(
+        create_app(tmp_path, "synthetic-provision-token", supervise=False, runtime=fake_runtime())
+    ) as client:
         assert client.post("/api/residents/provision", json=request()).status_code == 401
         ready = client.post("/api/residents/provision", headers=auth, json=request())
         assert ready.status_code == 200
@@ -75,7 +79,7 @@ def test_provisioning_api_replay_profile_and_input_choices(tmp_path):
         ).json()
         assert profile["creator"] == "operator" and profile["creation_reason"] == "Daily report"
         state = client.get("/api/state", headers=auth).json()
-        assert state["residents"][0]["profile"]["execution_profile"] == "inline_mock"
+        assert state["residents"][0]["profile"]["execution_profile"] == "codex_subscription"
         assert state["provisioning"][0]["status"] == "ready"
         assert (
             client.post("/api/residents/provision", headers=auth, json=request()).json() == result
@@ -163,7 +167,9 @@ def test_new_http_declaration_cannot_bypass_provisioning(tmp_path):
     from hearth.app import create_app
 
     auth = {"Authorization": "Bearer synthetic-provision-token"}
-    with TestClient(create_app(tmp_path, "synthetic-provision-token", supervise=False)) as client:
+    with TestClient(
+        create_app(tmp_path, "synthetic-provision-token", supervise=False, runtime=fake_runtime())
+    ) as client:
         result = client.put(
             "/api/residents/incomplete",
             headers=auth,
@@ -276,7 +282,9 @@ def test_the_journal_etiquette_joins_a_writable_resident_without_displacing_its_
     from hearth.skills.bootstrap import journal_skill
     from hearth.skills.catalog import Skills
 
-    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    app = create_app(
+        tmp_path, "synthetic-provisioning-operator", supervise=False, runtime=fake_runtime()
+    )
     hearth = app.state.hearth
     service = Provisioning(hearth)
     plain = service.create("plain", request(), actor="operator")
@@ -327,7 +335,9 @@ def test_an_edited_etiquette_draft_is_skipped_instead_of_failing_the_provision(t
     from hearth.skills.bootstrap import KEEP_A_JOURNAL, journal_skill
     from hearth.skills.catalog import Skills
 
-    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    app = create_app(
+        tmp_path, "synthetic-provisioning-operator", supervise=False, runtime=fake_runtime()
+    )
     hearth = app.state.hearth
     with hearth.database.transaction(write=True) as db:
         etiquette = journal_skill(db, hearth)
@@ -357,7 +367,7 @@ def test_an_edited_etiquette_draft_is_skipped_instead_of_failing_the_provision(t
                     "notes": [],
                     "assertions": {
                         "max_characters": 1000,
-                        "contains": ["No synthetic inputs"],
+                        "contains": ["No notes were supplied"],
                         "excludes": [],
                     },
                 },
@@ -380,7 +390,9 @@ def test_the_etiquette_is_skipped_rather_than_pushing_a_set_over_its_byte_bound(
     from hearth.skills.bootstrap import journal_skill
     from hearth.skills.catalog import Skills
 
-    app = create_app(tmp_path, "synthetic-provisioning-operator", supervise=False)
+    app = create_app(
+        tmp_path, "synthetic-provisioning-operator", supervise=False, runtime=fake_runtime()
+    )
     hearth = app.state.hearth
     with hearth.database.transaction(write=True) as db:
         journal_skill(db, hearth)

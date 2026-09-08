@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 
 import pytest
-from hearth.residents.models import Refused
+from hearth.storage.database import RUNTIME_KIND as KIND
 from hearth.storage.database import SCHEMA_VERSION, Database, schema_matches
 
 from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
@@ -82,30 +82,71 @@ def test_newer_store_and_foreign_layout_are_refused(tmp_path):
     assert not (tmp_path / "other.db.upgrading").exists()
 
 
-def test_quiet_store_changes_runtime_but_active_run_refuses(tmp_path):
-    from hearth.residents.models import Declaration
-    from hearth.work.service import Hearth
+def simulated_store(path, *, unfinished=False):
+    """A store recorded against a runtime this release no longer ships."""
+    pre_memory_store(path, runtime_kind="inline_mock")
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, runtime_kind, "
+        "runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, ?, "
+        "'inline_mock', 1, ?)",
+        (None if unfinished else 2, "a" * 64),
+    )
+    if unfinished:
+        db.execute("UPDATE runs SET status='running', actual_cost=NULL, usage_known=0 WHERE id='r'")
+        db.execute("UPDATE tasks SET status='running' WHERE id='t'")
+    db.commit()
+    db.close()
 
+
+def test_a_simulated_store_adopts_the_one_runtime_and_keeps_its_history(tmp_path):
     path = tmp_path / "hearth.db"
-    database = Database(path)
-    database.initialize(runtime_kind="inline_mock")
-    database.initialize(runtime_kind="process_mock")
-    assert database.runtime_kind() == "process_mock"
-    assert Database(path).runtime_kind() == "process_mock"
+    simulated_store(path)
+    Database(path).initialize()
+    assert Database(path).runtime_kind() == KIND
     db = sqlite3.connect(path)
-    kind, detail = db.execute(
-        "SELECT kind, detail FROM audit ORDER BY sequence DESC LIMIT 1"
-    ).fetchone()
-    assert (kind, json.loads(detail)) == (
-        "runtime_kind_changed",
-        {"from": "inline_mock", "to": "process_mock"},
+    # Relabelling the run would claim the work happened somewhere it did not.
+    assert db.execute("SELECT runtime_kind, actual_cost FROM runs").fetchone() == (
+        "inline_mock",
+        2000,
     )
-    hearth = Hearth(database, clock=lambda: 1_788_640_000)
-    hearth.save_resident(
-        "reader", Declaration("Reader", "Synthetic", 1_000_000), expected_revision=0
-    )
-    receipt = hearth.submit("summary", "reader", "Synthetic", expires_at=1_788_640_600)
-    hearth.admit(receipt.task_id, reserve=10_000)
-    with pytest.raises(Refused, match="runtime_store_busy"):
-        database.initialize(runtime_kind="inline_mock")
-    assert database.runtime_kind() == "process_mock"
+    assert db.execute("SELECT 1 FROM system_meta WHERE key='process_boundary'").fetchone() is None
+    detail = db.execute("SELECT detail FROM audit WHERE kind='runtime_kind_changed'").fetchone()[0]
+    assert json.loads(detail) == {"from": "inline_mock", "to": KIND}
+    Database(path).initialize()  # idempotent: adoption happens once
+    assert db.execute(
+        "SELECT count(*) FROM audit WHERE kind='runtime_kind_changed'"
+    ).fetchone() == (1,)
+
+
+def test_work_left_in_flight_by_a_removed_runtime_ends_with_its_usage_unknown(tmp_path):
+    path = tmp_path / "hearth.db"
+    simulated_store(path, unfinished=True)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    run = db.execute("SELECT * FROM runs").fetchone()
+    # No surviving runtime can observe that work, and no cost may be invented for it.
+    assert run["status"] == "cancelled" and run["finished_at"] is not None
+    assert run["actual_cost"] is None and not run["usage_known"]
+    assert db.execute("SELECT status FROM tasks").fetchone()[0] == "cancelled"
+    assert db.execute("SELECT reason FROM pauses").fetchone()[0] == "usage_unknown"
+    detail = db.execute("SELECT detail FROM audit WHERE kind='run.cancelled'").fetchone()[0]
+    assert json.loads(detail)["reason"] == "runtime_removed"
+
+
+def test_a_quarantined_copy_of_a_simulated_store_is_read_not_rewritten(tmp_path):
+    path = tmp_path / "hearth.db"
+    Database(path).initialize()
+    with sqlite3.connect(path, isolation_level=None) as db:
+        db.execute("UPDATE system_meta SET value='inline_mock' WHERE key='runtime_kind'")
+        db.execute("INSERT INTO system_meta VALUES ('restore_hold', 'held')")
+    before = path.read_bytes()
+    Database(path).initialize()
+    # A held copy exists to be read; adopting the one runtime would rewrite it.
+    assert path.read_bytes() == before
+    assert Database(path).runtime_kind() == "inline_mock"

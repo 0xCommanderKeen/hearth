@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.residents.maintenance import LifecycleChange, Maintenance
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 TOKEN = "synthetic-maintenance-operator"
@@ -11,7 +12,7 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 
 def test_archive_keeps_saved_result_and_refuses_future_work_across_restart(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     app.state.hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
         seed_reader_via(client)
@@ -39,7 +40,9 @@ def test_archive_keeps_saved_result_and_refuses_future_work_across_restart(tmp_p
             json={"resident_id": "reader", "instruction": "Again", "expires_at": 1_788_640_600},
         )
         assert refused.json() == {"error": "resident_archived"}
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as reopened:
+    with TestClient(
+        create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
+    ) as reopened:
         assert reopened.get(route, headers=AUTH).json()["state"] == "archived"
         assert reopened.put(route, headers=headers, json=body).json() == archived.json()
         invalid = reopened.put(
@@ -61,7 +64,7 @@ def test_archive_blocks_queued_admission_schedules_and_trusted_dispatch(tmp_path
     from hearth.work.service import Hearth
 
     database = Database(tmp_path / "hearth.db")
-    database.initialize(runtime_kind="process_mock")
+    database.initialize()
     hearth = Hearth(database, clock=lambda: 1_788_640_000)
     hearth.save_resident("reader", Declaration("Reader", "Read", 100000), expected_revision=0)
     routine = Routines(hearth).save(
@@ -106,7 +109,7 @@ def test_archive_blocks_queued_admission_schedules_and_trusted_dispatch(tmp_path
 def test_archive_before_launch_and_during_unknown_execution_keep_truthful_holds(tmp_path):
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False, scenario="hold")
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("hold"))
     hearth = app.state.hearth
     hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
@@ -131,7 +134,7 @@ def test_archive_before_launch_and_during_unknown_execution_keep_truthful_holds(
 def test_coherent_configuration_conflict_preserves_every_other_owned_revision(tmp_path):
     from hearth.residents.memory import Memory
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     with TestClient(app) as client:
         seed_reader_via(client)
         route = "/api/residents/reader/configuration"
@@ -161,7 +164,7 @@ def test_coherent_configuration_conflict_preserves_every_other_owned_revision(tm
 
 
 def test_profile_edits_inputs_skills_and_routine_with_owning_revision_guards(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     app.state.hearth.clock = lambda: 1_788_640_000
     with TestClient(app) as client:
         seed_reader_via(client)
@@ -226,7 +229,7 @@ def managed_fixture(tmp_path):
     from hearth.management.bridge import BoundRun, Bridge
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1_788_640_000
     karen = bootstrap(hearth)
@@ -252,7 +255,7 @@ def managed_fixture(tmp_path):
                 "name": "Reporter",
                 "purpose": "Count fictional pears",
                 "creation_reason": "A managed reporter",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
             },
         },
@@ -336,7 +339,7 @@ def test_archive_keeps_running_reservation_and_held_backup_refuses_damaged_lifec
 
     from tests.support import seed_reader
 
-    app = create_app(tmp_path / "data", TOKEN, supervise=False, scenario="hold")
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime("hold"))
     hearth = app.state.hearth
     hearth.clock = lambda: 1_788_640_000
     seed_reader(hearth)
@@ -349,9 +352,16 @@ def test_archive_keeps_running_reservation_and_held_backup_refuses_damaged_lifec
     assert hearth.run(run.id).status == "running" and hearth.run(run.id).reserved == 10000
     assert not hearth.run(run.id).cancellation_requested
     assert snapshot(hearth)["residents"][0]["presence"] == "running"
+    # Every run is priced, so a backup waits for the run to settle. A launched run
+    # cancelled mid-flight settles with unknown usage, so it stays unresolved.
+    app.state.execution.cancel(run.id)
+    app.state.executor.step()
+    assert hearth.run(run.id).status == "cancelled" and not hearth.run(run.id).usage_known
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    with TestClient(create_app(tmp_path / "held", TOKEN, supervise=False)) as held:
+    with TestClient(
+        create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as held:
         state = held.get("/api/state", headers=AUTH).json()
         assert state["restore_hold"] and state["residents"][0]["unresolved_runs"] == 1
         assert state["residents"][0]["lifecycle"]["state"] == "archived"
@@ -453,11 +463,13 @@ def test_competing_manager_and_operator_configuration_has_one_winner(tmp_path):
 
 
 def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_path):
+    import shutil
+
     from hearth.observation.snapshot import snapshot
 
     from tests.support import seed_reader
 
-    app = create_app(tmp_path, TOKEN, supervise=False, scenario="hold")
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("hold"))
     hearth = app.state.hearth
     hearth.clock = lambda: 1_788_640_000
     seed_reader(hearth)
@@ -465,13 +477,13 @@ def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_pat
     run = hearth.admit(task.task_id, reserve=10000)
     app.state.executor.step()
     # Lost external runtime evidence is not proof of termination.
-    (tmp_path / "mock-runtime" / (run.id + ".json")).unlink()
+    shutil.rmtree(tmp_path / "fake-runtime" / run.id)
     app.state.executor.step()
     assert hearth.run(run.id).status == "interrupted"
     Maintenance(hearth).change_lifecycle(
         "archive", "reader", LifecycleChange(expected_revision=0, state="archived")
     )
-    reopened = create_app(tmp_path, TOKEN, supervise=False, scenario="hold")
+    reopened = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("hold"))
     reopened.state.executor.step()
     state = snapshot(reopened.state.hearth)
     assert state["residents"][0]["lifecycle"]["state"] == "archived"
@@ -531,7 +543,7 @@ def test_unrelated_agent_and_forged_transfer_are_refused_without_changes(tmp_pat
 def test_configuration_accepts_legal_unicode_groups_and_rejects_transport_overflow(tmp_path):
     import json
 
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         seed_reader_via(client)
         route = "/api/residents/reader/configuration"
         before = client.get(route, headers=AUTH).json()

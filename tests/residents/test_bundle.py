@@ -38,7 +38,7 @@ def seeded(hearth: Hearth) -> dict:
             instructions="Be concise.",
             initial_memory="Remember: pears.",
             skills=[{"skill_id": skill["skill_id"], "revision": skill["revision"]}],
-            execution_profile="inline_mock",
+            execution_profile="codex_subscription",
             input_sets=[{"input_set_id": inputs["input_set_id"]}],
             daily_limit=250_000,
             budget_timezone="Europe/Ljubljana",
@@ -92,7 +92,7 @@ def test_import_round_trip_into_fresh_store_creates_content(tmp_path):
         if key == "resident":
             expected = expected | {
                 "creation_reason": again["resident"]["creation_reason"],
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
             }
         assert again[key] == expected
     assert again["resident"]["creation_reason"].startswith("Imported resident bundle")
@@ -198,7 +198,7 @@ def test_foreign_profile_is_substituted_and_grant_is_never_applied(tmp_path):
     assert receipt["status"] == "ready"
     assert receipt["resolution"]["execution_profile"] == {
         "requested": "codex_subscription",
-        "used": "inline_mock",
+        "used": "codex_subscription",
     }
     assert receipt["resolution"]["management_ignored"] is True
     from hearth.management.authority import read_grant
@@ -236,7 +236,7 @@ def test_karen_fixture_imports_as_ordinary_resident(tmp_path):
     receipt = Bundles(target).import_("import-karen", {"bundle": bundle})
     assert receipt["status"] == "ready"
     assert receipt["resolution"]["management_ignored"] is True
-    assert receipt["resolution"]["execution_profile"]["used"] == "inline_mock"
+    assert receipt["resolution"]["execution_profile"]["used"] == "codex_subscription"
     assert [entry["outcome"] for entry in receipt["resolution"]["skills"]] == ["created"] * 2
     with target.database.transaction() as db:
         assert read_grant(db, receipt["resident_id"])["revision"] == 0
