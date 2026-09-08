@@ -362,10 +362,16 @@ def test_a_backup_round_trip_keeps_the_answer_the_sender_will_read(tmp_path):
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
+    # The time the answer carries is the time it was written, read back from the store
+    # rather than from the clock now: this household runs on the real one, and a second
+    # boundary between the answer and this assertion says nothing about the copy.
+    with hearth.database.transaction() as db:
+        written_at = db.execute("SELECT written_at FROM letter_replies").fetchone()[0]
+    assert 0 <= int(hearth.clock()) - written_at <= 5
     assert copy.letters("orchard")["inbox"][0]["reply"] == {
         "resident_id": "orchard",
         "run_id": answering.id,
-        "written_at": int(hearth.clock()),
+        "written_at": written_at,
         "text": "The orchard has 412 pear trees.",
     }
 

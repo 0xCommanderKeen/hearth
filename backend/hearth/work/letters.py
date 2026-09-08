@@ -849,10 +849,9 @@ def validate_letters(db) -> None:
         # a state its own rows contradict: an answer nobody wrote, an unanswered letter
         # whose run never succeeded, or one closed for going stale after being worked.
         state, terminal = row["state"], row["status"] in {"succeeded", "failed", "cancelled"}
-        if state == "pending":
-            if terminal:
-                raise Refused("backup_letters_invalid")
-        elif not terminal:
+        # A letter is open exactly while the task it is: one still open whose task has
+        # ended, or one settled whose task has not, is a copy that no longer adds up.
+        if (state == "pending") == terminal:
             raise Refused("backup_letters_invalid")
         if state != "pending" and (state == "replied") != bool(row["answered"]):
             raise Refused("backup_letters_invalid")
