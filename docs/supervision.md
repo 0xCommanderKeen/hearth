@@ -6,10 +6,12 @@ process fails startup before its background work begins. Path aliases resolve to
 the same lock. Restored copies cannot acquire supervision and remain read-only.
 
 The worker owns routine ticks, queued routine admission, runtime supervision and
-mock notification delivery. Errors expose their class through authenticated health,
-not their private text. Notification errors remain separate from execution errors.
-Existing per-operation locks and durable run ownership tokens remain necessary for
-standalone mock operations, backup coordination, and stale-evidence rejection.
+pending skill validations. Errors expose their class through authenticated health,
+not their private text; executor, scheduler and validation errors stay separate.
+There is no notification pass: a notification is written in the same transaction as
+the fact it reports, so nothing periodic has to deliver it. Existing per-operation
+locks and durable run ownership tokens remain necessary for standalone operations,
+backup coordination, and stale-evidence rejection.
 
 Shutdown sets a stop event, prevents later stages/passes from beginning, and joins
 the worker. The worker itself releases the ownership lock after in-flight work
@@ -20,5 +22,5 @@ reconciliation remain distinct recovery operations.
 
 Tests use actual threads, an independent Python process, canonical path aliases,
 blocked-operation barriers, API startup/shutdown, fatal worker exit and restart.
-This proves local mock process coordination. It does not prove real runtime
+This proves local process coordination. It does not prove real runtime
 termination or host isolation.

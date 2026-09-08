@@ -2,6 +2,13 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Docs describe one runtime and no mocks. The last seven mock documents and ADR 0004 are
+  deleted, `implementation.md`'s mock and container-rehearsal checkpoints collapse into
+  one record of what the epic shipped, and the remaining incidental mentions of mock
+  runtimes, `simulated`, approvals, the noticeboard and the Skill evaluator are corrected
+  across `docs/`, `README.md`, `AGENTS.md` and `CONTEXT.md`. ADR 0014 records the
+  decision.
+
 - Skill examples run as the resident that asked for them (schema 5): the Skill evaluator
   service resident, its empty-memory rule and its provisioning escape hatch are gone. A
   validation pins the requesting resident, its declaration and memory revisions and the

@@ -34,25 +34,6 @@ lifetime, cancellation and uncertain execution are required even in a new projec
 Revisioned declarations/skills/memory, current-data backups and held restore remain.
 No existing data directory has been deleted, migrated or activated.
 
-## Verified mock behavior
-
-The application has one SQLite authority and one backend/browser artifact. Manual
-and daily tasks share durable commands and admission. Persistent mock runtime
-receipts support restart and cancellation; unknown usage holds further admission.
-Exact operator approvals govern local mock publication, with checksummed receipt
-recovery. Notifications retain stable identity and retries. Hamlet and Townhall
-share authenticated snapshots/SSE and preserve editing drafts across conflicts.
-Memory is immutable, checksummed and pinned at admission; skills belong to the
-pinned declaration revision. Reader can only read its context.
-
-The fresh-start baseline passed 204 backend and 35 browser tests, lint, types, builds and
-wheel checks. Fresh CLI summary/restart and current-schema backup/restore preserve
-memory and audit with the copied store held and the backup unchanged. The release
-wheel contains the direct schema and none of the removed modules. Rendered desktop
-and mobile journeys verify setup, memory save/conflict/reload and a pinned summary
-result. Independent Standards and Spec reviews found no blocking issue; they also
-ran 77 and 108 focused checks respectively.
-
 ## Standalone release verification
 
 Issue #46 adds an isolated installation check to `make check`. It exports hashed
@@ -60,7 +41,7 @@ runtime dependencies from the lockfile, installs the wheel without the editable
 checkout, and runs from an unrelated temporary directory with Python isolated mode.
 The installed CLI passes twice against the same fresh data. Loopback HTTP verifies
 packaged assets, authentication, Reader setup, duplicate command receipts, a
-simulated result, restart persistence and a held current-data restore. Temporary
+saved result, restart persistence and a held current-data restore. Temporary
 files and servers are cleaned up. See [the installation recipe](release.md).
 
 Miha selected Codex Astra, synthetic notes, this Mac for development and $10 per
@@ -78,28 +59,6 @@ orders explicit provenance, a durable fake-process worker, bounded event parsing
 staged inputs and actual-host acceptance before real wiring. Model access, billing and
 Mac process/isolation behavior remain unverified. No Codex task was launched.
 
-## Process lifecycle rehearsal
-
-Issue #52 implements a process mock through the existing Runtime
-contract. [The rehearsal](process-mock.md) uses a detached trusted worker, durable
-launch/started claims, bounded synthetic child output and durable cancellation.
-Real processes and temporary SQLite verify restart recovery and retention of
-ownership after uncertain launch. Its baseline passed 216 backend and 35 browser
-tests; both independent reviewers also ran all 12 process checks.
-
-Issue #54 connects the process mock to fresh application stores. Store runtime
-choice is immutable; runs pin adapter kind/version and serialized input digest at
-admission. Wrong adapters or mismatched evidence cannot execute or settle a run.
-Authenticated snapshots and run inspection expose the pins. Quiescent process
-backups preserve validated durable claims; active/unknown runs refuse capture.
-Restored stores infer their runtime and stay held. The schema is defined directly;
-incompatible prototype layouts require fresh data and are never converted.
-
-Real model/pricing provenance, live Codex event compatibility and Mac confinement remain
-pending. This wiring enables process-backed simulations only. Full `make check`
-passes 226 backend and 35 browser tests. Installed-wheel HTTP journeys pass for
-both runtimes, including pinned result/restart and verified held backup restore.
-
 ## Codex event interpretation
 
 Issue #56 adds an [offline exec JSONL parser](codex-events.md), tested only with
@@ -108,21 +67,23 @@ preserves unknown usage and ambiguous final messages, and requires observed proc
 exit before completed interpretation. It returns no runtime evidence or dollar cost.
 Real CLI event compatibility, final-file ownership, pricing and Mac isolation remain
 pending; no Codex task was launched. Full `make check` passes 273 backend and
-35 browser tests, including 47 synthetic parser checks and installed-wheel journeys
-for both mock runtimes.
+35 browser tests, including 47 synthetic parser checks and the installed-wheel
+journeys.
 
 ## Remaining acceptance
 
 | Gate | Current state | Required next evidence |
 | --- | --- | --- |
-| Fresh mock workflow | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
-| Bounded real Reader | Deferred by mock-only direction | Mac isolation, exact runtime/authentication/pricing; useful output and actual read-only isolation |
+| Workflow and simplicity | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
+| Bounded real Reader | Real subscription runs recorded (2026-09-06 demo, 2026-09-07 journal journey) | Mac isolation, exact runtime/authentication/pricing; useful output and actual read-only isolation |
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
 | Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
 
-The mock runtime deterministically formats supplied synthetic notes. Its output does not establish real summary
-quality or model behavior. No migration, source mapping, ownership transfer or
-retirement work remains in the project scope.
+`tests/fake_runtime.py` publishes provider-shaped receipts so the suite can exercise the
+real interpreter without a subscription. A passing suite is wiring evidence, never
+evidence of summary quality or model behavior, and completes no gate above. No
+migration, source mapping, ownership transfer or retirement work remains in the project
+scope.
 
 ## Pinned worker input staging
 
@@ -137,7 +98,7 @@ concurrency, digest and size limits, unsafe paths and sync failures before/after
 publication. Fifty repeated concurrent staging checks pass after switching lock
 creation to exclusive create followed by existing-file open on contention; the
 original combined create/open intermittently failed with ENOENT on this Mac.
-Full `make check` passes 289 backend and 35 browser tests plus both installed mock
+Full `make check` passes 289 backend and 35 browser tests plus the installed-wheel
 journeys. Actual worker wiring and Mac filesystem/network isolation remain pending;
 read-only file permissions are not evidence of confinement. No Codex call was made.
 
@@ -155,88 +116,11 @@ The daemon default is unconfined; explicit built-in seccomp and an in-container
 Seccomp=2 assertion avoid relying on it. Dormant tunnel interfaces are present;
 the probe checks no active non-loopback interfaces/routes and connection denial.
 Three offline cleanup checks cover daemon loss and foreign-ownership refusal.
-Full `make check` passes 292 backend/35 browser plus both installed mock journeys.
+Full `make check` passes 292 backend/35 browser plus the installed-wheel journeys.
 This is host evidence for the synthetic image, not a Codex integration or a real
 summary. [Reproduction and remaining gates](mac-isolation.md) cover actual staged
 mount permissions, durable worker identity, model transport/credential separation,
 pricing, real-test selection and the remaining observation/operation gates.
-
-## Pinned-input container ownership rehearsal
-
-Issue #62 connects actual `stage_run` 0400/0700 files to a non-root network-disabled
-container without broadening permissions. A durable claim precedes create and the
-exact inspected ID is persisted before start. Replay only inspects; missing, changed
-or uncertain evidence never authorizes another create/start. Ownership guards stop
-and removal. Terminal logs use the offline Codex parser with run-ID matching and
-observed container exit; no token/dollar usage is invented.
-
-The actual Mac rehearsal passed success and held-cancellation cases, including a
-lost start acknowledgement and observation from a fresh trusted process. It uses
-fresh SQLite, synthetic memory and the fixed Python image; no Codex or credentials.
-[Evidence and remaining integration](container-rehearsal.md) distinguish this from
-an application runtime and describe unavailable terminal logs after explicit cleanup.
-Full `make check` passes 306 backend/35 browser plus both installed mock journeys;
-14 fault-boundary tests use real SQLite, and the Mac rehearsal is separately opt-in.
-
-## Durable container terminal evidence
-
-Issue #64 preserves bounded immutable terminal receipts tied to the exact claim
-and container ID before cleanup. Validated raw events and exit status survive
-container removal and daemon loss. Corrupt/missing receipts remain unknown; competing
-conflicting captures leave a durable hold marker. No evidence is overwritten and
-storage failures prevent removal. Invalid transcripts remain visibly invalid, with
-no invented usage or costs. Automatic container restart is explicitly disabled.
-
-Full `make check` passes 330 backend/35 browser and both installed mock journeys,
-including 38 container ownership/receipt checks. Twenty concurrent-conflict
-repetitions pass. The updated actual Mac rehearsal verifies success and cancellation
-receipts survive container removal; its report records the final module hash.
-[Receipt behavior and remaining gates](container-rehearsal.md) still defer operational
-worker/backup integration, actual Codex/model-channel execution and real acceptance.
-
-## Operational container dispatch prerequisite
-
-Issue #66 remains in progress. `Execution.dispatch_guard` now serializes the final
-container start against SQLite cancellation and declaration changes, checking owner,
-epoch, pinned input, runtime contract and launch intent. A held restore refuses.
-Refused or uncertain starts retain their inspect-only container claims. The Mac
-rehearsal now supplies this guard using a fresh process-mock database.
-
-Validation: 343 backend and 35 browser tests, lint/types/build and both installed
-mock journeys passed. Thirteen additional checks cover active observations, changes
-during container creation, concurrent writer exclusion and lost start replies.
-The actual Mac synthetic success/cancellation rehearsal passed with guarded dispatch
-and terminal receipts surviving cleanup. This does not enable a container selector
-or complete issue #66: detached worker wiring, reconciliation and quiescent backup/
-held restore for container evidence remain next. Real Codex execution stays deferred.
-
-## Operational contained mock and held recovery
-
-Issue #66 connects the guarded container fixture to the existing process runtime and
-normal executor. Fresh stores pin the process boundary; reopening infers it and a
-conflicting selector refuses. Private requests pin owner/epoch/input; only synthetic
-context reaches the container. The detached worker observes cancellation and timeout,
-and the reopened adapter can reconcile and stop an owned container after worker loss.
-Synthetic receipts become ordinary simulated artifacts and accounting. Unknown
-execution still prevents retry or release of the active run.
-
-Quiescent backup preserves and validates container claims, identities, staged input
-and terminal receipts against the process request, run and artifact. Verification
-uses no Docker access. Held restores cannot execute, and repeated held generations
-retain original execution provenance. Current required configuration/request fields
-are defined directly; incompatible prototype data is refused without conversion.
-
-Validation: full `make check` passed 362 backend and 35 browser tests, lint/types/build
-and both installed inline/POSIX mock journeys. Nineteen new integration checks cover
-normal execution, restart, worker loss, cancellation before/during dispatch, timeout,
-input contradiction, active-worker capture refusal, receipt corruption and repeated
-held recovery. Review regressions cover persisted timeouts after worker loss and
-receipt conflicts during cleanup/cached-result observation. The actual Mac worker
-rehearsal verifies synthetic success, cancellation,
-app restart, loss of the trusted worker and its retained timeout, plus container
-cleanup and held restore.
-See [configuration and evidence](container-worker.md). This completes the contained
-mock integration, not actual Codex/model-channel execution or daily-use acceptance.
 
 ## Offline subscription CLI compatibility
 
@@ -308,12 +192,12 @@ cost, artifact reference and audit commit together. Missing usage retains the
 admission hold; scalar or contradictory evidence cannot settle a priced run.
 Current-data backup/held restore independently revalidates the SQLite receipt and
 preserves explicit operator reconciliation. Run inspection and the browser identify
-API-equivalent simulated amounts. See [the accounting seam](codex-accounting.md).
+API-equivalent estimated amounts. See [the accounting seam](codex-accounting.md).
 
 Full `make check` passed 448 backend and 35 browser tests, lint/types/build and both
 installed-wheel journeys. Sixteen accounting tests cover ownership/binding,
 standard/Fast pricing, $10/day exposure, atomic rollback, unknown usage and held
-recovery. An unsupported priced run stays interrupted while unrelated mock work
+recovery. An unsupported priced run stays interrupted while unrelated work
 continues. This does not enable a Codex worker or complete issue #69; production
 collector isolation, terminal handoff and operational dispatch/recovery remain.
 
@@ -362,33 +246,6 @@ the ground/camera for additional rows. Full `make check` passed: 463 backend,
 37 frontend, type/format/build and both installed-wheel journeys. Log:
 `/private/tmp/hearth-demo-full-check.log` (local evidence, not a repository artifact).
 
-## Operational offline Codex demo — issue #79, working branch
-
-The optional `codex_mock` adapter now accepts normal browser/API tasks and runs
-pinned Codex CLI 0.145.0 with synthetic authentication against the local fixture.
-The CLI and collector use separate filesystem/PID namespaces and shared offline
-loopback. Runtime assets, launch identity, input, terminal logs and usage bind to
-the admitted run; reopening never retries creation or start.
-
-Terminal settlement also retries unfinished owned cleanup. A lost removal reply
-requires a successful exact-ID daemon listing to prove absence; daemon errors
-remain unknown. A created container with uncertain start intent cannot be sealed
-as never started. SQLite receipts retain terminal proof after cleanup and backup.
-
-Verified 2026-09-06: full `make check` passed 466 backend / 38 frontend tests plus
-both installed-wheel journeys. Fresh actual-container API success saved an
-artifact with 623 microdollars API-equivalent mock usage and passed held restore.
-Cancellation during an incomplete request preserved unknown usage and passed held
-restore. These checks used only synthetic inputs, auth and local responses.
-They do not establish real account/model access, upstream credentials, production
-isolation or observation gates.
-
-Additional actual Mac evidence: killing only a disposable API server after CLI
-start intent, then reopening the same data, recovered the original run to success
-with 623 microdollars and both owned containers removed. Review also added asset
-revalidation before worker setup and each guarded start, with a regression proving
-that post-startup asset changes dispatch no containers.
-
 ## Real subscription connection — 2026-09-06
 
 The user explicitly authorized real Codex and reuse of the existing Mac login.
@@ -396,7 +253,7 @@ A separate pinned 0.153.4 CLI/home now runs Astra through `codex_subscription`.
 A real standalone fictional-notes summary passed, followed by the browser flow
 Reader → Run summary → saved real result. The initial application transcript-order
 failure is covered by an exact pre-turn diagnostic regression. API/artifact/audit/
-backup/browser provenance distinguish real execution from mocks. See
+backup/browser provenance record the runtime each run used. See
 [codex-subscription-demo.md](codex-subscription-demo.md) and ADR0008 for setup,
 accounting and limits. Real source connectors and production deployment remain
 unselected; this does not complete the daily-observation gate.
@@ -421,7 +278,7 @@ subscription lost-launch recovery behavior. Hearth retains transactional account
 and dispatch authority; no schema, receipt format, routes or configuration changed.
 
 Verified 2026-09-06: `make check` passes 489 backend and 40 frontend tests,
-format/lint/types/build and both installed-wheel journeys (inline and process mock),
+format/lint/types/build and the installed-wheel journeys,
 including auth, results, restart and held restore. Two interface checks reject
 changed cancellation run/input/runtime pins. A collector regression checks the
 previously pinned bundle hashes, unchanged manifest and isolated imports. All three
@@ -429,7 +286,7 @@ collector sources and the emitted fixture match the pre-refactor release bytes.
 
 An actual isolated browser passed login → Reader → saved visible result, refresh
 persistence, Hamlet canvas, mobile overflow and Lock/logout checks using synthetic
-mock data. No provider call, live-data edit or credential access was needed.
+data. No provider call, live-data edit or credential access was needed.
 Independent Standards and Spec reviews both report zero remaining findings after
 fixing offline bundle preservation. Karen/shared Skills (#85) and deployment remain
 outside this issue.
@@ -520,7 +377,7 @@ and used history read-only. Scheduler errors stay visible while healthy queued a
 active residents continue. See [the operation and pinning contract](skill-assignments.md).
 
 A real rendered browser passed: attach one shared revision to two residents, publish
-a new revision, deliberately update only one, run both through the mock runtime and
+a new revision, deliberately update only one, run both and
 observe revision 2 versus revision 1. Detach/archive left run history unchanged;
 reverse resident links, archived assignment labels and mobile overflow checks passed.
 Desktop/mobile screenshots were inspected. All inputs were synthetic; the live demo,
@@ -570,11 +427,11 @@ including an explicit empty selection. Context version 5 pins ordered exact
 revisions and checksums in the admission transaction. Later content or selection
 edits affect future admissions; result history links to the original source.
 Reader setup explicitly seeds its example once and preserves operator edits.
-The deterministic mock formats the supplied notes, enabling distinct resident
-results. See [the API and data boundary](synthetic-inputs.md).
+Each resident's own pinned notes produce its own result. See
+[the API and data boundary](synthetic-inputs.md).
 
 Verification passed 543 backend and 59 browser tests, lint/format/types, frontend
-and wheel builds, and both installed-wheel mock journeys. New checks cover exact
+and wheel builds, and the installed-wheel journeys. New checks cover exact
 retry/conflicts, three distinct/empty contexts and summaries, concurrent content
 edit/admission, future selection, source/pin corruption with healthy progress,
 scoped and revoked run access, inert malicious source text, serialized size limits
@@ -602,7 +459,7 @@ application writer. Created residents inherit no management grant. Reader retain
 its read-only exec route. See [the permission contract](management.md).
 
 Final `make check` passed 620 backend and 61 browser tests, lint/format/types and release
-builds, including both isolated mock HTTP/restart/held-restore journeys with cached
+builds, including the isolated HTTP/restart/held-restore journeys with cached
 dependencies. Thirty-five management checks cover scoped
 creation/reuse/start, concurrency, revocation, stale ownership, changed pins,
 unknown usage holds, current-data backup and transactional failure. A fresh rendered
@@ -651,16 +508,17 @@ grant revocation, and preserve uncertain-usage holds. See [management](managemen
 for the pins, expiry, repair and evidence boundaries.
 
 `make check` passed 632 backend tests and 65 browser tests, lint/format/types, frontend
-and wheel builds, and both isolated installed-wheel mock journeys. New regressions
+and wheel builds, and the isolated installed-wheel journeys. New regressions
 exercise exact lost-save/validation/publication replies, concurrent human/agent edits,
 unauthorized revisions and assignments, failed structural/output checks, unknown
 usage, revoked grants during bounded waits, prompt escalation, a repaired declaration
-resuming the same case identities, and held-backup provenance. UI checks cover saved simulated evidence, retained
+resuming the same case identities, and held-backup provenance. UI checks cover saved
+example evidence, retained
 publication requests, live catalog arrival and preservation of conflicting drafts.
 
 A fresh actual Chromium journey on synthetic localhost 8792 observed a scoped Karen
 creation appear in the open Skills catalog, inspected named authorship and two saved
-accounted mock example runs, published revision 2, and preserved an unsaved human draft
+accounted example runs, published revision 2, and preserved an unsaved human draft
 when a scoped edit created revision 3. It then inspected a scoped assignment of the
 still-active exact revision 2 and the resident's ordinary saved report. Desktop/mobile
 screenshots were inspected, mobile had no horizontal overflow, and no browser errors
@@ -696,7 +554,7 @@ release builds passed. Both installed-wheel isolated HTTP/restart/held-restore
 journeys passed with cached dependencies (localhost socket permission required).
 Focused regressions cover competing manager/operator revisions, unrelated-agent
 refusal, forged transfer, archive dispatch gates, durable retry/restart, unknown
-mock evidence and held restore corruption, plus legal maximum Unicode groups.
+runtime evidence and held restore corruption, plus legal maximum Unicode groups.
 Actual rendered desktop/mobile verification created a synthetic resident/routine,
 ran and read its first result, retained a conflicting configuration draft, reloaded
 and saved declaration/memory, paused and archived, reopened the saved result,
@@ -757,8 +615,8 @@ The [integrated reporting journey](karen-journey.md) now exercises one scripted 
 manager task through authoring, two serial executed examples, immutable publication,
 resident creation, exact skill/input assignment, a daily routine and its first saved
 report. It uses the ordinary subscription adapter and supervisor with a credential-free
-fake executable. Names/output mark the fixture as simulated; its synthetic token
-counters do not establish real-provider acceptance.
+fake executable. The fixture's names and output say plainly where they come from; its
+synthetic token counters do not establish real-provider acceptance.
 
 The owning-path test exposed and reproduced a detached-worker startup race. Parent
 lock acquisition and inherited worker-lock ownership now close that gap without
@@ -852,7 +710,7 @@ is the existing provisioning row, so the setup receipt view and generic retry ap
 ADR 0010 bounds the departure from the no-transfer rule; `AGENTS.md` and the rebuild
 plan name the exception. Karen's live export is the checked-in fixture and imports as
 an ordinary resident with no authority. Verified: backend bundle and HTTP tests, web
-import/export tests, `make check`, and a browser round trip on the local mock store.
+import/export tests, `make check`, and a browser round trip on a local store.
 
 ## Run-authored memory revisions — issue #116
 
@@ -975,8 +833,8 @@ check as the pinned skills and inputs, on the receipted path as well as the inli
 Etiquette stays out of the code: the context states the capability and the entries, and
 #119's shared skill says what to write.
 
-Verified with real temporary SQLite through the owning interfaces: a mock end-to-end
-where run 1 reads revision 1, saves revision 2 as `author='run'`, replays that revision on
+Verified with real temporary SQLite through the owning interfaces: an end-to-end run
+pair where run 1 reads revision 1, saves revision 2 as `author='run'`, replays that revision on
 an uncertain retry and writes entry 1, an operator edit between the runs becomes revision
 3, and run 2's pinned context carries the operator's text and run 1's entry while its own
 entry waits for run 3; a run that lost a race is refused with `revision_conflict` and the
@@ -1018,8 +876,8 @@ cannot write however its declaration reads; Miha decided against leaving it ther
 writable declaration, exactly the three memory tools and every management tool refused —
 supersedes that limit, so the orchard reporter will not need a capability-less grant.
 Reporting `memory_writable` from the pinned tool surface rather than from the declaration
-outlives that change and stays: #119's pin leaves the gap open for mock runtimes, which
-have no native tool surface at all, and a run there must still be told it cannot write.
+outlives that change and stays: the flag has to state the run's actual authority, not
+what its declaration wishes for.
 
 ## Townhall memory history, the journal and the etiquette skill — 2026-09-07
 
@@ -1082,11 +940,7 @@ microdollars in API-equivalent estimates against the $10 household allowance;
 `docs/evidence/journal-journey-2026-09-07.json` and `docs/karen-journey.md` record the runs,
 the entries and the quoted report, and the data directory was discarded after recording.
 
-Remaining: the pinned context still states `memory_writable` from the declaration alone.
-That now matches the offered tools on the subscription runtime, where a writable
-declaration always pins the transport, but the mock runtimes have no native tool surface
-at all, so a writable resident there is still told it may write when nothing is offered.
-The context should read the pinned tool surface rather than the declaration. The household
+Remaining: the household
 `journal_limit` still moves only through `PUT /api/household`,
 with no Townhall control. Resident bundles still do not carry `memory_writable`, so an
 imported resident starts unable to write. A household that never sets Karen up has no
@@ -1140,3 +994,65 @@ still authorizing it; and both panels paging by offset and naming the runs they 
 open. `make check` passed on a plain developer PATH: ruff, ruff format, ty, 708 pytest
 tests, 90 browser tests, Prettier, the production build, packaged assets, the wheel and the
 installed-wheel check. The recorded real journey is unaffected and was not repeated.
+
+## One runtime, no mocks — 2026-09-08
+
+Before there was a real runtime, Hearth shipped four: an inline mock, a detached process
+mock, a pinned-container rehearsal of that process mock, and `codex_mock`, which drove
+the actual Codex CLI against an offline fixture. They were selected with
+`HEARTH_MOCK_RUNTIME` and `HEARTH_PROCESS_BOUNDARY`, produced artifacts flagged
+`simulated`, published to a local `mock-noticeboard` folder through the approvals broker,
+and delivered notifications into a `mock-inbox` folder. Their rehearsals proved things
+worth proving at the time — durable launch claims, uncertain-dispatch ownership, terminal
+receipts surviving container removal and daemon loss, quiescent backup of container
+evidence, held restore — and those guarantees moved onto the runtime that survived. The
+scaffolding did not: it cost two executor paths, two backup verifiers, dead branches in
+the receipt code and a set of promises that only held for simulations. Epic #158 removed
+it across issues #152–#157; [ADR 0014](adr/0014-one-runtime-and-no-mocks.md) records the
+decision, and the recorded host evidence stays under `evidence/`.
+
+What shipped:
+
+- **One runtime (#152).** `CodexLiveRuntime` is the only one. `integrations/mock/` and
+  `integrations/codex/runtime.py` are gone, with `HEARTH_MOCK_*`, `HEARTH_RUNTIME`,
+  `HEARTH_CODEX_ARCHIVE`, `HEARTH_PROCESS_BOUNDARY` and the stored process boundary.
+  `create_app(runtime=...)` injects `tests/fake_runtime.py`, which claims kind
+  `codex_subscription` and publishes provider-shaped receipts, so the database check, the
+  executor guard and the run pins stay as strict as in production; it is never packaged.
+  `runs.runtime_kind` still admits the three retired kinds as history — deleting those
+  runs would take resident provisioning and profiles with them — and
+  `storage.database.HISTORICAL_RUNTIME_KINDS` names them. A store recorded against a retired
+  runtime adopts the one runtime on start with a `runtime_kind_changed` audit fact; work
+  such a runtime left in flight ends as cancelled with usage unknown, and a quarantined
+  copy is never rewritten.
+- **No `simulated` flag (#153, schema 3).** Dropped from `artifacts`, the run context
+  (`context_version` 7), the snapshot, `/health`, run start/cancel, the audit detail, the
+  backup manifest, the stored skill-validation case result and the browser. The
+  reconciliation source is `operator_reported`. The upgrade learned two things: a column
+  named in `migration.DROPS` may be dropped, and a value the new layout refuses is
+  rewritten on the way in through `migration.REWRITES`.
+- **Backup is the household (#154).** `storage/backup.STORES` is `artifacts` and `memory`;
+  a backup is `hearth.db`, the artifacts it names and every resident's memory with its
+  archived journal entries. A manifest naming a retired store is refused.
+- **Approvals out, the inbox in (#155, schema 4).** `approvals`, `publication_actions`,
+  `publication_policies` and `publication_targets` are gone with `Authority`, `Broker`,
+  `MockNoticeboard` and `EffectReceipt`; there was no real publication target behind them,
+  and they return with the first real approval-gated effect. `deliveries` became
+  `notifications` with `read_at`, `observation/notifications.py` is the inbox, Townhall has
+  an Inbox page, and `Forwarder` is the seam ntfy (#127) and chat (#136) will implement.
+  The supervisor runs no notification pass. The upgrade learned `DROPPED_TABLES` and
+  version-scoped `RENAMES`. See [the inbox](inbox.md).
+- **Examples run as the requesting resident (#156, schema 5).** The Skill evaluator service
+  resident is gone with `system_meta.skill_evaluator`, `evaluator_context` and the
+  empty-memory rule. `skill_validations` pins `resident_id`, `resident_revision`,
+  `memory_revision` and `context_version`; a resident validates its own draft on its own
+  allowance and its one run slot, so the requesting turn ends before the examples start.
+  The upgrade learned version-scoped `COLUMN_RENAMES` and archives any existing evaluator
+  with an audit fact. See [management](management.md) and [the Karen journey](karen-journey.md).
+- **Docs (#157).** The last seven mock documents and ADR 0004 are deleted — #155 had
+  already taken `mock-approvals.md` and `mock-notifications.md`, making nine for the epic —
+  and this section replaces the mock and container-rehearsal checkpoints that described
+  them.
+
+Nothing here completes a gate in *Remaining acceptance*: removal changed no real-host
+evidence, and the recorded real journeys are unaffected and were not repeated.

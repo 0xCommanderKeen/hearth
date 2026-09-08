@@ -17,7 +17,7 @@ entirely, and their changed epoch also invalidates copied credential bindings.
 The single allowed route is `GET /api/runtime/runs/{run_id}/context`. Runtime
 authentication is separate from operator authentication and occurs before reading
 the request body. A runtime credential cannot call operator reads, task commands,
-approval decisions, publication, or another existing run's context. The operator
+the inbox, or another existing run's context. The operator
 token cannot substitute for a runtime credential on this route. Malformed or
 unrecognized runtime routes do not fall back to operator authentication.
 
@@ -27,15 +27,14 @@ pinned journal entries with their usage note, instruction, context version and e
 synthetic notes. The executor
 and this route use the same pinned context reader; the route keeps its credential
 checks in the same read transaction. It excludes run ownership
-secrets, budgets, other residents, real notes and effect credentials. Responses use
+secrets, budgets, other residents, real notes and provider credentials. Responses use
 `Cache-Control: no-store`; a valid read is authorized at its database snapshot.
 Revocation cannot retract bytes from a read that was already authorized.
 
-Tests exercise a mock runtime-origin HTTP client, exact-run isolation, credential
+Tests exercise a runtime-origin HTTP client, exact-run isolation, credential
 rotation/revocation/expiry, changed state/owner/configuration, audit rollback,
 restart validity, secret exclusion and restored-copy refusal. This is the credential
-contract for the read-only Reader. The deterministic in-process MockRuntime still
-runs without a network credential, receiving the context directly as canonical
-JSON at launch. Actual runtime credential injection, private credential
-mounts, filesystem/network isolation and a real adapter contract remain pending.
-No publication capability has been added to Reader and no real model is invoked.
+contract for the read-only Reader. The executor also hands the same canonical JSON
+to the runtime directly at launch, so a run that never calls this route reads the
+identical bytes. Actual runtime credential injection, private credential
+mounts and filesystem/network isolation remain pending.

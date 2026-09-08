@@ -29,7 +29,7 @@ authority. A declaration edit can invalidate launch even though the old context
 remains available for exact inspection. Returning a path does not prevent later
 host tampering; isolation and launch-time verification remain required.
 
-This helper is deliberately not wired into the mock executors or a real runtime
-selector. It is exercised against fresh SQLite and synthetic notes. Mac filesystem
+This helper stages input; it grants no launch authority of its own. It is
+exercised against fresh SQLite and synthetic notes. Mac filesystem
 and network confinement, credential separation, descendant termination, actual
 Codex compatibility and paid execution remain unverified and disabled.

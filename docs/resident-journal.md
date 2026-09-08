@@ -56,7 +56,7 @@ out during the run that pinned it; nothing else reads archived entries into a co
 ## The journal a run opens with
 
 Admission pins the newest `CONTEXT_ENTRIES` (5) entries in `run_journal`, in the same
-transaction as `run_memory`, and context version 6 carries exactly those under `journal`,
+transaction as `run_memory`, and context version 7 carries exactly those under `journal`,
 newest first, with `journal_usage` marking them as data that cannot grant authority or
 override instructions — the same neutralization the pinned inputs carry. Entries written
 later, including the run's own, join the next run's context, never this one's. Only rows

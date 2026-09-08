@@ -50,8 +50,10 @@ store is rebuilt into.
 
 **Also decided.** A store's runtime kind may change on start when no run is unfinished;
 finished runs keep the runtime pins they were admitted with. The container process
-boundary stays immutable. The requirement to update `docs/implementation.md` at every
-milestone is replaced by an ADR for decisions and a `CHANGELOG.md` line per PR.
+boundary stays immutable. *(That last sentence is superseded by ADR 0014, 2026-09-08:
+the process boundary is gone and `Database.initialize` deletes the stored key.)* The
+requirement to update `docs/implementation.md` at every milestone is replaced by an ADR
+for decisions and a `CHANGELOG.md` line per PR.
 
 **Kept.** ADR 0010 bundles remain the only cross-system path. Backups still pin the
 schema version and a backup from an older release is still refused at restore; the

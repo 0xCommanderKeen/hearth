@@ -23,7 +23,7 @@ reload. Held restores expose this state read-only.
 ## Run authority and transactions
 
 Admission pins an immutable grant revision/digest and a ten-minute expiry separately
-from ordinary context version 6. Only admitted granted subscription runs select the
+from ordinary context version 7. Only admitted granted subscription runs select the
 native management adapter; Reader retains its existing read-only exec adapter.
 The trusted worker passes a private binding to the bridge, never model-visible
 owner tokens, operator credentials, database handles or auth paths. Native thread
@@ -128,8 +128,8 @@ since. Unknown usage remains pending and never authorizes replacement execution.
 The structural checker verifies populated sections and two bounded examples. Normal
 and edge/adversarial cases execute the candidate using synthetic input revisions;
 allowlisted output-length, required-phrase and forbidden-phrase assertions inspect
-saved artifact bytes. Evidence distinguishes simulated runs from model execution and
-deterministic assertions from semantic assessment. There is no model grader or general
+saved artifact bytes. Evidence records deterministic assertions, not semantic
+assessment. There is no model grader or general
 quality guarantee. Publication binds the immutable candidate/content/example hashes,
 both successful case results, and a new active revision with identical instructions.
 Backup verifies this chain; held restores remain read-only. Townhall shows draft

@@ -20,8 +20,9 @@ _Avoid_: Session (when referring to task execution).
 
 **Routine:** A recurring source of tasks with an explicit schedule.
 
-**Approval:** A human decision about one specific proposed action.
-_Avoid_: Permission to continue.
+**Notification:** A durable record that Hearth told the household something. It is
+read or unread and is never deleted.
+_Avoid_: Delivery, alert.
 
 **Artifact:** An output of work with a durable reference and provenance.
 
