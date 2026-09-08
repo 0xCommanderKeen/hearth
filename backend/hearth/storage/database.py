@@ -8,14 +8,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from hearth.integrations.interface import live
 from hearth.residents.models import Refused
 from hearth.storage.migration import upgrade
 from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 9
-# Hearth ships one runtime, and every new store and run records that one kind.
+SCHEMA_VERSION = 10
+# The kind a new store records. Hearth now knows a second live runtime, and a store
+# configured for one of the others keeps it; this is the default, not the only answer.
 RUNTIME_KIND = "codex_subscription"
 # Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on
 # start; its finished runs keep their own pin, because that is where the work happened.
@@ -143,7 +145,7 @@ class Database:
                 if quarantined is None:
                     _adopt_the_one_runtime(connection, stored[0])
                     stored = (RUNTIME_KIND,)
-            elif stored is None or stored[0] != RUNTIME_KIND:
+            elif stored is None or not live(stored[0]):
                 raise Refused("runtime_configuration_invalid")
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Database contains invalid references")
@@ -169,7 +171,7 @@ class Database:
         """The runtime this store records. Only a quarantined copy can name an old one."""
         with self.transaction() as db:
             row = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-            if row is None or row[0] not in (RUNTIME_KIND, *HISTORICAL_RUNTIME_KINDS):
+            if row is None or not (live(row[0]) or row[0] in HISTORICAL_RUNTIME_KINDS):
                 raise Refused("runtime_configuration_invalid")
             return row[0]
 

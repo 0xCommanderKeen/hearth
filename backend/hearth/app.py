@@ -31,6 +31,8 @@ from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
+from hearth.integrations.claude.config import KIND as CLAUDE_KIND
+from hearth.integrations.claude.subscription import ClaudeLiveRuntime
 from hearth.integrations.codex.subscription import CodexLiveRuntime
 from hearth.integrations.interface import Runtime
 from hearth.management.api import mount_management
@@ -57,12 +59,15 @@ def create_app(
     runtime: Callable[[Path], Runtime] | None = None,
     codex_binary: Path | None = None,
     codex_auth_home: Path | None = None,
+    claude_binary: Path | None = None,
+    claude_config_dir: Path | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime over the data directory Hearth just opened.
 
-    Only tests and the installed-wheel smoke pass it, to stand in for a Codex
-    subscription no continuous integration host has. Hearth itself runs the one
-    runtime it ships.
+    Only tests and the installed-wheel smoke pass it, to stand in for a subscription
+    no continuous integration host has. Otherwise Hearth builds the adapter for the
+    runtime its own store records, configured with that provider's pinned binary and
+    private login.
     """
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
@@ -78,12 +83,13 @@ def create_app(
         # before letters existed will never run Karen's setup again.
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
-    executor = Executor(
-        execution,
-        runtime(data)
-        if runtime is not None
-        else CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home),
-    )
+    if runtime is not None:
+        adapter: Runtime = runtime(data)
+    elif database.runtime_kind() == CLAUDE_KIND:
+        adapter = ClaudeLiveRuntime(data, binary=claude_binary, config_dir=claude_config_dir)
+    else:
+        adapter = CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home)
+    executor = Executor(execution, adapter)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
@@ -417,5 +423,11 @@ def from_env() -> FastAPI:
         else None,
         codex_auth_home=Path(os.environ["HEARTH_CODEX_AUTH_HOME"])
         if os.environ.get("HEARTH_CODEX_AUTH_HOME")
+        else None,
+        claude_binary=Path(os.environ["HEARTH_CLAUDE_BINARY"])
+        if os.environ.get("HEARTH_CLAUDE_BINARY")
+        else None,
+        claude_config_dir=Path(os.environ["HEARTH_CLAUDE_CONFIG_DIR"])
+        if os.environ.get("HEARTH_CLAUDE_CONFIG_DIR")
         else None,
     )

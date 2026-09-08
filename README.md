@@ -50,6 +50,13 @@ uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 Open `http://127.0.0.1:8766` and enter that token. Hearth starts empty and ships no
 sample data: create a resident, assign it a task, and open its summary. The
 credential stays in browser memory for the session.
+
+A store recorded against the Claude subscription is configured the same way, with
+`HEARTH_CLAUDE_BINARY` pointing at the pinned Claude Code CLI and
+`HEARTH_CLAUDE_CONFIG_DIR` at its own logged-in configuration directory (never the
+machine's `~/.claude`); see [the Claude runtime](docs/claude-runtime.md) for the pins,
+the login step and the measurements behind them.
+
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
 For browser development, `pnpm dev` from `web/` proxies its `/api` requests to the
 same local backend. Continuous integration has no subscription, so the test suite

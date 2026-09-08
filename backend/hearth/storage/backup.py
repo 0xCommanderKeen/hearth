@@ -19,6 +19,7 @@ from hearth.authority.household import validate_windows
 from hearth.execution import usage as codex_accounting
 from hearth.inputs.catalog import checked_input
 from hearth.inputs.selection import read_selection, run_inputs
+from hearth.integrations.interface import live
 from hearth.management.authority import validate_management
 from hearth.residents.journal import (
     JournalFiles,
@@ -224,7 +225,7 @@ def _check_database(root: Path) -> dict:
         for revision in db.execute("SELECT * FROM skill_revisions"):
             checked_revision(revision)
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-        if selected is None or selected[0] not in (RUNTIME_KIND, *HISTORICAL_RUNTIME_KINDS):
+        if selected is None or not (live(selected[0]) or selected[0] in HISTORICAL_RUNTIME_KINDS):
             raise Refused("backup_runtime_invalid")
         validate_management(db)
         verify_authoring_backup(db, root)
