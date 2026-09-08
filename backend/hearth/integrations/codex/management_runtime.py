@@ -99,6 +99,7 @@ def pin_configuration(hearth, bound, binary):
     """Generate native metadata without auth or a writer, then pin it before launch."""
     from hearth.management.bridge import authorize
     from hearth.management.tools import tool_specs
+    from hearth.work.letters import run_letter_scope
 
     with hearth.database.transaction() as db:
         pin = db.execute(
@@ -107,7 +108,8 @@ def pin_configuration(hearth, bound, binary):
         if pin is None:
             return None
         # The declared tool set of this run; the write below rechecks it under authority.
-        # A run pinned without a grant revision is offered its memory tools and nothing else.
+        # A run pinned without a grant revision is offered its memory and letter tools and
+        # nothing else.
         management = pin["grant_revision"] is not None
         memory = bool(
             db.execute(
@@ -116,10 +118,23 @@ def pin_configuration(hearth, bound, binary):
                 (bound.run_id,),
             ).fetchone()[0]
         )
-    pins = app_server.configuration_pins(binary, tool_specs(memory=memory, management=management))
+        letters = run_letter_scope(db, bound.run_id, int(hearth.clock()))
+    pins = app_server.configuration_pins(
+        binary,
+        tool_specs(
+            memory=memory,
+            management=management,
+            send_letters=letters["send"],
+            reply_letter=letters["reply"],
+        ),
+    )
     with hearth.database.transaction(write=True) as db:
         authority = authorize(db, bound, int(hearth.clock()))
-        if authority["memory_writable"] != memory or authority["grant"]["enabled"] != management:
+        if (
+            authority["memory_writable"] != memory
+            or authority["grant"]["enabled"] != management
+            or run_letter_scope(db, bound.run_id, int(hearth.clock())) != letters
+        ):
             raise Refused("management_configuration_changed")
         row = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
         for key, value in pins.items():
@@ -143,6 +158,7 @@ def worker(folder, request, execution):
     from hearth.integrations.codex.usage import UsageBinding
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
+    from hearth.work.letters import run_letter_scope
 
     hearth = execution.hearth
     bound = BoundRun(
@@ -180,6 +196,7 @@ def worker(folder, request, execution):
                 row[key] != request["management"][key] for key in ("catalog_sha256", "tools_sha256")
             ):
                 raise Refused("management_configuration_changed")
+            letters = run_letter_scope(db, bound.run_id, int(hearth.clock()))
             remaining = row["expires_at"] - int(hearth.clock())
     except Refused as error:
         terminal = {
@@ -198,7 +215,10 @@ def worker(folder, request, execution):
             workspace=workspace,
             prompt=request["prompt"],
             tools=tool_specs(
-                memory=authority["memory_writable"], management=authority["grant"]["enabled"]
+                memory=authority["memory_writable"],
+                management=authority["grant"]["enabled"],
+                send_letters=letters["send"],
+                reply_letter=letters["reply"],
             ),
             on_thread=bridge.bind_thread,
             on_turn=bridge.bind_turn,

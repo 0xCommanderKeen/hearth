@@ -16,6 +16,7 @@ from hearth.api.auth import OperatorAuth
 from hearth.api.requests import (
     DeclarationPost,
     HouseholdPost,
+    LetterPost,
     MemoryPost,
     PausePost,
     ReadPost,
@@ -203,6 +204,27 @@ def create_app(
     @app.get("/api/residents/{resident_id}/journal")
     def journal(resident_id: str, limit: int = PAGE, offset: int = 0):
         return Journal(hearth).read(resident_id, limit=limit, offset=offset)
+
+    # The operator writes with its own hand: no grant bounds it, because there is no
+    # resident whose authority it could escalate. The receiver's door, its archive state
+    # and the household's own reach hold exactly as they do for a resident's letter.
+    @app.post("/api/residents/{resident_id}/letters", status_code=201)
+    def send_letter(
+        resident_id: str,
+        body: LetterPost,
+        idempotency_key: str = Header(min_length=1, max_length=128),
+    ):
+        return hearth.send_operator_letter(
+            idempotency_key,
+            resident_id,
+            body.title,
+            body.detail,
+            expires_at=body.expires_at,
+        )
+
+    @app.get("/api/residents/{resident_id}/letters")
+    def letters(resident_id: str, limit: int = 30, offset: int = 0):
+        return hearth.letters(resident_id, limit=limit, offset=offset)
 
     @app.put("/api/residents/{resident_id}")
     def save_resident(resident_id: str, body: DeclarationPost):

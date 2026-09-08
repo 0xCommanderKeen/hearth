@@ -131,12 +131,22 @@ class Management:
         return result
 
 
-def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
-    """A run reaches the native tools with a management grant, with writable memory, or not.
+def works_a_letter(db, run_id: str) -> bool:
+    """Is the task this run was admitted for a letter someone is owed an answer to?"""
+    return (
+        db.execute(
+            "SELECT 1 FROM letters l JOIN runs r ON r.task_id=l.task_id WHERE r.id=?", (run_id,)
+        ).fetchone()
+        is not None
+    )
 
-    Both pin a row here, because both need the tool transport; only the granted one pins a
-    grant revision. A run pinned without one carries no management authority at all, whatever
-    the operator grants afterwards.
+
+def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
+    """A run reaches the native tools with a grant, with writable memory, with a letter, or not.
+
+    All three pin a row here, because all three need the tool transport; only the granted
+    one pins a grant revision. A run pinned without one carries no management authority at
+    all, whatever the operator grants afterwards.
     """
     grant = read_grant(db, resident_id)
     if grant["enabled"]:
@@ -147,7 +157,7 @@ def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writab
             "INSERT INTO run_management VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, grant["revision"], digest(policy), now + 600),
         )
-    elif memory_writable:
+    elif memory_writable or works_a_letter(db, run_id):
         db.execute(
             "INSERT INTO run_management VALUES (?,?,NULL,NULL,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, now + 600),
@@ -163,7 +173,8 @@ def validate_management(db) -> None:
         except ValueError, TypeError:
             raise Refused("management_grant_corrupt") from None
     for row in db.execute(
-        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256,d.memory_writable "
+        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256,d.memory_writable,"
+        "EXISTS(SELECT 1 FROM letters l WHERE l.task_id=r.task_id) AS letter "
         "FROM run_management p JOIN runs r ON r.id=p.run_id "
         "LEFT JOIN management_grant_revisions g "
         "ON g.resident_id=p.resident_id AND g.revision=p.grant_revision "
@@ -175,8 +186,9 @@ def validate_management(db) -> None:
             or row["expires_at"] != row["created_at"] + 600
         ):
             raise Refused("management_admission_changed")
-        # A pin without a grant revision exists only for a run that could write its own memory.
-        if row["grant_revision"] is None and not row["memory_writable"]:
+        # A pin without a grant revision exists only for a run that could write its own
+        # memory or answer the letter it was admitted for.
+        if row["grant_revision"] is None and not row["memory_writable"] and not row["letter"]:
             raise Refused("management_admission_changed")
 
 
