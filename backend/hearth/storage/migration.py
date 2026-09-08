@@ -47,8 +47,44 @@ REWRITES: dict[tuple[str, str], str] = {
 }
 
 
+# Upgrading from a version below this changes the run context Hearth builds, so the
+# instruction an admitted run would now be launched with no longer matches the digest it
+# reserved against. Such a run cannot start, and on the next pass it would settle as
+# interrupted while holding its resident's slot and reservation.
+CONTEXT_REWRITTEN_AT = 3
+
+
 class UpgradeError(RuntimeError):
     """The store cannot be brought to the current layout; the original is untouched."""
+
+
+def _release_unlaunched_runs(connection: sqlite3.Connection, now: int) -> None:
+    """Ask the executor to end runs whose pinned context this release cannot rebuild.
+
+    Only a run Hearth never launched is affected: observing a launched run reads the
+    runtime, never the context. Cancellation is requested rather than settled here so
+    the executor ends the run through its ordinary path, at zero with a receipt,
+    because no work was ever started for it.
+    """
+    for run in connection.execute(
+        "SELECT id, task_id FROM runs "
+        "WHERE finished_at IS NULL AND launch_attempted=0 AND cancellation_requested=0"
+    ).fetchall():
+        connection.execute(
+            "UPDATE runs SET status='stopping', cancellation_requested=1 WHERE id=?", (run["id"],)
+        )
+        connection.execute("UPDATE tasks SET status='stopping' WHERE id=?", (run["task_id"],))
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "run.cancel_requested",
+                run["id"],
+                now,
+                json.dumps(
+                    {"task_id": run["task_id"], "reason": "context_format_changed"}, sort_keys=True
+                ),
+            ),
+        )
 
 
 def _columns(db: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
@@ -121,7 +157,12 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 }
                 if dropped:
                     raise UpgradeError(f"Upgrade would drop {table} columns {sorted(dropped)}")
-                rows = old.execute(f'SELECT {", ".join(select)} FROM "{table}"').fetchall()
+                try:
+                    rows = old.execute(f'SELECT {", ".join(select)} FROM "{table}"').fetchall()
+                except sqlite3.Error as error:
+                    # A rewrite met a value it could not read. Report it as an upgrade
+                    # failure rather than leaking SQLite's exception to the caller.
+                    raise UpgradeError(f"Cannot read {table} for upgrade: {error}") from error
                 if rows:
                     new.executemany(
                         f'INSERT INTO "{table}" ({", ".join(insert)}) '
@@ -132,17 +173,20 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 raise UpgradeError("Upgraded store contains invalid references")
             if not schema_matches(new):
                 raise UpgradeError("Upgraded store does not match the current layout")
+            at = now if now is not None else int(time.time())
             new.execute(
                 "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
                 (
                     "database_upgraded",
                     "hearth.db",
-                    now if now is not None else int(time.time()),
+                    at,
                     json.dumps(
                         {"from": from_version, "to": to_version, "kept": keep.name}, sort_keys=True
                     ),
                 ),
             )
+            if from_version < CONTEXT_REWRITTEN_AT:
+                _release_unlaunched_runs(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
