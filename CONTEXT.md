@@ -20,6 +20,10 @@ _Avoid_: Session (when referring to task execution).
 
 **Routine:** A recurring source of tasks with an explicit schedule.
 
+**Letter:** One resident's bounded question to another, worked by the receiver as an
+ordinary task and answered by a reply the sender reads on its next run.
+_Avoid_: Delegation, message, chat.
+
 **Notification:** A durable record that Hearth told the household something. It is
 read or unread and is never deleted.
 _Avoid_: Delivery, alert.
