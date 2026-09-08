@@ -6,7 +6,9 @@ what came back, and what did not measure the way the plan assumed. A later slice
 needs a fact not in here measures it and adds it.
 
 Measured on **2026-09-08**, macOS (Darwin 25.5.0, arm64), by the slice that introduced
-the runtime (#145).
+the runtime (#145), and extended on **2026-09-09** by the headless run (#146), which
+recorded real sessions and read their numbers. Where the two disagree, the later
+measurement says so in place and wins.
 
 | Pin | Value |
 | --- | --- |
@@ -43,6 +45,21 @@ it is not visible from `$CFG`: the CLI reports no login there and refuses to run
 Codex adapter's shape carries over — a private login directory the operator
 seeds once — and Hearth's own check is `auth status --json` reporting `loggedIn: true`
 in exactly the directory the run will use.
+
+**Sharper than that, measured 2026-09-09: it is setting the variable at all that
+changes the login, not the path it names.**
+
+| Command | Observed |
+| --- | --- |
+| `auth status --json`, no `CLAUDE_CONFIG_DIR` in the environment | `loggedIn: true`, `authMethod: "claude.ai"` |
+| `auth status --json` with `CLAUDE_CONFIG_DIR=$HOME/.claude` — the same directory the line above used | `loggedIn: false`, `authMethod: "none"` |
+| `auth status --json` with `PATH=/usr/bin:/bin` and no `CLAUDE_CONFIG_DIR` | `loggedIn: true` |
+
+An explicitly configured directory gets its own login namespace even when it *is* the
+default one, so the operator's seeding step cannot be skipped by pointing Hearth at
+`~/.claude`, and a stripped environment is not what hides the machine's login. Hearth
+always sets `CLAUDE_CONFIG_DIR`, so every session it launches is on the private login
+or on none.
 
 `auth status` **exits 0 whether or not there is a login**, so the exit code proves
 nothing and the JSON has to be read.
@@ -112,20 +129,87 @@ reach the session.
 
 ### What the stream says about usage
 
-Two observations from the same runs decide how #146 can price anything.
+This is the section #146 is built on, and three of its rows came back against the plan.
+The transcripts behind it are committed, scrubbed, under
+`tests/integrations/claude/fixtures/`.
 
-- **The result event's own `usage` block is zeroed.** Every field of `usage` came back
-  `0` while the turn had really spent tokens. The truthful numbers are in each
-  `assistant` message's `message.usage` (`input_tokens`, `cache_creation_input_tokens`,
-  `cache_read_input_tokens`, `output_tokens`) and, per model, in the result's
-  `modelUsage`. Pricing reads the per-request usage; `total_cost_usd` and `modelUsage`
-  stay the cross-check.
-- **A session spends more than one model.** A one-word answer's `modelUsage` named both
-  `claude-opus-5` (the turn) and `claude-haiku-4-5-20251001` (899 input, 9 output tokens,
-  the CLI's own housekeeping). `total_cost_usd` is the sum of both. A rule of "a receipt
-  naming another model leaves usage unknown" would therefore hold every single run: the
-  pinned-model check has to be about the *turn's* model, and the secondary model's
-  tokens have to be priced or explicitly excluded, deliberately.
+| Place the CLI reports usage | On a clean success | On a `--max-budget-usd` stop |
+| --- | --- | --- |
+| `result.usage` (top level) | truthful: the turn's totals | **every field `0`** |
+| `result.usage.iterations` | one row per request, truthful | **empty** |
+| `result.modelUsage` | truthful, per model, with each model's own `costUSD` | truthful |
+| `result.total_cost_usd` | truthful | truthful |
+| an `assistant` message's `message.usage` | **`output_tokens: 1` where the request billed 4** | same |
+
+- **`result.usage` cannot be trusted as usage.** #145 saw it zeroed; #146 saw it
+  truthful on a success and zeroed again on the budget stop. Neither reading is safe to
+  build on, so Hearth never reads it as usage — only `usage.iterations` and `modelUsage`.
+- **An `assistant` message's `usage` is a mid-stream snapshot.** Its `output_tokens`
+  undercounts the request that produced it. Its *cache* numbers were final in every
+  recording, and it is the only place the five-minute / one-hour cache-write split
+  (`cache_creation.ephemeral_5m_input_tokens` / `…_1h_…`) ever appears — which decides
+  whether those tokens are priced at 1.25x or 2x. So Hearth takes the split from there
+  and nothing else.
+- **The per-request rows are not always there.** `usage.iterations` gave the individual
+  requests on every success and nothing at all on the budget stop. Hearth prices the
+  individual rows where the CLI reports them and the per-model total where it does not,
+  which is sound here only because this schedule has no long-context tier (below):
+  a total costs exactly what the requests behind it cost.
+- **A session spends more than one model.** `modelUsage` named both `claude-opus-5` (the
+  turn) and `claude-haiku-4-5-20251001` (the CLI's own housekeeping, ~900 input tokens) in
+  every recording, and `total_cost_usd` is the sum of both. The pinned-model check is
+  therefore about the *turn's* model — the session's own `init` event and every
+  assistant message — and the second model is priced at its own published rates, not
+  excluded and not charged as the pinned one.
+- **Every observed cache write landed in the one-hour tier.** `cache_creation` reported
+  `ephemeral_1h_input_tokens` and a zero five-minute count in all three sessions.
+
+### The price schedule, and its arithmetic checked against the CLI's own
+
+Read 2026-09-09 from <https://platform.claude.com/docs/en/about-claude/pricing>, per
+million tokens:
+
+| Model | Base input | Cache read | 5m cache write | 1h cache write | Output |
+| --- | --- | --- | --- | --- | --- |
+| `claude-opus-5` | $5 | $0.50 | $6.25 | $10 | $25 |
+| `claude-haiku-4-5` | $1 | $0.10 | $1.25 | $2 | $5 |
+
+**There is no long-context tier, and that was confirmed rather than assumed.** The
+pricing page's long-context section says Claude 4.6 and later carry the full
+one-million-token context window at standard pricing — "a 900k-token request is billed
+at the same per-token rate as a 9k-token request". The Codex schedule's doubling above
+272,000 tokens has no counterpart here, and its absence is what makes a per-model total
+priceable.
+
+The recorded success is the proof that the table is the one the CLI bills on:
+
+| Line | Tokens | Rate | Dollars |
+| --- | --- | --- | --- |
+| opus input | 2 | $5 / MTok | 0.00001 |
+| opus 1h cache write | 3,552 | $10 / MTok | 0.03552 |
+| opus output | 4 | $25 / MTok | 0.0001 |
+| | | CLI's `modelUsage["claude-opus-5"].costUSD` | **0.03563** |
+| haiku input | 900 | $1 / MTok | 0.0009 |
+| haiku output | 10 | $5 / MTok | 0.00005 |
+| | | CLI's `modelUsage["claude-haiku-4-5-…"].costUSD` | **0.00095** |
+| | | CLI's `total_cost_usd` | **0.03658** |
+
+Hearth computes those three numbers itself, in hundredths of a microdollar so that
+$6.25 and $1.25 stay integers, and settles only when its own arithmetic matches the
+CLI's — per model and in total, within one microdollar per priced row. Any wider
+disagreement leaves usage unknown and the resident's hold in place.
+
+### How a run is launched
+
+Measured 2026-09-09, and the shape `integrations/claude/config.py::session_command`
+builds:
+
+| Question | Observed |
+| --- | --- |
+| the prompt on stdin instead of in argv | accepted; identical stream and result. Hearth uses stdin, so a large pinned context can never meet an argv limit |
+| `--max-budget-usd 0.25` | accepted as decimal dollars; Hearth writes the run's reserved microdollars as `f"{n / 1_000_000:.6f}"`, which is exact |
+| `--tools ""` with no `--mcp-config` | `init` reports `"tools": []`; a run has no tools at all until the bridge grants some (#147) |
+| event types beyond `system` / `assistant` / `result` | `rate_limit_event` appeared in every session. The parser counts and skips what it does not know, and settles only on the one `result` event |
 
 ### Consequences for the design
 
@@ -158,7 +242,10 @@ audit fact, and refuses by name — `claude_subscription_configuration_required`
 `claude_subscription_version_unsupported`, `claude_subscription_login_required`,
 `claude_subscription_binary_changed` — writing nothing when it does.
 
-No run executes on this runtime yet; that is #146. Until its price schedule lands, a
-store configured for Claude refuses `run_pricing_required` when a task is admitted: a
-runtime whose evidence Hearth cannot read cannot price the work it does, and a run
-admitted without a pinned schedule could only settle at a number nobody can check.
+A store configured for Claude now admits, dispatches and settles work. A run is a
+detached worker holding an inherited flock over its own folder; it launches the CLI once
+and never again, keeps the CLI's original stream-json as the receipt, and settles from
+it under the pinned schedule above. Cancellation signals the worker's own process group
+and claims zero usage only when the launch provably never happened. The management
+tools a run can reach over Hearth's own bridge are still #147, so every session runs
+with `--tools ""`.
