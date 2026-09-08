@@ -112,7 +112,7 @@ def _deadline(now: int, policy: dict, expires_at: int | None) -> int:
     return deadline
 
 
-def _check_recipient(db, hearth, to: str) -> None:
+def _check_recipient(db, to: str) -> None:
     """The receiving end of every letter, whoever wrote it."""
     from hearth.residents.lifecycle import read_lifecycle
 
@@ -184,7 +184,7 @@ def send_letter(
         raise Refused("letters_not_permitted")
     if grant["letter_recipient_ids"] and to not in grant["letter_recipient_ids"]:
         raise Refused("recipient_not_allowed")
-    _check_recipient(db, hearth, to)
+    _check_recipient(db, to)
     if to == sender:
         raise Refused("self_letter")
     if not hearth.declared_letters_accept(db, to):
@@ -293,7 +293,7 @@ def send_operator_letter(
         if previous["payload_digest"] != payload:
             raise Refused("command_conflict")
         return _receipt(db, previous["task_id"], command_id)
-    _check_recipient(db, hearth, to)
+    _check_recipient(db, to)
     if not hearth.declared_letters_accept(db, to):
         raise Refused("letters_not_accepted")
     policy = read_letter_policy(db)

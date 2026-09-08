@@ -151,7 +151,8 @@ LETTER_TOOLS = {
         "identical arguments for uncertain retries.",
     ),
 }
-# The two a run holds by working a letter rather than by being granted anything.
+# Neither of these is management: a run reads its own post and answers the letter it was
+# handed, so both outlive a grant revoked mid-run exactly as the memory tools do.
 LETTER_RECEIVER_TOOLS = {"hearth_letters_read", "hearth_letters_reply"}
 
 
@@ -500,8 +501,8 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool in LETTER_TOOLS:
         # The post is the run's own. Writing answers for itself, under the grant the run
         # was admitted with, and refuses with the reason the sender needs to act on it.
-        # The other two exist only for a run that holds an end of a letter, and a run
-        # holding neither is refused them exactly as it would be a tool never offered.
+        # The other two exist only for a run holding an end of a letter; a run holding
+        # neither is refused them as it would be a tool it was never offered.
         scope = run_letter_scope(db, authority["run_id"], int(hearth.clock()))
         permitted = {
             "hearth_letters_send": True,
