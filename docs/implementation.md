@@ -644,17 +644,18 @@ and exact-assignment capabilities. Authored revisions remain drafts until struct
 and two bounded ordinary example runs pass. Publication preserves the exact tested
 content in a new immutable active revision. Human edits use the same conflict-aware
 workflow and need fresh checks; existing assignments retain their pinned revisions.
-The single visible evaluator has no management grant and uses only its exact fictional
-case inputs and empty memory. Pending checks are durable, release the writer, honor
+The examples run as the resident that asked for them, on its allowance and its one run
+slot, with its pinned declaration and memory and no management tools; the requesting turn
+therefore ends before they start. Pending checks are durable, release the writer, honor
 grant revocation, and preserve uncertain-usage holds. See [management](management.md)
-for the helper permission, expiry, repair and evidence boundaries.
+for the pins, expiry, repair and evidence boundaries.
 
 `make check` passed 632 backend tests and 65 browser tests, lint/format/types, frontend
 and wheel builds, and both isolated installed-wheel mock journeys. New regressions
 exercise exact lost-save/validation/publication replies, concurrent human/agent edits,
 unauthorized revisions and assignments, failed structural/output checks, unknown
-usage, revoked grants during bounded waits, prompt escalation, repaired evaluator
-memory and held-backup provenance. UI checks cover saved simulated evidence, retained
+usage, revoked grants during bounded waits, prompt escalation, a repaired declaration
+resuming the same case identities, and held-backup provenance. UI checks cover saved simulated evidence, retained
 publication requests, live catalog arrival and preservation of conflicting drafts.
 
 A fresh actual Chromium journey on synthetic localhost 8792 observed a scoped Karen

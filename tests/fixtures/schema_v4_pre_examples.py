@@ -1,18 +1,13 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 4, before skill examples ran as the
+requesting resident instead of a service evaluator; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
         id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, candidate_revision INTEGER NOT NULL,
         candidate_sha256 TEXT NOT NULL, manifest_sha256 TEXT NOT NULL,
-        resident_id TEXT REFERENCES residents(id), resident_revision INTEGER,
-        memory_revision INTEGER, context_version INTEGER,
+        evaluator_id TEXT REFERENCES residents(id), evaluator_revision INTEGER,
         actor TEXT NOT NULL, originating_run_id TEXT REFERENCES runs(id), grant_revision INTEGER,
         reserve INTEGER NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
         request_sha256 TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),

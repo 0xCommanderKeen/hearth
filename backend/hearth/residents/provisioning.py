@@ -222,7 +222,6 @@ class Provisioning:
         *,
         actor: str,
         originating_run_id: str | None = None,
-        _service_evaluator: bool = False,
     ) -> dict:
         """Caller owns writer and authenticated grant check; never opens another writer."""
         identifier(command_id)
@@ -240,7 +239,7 @@ class Provisioning:
                 (originating_run_id, actor),
             ).fetchone():
                 raise Refused("provisioning_run_mismatch")
-            if body.manager != actor and not _service_evaluator:
+            if body.manager != actor:
                 raise Refused("provisioning_manager_out_of_scope")
         payload = body.model_dump()
         digest = hashlib.sha256(
@@ -409,39 +408,6 @@ class Provisioning:
             db.execute(
                 "SELECT * FROM resident_provisioning WHERE command_id=?", (command_id,)
             ).fetchone()
-        )
-
-    def create_evaluator_in_transaction(self, db, request, *, actor, originating_run_id):
-        """Narrow trusted service provisioning; no route or model field selects this path."""
-        from hearth.management.authority import read_grant
-
-        body = ProvisionRequest.model_validate(request)
-        if (
-            body.manager != "operator"
-            or body.skills
-            or body.input_sets
-            or body.routine
-            or body.first_assignment
-            or body.initial_memory
-            or body.memory_writable
-        ):
-            raise Refused("skill_evaluator_setup_invalid")
-        if actor != "operator":
-            grant = read_grant(db, actor)
-            if (
-                not grant["enabled"]
-                or "author_skills" not in grant["capabilities"]
-                or body.execution_profile not in grant["profiles"]
-                or body.daily_limit > grant["max_daily_limit"]
-            ):
-                raise Refused("management_skill_authoring_not_permitted")
-        return self.create_in_transaction(
-            db,
-            "skill-validation-evaluator",
-            body.model_dump(),
-            actor=actor,
-            originating_run_id=originating_run_id,
-            _service_evaluator=True,
         )
 
 

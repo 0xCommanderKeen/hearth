@@ -12,6 +12,16 @@ import tomllib
 
 REPLAY = False
 UNKNOWN_USAGE = False
+# Karen's examples run as Karen, so they need the slot her authoring turn is holding.
+# She asks for validation, ends that turn, and deploys in a later one. Only the last
+# manager turn may end with unknown usage: an earlier one would pause her mid-journey.
+LAST_TURN = False
+SKILL_NAME = "Simulated orchard reports"
+DEPLOY = (
+    "Publish the validated orchard reporting skill, create its reporter, assign the published "
+    "revision and the named Fictional orchard input, schedule a daily report at 09:00 "
+    "Europe/Ljubljana, and save its first report now."
+)
 
 
 def send(value):
@@ -66,8 +76,6 @@ def mutation(tool, arguments):
 
 
 def journey(_input):
-    catalog = yield from call("hearth_catalog", {})
-    orchard = next(item for item in catalog["input_sets"] if item["name"] == "Fictional orchard")
     instructions = """# When to use
 Produce a concise report from fictional orchard notes.
 # When not to use
@@ -87,7 +95,7 @@ Preserve the number, crop and day relationships; invent no sales or weather.
         "hearth_skills_save",
         {
             "operation_id": "orchard-skill",
-            "name": "Simulated orchard reports",
+            "name": SKILL_NAME,
             "description": "Report supplied orchard facts and disclose missing inputs.",
             "instructions": instructions,
             "authoring": {
@@ -120,6 +128,35 @@ Preserve the number, crop and day relationships; invent no sales or weather.
         "hearth_skills_validate",
         {
             "operation_id": "orchard-validation",
+            "skill_id": saved["skill_id"],
+            "revision": saved["revision"],
+            "reserve": 10000,
+        },
+    )
+    # The examples are Karen's own runs and need this run's slot. Waiting here would
+    # only spend the turn; she reports the identity and picks the evidence up later.
+    waited = yield from call(
+        "hearth_skills_validation",
+        {"validation_id": validation["validation_id"], "wait_seconds": 3},
+    )
+    assert waited["status"] == "pending", waited
+    assert waited["resident_id"] == validation["resident_id"], waited
+    return "Simulation: requested validation " + validation["validation_id"]
+
+
+def deploy(_input):
+    catalog = yield from call("hearth_catalog", {})
+    orchard = next(item for item in catalog["input_sets"] if item["name"] == "Fictional orchard")
+    saved = next(
+        item
+        for item in catalog["skills"]
+        if item["name"] == SKILL_NAME and item["status"] == "draft"
+    )
+    # Retrying the request recovers the durable validation identity this draft owns.
+    validation = yield from call(
+        "hearth_skills_validate",
+        {
+            "operation_id": "orchard-evidence",
             "skill_id": saved["skill_id"],
             "revision": saved["revision"],
             "reserve": 10000,
@@ -339,6 +376,7 @@ def reader(args):
 
 
 def native(args):
+    global LAST_TURN
     config = {
         "mcp_servers": {},
         "plugins": {},
@@ -401,6 +439,9 @@ def native(args):
                 driver = contend(context)
             elif context["instruction"] == REPORT:
                 driver = report(context)
+            elif context["instruction"] == DEPLOY:
+                LAST_TURN = True
+                driver = deploy(params["input"])
             else:
                 driver = journey(params["input"])
             index = 1
@@ -421,7 +462,11 @@ def native(args):
                                 "total": {
                                     "totalTokens": 30,
                                     "inputTokens": 20,
-                                    **({} if UNKNOWN_USAGE else {"cachedInputTokens": 0}),
+                                    **(
+                                        {}
+                                        if UNKNOWN_USAGE and LAST_TURN
+                                        else {"cachedInputTokens": 0}
+                                    ),
                                     "cacheWriteInputTokens": 0,
                                     "outputTokens": 10,
                                     "reasoningOutputTokens": 0,

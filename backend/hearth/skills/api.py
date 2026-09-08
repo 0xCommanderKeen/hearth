@@ -41,6 +41,9 @@ class AssignmentPut(BaseModel):
 class ValidationPost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     revision: int = Field(ge=1)
+    # The examples run as a resident, on its allowance and in its one run slot, so the
+    # operator says whose they are; there is no household runner to fall back on.
+    resident_id: str = Field(min_length=1, max_length=128)
     reserve: int = Field(default=100000, ge=1, le=500000)
 
 
@@ -67,7 +70,9 @@ def mount_skills(app: FastAPI, hearth: Hearth) -> None:
 
     @app.post("/api/skills/{skill_id}/validations")
     def validate(skill_id: str, body: ValidationPost):
-        return validation.request(skill_id, body.revision, body.reserve)
+        return validation.request(
+            skill_id, body.revision, body.reserve, resident_id=body.resident_id
+        )
 
     @app.post("/api/skills/{skill_id}/publish")
     def publish(

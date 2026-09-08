@@ -18,10 +18,11 @@ subscription runtime kind deliberately exercises that adapter's receipt and back
 paths; its synthetic counters and passed assertions are not evidence of model quality
 or real-host isolation. Fixture names and output explicitly say they are simulated.
 
-The journey records four runs: one manager, two serial validation cases and one
-report. It checks the causal links between the manager's task and native binding,
-seven operation receipts, immutable candidate/publication, evaluator case inputs and
-results, creator/current manager, exact skill and input pins, routine occurrence,
+The journey records five runs: two manager turns — Karen authors and requests, then
+deploys once the evidence is in — two serial validation cases on Karen's own slot, and
+one report. It checks the causal links between the manager's task and native binding,
+eight operation receipts, immutable candidate/publication, case inputs and results,
+creator/current manager, exact skill and input pins, routine occurrence,
 saved report and one settlement per run. Children receive no management authority.
 
 Reply-loss checks discard a committed reply before the scripted journey advances

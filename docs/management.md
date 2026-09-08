@@ -103,22 +103,27 @@ skill content nor an example grants capabilities. Humans use the same catalog an
 conflict-aware revisions; editing an authored skill creates a draft with fresh checks.
 Existing assignments retain their exact published revisions.
 
-Authoring permission includes one visible service evaluator and its named fictional
-case inputs. This narrowly scoped helper is created through ordinary provisioning,
-has the requesting resident as creator and the operator as manager, and receives no
-management grant, routine or general input selection. Its two cases use ordinary
-serial admissions, reservations, saved artifacts and known usage under all household
-limits. Only their durable trusted task bindings permit pinning the exact draft;
-there is no model-supplied draft override. Pending validation survives the requesting
-turn, but future admissions recheck the current authoring grant and ten-minute expiry.
+The examples are the requesting resident's own work. A validation pins that resident,
+its declaration revision, the memory revision it had when it asked and the context
+version this release builds, and its two cases are admitted on it: its allowance, its
+reservations, its one run slot, under all household limits. A resident therefore cannot
+watch its own examples run — they need the slot the requesting turn is holding — so it
+reports the pending validation identity, ends its turn and reads the durable evidence in
+a later one. An operator has no allowance or slot to lend, and names the resident that
+runs them. Only the durable trusted task bindings permit pinning the exact draft; there
+is no model-supplied draft override. Pending validation survives the requesting turn,
+and future admissions recheck the current authoring grant and a one-day expiry.
 Revocation prevents new admissions; already admitted work preserves ordinary holds.
 Status waits last at most three seconds and release the database writer throughout.
 
-Fixed evaluator instructions and empty memory keep unrelated operator data out of
-examples. An operator edit that adds memory or changes that context pauses admission;
-ordinary repair to the required empty context resumes the same queued case identities.
-Budget changes and harmless declaration revisions do not permanently poison a helper.
-Unknown usage remains pending and never authorizes replacement execution.
+An example run reaches no management tools at all: admission pins none for it, whatever
+the resident is otherwise granted, and it carries exactly one candidate skill and one
+case input beside the resident's own pinned context. An operator edit to the declaration
+text the request pinned pauses admission, because the examples would then answer for a
+different resident; restoring that text resumes the same queued case identities. Budget
+and name changes are not that text and do not block. The resident's memory moves on
+freely: each case carries the revision the request named, not whatever has been written
+since. Unknown usage remains pending and never authorizes replacement execution.
 
 The structural checker verifies populated sections and two bounded examples. Normal
 and edge/adversarial cases execute the candidate using synthetic input revisions;

@@ -26,12 +26,14 @@ each at most 200 characters. Each example permits at most four notes, each at mo
 2000 characters; represent missing input as notes=[], not an empty-string note.
 Do not author pretend evaluation outputs.
 
-Request validation, retain its identity and inspect its durable status. One visible
-read-only evaluator runs the two examples serially through ordinary accounted work.
+Request validation and retain its identity. The two examples run as you: your pinned
+declaration and the memory revision you had when you asked, with no management tools
+and only the candidate skill and the case input. They therefore need the run slot this
+run is holding, and start only once you have finished. Expect pending here, report the
+validation identity and end your work; read the durable status with a later run.
 Structure checks and deterministic assertions over saved outputs are limited evidence,
 not model grading or a guarantee of general quality. Unknown usage cannot pass.
-If pending, use bounded status waits and report the pending identity if time expires;
-never invent another validation to relaunch uncertain work. If failed, inspect reasons
+Never invent another validation to relaunch uncertain work. If failed, inspect reasons
 and revise the draft. Publish only the exact passing candidate, then explicitly assign
 the published revision to an authorized managed resident. First read the current ordered
 assignments with hearth_skills_assignments; preserve unrelated entries and use the returned

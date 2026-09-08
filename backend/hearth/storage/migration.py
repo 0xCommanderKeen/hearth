@@ -3,7 +3,8 @@
 Hearth never imports foreign data, but its own stores upgrade forward. An upgrade
 copies every row of every current table from the old file into a freshly created
 current-schema file, reading a table renamed since that store's version from the name it
-had through `RENAMES`, fills the columns the old layout lacked from `FILLS`, rewrites
+had through `RENAMES` and a column likewise through `COLUMN_RENAMES`, fills the columns
+the old layout lacked from `FILLS`, rewrites
 values the current layout no longer admits through `REWRITES`, verifies references and
 layout, and only then replaces the original. A column the old layout had and the new
 one does not is lost data unless the release listed it in `DROPS`, and so is a whole
@@ -13,6 +14,7 @@ if the new file is wrong.
 """
 
 import fcntl
+import hashlib
 import json
 import os
 import sqlite3
@@ -77,6 +79,32 @@ def _source_tables(from_version: int) -> dict[str, str]:
     }
 
 
+# (table, current column) -> (the name it had, the version that renamed it). Read like
+# RENAMES: a store older than that version is read from the old column name, and the old
+# name is not counted as a dropped column, because its values move rather than go.
+COLUMN_RENAMES: dict[tuple[str, str], tuple[str, int]] = {
+    # Skill examples run as the resident that asked for them, not a service evaluator.
+    ("skill_validations", "resident_id"): ("evaluator_id", 5),
+    ("skill_validations", "resident_revision"): ("evaluator_revision", 5),
+}
+
+
+def _source_columns(from_version: int) -> dict[tuple[str, str], str]:
+    """(table, column) -> the column an upgrade from `from_version` reads its values out of."""
+    renames = {
+        key: previous
+        for key, (previous, renamed_at) in COLUMN_RENAMES.items()
+        if from_version < renamed_at
+    }
+    # A rewrite expression is written against a column name. Renaming and rewriting the
+    # same column in one release would leave which name ambiguous, so it is refused
+    # rather than quietly resolved one way.
+    both = sorted(set(renames) & set(REWRITES))
+    if both:
+        raise UpgradeError(f"Cannot rename and rewrite the same columns {both}")
+    return renames
+
+
 # (table, column) -> SQL expression replacing the old column value on the way in, for a
 # value the current layout no longer admits.
 REWRITES: dict[tuple[str, str], str] = {
@@ -100,6 +128,53 @@ CONTEXT_REWRITTEN_AT = 3
 # one names a review the store no longer holds and can no longer open.
 APPROVALS_REMOVED_AT = 4
 
+# Upgrading from a version below this removes the service evaluator that owned skill
+# example runs. Skill examples now run as the resident that asked for them.
+EVALUATOR_REMOVED_AT = 5
+
+# The pinned request fields of a `skill_validations` row before and at version 5, frozen
+# here: the rename moves what the stored digest covers, so the old digest is verified and
+# a new one written, and a later edit to the live `REQUEST_FIELDS` must not silently
+# change what an old store is rebuilt into. The values are read from the rebuilt row,
+# where the rename has already happened, so the old list names the new columns in the old
+# order and the old digest is reproduced by relabelling them.
+VALIDATION_REQUEST_FIELDS_V4 = (
+    ("id", "id"),
+    ("skill_id", "skill_id"),
+    ("candidate_revision", "candidate_revision"),
+    ("candidate_sha256", "candidate_sha256"),
+    ("manifest_sha256", "manifest_sha256"),
+    ("evaluator_id", "resident_id"),
+    ("evaluator_revision", "resident_revision"),
+    ("actor", "actor"),
+    ("originating_run_id", "originating_run_id"),
+    ("grant_revision", "grant_revision"),
+    ("reserve", "reserve"),
+    ("created_at", "created_at"),
+    ("expires_at", "expires_at"),
+)
+VALIDATION_REQUEST_FIELDS_V5 = (
+    "id",
+    "skill_id",
+    "candidate_revision",
+    "candidate_sha256",
+    "manifest_sha256",
+    "resident_id",
+    "resident_revision",
+    "memory_revision",
+    "context_version",
+    "actor",
+    "originating_run_id",
+    "grant_revision",
+    "reserve",
+    "created_at",
+    "expires_at",
+)
+
+
+def _digest(value: dict) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
 
 class UpgradeError(RuntimeError):
     """The store cannot be brought to the current layout; the original is untouched."""
@@ -120,6 +195,94 @@ def _drop_approval_notifications(connection: sqlite3.Connection, now: int) -> No
                 json.dumps({"count": removed, "reason": "approvals_removed"}, sort_keys=True),
             ),
         )
+
+
+def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
+    """Retire the service resident that used to own skill examples, keeping its history.
+
+    Its finished validations stay exactly as they were recorded — the runs really did
+    happen on that resident, and the rows now say so under the column's honest name. A
+    validation still waiting for a case can never get one, because nothing will admit
+    work on an archived resident, so it is failed here with a reason rather than left
+    pending forever. A case run still in flight when the store is upgraded settles
+    through the ordinary executor path and releases its reservation; only its result is
+    no longer wanted, because the validation it belonged to has already been failed.
+    """
+    for row in connection.execute("SELECT * FROM skill_validations").fetchall():
+        # Rewriting the digest without checking the old one would turn a row an operator
+        # had edited in the file into a valid record, so the check moves with the rename
+        # rather than being skipped by it.
+        if (
+            _digest({old: row[new] for old, new in VALIDATION_REQUEST_FIELDS_V4})
+            != (row["request_sha256"])
+        ):
+            raise UpgradeError(f"Stored skill validation {row['id']} was changed in the file")
+        connection.execute(
+            "UPDATE skill_validations SET request_sha256=? WHERE id=?",
+            (_digest({key: row[key] for key in VALIDATION_REQUEST_FIELDS_V5}), row["id"]),
+        )
+    pending = connection.execute(
+        "UPDATE skill_validations SET status='failed', reason='skill_evaluator_removed' "
+        "WHERE status='pending'"
+    ).rowcount
+    if pending:
+        _fact(connection, "skill.validations_failed", "skill_evaluator_removed", now, pending)
+    row = connection.execute("SELECT value FROM system_meta WHERE key='skill_evaluator'").fetchone()
+    if row is None:
+        return
+    evaluator = row[0]
+    previous = connection.execute(
+        "SELECT h.revision, h.content FROM resident_lifecycle_history h "
+        "WHERE h.resident_id=? ORDER BY h.revision DESC LIMIT 1",
+        (evaluator,),
+    ).fetchone()
+    if previous is None:
+        # Forgetting which resident this was while leaving it ready would leave a
+        # household member nothing can explain and anything can be assigned to.
+        raise UpgradeError(f"Skill evaluator {evaluator} has no lifecycle to archive")
+    connection.execute("DELETE FROM system_meta WHERE key='skill_evaluator'")
+    content = json.loads(previous["content"])
+    if content["state"] != "archived":
+        lifecycle = {
+            "resident_id": evaluator,
+            "revision": previous["revision"] + 1,
+            "state": "archived",
+            "manager": content["manager"],
+            "actor": "operator",
+            "originating_run_id": None,
+            "updated_at": now,
+        }
+        connection.execute(
+            "INSERT INTO resident_lifecycle_history VALUES (?,?,?,?)",
+            (
+                evaluator,
+                lifecycle["revision"],
+                json.dumps(lifecycle, sort_keys=True),
+                hashlib.sha256(
+                    json.dumps(lifecycle, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO resident_lifecycle VALUES (?,?) ON CONFLICT(resident_id) "
+            "DO UPDATE SET revision=excluded.revision",
+            (evaluator, lifecycle["revision"]),
+        )
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            ("resident.lifecycle_saved", evaluator, now, json.dumps(lifecycle, sort_keys=True)),
+        )
+    _fact(connection, "resident.archived", evaluator, now)
+
+
+def _fact(
+    connection: sqlite3.Connection, kind: str, resource: str, now: int, count: int = 0
+) -> None:
+    detail = {"reason": "skill_evaluator_removed"} | ({"count": count} if count else {})
+    connection.execute(
+        "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+        (kind, resource, now, json.dumps(detail, sort_keys=True)),
+    )
 
 
 def _release_unlaunched_runs(connection: sqlite3.Connection, now: int) -> None:
@@ -198,6 +361,7 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
             ):
                 raise UpgradeError("Not a Hearth store; refusing to upgrade")
             sources = _source_tables(from_version)
+            renames = _source_columns(from_version)
             lost = old_tables - set(_tables(new)) - set(sources.values()) - DROPPED_TABLES
             if lost:
                 raise UpgradeError(f"Upgrade would drop tables {sorted(lost)}")
@@ -210,7 +374,10 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 insert: list[str] = []
                 for column in _columns(new, table):
                     name = column["name"]
-                    if name in old_columns:
+                    renamed = renames.get((table, name))
+                    if renamed is not None and renamed in old_columns:
+                        select.append(f'"{renamed}"')
+                    elif name in old_columns:
                         select.append(REWRITES.get((table, name), f'"{name}"'))
                     elif (table, name) in FILLS:
                         select.append(FILLS[(table, name)])
@@ -219,9 +386,10 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                     else:
                         continue
                     insert.append(f'"{name}"')
+                moved = {previous for (owner, _), previous in renames.items() if owner == table}
                 dropped = {
                     name
-                    for name in old_columns - {row["name"] for row in _columns(new, table)}
+                    for name in old_columns - {row["name"] for row in _columns(new, table)} - moved
                     if (table, name) not in DROPS
                 }
                 if dropped:
@@ -258,6 +426,8 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 _release_unlaunched_runs(new, at)
             if from_version < APPROVALS_REMOVED_AT:
                 _drop_approval_notifications(new, at)
+            if from_version < EVALUATOR_REMOVED_AT:
+                _retire_skill_evaluator(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
