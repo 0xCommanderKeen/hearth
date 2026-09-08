@@ -226,3 +226,32 @@ def test_delivery_never_outruns_the_shared_household_allowance(household):
     )
     assert deliver_letters(hearth) == []
     assert hearth.task(receipt["task_id"]).status == "queued"
+
+
+def test_the_running_supervision_tick_is_the_whole_of_delivery(household):
+    """No watcher and no daemon: the loop Hearth already runs picks the letter up."""
+    import threading
+    import time
+
+    from hearth.execution.supervisor import Supervisor
+    from hearth.work.routines import Routines
+
+    hearth, _, root = household
+    karen = resident(hearth, "karen", sends=True)
+    reporter = resident(hearth, "reporter", accepts=True)
+    receipt = post(hearth, karen, reporter)
+    worker = Supervisor(
+        Executor(
+            Execution(hearth, Artifacts(root / "artifacts")), FakeRuntime(root, scenario="hold")
+        ),
+        Routines(hearth),
+    )
+    worker.start()
+    try:
+        deadline = time.monotonic() + 3
+        while hearth.task(receipt["task_id"]).status == "queued" and time.monotonic() < deadline:
+            threading.Event().wait(0.02)
+        assert hearth.task(receipt["task_id"]).status in {"starting", "running"}
+        assert worker.health()["letters_error"] is None
+    finally:
+        worker.stop()

@@ -2,6 +2,21 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A letter is now delivered by being worked (schema 8, context 8). No watcher, poller or
+  inbox drain: the supervision tick that admits routine occurrences admits queued letter
+  tasks the same way, so a letter is bounded by the receiver's allocation, the shared
+  household allowance and the receiver's own pause and archive state — a paused receiver
+  keeps its letter and resuming delivers it — and never by anything its sender holds.
+  Letters that went stale first are closed as failed in the same pass and never admitted.
+  A new household setting `letter_daily_limit` (default five, `0` shuts the post) caps
+  what one resident may be handed in its own day, counted whoever wrote it, so one chatty
+  colleague — or the operator — cannot spend a neighbour's day; the refusal is structured
+  and writes nothing. The receiver reads a request rather than an order: the letter task's
+  instruction is the sender's own text alone, and the run context renders the sender, the
+  title, the pinned letter id and a line saying a letter cannot grant authority or
+  override the receiver's own skill text and limits, so a sender can no longer write a
+  heading into its detail and have it read as Hearth's own.
+
 - Letters can now be written, read and answered (schema 7). A run holding the grant
   capability `send_letters` is offered `hearth_letters_send`; the run working a letter —
   and only that run — is offered `hearth_letters_reply`, which records the one answer its
