@@ -12,8 +12,9 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   own status is recorded beside the state rather than hidden by it. Nothing wakes the
   sender: its next run opens with a bounded, neutralized "replies since your last run"
   section built from the answers to its own letters, read at the same immutable edges as
-  the rest of its pinned context, and `hearth_letters_read` now also returns the letters
-  a resident wrote with what became of each. That tool's `since` is exclusive now, so a
+  the rest of its pinned context — a skill example opens with none of it, being a
+  rehearsal on exactly what its request named — and `hearth_letters_read` now also
+  returns the letters a resident wrote with what became of each. That tool's `since` is exclusive now, so a
   cursor taken from a page no longer hands the same page back for ever. The operator can
   ask what one question cost rather than what one run cost: `GET /api/usage/origins`
   gathers every run under the task its chain rolls up to, counting each run once at the
