@@ -198,8 +198,9 @@ def result_for_case(db, validation, case, artifacts: Artifacts):
     # before this release named none, and its cases are checked by their own pins alone.
     if validation["memory_revision"] not in {None, pins["memory_revision"]}:
         raise Refused("skill_evaluation_run_changed")
-    # An example run reaches no management tools at all: admission pins none for it, so
-    # a candidate that asks for authority has nothing to ask.
+    # Admission is what keeps an example read-only: it pins no management row for one, so
+    # a candidate that asks for authority reaches no tool to ask with. This reads that
+    # back as evidence — a pin here means the row was written outside admission.
     if db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run["id"],)).fetchone():
         raise Refused("skill_examples_must_be_read_only")
     # Rebuilding the pinned context is only evidence while this release still builds it

@@ -298,10 +298,14 @@ class Validation:
                     )
                 except Refused as error:
                     db.execute("ROLLBACK TO validation_admission")
+                    # States the runner comes out of on its own or with ordinary
+                    # operator action. An archived runner is not one of them: it will
+                    # never take work again, and waiting out the request's day would
+                    # only report the same answer later.
                     if error.code in {
                         "resident_busy",
                         "resident_paused",
-                        "resident_archived",
+                        "resident_setup_incomplete",
                         "capacity_exhausted",
                         "budget_exhausted",
                         "household_budget_exhausted",

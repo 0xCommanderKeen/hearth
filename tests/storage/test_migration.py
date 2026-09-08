@@ -156,6 +156,29 @@ def test_a_quarantined_copy_of_a_simulated_store_is_read_not_rewritten(tmp_path)
     assert Database(path).runtime_kind() == "inline_mock"
 
 
+def validation_request(**values):
+    """A pre-version-5 `skill_validations` row with the request digest it really had."""
+    import hashlib
+
+    row = {
+        "id": "v",
+        "skill_id": "reports",
+        "candidate_revision": 1,
+        "candidate_sha256": "d" * 64,
+        "manifest_sha256": "f" * 64,
+        "evaluator_id": "karen",
+        "evaluator_revision": 1,
+        "actor": "operator",
+        "originating_run_id": None,
+        "grant_revision": None,
+        "reserve": 10000,
+        "created_at": 1,
+        "expires_at": 601,
+    } | values
+    digest = hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()
+    return tuple(row.values()) + (digest,)
+
+
 def settled_store(path):
     """A version-1 store carrying a published artifact and a reconciled run."""
     pre_memory_store(path)
@@ -189,9 +212,8 @@ def settled_store(path):
         ("e" * 64,),
     )
     db.execute(
-        "INSERT INTO skill_validations VALUES "
-        "('v', 'reports', 1, ?, ?, 'karen', 1, 'operator', NULL, NULL, 0, 1, 9, ?, 'passed', NULL)",
-        ("d" * 64, "f" * 64, "0" * 64),
+        "INSERT INTO skill_validations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'passed',NULL)",
+        validation_request(),
     )
     db.execute(
         "INSERT INTO skill_validation_cases VALUES ('v', 0, 't', 'r', 'notes', 1, ?, ?)",
@@ -501,10 +523,8 @@ def version_4_store(path):
         ("d" * 64,),
     )
     db.execute(
-        "INSERT INTO skill_validations VALUES "
-        "('v', 'reports', 1, ?, ?, 'evaluator', 1, 'karen', NULL, 1, 10000, 1, 601, ?, "
-        "'pending', NULL)",
-        ("d" * 64, "f" * 64, "0" * 64),
+        "INSERT INTO skill_validations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NULL)",
+        validation_request(evaluator_id="evaluator", actor="karen", grant_revision=1),
     )
     db.execute("PRAGMA user_version = 4")
     db.commit()
@@ -545,6 +565,51 @@ def test_the_version_4_store_retires_the_evaluator_and_the_work_it_owned(tmp_pat
     assert json.loads(
         db.execute("SELECT detail FROM audit WHERE kind='skill.validations_failed'").fetchone()[0]
     ) == {"reason": "skill_evaluator_removed", "count": 1}
+
+
+def test_a_validation_edited_in_the_file_refuses_the_upgrade(tmp_path):
+    """Rewriting the digest for the rename must not bless a row somebody had changed."""
+    path = tmp_path / "hearth.db"
+    settled_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("UPDATE skill_validations SET reserve=500000")
+    db.close()
+    before = path.read_bytes()
+    with pytest.raises(UpgradeError, match="was changed in the file"):
+        Database(path).initialize()
+    assert path.read_bytes() == before
+
+
+def test_an_evaluator_with_no_lifecycle_refuses_rather_than_staying_ready(tmp_path):
+    """Forgetting which resident it was while leaving it admissible is the worse end."""
+    path = tmp_path / "hearth.db"
+    version_4_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("DELETE FROM resident_lifecycle WHERE resident_id='evaluator'")
+    db.execute("DELETE FROM resident_lifecycle_history WHERE resident_id='evaluator'")
+    db.close()
+    before = path.read_bytes()
+    with pytest.raises(UpgradeError, match="no lifecycle to archive"):
+        Database(path).initialize()
+    assert path.read_bytes() == before
+
+
+def test_an_already_archived_evaluator_keeps_the_revision_it_had(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_4_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    _lifecycle(db, "evaluator", 1, "archived")
+    db.close()
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    assert (
+        db.execute(
+            "SELECT MAX(revision) FROM resident_lifecycle_history WHERE resident_id='evaluator'"
+        ).fetchone()[0]
+        == 1
+    )
+    assert db.execute("SELECT 1 FROM system_meta WHERE key='skill_evaluator'").fetchone() is None
 
 
 def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):

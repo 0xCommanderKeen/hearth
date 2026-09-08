@@ -487,6 +487,47 @@ def test_bounded_status_wait_releases_the_writer_and_never_outwaits_its_own_run(
     ]
 
 
+def test_an_archived_runner_fails_the_validation_instead_of_waiting_out_its_day(tmp_path):
+    """A paused runner comes back; an archived one never takes work again."""
+    from hearth.residents.maintenance import LifecycleChange, Maintenance
+    from hearth.skills.validation import Validation
+
+    app, client, karen, bridge = manager(tmp_path)
+    _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
+    _, pending = call(
+        bridge,
+        "hearth_skills_validate",
+        {
+            "operation_id": "validate",
+            "skill_id": saved["skill_id"],
+            "revision": 1,
+            "reserve": 10000,
+        },
+        "validate",
+    )
+    assert settle_karen(app, bridge).status == "succeeded"
+    maintenance = Maintenance(app.state.hearth)
+    lifecycle = maintenance.lifecycle(karen["resident_id"])
+    maintenance.change_lifecycle(
+        "pause-karen",
+        karen["resident_id"],
+        LifecycleChange(state="paused", expected_revision=lifecycle["revision"]),
+    )
+    validation = Validation(app.state.hearth)
+    validation.step()
+    waiting = validation.read(pending["validation_id"])
+    assert (waiting["status"], waiting["reason"]) == ("pending", "resident_paused")
+    maintenance.change_lifecycle(
+        "archive-karen",
+        karen["resident_id"],
+        LifecycleChange(state="archived", expected_revision=lifecycle["revision"] + 1),
+    )
+    validation.step()
+    stopped = validation.read(pending["validation_id"])
+    assert (stopped["status"], stopped["reason"]) == ("failed", "resident_archived")
+    assert all(case["run_id"] is None for case in stopped["cases"])
+
+
 def test_declaration_edit_blocks_admission_and_restored_text_reuses_cases(tmp_path):
     """The examples promise this resident's declaration; memory moves on without them."""
     app, client, karen, bridge = manager(tmp_path)
