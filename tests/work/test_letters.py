@@ -397,6 +397,38 @@ def test_the_operator_s_own_letter_starts_a_chain_the_receiver_can_walk_on(house
         ) == (None, None)
 
 
+def test_the_daily_cap_bounds_what_one_resident_may_be_handed_in_its_own_day(household):
+    """A neighbour's day is the household's to spend, and one sender cannot spend it all."""
+    hearth, now = household
+    karen = resident(hearth, "karen", sends=True)
+    reporter = resident(hearth, "reporter", accepts=True)
+    Household(hearth).save(
+        daily_limit=100_000_000,
+        timezone="UTC",
+        resident_limit=20,
+        concurrency_limit=10,
+        expected_revision=Household(hearth).read()["revision"],
+        letter_daily_limit=2,
+    )
+    run = running(hearth, karen)
+    send(hearth, run, reporter, operation_id="letter-1")
+    send(hearth, run, reporter, operation_id="letter-2")
+    error = refused(hearth, run, reporter, operation_id="letter-3")
+    assert error.code == "letter_daily_limit_reached"
+    assert error.details == {"received_today": 2, "letter_daily_limit": 2}
+    # The operator writes with its own hand and still cannot outspend the neighbour's day.
+    with pytest.raises(Refused, match="letter_daily_limit_reached"):
+        hearth.send_operator_letter("operator-letter-1", reporter, "One more", "Please answer.")
+    # The cap counts what one resident was handed, not what the household wrote.
+    other = resident(hearth, "other", accepts=True)
+    assert send(hearth, run, other, operation_id="letter-4")["status"] == "queued"
+    # Tomorrow in the receiver's own timezone is a fresh day.
+    settle(hearth, run)
+    now[0] = NOW + DAY
+    tomorrow = running(hearth, karen)
+    assert send(hearth, tomorrow, reporter, operation_id="letter-5")["status"] == "queued"
+
+
 def test_a_finished_run_and_unreadable_text_send_nothing(household):
     hearth, _ = household
     karen = resident(hearth, "karen", sends=True)

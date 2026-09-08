@@ -17,9 +17,14 @@ DEFAULTS: dict = dict(
     # answering. Zero hops disables letters for the whole household.
     max_letter_depth=2,
     letter_ttl_seconds=86_400,
+    # How many letters one resident may be handed in its own day. A letter is worked as
+    # an ordinary task, so this is the neighbour's time and the household's money; the
+    # default is deliberately small, and zero shuts a household's post entirely.
+    letter_daily_limit=5,
 )
 MAX_LETTER_DEPTH = 5
 LETTER_TTL_RANGE = (60, 604_800)
+MAX_LETTER_DAILY_LIMIT = 100
 ACTIVE = "('starting', 'running', 'stopping', 'interrupted')"
 
 
@@ -30,11 +35,12 @@ def read_journal_limit(db) -> int:
 
 
 def read_letter_policy(db) -> dict:
-    """The household's letter reach and shelf life; a fresh store uses the defaults."""
+    """The household's letter reach, shelf life and daily cap; a fresh store uses defaults."""
     row = db.execute(
-        "SELECT max_letter_depth,letter_ttl_seconds FROM household_policy WHERE id=1"
+        "SELECT max_letter_depth,letter_ttl_seconds,letter_daily_limit "
+        "FROM household_policy WHERE id=1"
     ).fetchone()
-    keys = ("max_letter_depth", "letter_ttl_seconds")
+    keys = ("max_letter_depth", "letter_ttl_seconds", "letter_daily_limit")
     return dict(row) if row else {key: DEFAULTS[key] for key in keys}
 
 
@@ -131,6 +137,7 @@ class Household:
         journal_limit: int | None = None,
         max_letter_depth: int | None = None,
         letter_ttl_seconds: int | None = None,
+        letter_daily_limit: int | None = None,
     ) -> dict:
         """Operator-only API. No runtime bridge exposes this authority."""
         microdollars(daily_limit)
@@ -161,6 +168,8 @@ class Household:
                 max_letter_depth = current["max_letter_depth"]
             if letter_ttl_seconds is None:
                 letter_ttl_seconds = current["letter_ttl_seconds"]
+            if letter_daily_limit is None:
+                letter_daily_limit = current["letter_daily_limit"]
             if type(max_letter_depth) is not int or not 0 <= max_letter_depth <= MAX_LETTER_DEPTH:
                 raise Refused("invalid_letter_policy")
             if (
@@ -168,15 +177,21 @@ class Household:
                 or not LETTER_TTL_RANGE[0] <= letter_ttl_seconds <= LETTER_TTL_RANGE[1]
             ):
                 raise Refused("invalid_letter_policy")
+            if (
+                type(letter_daily_limit) is not int
+                or not 0 <= letter_daily_limit <= MAX_LETTER_DAILY_LIMIT
+            ):
+                raise Refused("invalid_letter_policy")
             revision = expected_revision + 1
             db.execute(
-                "INSERT INTO household_policy VALUES (1,?,?,?,?,?,?,?,?) ON CONFLICT(id) "
+                "INSERT INTO household_policy VALUES (1,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) "
                 "DO UPDATE SET revision=excluded.revision,daily_limit=excluded.daily_limit,"
                 "timezone=excluded.timezone,resident_limit=excluded.resident_limit,"
                 "concurrency_limit=excluded.concurrency_limit,"
                 "journal_limit=excluded.journal_limit,"
                 "max_letter_depth=excluded.max_letter_depth,"
-                "letter_ttl_seconds=excluded.letter_ttl_seconds",
+                "letter_ttl_seconds=excluded.letter_ttl_seconds,"
+                "letter_daily_limit=excluded.letter_daily_limit",
                 (
                     revision,
                     daily_limit,
@@ -186,6 +201,7 @@ class Household:
                     journal_limit,
                     max_letter_depth,
                     letter_ttl_seconds,
+                    letter_daily_limit,
                 ),
             )
             db.execute(
@@ -204,6 +220,7 @@ class Household:
                             journal_limit=journal_limit,
                             max_letter_depth=max_letter_depth,
                             letter_ttl_seconds=letter_ttl_seconds,
+                            letter_daily_limit=letter_daily_limit,
                             actor="operator",
                         )
                     ),

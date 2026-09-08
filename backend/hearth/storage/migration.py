@@ -30,6 +30,9 @@ FILLS: dict[tuple[str, str], str] = {
     # A household that never had letters keeps the shipped defaults: two hops, one day.
     ("household_policy", "max_letter_depth"): "2",
     ("household_policy", "letter_ttl_seconds"): "86400",
+    # A household that never had the cap keeps the shipped one: five letters a day is
+    # already more than a resident can work while doing anything else.
+    ("household_policy", "letter_daily_limit"): "5",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is

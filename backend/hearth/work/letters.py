@@ -11,7 +11,7 @@ says about a parent is trusted, so a forged or omitted parent cannot lengthen a 
 revisit a resident or attribute cost to the wrong origin.
 """
 
-from hearth.authority.household import read_letter_policy
+from hearth.authority.household import _day_window, read_letter_policy
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import _audit, _queue_task
 
@@ -122,6 +122,34 @@ def _check_recipient(db, to: str) -> None:
         raise Refused("recipient_archived")
 
 
+def _check_daily_cap(db, to: str, now: int, policy: dict) -> None:
+    """What one resident may be handed in a day, counted in that resident's own day.
+
+    A letter is worked as an ordinary task, so every one of them spends the receiver's
+    time and the household's money. The cap is the receiver's, not the sender's: it
+    counts every letter that reached this resident today whoever wrote it, so no number
+    of chatty colleagues — or of operator letters — adds up to a day nobody planned.
+    A letter already sent counts whatever became of it; closing one does not buy another.
+    """
+    limit = policy["letter_daily_limit"]
+    timezone = db.execute(
+        "SELECT d.budget_timezone FROM declarations d JOIN residents r "
+        "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+        (to,),
+    ).fetchone()["budget_timezone"]
+    window = _day_window(now, timezone)
+    received = db.execute(
+        "SELECT COUNT(*) FROM letters l JOIN tasks t ON t.id=l.task_id "
+        "WHERE t.resident_id=? AND l.created_at>=? AND l.created_at<?",
+        (to, window["starts_at"], window["ends_at"]),
+    ).fetchone()[0]
+    if received >= limit:
+        raise Refused(
+            "letter_daily_limit_reached",
+            {"received_today": received, "letter_daily_limit": limit},
+        )
+
+
 def run_letter_scope(db, run_id: str, now: int) -> dict:
     """Which letter tools one run is offered, and the letter a reply would answer.
 
@@ -210,6 +238,7 @@ def send_letter(
     chain = _chain(db, parent_task_id)
     if to in chain:
         raise Refused("letter_cycle", {"chain": chain + [to]})
+    _check_daily_cap(db, to, now, policy)
 
     deadline = _deadline(now, policy, expires_at)
     task_id = _queue_task(
@@ -315,6 +344,7 @@ def send_operator_letter(
             "max_letter_depth_exceeded",
             {"depth": 1, "max_letter_depth": policy["max_letter_depth"]},
         )
+    _check_daily_cap(db, to, now, policy)
     deadline = _deadline(now, policy, expires_at)
     task_id = _queue_task(
         db,
