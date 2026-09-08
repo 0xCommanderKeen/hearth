@@ -157,6 +157,18 @@ def settled(hearth, task_id):
     return check
 
 
+def asked_and_settled(hearth, task_id):
+    """The whole hand-off, watched by one supervisor: the sender finished and the
+    letter it wrote reached an end state of its own."""
+
+    def check():
+        with hearth.database.transaction() as db:
+            letter = db.execute("SELECT state FROM letters").fetchone()
+        return settled(hearth, task_id)() and letter is not None and letter["state"] != "pending"
+
+    return check
+
+
 def test_a_letter_is_asked_worked_answered_and_read_back_without_an_operator_step(tmp_path):
     app, karen, reporter = household(tmp_path)
     hearth = app.state.hearth
@@ -168,8 +180,10 @@ def test_a_letter_is_asked_worked_answered_and_read_back_without_an_operator_ste
     assert [item["name"] for item in answering] == [ANSWER_SKILL_NAME]
     assert answering[0]["instructions"] == ANSWER_A_LETTER
 
+    # One supervisor watches the whole hand-off. Nothing is started for the receiver: the
+    # ordinary tick admits the letter as its own task, on its own allowance.
     asking = start(app, karen, "ask-the-reporter", ASK)
-    assert run_until(app, settled(hearth, asking)), run_of(hearth, asking)
+    assert run_until(app, asked_and_settled(hearth, asking)), run_of(hearth, asking)
     ask_run = run_of(hearth, asking)
     assert ask_run["status"] == "succeeded", ask_run
     with hearth.database.transaction() as db:
@@ -182,9 +196,6 @@ def test_a_letter_is_asked_worked_answered_and_read_back_without_an_operator_ste
     assert "id " + letter["task_id"] in said
     assert REFERENCE not in said, said
 
-    # Nothing is started for the receiver: the ordinary tick admits the letter as its own
-    # task, on its own allowance, and the answer is written by that run.
-    assert run_until(app, settled(hearth, letter["task_id"])), letter
     answer_run = run_of(hearth, letter["task_id"])
     assert answer_run["status"] == "succeeded", answer_run
     with hearth.database.transaction() as db:
