@@ -343,6 +343,50 @@ def test_a_live_result_survives_backup_without_the_login_or_the_stream_leaving_s
     assert Hearth(held).run(run.id).actual_cost == 36_580
 
 
+def settled(runtime, hearth, run, published, data):
+    """Commit one Claude receipt through the ordinary settlement path."""
+    from hearth.execution.lifecycle import Execution
+    from hearth.execution.usage import binding
+    from hearth.storage.artifacts import Artifacts
+
+    execution = Execution(hearth, Artifacts(data / "artifacts"))
+    with hearth.database.transaction() as db:
+        row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
+        bound = binding(db, row)
+    return execution.finish(
+        run.id, run.owner_token, encode(published, bound)[2], _usage_receipt=published
+    )
+
+
+def test_a_settled_run_keeps_the_stream_as_its_receipt_and_the_price_as_its_cost(tmp_path):
+    runtime, hearth, run, _ = prepared(tmp_path)
+    worker(runtime.folder(run.id))
+    result = settled(runtime, hearth, run, runtime.receipt(run.id), tmp_path / "data")
+    assert (result.status, result.actual_cost, result.usage_known) == ("succeeded", 36_580, True)
+    with hearth.database.transaction() as db:
+        stored = db.execute("SELECT receipt FROM run_usage WHERE run_id=?", (run.id,)).fetchone()[0]
+        pin = db.execute("SELECT schedule FROM run_pricing WHERE run_id=?", (run.id,)).fetchone()[0]
+    # What commits is the CLI's own stream, not a summary of it.
+    assert json.loads(stored)["stdout"] == stream("success")
+    assert pin == PRICE_SCHEDULE
+
+
+def test_usage_the_stream_contradicts_keeps_the_answer_and_holds_the_resident(tmp_path):
+    runtime, hearth, run, _ = prepared(tmp_path)
+    worker(runtime.folder(run.id))
+    published = runtime.receipt(run.id)
+    events = [json.loads(line) for line in published["stdout"].splitlines()]
+    events[-1]["modelUsage"]["claude-opus-5"]["outputTokens"] = 4000
+    published["stdout"] = "\n".join(json.dumps(event) for event in events) + "\n"
+    result = settled(runtime, hearth, run, published, tmp_path / "data")
+    assert result.status == "succeeded" and not result.usage_known
+    assert result.actual_cost is None
+    # The hold the unknown usage placed stays on the resident.
+    task = hearth.submit("next", "reader", "Next", expires_at=int(hearth.clock()) + 600)
+    with pytest.raises(Refused, match="resident_paused"):
+        hearth.admit(task.task_id, reserve=10_000)
+
+
 def test_the_operator_sees_the_individual_requests_the_session_reported(tmp_path):
     from hearth.integrations.interface import receipt_requests
 
