@@ -36,8 +36,9 @@ PROBE_TIMEOUT = 30
 # the provider's own `--max-budget-usd` fence stops a session that is merely expensive.
 RUN_TIMEOUT = 600
 
-# The bounded session every run is launched with. The run's own arguments (prompt,
-# model, budget ceiling, tools, MCP config) are added by the worker in #146 and #147.
+# The bounded session every run is launched with. The run's own arguments -- model,
+# effort, tool list and budget fence -- are added by `session_command` below; the
+# prompt is delivered on stdin, and the MCP configuration arrives with the bridge (#147).
 SESSION_FLAGS: tuple[str, ...] = (
     "--print",
     # The stream is the receipt: every API response's usage block is kept.
