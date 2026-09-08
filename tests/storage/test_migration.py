@@ -88,7 +88,7 @@ def test_quiet_store_changes_runtime_but_active_run_refuses(tmp_path):
 
     path = tmp_path / "hearth.db"
     database = Database(path)
-    database.initialize(runtime_kind="inline_mock")
+    database.initialize(runtime_kind="codex_subscription")
     database.initialize(runtime_kind="process_mock")
     assert database.runtime_kind() == "process_mock"
     assert Database(path).runtime_kind() == "process_mock"
@@ -98,7 +98,7 @@ def test_quiet_store_changes_runtime_but_active_run_refuses(tmp_path):
     ).fetchone()
     assert (kind, json.loads(detail)) == (
         "runtime_kind_changed",
-        {"from": "inline_mock", "to": "process_mock"},
+        {"from": "codex_subscription", "to": "process_mock"},
     )
     hearth = Hearth(database, clock=lambda: 1_788_640_000)
     hearth.save_resident(
@@ -107,5 +107,5 @@ def test_quiet_store_changes_runtime_but_active_run_refuses(tmp_path):
     receipt = hearth.submit("summary", "reader", "Synthetic", expires_at=1_788_640_600)
     hearth.admit(receipt.task_id, reserve=10_000)
     with pytest.raises(Refused, match="runtime_store_busy"):
-        database.initialize(runtime_kind="inline_mock")
+        database.initialize(runtime_kind="codex_subscription")
     assert database.runtime_kind() == "process_mock"

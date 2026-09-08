@@ -247,7 +247,7 @@ def test_assignment_and_revision_authority_are_enforced_by_catalog_owners(tmp_pa
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Use an exact reusable skill",
             },
@@ -634,7 +634,7 @@ def test_scoped_assignment_read_recovers_human_edits_and_preserves_order(tmp_pat
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Preserve existing assignments",
             },

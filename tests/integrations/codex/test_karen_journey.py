@@ -39,7 +39,6 @@ def reopen(tmp_path):
         tmp_path / "data",
         TOKEN,
         supervise=False,
-        runtime_kind="codex_subscription",
         codex_binary=tmp_path / "synthetic-codex",
         codex_auth_home=tmp_path / "synthetic-auth",
     )

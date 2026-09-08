@@ -76,7 +76,7 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
             dict(
                 name=name,
                 purpose="Summarize selected synthetic inputs",
-                execution_profile="inline_mock",
+                execution_profile="codex_subscription",
                 daily_limit=100000,
                 creation_reason="Different fictional notes",
                 input_sets=[{"input_set_id": item["input_set_id"]} for item in selection],

@@ -255,7 +255,7 @@ def managed_fixture(tmp_path):
                 "name": "Reporter",
                 "purpose": "Count fictional pears",
                 "creation_reason": "A managed reporter",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
             },
         },

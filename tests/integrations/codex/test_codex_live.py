@@ -117,7 +117,7 @@ def test_live_result_and_usage_survive_backup_without_auth_files(tmp_path, monke
         lambda *args, **kwargs: VERSION,
     )
     db = Database(data / "hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     CodexLiveRuntime(data, binary=binary, auth_home=auth)
     hearth = Hearth(db, clock=lambda: 1_788_640_000)
     hearth.save_resident(
@@ -191,7 +191,7 @@ def prepared_worker(tmp_path, monkeypatch):
     )
     binary.chmod(0o700)
     db = Database(data / "hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth)
     hearth = Hearth(db)
     hearth.save_resident(

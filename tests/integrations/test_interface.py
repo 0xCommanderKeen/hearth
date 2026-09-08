@@ -11,11 +11,11 @@ from hearth.integrations.interface import (
 from hearth.residents.models import Refused
 
 
-@pytest.mark.parametrize("kind", ["codex_mock", "codex_subscription"])
-def test_prelaunch_cancellation_requires_matching_runtime_and_input_pins(kind):
+def test_prelaunch_cancellation_requires_matching_runtime_and_input_pins():
+    kind = "codex_subscription"
     pin = pricing_pin(kind)
     binding = usage_binding("run", "a" * 64, pin)
-    pins = {"codex_assets": "b" * 64, "codex_live_binary": "c" * 64}
+    pins = {"codex_live_binary": "c" * 64}
     receipt = cancellation_receipt(kind, binding, pins)
     assert validate_receipt_pins(kind, receipt, pins, cancelled=True)
     assert not validate_receipt_pins(kind, receipt, pins, cancelled=False)

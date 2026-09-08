@@ -14,7 +14,7 @@ def request():
         instructions="Be concise",
         initial_memory="Remember: use bullets",
         skills=[],
-        execution_profile="inline_mock",
+        execution_profile="codex_subscription",
         input_sets=[],
         daily_limit=100000,
         budget_timezone="Europe/Ljubljana",
@@ -79,7 +79,7 @@ def test_provisioning_api_replay_profile_and_input_choices(tmp_path):
         ).json()
         assert profile["creator"] == "operator" and profile["creation_reason"] == "Daily report"
         state = client.get("/api/state", headers=auth).json()
-        assert state["residents"][0]["profile"]["execution_profile"] == "inline_mock"
+        assert state["residents"][0]["profile"]["execution_profile"] == "codex_subscription"
         assert state["provisioning"][0]["status"] == "ready"
         assert (
             client.post("/api/residents/provision", headers=auth, json=request()).json() == result

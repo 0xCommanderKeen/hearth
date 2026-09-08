@@ -27,7 +27,7 @@ def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
         assert assignment["skills"][0]["skill_id"] == skill_id
         path = f"/api/residents/{resident_id}/management"
         grant = client.get(path, headers=AUTH).json()
-        assert grant["enabled"] and grant["profiles"] == ["inline_mock"]
+        assert grant["enabled"] and grant["profiles"] == ["codex_subscription"]
         assert "create_residents" in grant["capabilities"]
         disabled = {
             key: value for key, value in grant.items() if key not in {"resident_id", "revision"}
@@ -86,7 +86,7 @@ def test_private_tool_call_provisions_once_and_starts_initial_work(tmp_path):
                 name="Reporter",
                 purpose="Summarize synthetic data",
                 creation_reason="Requested by operator through Karen",
-                execution_profile="inline_mock",
+                execution_profile="codex_subscription",
                 daily_limit=100000,
                 first_assignment={"instruction": "First report"},
             ),
@@ -218,7 +218,7 @@ def provision_call(call_id="call", **changes):
         name="Reporter",
         purpose="Synthetic summary",
         creation_reason="Requested setup",
-        execution_profile="inline_mock",
+        execution_profile="codex_subscription",
         daily_limit=100000,
     )
     return dict(
