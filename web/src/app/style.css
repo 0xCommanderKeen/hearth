@@ -1036,6 +1036,24 @@ table.ledger {
 .inbox .tasks h3 {
   font-size: 13.5px;
 }
+.inbox .tasks > li.unread h3 {
+  font-weight: 600;
+}
+.inbox .pip {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: #8f3d1e;
+  vertical-align: middle;
+}
+.inbox .tasks > li > button {
+  margin-left: 14px;
+  font-size: 13px;
+}
 
 /* ---------- hamlet ---------- */
 .hamlet-scene {
@@ -1193,7 +1211,6 @@ table.ledger {
 .management-intro h2,
 .provisioning[aria-label="New resident setup"] > .eyebrow,
 .provisioning[aria-label="New resident setup"] > h2,
-.approvals > .eyebrow,
 section[aria-label="Daily routines"] > .eyebrow {
   display: none;
 }

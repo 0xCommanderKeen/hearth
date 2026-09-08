@@ -2,6 +2,12 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Approvals and publication are gone (schema 4): no grants, requests, decisions, broker
+  or noticeboard until a real approval-gated effect needs them. The inbox becomes the
+  feature they were attached to: every notification is written with the work it reports,
+  kept, marked read or unread, and shown on its own Townhall page. Upgrading keeps every
+  run notification and removes the ones announcing a review that no longer exists.
+
 - A backup is the household and nothing else: `hearth.db`, artifacts, resident memory
   and archived journal entries. The local inbox and noticeboard folders are no longer
   copied or verified, so a restored copy no longer carries their files.
