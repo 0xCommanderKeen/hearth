@@ -59,7 +59,8 @@ def test_snapshot_has_no_owner_token(client):
     assert body["simulated"] is False and body["schema_version"] == 1
     assert body["residents"][0]["presence"] == "starting"
     assert "owner_token" not in state.text and TOKEN not in state.text
-    assert body["cursor"] == 5
+    # The cursor is the audit sequence, and the runtime records its own configuration.
+    assert body["cursor"] == len(body["activity"]) == 6
 
 
 def test_lost_submission_response_is_reconcilable(client):
@@ -207,7 +208,7 @@ def proposal(client):
     return response.json()
 
 
-def test_mock_approval_operator_journey(client):
+def test_approval_operator_journey(client):
     request = proposal(client)
     route = "/api/approvals/" + request["id"]
     assert client.get(route).status_code == 401
@@ -230,7 +231,7 @@ def test_mock_approval_operator_journey(client):
     assert state["publication_policies"][0]["enabled"] == 1
 
 
-def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
+def test_api_denied_and_revoked_permission_cannot_publish(client):
     request = proposal(client)
     route = "/api/approvals/" + request["id"]
     decision = {"reviewed_digest": request["digest"], "approve": False}
@@ -244,7 +245,7 @@ def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
     assert client.post(route + "/execute", headers=AUTH).status_code == 409
 
 
-def test_mock_api_strict_policy_and_decision_payload(client):
+def test_api_strict_policy_and_decision_payload(client):
     request = proposal(client)
     assert (
         client.post(
@@ -264,7 +265,7 @@ def test_mock_api_strict_policy_and_decision_payload(client):
     )
 
 
-def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
+def test_daily_routine_api_runs_through_background_executor(tmp_path):
     app = create_app(tmp_path, TOKEN, runtime=fake_runtime())
     now = [1_788_652_800]
     app.state.hearth.clock = lambda: now[0]
@@ -332,7 +333,7 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
     assert client.post(start, headers=AUTH).status_code == 200
 
 
-def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
+def test_operator_reports_usage_and_snapshot_labels_source(tmp_path):
     app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
     with TestClient(app) as client:
         seed_reader_via(client)
