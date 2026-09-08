@@ -1,4 +1,4 @@
-# Mock backup and restore rehearsal
+# Backup and restore
 
 Use unique destination directories outside the source data directory:
 
@@ -10,17 +10,20 @@ python -m hearth restore --source /private/tmp/hearth-backup --destination /priv
 
 Capture excludes executor, action broker and notification workers with their
 existing locks, then holds a SQLite write transaction while SQLite's backup API
-copies the database and the known mock stores are copied. Scheduler and API writes
+copies the database and the covered stores are copied. Scheduler and API writes
 are therefore frozen too. Busy workers cause a refusal; retry the command later.
-The allowlist is `hearth.db`, `artifacts`, `mock-runtime`, `mock-inbox`, and
-`mock-noticeboard`, nested resident `memory` files, and the archived journal entries
-one level below them in `memory/{resident}/journal`. Dotfiles, unrelated directories, and credentials are not copied.
-This is the defined mock application layout, not a general filesystem backup.
+A run that is priced but not yet settled refuses capture: its provider evidence is
+still in flight and nothing here can copy it.
+A backup is the household, not the directory it happens to live in: `hearth.db`,
+`artifacts`, nested resident `memory` files, and the archived journal entries one
+level below them in `memory/{resident}/journal`. Dotfiles, unrelated directories,
+local development scaffolding beside the data, and credentials are not copied.
 
 A versioned manifest records schema, package version, backend source fingerprint,
 creation time, and every file checksum. Verification checks path shape, file type,
 checksums, SQLite integrity/foreign keys, compatible schema and every referenced
-artifact. Extra unverified payloads are refused. Files are bounded to 128 MiB each;
+artifact. Extra unverified payloads are refused, a directory outside the covered
+stores included. Files are bounded to 128 MiB each;
 larger backups require a deliberate limit change. Checksums detect corruption,
 not a maliciously rewritten backup from an untrusted author.
 
@@ -38,15 +41,17 @@ artifact/approval previews remain available, and the client refuses mutation cal
 There is intentionally no activation command or automatic hold removal.
 
 The restored database retains runs (including active/unknown ownership), command
-receipts, approvals, actions, occurrence identities, usage, queues, and mock runtime/
-effect evidence. This preserves information for reconciliation without claiming
-that copied execution is authoritative. The backup format does not include real
-runtime credentials; those do not exist in the current
-mock workflow. Production restore requires an ownership reconciliation plan and
-actual host checks before activation.
+receipts, approvals, actions, occurrence identities, usage and queues. This preserves
+information for reconciliation without claiming that copied execution is
+authoritative. What a local development adapter left on disk beside the data is not
+copied, so a restored copy carries the durable record of an uncertain publication
+without the adapter evidence to reconcile it against — and it may not execute anyway.
+The backup format does not include runtime credentials.
+Production restore requires an ownership reconciliation plan and actual host checks
+before activation.
 
 Verification includes completed/active/uncertain-action restores, matching artifacts
-and receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
+and command receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
 artifacts, extra files, symlinks, FIFOs, traversal, busy workers and overwrite refusal.
 An actual CLI demo → backup → restore rehearsal ran on synthetic data on 2026-09-06
 under `/private/tmp/hearth-restore-rehearsal-{source,backup,copy}`. The copy has a new
@@ -55,7 +60,8 @@ epoch and remains held. Live disaster recovery and activation remain unproven.
 ## Current-schema backups
 
 Only the current schema and complete layout are accepted. Incompatible prototypes
-or modified schemas are refused without conversion. Backups preserve every resident
+or modified schemas are refused without conversion. A backup pins the schema version
+it was captured at, so re-capture after upgrading a store. Backups preserve every resident
 memory revision and run pin, including unreferenced immutable files. Verification
 rejects corrupt memory and references to another resident's memory. Journal entries, archived
 references and their files are preserved the same way; verification rejects a changed
@@ -63,8 +69,9 @@ entry, a changed, renamed or missing archived file, an archived document that di
 with its row, and either half naming a run that belongs to another resident.
 All restored copies remain held. There is no historical upgrade path or data importer.
 
-Process-backed stores require all runs to be settled and workers idle before capture.
-Active or uncertain process runs refuse backup without stopping the worker. Durable
-request/result/cancel/started claims are checksummed and checked against pinned run
-identity, input and results. Locks and fixture scratch files are excluded. Held
-restore preserves the store's runtime choice; it does not reactivate that runtime.
+Every run carries a runtime version and a well-formed input digest, and a run on the
+runtime this release ships is verified against its stored provider receipt as well. A
+run pinned to a runtime Hearth no longer ships is finished history: its evidence left
+with that runtime, so beyond those two it is only required to have finished and to name
+a kind Hearth actually shipped. A held restore preserves the store's recorded runtime;
+it does not reactivate it.

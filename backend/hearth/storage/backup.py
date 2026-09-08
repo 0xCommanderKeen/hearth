@@ -43,10 +43,10 @@ from hearth.storage.database import (
 )
 
 FORMAT = 1
+# The household is the database, the artifacts it names and every resident's memory
+# (their journal archives included). Nothing else beside the data directory is copied.
 STORES = {
     "artifacts": ".md",
-    "mock-inbox": ".md",
-    "mock-noticeboard": ".md",
     "memory": ".md",
 }
 MAX_FILE = 128 * 1024 * 1024
