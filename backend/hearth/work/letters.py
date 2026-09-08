@@ -518,6 +518,7 @@ def settle_letter(
     status: str,
     artifact_id: str | None,
     now: int,
+    reason: str | None = None,
 ) -> str | None:
     """Say what became of the letter this run was working, or nothing if it was not one.
 
@@ -527,6 +528,12 @@ def settle_letter(
     (`failed`). An answer already written survives its run failing afterwards: the sender
     has the answer, and the run's own status is recorded beside the state rather than
     hidden by it.
+
+    A cancelled run is one of the runs that did not finish, so its letter says `failed`
+    like any other: `cancelled` is a word about the run, and the sender is owed a word
+    about its question. `reason` names a cancellation that came from outside the run —
+    a runtime this release no longer ships, say — so the letter's own fact stands up
+    without reading the run's beside it.
 
     Called inside the transaction that settles the run, so the state, the run's terminal
     status and the audit fact are one write. A letter already settled — by the expiry
@@ -549,6 +556,7 @@ def settle_letter(
             "state": state,
             "run_id": run_id,
             "run_status": status,
+            **({"reason": reason} if reason is not None else {}),
             "artifact_id": artifact_id,
             "sender_resident_id": letter["sender_resident_id"],
             "sender": letter["sender_resident_id"] or OPERATOR,
@@ -893,6 +901,9 @@ def validate_letters(db) -> None:
         state, terminal = row["state"], row["status"] in {"succeeded", "failed", "cancelled"}
         # A letter is open exactly while the task it is: one still open whose task has
         # ended, or one settled whose task has not, is a copy that no longer adds up.
+        # Every path that ends a letter task settles the letter in the same transaction
+        # — the run's own settlement, the expiry sweep, and the adoption of the one
+        # runtime — so a terminal task with an open letter is a copy, not a live store.
         if (state == "pending") == terminal:
             raise Refused("backup_letters_invalid")
         if state != "pending" and (state == "replied") != bool(row["answered"]):

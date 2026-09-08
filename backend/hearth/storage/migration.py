@@ -355,12 +355,18 @@ def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
     """Give every letter that already ended the word for what it came to.
 
     The store knows this without being told: a letter with an answer was `replied` to,
-    one whose run succeeded without writing one went `unanswered`, one closed with no
-    run at all `expired` before anybody started it, and any other closed letter `failed`
-    with the run that was working it. A letter still open keeps saying so.
+    one whose run succeeded without writing one went `unanswered`, one whose task failed
+    with no run at all `expired` before anybody started it, and any other closed letter
+    `failed` — with the run that was working it, or with the cancel that ended it before
+    one ever did. A letter still open keeps saying so.
+
+    Cancelling is not going stale, so an unworked cancelled letter is `failed` rather
+    than `expired`: the sender's question ended, but its shelf life never ran out, and a
+    store that said otherwise would contradict its own rows on the next validation.
 
     When it ended is the run's own finish, or the shelf life for one nothing ever
-    started; an upgrade never invents a time later than the fact it records.
+    started; an upgrade never invents a time later than the fact it records, so a shelf
+    life still ahead of this upgrade settles at the upgrade instead.
     """
     settled = 0
     for row in connection.execute(
@@ -375,7 +381,7 @@ def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
             state = "replied"
         elif row["status"] == "succeeded":
             state = "unanswered"
-        elif not row["worked"]:
+        elif not row["worked"] and row["status"] == "failed":
             state = "expired"
         else:
             state = "failed"
@@ -383,7 +389,7 @@ def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
             "UPDATE letters SET state=?,settled_at=? WHERE task_id=?",
             (
                 state,
-                row["finished"] if row["finished"] is not None else row["expires_at"],
+                row["finished"] if row["finished"] is not None else min(row["expires_at"], now),
                 row["task_id"],
             ),
         )

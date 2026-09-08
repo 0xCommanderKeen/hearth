@@ -12,6 +12,7 @@ ends through the ordinary settlement path with a receipt of its own.
 
 import hashlib
 import json
+import sqlite3
 from dataclasses import asdict
 
 import pytest
@@ -27,7 +28,13 @@ from hearth.management.bridge import BoundRun, Bridge
 from hearth.observation.snapshot import snapshot
 from hearth.residents.memory import MemoryFiles
 from hearth.residents.models import Declaration
-from hearth.work.letters import deliver_letters, expire_letters, read_letters
+from hearth.storage.database import Database
+from hearth.work.letters import (
+    deliver_letters,
+    expire_letters,
+    read_letters,
+    validate_letters,
+)
 
 from tests.fake_runtime import fake_runtime
 
@@ -448,3 +455,64 @@ def test_an_operator_letter_is_answered_without_being_injected_into_anyone_s_con
     # The operator reads the answer through its own view of the resident's post.
     inbox = hearth.letters("reporter")["inbox"]
     assert inbox[0]["reply"]["text"] == ANSWER and inbox[0]["state"] == "replied"
+
+
+def delivered(app, task_id):
+    """The receiver's run of a letter the delivery pass admitted, before any launch."""
+    hearth = app.state.hearth
+    assert deliver_letters(hearth) == [task_id]
+    with hearth.database.transaction() as db:
+        return db.execute("SELECT id FROM runs WHERE task_id=?", (task_id,)).fetchone()[0]
+
+
+def test_an_operator_cancel_of_a_letter_settles_it_as_failed_and_the_copy_still_adds_up(household):
+    """Cancelling is not silence: the sender reads `failed`, and validation accepts it."""
+    app, hearth, _ = household
+    asked, karen = working_run(app, "karen", "asks")
+    receipt = sends(karen)
+    settle(app, asked)
+    run_id = delivered(app, receipt["task_id"])
+
+    app.state.execution.cancel(run_id)
+    # Nothing was launched for it, so the executor ends it at zero with its own receipt.
+    assert [run.status for run in app.state.executor.step()] == ["cancelled"]
+    assert hearth.task(receipt["task_id"]).status == "cancelled"
+
+    letter = letter_row(hearth, receipt["task_id"])
+    assert letter["state"] == "failed" and letter["settled_at"] == NOW
+    fact = facts(hearth, "letter.failed")[0]
+    assert fact["resource_id"] == receipt["task_id"]
+    assert fact["detail"]["run_status"] == "cancelled" and fact["detail"]["reply_run_id"] is None
+    # The sender is told what became of its question rather than left holding it open.
+    with hearth.database.transaction() as db:
+        post = read_letters(db, "karen")
+        # A letter left `pending` under a cancelled task is what a backup refuses.
+        validate_letters(db)
+    assert [(one["task_id"], one["state"]) for one in post["sent"]] == [
+        (receipt["task_id"], "failed")
+    ]
+
+
+def test_a_letter_in_flight_when_a_removed_runtime_is_adopted_ends_with_its_run(household):
+    """Adoption cancels work no surviving runtime can observe; the letter ends with it."""
+    app, hearth, _ = household
+    asked, karen = working_run(app, "karen", "asks")
+    receipt = sends(karen)
+    settle(app, asked)
+    run_id = delivered(app, receipt["task_id"])
+    path = hearth.database.path
+    with sqlite3.connect(path, isolation_level=None) as db:
+        db.execute("UPDATE system_meta SET value='inline_mock' WHERE key='runtime_kind'")
+        db.execute("UPDATE runs SET runtime_kind='inline_mock' WHERE id=?", (run_id,))
+
+    Database(path).initialize()
+
+    assert hearth.run(run_id).status == "cancelled"
+    assert hearth.task(receipt["task_id"]).status == "cancelled"
+    letter = letter_row(hearth, receipt["task_id"])
+    assert letter["state"] == "failed" and letter["settled_at"] is not None
+    fact = facts(hearth, "letter.failed")[0]
+    assert fact["detail"]["run_status"] == "cancelled"
+    assert fact["detail"]["reason"] == "runtime_removed"
+    with hearth.database.transaction() as db:
+        validate_letters(db)

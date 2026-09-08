@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import time
 import uuid
 
 import pytest
@@ -932,17 +933,23 @@ def version_8_store(path):
     run("r", "t", "karen", "succeeded", finished=10)
     db.execute("INSERT INTO tasks VALUES ('t2', 'karen', 'Ask again', 'starting', 20)")
     run("r2", "t2", "karen", "starting", finished=None, launched=0)
-    for task_id, status, run_id, finished in (
-        ("answered", "succeeded", "worked-answered", 30),
-        ("silent", "succeeded", "worked-silent", 40),
-        ("broken", "failed", "worked-broken", 50),
-        ("stale", "failed", None, None),
-        ("waiting", "queued", None, None),
+    for task_id, status, run_id, finished, expires_at in (
+        ("answered", "succeeded", "worked-answered", 30, 86402),
+        ("silent", "succeeded", "worked-silent", 40, 86402),
+        ("broken", "failed", "worked-broken", 50, 86402),
+        ("stale", "failed", None, None, 86402),
+        # Cancelled before anybody worked it, with its shelf life already spent, and
+        # cancelled with one still years ahead: neither of them went stale.
+        ("cut", "cancelled", None, None, 86402),
+        ("cut_early", "cancelled", None, None, 4_000_000_000),
+        ("waiting", "queued", None, None, 86402),
     ):
         db.execute(
             "INSERT INTO tasks VALUES (?, 'orchard', 'One question', ?, 2)", (task_id, status)
         )
-        db.execute("INSERT INTO letters VALUES (?,'karen','r','t','t',1,'One',2,86402)", (task_id,))
+        db.execute(
+            "INSERT INTO letters VALUES (?,'karen','r','t','t',1,'One',2,?)", (task_id, expires_at)
+        )
         if run_id is not None:
             run(run_id, task_id, "orchard", status, finished=finished)
     db.execute(
@@ -958,26 +965,34 @@ def test_the_version_8_store_says_what_each_of_its_letters_came_to(tmp_path):
 
     path = tmp_path / "hearth.db"
     version_8_store(path)
+    before = int(time.time())
     Database(path).initialize()
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert schema_matches(db)
-    # The store already knew what became of each letter; the upgrade only says it.
-    assert {
+    letters = {
         row["task_id"]: (row["state"], row["settled_at"])
         for row in db.execute("SELECT * FROM letters")
-    } == {
+    }
+    early = letters.pop("cut_early")
+    # The store already knew what became of each letter; the upgrade only says it.
+    assert letters == {
         "answered": ("replied", 30),
         "silent": ("unanswered", 40),
         "broken": ("failed", 50),
         # Nothing ever worked this one, so its shelf life is when it ended.
         "stale": ("expired", 86402),
+        # Cancelled is not stale: the question ended, the shelf life did not run out.
+        "cut": ("failed", 86402),
         "waiting": ("pending", None),
     }
+    # A shelf life still years ahead is not when this letter ended, so the upgrade
+    # records itself rather than inventing a time later than the fact it holds.
+    assert early[0] == "failed" and before <= early[1] <= int(time.time())
     assert json.loads(
         db.execute("SELECT detail FROM audit WHERE kind='letters_settled'").fetchone()[0]
-    ) == {"count": 4, "reason": "letter_states_added"}
+    ) == {"count": 6, "reason": "letter_states_added"}
     validate_letters(db)
     # The context gained the replies a sender opens with, so a run admitted against the
     # older shape is asked to end rather than launched with bytes it never reserved.

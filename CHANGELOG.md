@@ -7,7 +7,11 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   it, in the same transaction: `replied` when an answer was written, `unanswered` when
   the run succeeded and never called the reply tool, `failed` when the run did not
   finish, and `expired` when it went stale before anybody started it — each audited under
-  its own name and linked to the letter, its root task and the run. An answer written by
+  its own name and linked to the letter, its root task and the run. A cancelled run is a
+  run that did not finish, so its letter says `failed` too: cancelling is not going stale,
+  and the one place a letter task ends outside its own run's settlement — a store adopting
+  the one runtime over work no surviving runtime can observe — closes the letter in the
+  same transaction, with the reason recorded on the letter's own fact. An answer written by
   a run that then fails still counts as an answer, because the sender has it; the run's
   own status is recorded beside the state rather than hidden by it. Nothing wakes the
   sender: its next run opens with a bounded, neutralized "replies since your last run"
