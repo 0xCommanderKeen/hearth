@@ -97,7 +97,9 @@ def test_a_model_the_schedule_does_not_price_leaves_the_whole_session_unknown():
 def test_a_session_that_never_names_the_pinned_model_is_not_priced():
     """Only the housekeeping model ran, so nothing proves the pinned model did."""
     assert estimate(HOUSEKEEPING).microdollars == 950
-    assert estimate_api_equivalent((HOUSEKEEPING,), model=MODEL, mode="standard").microdollars == 950
+    assert (
+        estimate_api_equivalent((HOUSEKEEPING,), model=MODEL, mode="standard").microdollars == 950
+    )
 
 
 def test_unknown_coverage_or_service_mode_refuses():

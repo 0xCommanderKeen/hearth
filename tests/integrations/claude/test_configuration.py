@@ -144,16 +144,16 @@ def test_the_session_environment_carries_no_machine_state(tmp_path):
     assert env["DISABLE_AUTOUPDATER"] == "1"
 
 
-def test_a_run_cannot_be_started_on_this_release(tmp_path):
+def test_a_run_this_store_never_admitted_is_not_launched(tmp_path):
     data, _, binary, config_dir = configured(tmp_path)
     runtime = ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir)
-    for call in (
-        lambda: runtime.start("run", "{}"),
-        lambda: runtime.inspect("run"),
-        lambda: runtime.stop("run"),
-    ):
-        with pytest.raises(Refused, match="claude_subscription_run_unsupported"):
-            call()
+    with pytest.raises(Refused, match="runtime_identity_conflict"):
+        runtime.start("run", "{}")
+    # Nothing was created for it, so there is nothing to observe or to stop.
+    assert not (data / "claude-live/run").exists()
+    assert runtime.inspect("run").status == "absent"
+    runtime.stop("run")
+    assert not (data / "claude-live/run").exists()
 
 
 def test_the_application_builds_the_adapter_its_own_store_records(tmp_path):

@@ -9,6 +9,7 @@ them on its finished runs and their answers have to stay exactly what they were.
 """
 
 import importlib
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -79,8 +80,6 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         runtime="CodexLiveRuntime",
         receipts="hearth.integrations.codex.receipts",
     ),
-    # The second live kind. Its receipts, price schedule and worker land with the
-    # headless run (#146); until then it is configured, pinned and started by nobody.
     "claude_subscription": RuntimeSpec(
         "claude_subscription",
         live=True,
@@ -88,6 +87,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         label="Claude subscription",
         module="hearth.integrations.claude.subscription",
         runtime="ClaudeLiveRuntime",
+        receipts="hearth.integrations.claude.receipts",
     ),
 }
 
@@ -117,12 +117,32 @@ def pricing_pin(kind: str, mode: str | None = None) -> dict | None:
 
 
 def validate_pricing(value: dict) -> None:
-    from hearth.integrations.codex.receipts import validate_pricing
+    """A stored price pin has to be one some live runtime's schedule still recognises.
 
-    validate_pricing(value)
+    The pin travels with the run rather than with the kind, so this asks the schedules
+    themselves instead of a caller who may not know which provider wrote it. A pin no
+    schedule claims is refused: a run whose price nobody can read settles no money.
+    """
+    for spec in RUNTIMES.values():
+        if spec.receipts is None:
+            continue
+        try:
+            importlib.import_module(spec.receipts).validate_pricing(value)
+        except Refused:
+            continue
+        except KeyError, TypeError:
+            break
+        return
+    raise Refused("run_pricing_invalid")
 
 
 def usage_binding(run_id: str, input_digest: str, pin: dict):
+    """What a receipt has to name to settle this run: its identity and its price pin.
+
+    One shape for every provider -- the binding is Hearth's own statement of what was
+    admitted, not a provider's evidence -- so both live adapters compare against it
+    unchanged. It lives beside the Codex usage journal for historical reasons only.
+    """
     from hearth.integrations.codex.usage import UsageBinding
 
     return UsageBinding(run_id, input_digest, pin["model"], pin["mode"], pin["schedule"])
@@ -177,6 +197,12 @@ def supports_dispatch(kind: str, version: int) -> bool:
 
 
 def receipt_requests(raw: str) -> list:
-    from hearth.integrations.codex.receipts import receipt_requests
-
-    return receipt_requests(raw)
+    """What the receipt says each individual request of a run spent, for the operator."""
+    value = json.loads(raw)
+    if isinstance(value, dict) and isinstance(value.get("kind"), str):
+        spec = RUNTIMES.get(value["kind"])
+        if spec is not None and spec.receipts is not None:
+            return importlib.import_module(spec.receipts).receipt_requests(value)
+    # A receipt naming no kind of its own is the Codex app-server protocol's journal,
+    # which keeps each request's usage under `requests`.
+    return value["requests"]

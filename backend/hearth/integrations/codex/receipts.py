@@ -1,6 +1,5 @@
 """Pure provider receipt validation and pricing interpretation; no database access."""
 
-import json
 from dataclasses import asdict
 
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
@@ -72,7 +71,6 @@ def cancellation_receipt(kind: str, binding, pins: dict) -> dict:
     raise Refused("run_pricing_required")
 
 
-def receipt_requests(raw: str) -> list:
-    value = json.loads(raw)
+def receipt_requests(receipt: dict) -> list:
     # Native subscription evidence is a cumulative turn total, not per-request receipts.
-    return [] if value.get("kind") == "codex_subscription" else value["requests"]
+    return []

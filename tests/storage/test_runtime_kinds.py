@@ -33,9 +33,34 @@ def test_a_store_configured_for_the_claude_subscription_opens_and_keeps_that_kin
     assert Hearth(database).audit() == []
 
 
-def test_a_runtime_that_cannot_price_its_work_admits_none(tmp_path):
-    # The Claude subscription has no price schedule until #146, and a run admitted
-    # without one could only settle at a number nobody can check.
+def test_a_store_on_the_claude_subscription_admits_work_under_its_own_schedule(tmp_path):
+    """A kind with a price schedule admits; the pin the run keeps is that schedule's."""
+    database = opened(tmp_path, "claude_subscription")
+    hearth = Hearth(database)
+    run = hearth.admit(submitted(hearth), reserve=10_000)
+    with database.transaction() as db:
+        pin = db.execute(
+            "SELECT model,mode,schedule FROM run_pricing WHERE run_id=?", (run.id,)
+        ).fetchone()
+    assert dict(pin) == {
+        "model": "claude-opus-5",
+        "mode": "standard",
+        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
+    }
+    assert run.runtime_kind == "claude_subscription"
+
+
+def test_a_runtime_that_cannot_price_its_work_admits_none(tmp_path, monkeypatch):
+    """A run admitted without a schedule could only settle at a number nobody checks."""
+    from dataclasses import replace
+
+    from hearth.integrations import interface
+
+    monkeypatch.setitem(
+        interface.RUNTIMES,
+        "claude_subscription",
+        replace(interface.RUNTIMES["claude_subscription"], receipts=None),
+    )
     database = opened(tmp_path, "claude_subscription")
     hearth = Hearth(database)
     task = submitted(hearth)
