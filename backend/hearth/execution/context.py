@@ -30,19 +30,26 @@ def render_letter(db: sqlite3.Connection, task_id: str, instruction: str) -> dic
     — while the body is the sender's own text, bounded here as every injected note and
     journal entry is, and labelled for what it is. The pinned letter id travels with it
     so the answer this run owes can be attributed to the question that was asked.
+
+    Every field here is immutable, like the rest of the pinned context. The sender's
+    name is the one it was declared under when it wrote: read through the revision its
+    own sending run was admitted with, never the revision it carries now. Reading the
+    current one would let renaming any resident break the digest of a letter run that
+    was already admitted and had not launched yet.
     """
     row = db.execute(
-        "SELECT sender_resident_id,title,expires_at FROM letters WHERE task_id=?", (task_id,)
+        "SELECT sender_resident_id,sender_run_id,title,expires_at FROM letters WHERE task_id=?",
+        (task_id,),
     ).fetchone()
     if row is None:
         return None
     sender = row["sender_resident_id"]
     name = None
-    if sender is not None:
+    if row["sender_run_id"] is not None:
         declared = db.execute(
-            "SELECT d.name FROM declarations d JOIN residents r "
-            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
-            (sender,),
+            "SELECT d.name FROM runs r JOIN declarations d ON d.resident_id=r.resident_id "
+            "AND d.revision=r.resident_revision WHERE r.id=?",
+            (row["sender_run_id"],),
         ).fetchone()
         name = declared["name"] if declared else sender
     return {

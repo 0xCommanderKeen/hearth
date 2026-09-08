@@ -35,6 +35,10 @@ ADMISSION_WAITS = frozenset(
         "resident_busy",
         "resident_paused",
         "resident_archived",
+        # A resident whose setup never finished can still be retried into being ready.
+        # Reporting it every pass would hold an error open for as long as the work is
+        # queued and hide any real fault the same pass hits.
+        "resident_setup_incomplete",
         "capacity_exhausted",
         "budget_exhausted",
         "household_budget_exhausted",

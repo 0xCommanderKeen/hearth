@@ -129,6 +129,39 @@ def test_the_tick_admits_a_letter_and_the_receiver_reads_a_request_not_an_order(
     assert deliver_letters(hearth) == []
 
 
+def test_renaming_the_sender_does_not_move_the_context_the_receiver_reserved_against(household):
+    """Every field of a pinned context is immutable, the sender's own name included."""
+    import hashlib
+
+    from hearth.execution.staging import stage_run
+
+    hearth, _, root = household
+    karen = resident(hearth, "karen", sends=True)
+    reporter = resident(hearth, "reporter", accepts=True)
+    receipt = post(hearth, karen, reporter)
+    assert deliver_letters(hearth) == [receipt["task_id"]]
+    with hearth.database.transaction() as db:
+        run = db.execute("SELECT * FROM runs WHERE task_id=?", (receipt["task_id"],)).fetchone()
+    declaration = hearth.resident(karen).declaration
+    hearth.save_resident(
+        karen,
+        Declaration(
+            "Karen Renamed",
+            declaration.purpose,
+            declaration.daily_limit,
+            skill_text=declaration.skill_text,
+        ),
+        expected_revision=1,
+    )
+    # The letter still names whoever wrote it, as they were called when they wrote it,
+    # so the receiver's admitted run still hashes to the digest it reserved against.
+    context = context_of(hearth, run["id"])
+    assert context["letter"]["sender_name"] == "Karen"
+    encoded = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+    assert hashlib.sha256(encoded).hexdigest() == run["input_digest"]
+    assert stage_run(hearth.database, run["id"], root / "staged").exists()
+
+
 def test_the_letter_the_receiver_is_launched_with_is_the_letter_that_was_sent(
     household, monkeypatch
 ):
@@ -225,6 +258,33 @@ def test_delivery_never_outruns_the_shared_household_allowance(household):
     )
     assert deliver_letters(hearth) == []
     assert hearth.task(receipt["task_id"]).status == "queued"
+
+
+def test_a_letter_arriving_mid_flight_does_not_change_a_starting_run_s_tools(household):
+    """Delivery makes letters land at any moment; a run's offered tools must not move.
+
+    The tool set a launch pins is compared against itself across a native configuration
+    read, so an answer that depended on somebody else's write would end a healthy run as
+    changed configuration the moment a colleague wrote to its resident.
+    """
+    from hearth.work.letters import run_letter_scope
+
+    hearth, now, _ = household
+    karen = resident(hearth, "karen", sends=True)
+    reporter = resident(hearth, "reporter", accepts=True)
+    starting = running(hearth, reporter)
+    with hearth.database.transaction() as db:
+        before = run_letter_scope(db, starting.id, now[0])
+    assert before["post"] is False
+    now[0] = NOW + 1
+    post(hearth, karen, reporter)
+    with hearth.database.transaction() as db:
+        assert run_letter_scope(db, starting.id, now[0]) == before
+    # The next run of that resident is admitted with the letter already in its post.
+    settle(hearth, starting)
+    later = running(hearth, reporter)
+    with hearth.database.transaction() as db:
+        assert run_letter_scope(db, later.id, now[0])["post"] is True
 
 
 def test_the_running_supervision_tick_is_the_whole_of_delivery(household):

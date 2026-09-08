@@ -160,10 +160,17 @@ def run_letter_scope(db, run_id: str, now: int) -> dict:
     """Which letter tools one run is offered, and the letter a reply would answer.
 
     Sending is the grant this run was admitted with; replying is the letter this run is
-    actually working; reading is having an end of any letter at all. A resident never
-    sees a tool it may not use, and never loses sight of an answer to a question it
-    already asked: an operator who narrows the grant stops the next letter, not the
-    reply to the last one.
+    actually working; reading is having an end of a letter this run already had when it
+    was admitted. A resident never sees a tool it may not use, and never loses sight of
+    an answer to a question it already asked: an operator who narrows the grant stops the
+    next letter, not the reply to the last one.
+
+    The post a run may read is the post that existed when it was admitted. A letter
+    arriving for the resident while one of its runs is starting is a write by somebody
+    else, and this answer is compared against itself across a launch: without the bound,
+    a colleague's letter landing in that window would change the tool set a starting run
+    was pinned and end it as changed configuration. A run that gains its first letter
+    mid-flight reads it on its next run, which is when it was offered the tool.
     """
     run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     if run is None:
@@ -172,8 +179,8 @@ def run_letter_scope(db, run_id: str, now: int) -> dict:
     send = _sending_grant(db, run, now) is not None
     post = db.execute(
         "SELECT 1 FROM letters l JOIN tasks t ON t.id=l.task_id "
-        "WHERE t.resident_id=? OR l.sender_resident_id=? LIMIT 1",
-        (run["resident_id"], run["resident_id"]),
+        "WHERE (t.resident_id=? OR l.sender_resident_id=?) AND l.created_at<=? LIMIT 1",
+        (run["resident_id"], run["resident_id"], run["created_at"]),
     ).fetchone()
     return {
         "send": send,
