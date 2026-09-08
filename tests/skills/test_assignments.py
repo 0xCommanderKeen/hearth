@@ -281,7 +281,6 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
 
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.execution.supervisor import Supervisor
-    from hearth.observation.notifications import MockInbox, Notifications
     from hearth.residents.models import Refused
     from hearth.skills.assignments import Assignments
     from hearth.storage.artifacts import Artifacts
@@ -339,7 +338,6 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
             Execution(hearth, Artifacts(db.path.parent / "artifacts")), FakeRuntime(db.path.parent)
         ),
         routines,
-        Notifications(hearth, MockInbox(tmp_path / "inbox")),
     )
     worker.start()
     try:

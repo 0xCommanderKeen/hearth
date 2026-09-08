@@ -117,8 +117,17 @@ def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_p
             ).status_code
             == 409
         )
-        assert state["notifications"][0]["status"] == "pending"
-        assert not list((tmp_path / "restored/mock-inbox").glob("*.md"))
+        # The inbox came with the household; a restored copy may read it, never mark it.
+        notification = state["notifications"][0]
+        assert notification["kind"] == "run.succeeded" and notification["read_at"] is None
+        assert (
+            client.post(
+                "/api/notifications/" + notification["id"] + "/read",
+                headers=headers,
+                json={"read": True},
+            ).status_code
+            == 409
+        )
 
 
 @pytest.mark.parametrize("mutation", ["corrupt", "missing", "symlink", "traversal", "extra"])
@@ -186,43 +195,6 @@ def test_fifo_payload_is_refused_without_blocking(system, tmp_path):
     with pytest.raises(Refused, match="backup_file_missing_or_unsafe"):
         capture(root, tmp_path / "backup")
     assert not (tmp_path / "backup").exists()
-
-
-def test_uncertain_action_survives_restore_without_consumption(system, tmp_path, monkeypatch):
-    from hearth.authority.broker import Broker, MockNoticeboard
-    from hearth.authority.permissions import Authority
-
-    hearth, executor, run, root = system
-    executor.step()
-    authority = Authority(hearth, executor.execution.artifacts)
-    authority.set_publication_policy("reader", enabled=True, expected_revision=0)
-    proposal = authority.request("review", run.id, expires_at=1_788_640_600)
-    authority.decide(proposal.id, reviewed_digest=proposal.digest, approve=True)
-    effect = MockNoticeboard(root / "mock-noticeboard")
-    original = effect.publish
-
-    def lost_ack(*args):
-        original(*args)
-        raise OSError("lost acknowledgement")
-
-    monkeypatch.setattr(effect, "publish", lost_ack)
-    broker = Broker(authority, effect)
-    assert broker.execute(proposal.id)["status"] == "unknown"
-    capture(root, tmp_path / "backup")
-    restore(tmp_path / "backup", tmp_path / "restored")
-    restored = tmp_path / "restored"
-    copy = Hearth(Database(restored / "hearth.db"))
-    copy_effect = MockNoticeboard(restored / "mock-noticeboard")
-    copy_broker = Broker(Authority(copy, Artifacts(restored / "artifacts")), copy_effect)
-    assert copy_broker.inspect(proposal.id)["status"] == "unknown"
-    # The durable uncertainty is copied; the local noticeboard is scaffolding beside
-    # the data directory, so the copy has no evidence of its own to reconcile against.
-    assert copy_effect.inspect(proposal.id) is None
-    assert effect.inspect(proposal.id).digest == proposal.digest
-    with pytest.raises(Refused, match="restored_copy_read_only"):
-        copy_broker.execute(proposal.id)
-    assert copy_broker.inspect(proposal.id)["status"] == "unknown"
-    assert broker.inspect(proposal.id)["status"] == "unknown"
 
 
 @pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=12"])

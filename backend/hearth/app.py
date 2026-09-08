@@ -14,20 +14,16 @@ from fastapi.staticfiles import StaticFiles
 
 from hearth.api.auth import OperatorAuth
 from hearth.api.requests import (
-    ApprovalPost,
-    DecisionPost,
     DeclarationPost,
     HouseholdPost,
     MemoryPost,
     PausePost,
-    PolicyPost,
+    ReadPost,
     RoutinePost,
     TaskPost,
     UsagePost,
 )
-from hearth.authority.broker import Broker, MockNoticeboard
 from hearth.authority.household import Household
-from hearth.authority.permissions import Authority
 from hearth.authority.run_access import RunAccess
 from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
@@ -36,7 +32,7 @@ from hearth.inputs.api import mount_inputs
 from hearth.integrations.codex.subscription import CodexLiveRuntime
 from hearth.integrations.interface import Runtime
 from hearth.management.api import mount_management
-from hearth.observation.notifications import MockInbox, Notifications
+from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import PAGE, Journal
 from hearth.residents.memory import PAGE as MEMORY_PAGE
@@ -79,11 +75,9 @@ def create_app(
         if runtime is not None
         else CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home),
     )
-    authority = Authority(hearth, execution.artifacts)
-    broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
+    inbox = Inbox(hearth)
     routines = Routines(hearth)
-    notifications = Notifications(hearth, MockInbox(data / "mock-inbox"))
-    supervisor = Supervisor(executor, routines, notifications)
+    supervisor = Supervisor(executor, routines)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -301,41 +295,10 @@ def create_app(
         metadata, content = execution.artifact(artifact_id)
         return {"artifact": asdict(metadata), "content": content}
 
-    @app.post("/api/residents/{resident_id}/publication-policy")
-    def publication_policy(resident_id: str, body: PolicyPost):
-        revision = authority.set_publication_policy(
-            resident_id, enabled=body.enabled, expected_revision=body.expected_revision
-        )
-        return {
-            "revision": revision,
-            "enabled": body.enabled,
-        }
-
-    @app.post("/api/approvals", status_code=201)
-    def propose(body: ApprovalPost, idempotency_key: str = Header(min_length=1, max_length=128)):
-        return asdict(
-            authority.request(idempotency_key, body.artifact_id, expires_at=body.expires_at)
-        )
-
-    @app.get("/api/approvals/{approval_id}")
-    def review(approval_id: str):
-        approval = authority.inspect(approval_id)
-        metadata, content = execution.artifact(approval.artifact_id)
-        if metadata.sha256 != approval.payload["sha256"]:
-            raise Refused("artifact_changed")
-        return {"approval": asdict(approval), "content": content}
-
-    @app.post("/api/approvals/{approval_id}/decision")
-    def decide(approval_id: str, body: DecisionPost):
-        return asdict(
-            authority.decide(
-                approval_id, reviewed_digest=body.reviewed_digest, approve=body.approve
-            )
-        )
-
-    @app.post("/api/approvals/{approval_id}/execute")
-    def execute_action(approval_id: str):
-        return broker.execute(approval_id)
+    # The inbox is the record; reading one only marks it read.
+    @app.post("/api/notifications/{notification_id}/read")
+    def mark_notification(notification_id: str, body: ReadPost):
+        return asdict(inbox.mark(notification_id, read=body.read))
 
     @app.post("/api/routines/{routine_id}")
     def save_routine(routine_id: str, body: RoutinePost):

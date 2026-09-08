@@ -175,7 +175,6 @@ def test_blocked_routine_does_not_stall_an_admitted_run(tmp_path, allowance, cap
     from hearth.authority.household import Household
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.execution.supervisor import Supervisor
-    from hearth.observation.notifications import MockInbox, Notifications
     from hearth.residents.models import Declaration
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
@@ -216,7 +215,6 @@ def test_blocked_routine_does_not_stall_an_admitted_run(tmp_path, allowance, cap
     worker = Supervisor(
         Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)),
         routines,
-        Notifications(hearth, MockInbox(tmp_path / "inbox")),
     )
     worker.start()
     try:

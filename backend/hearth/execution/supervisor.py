@@ -5,17 +5,15 @@ import threading
 from typing import IO
 
 from hearth.execution.lifecycle import Executor
-from hearth.observation.notifications import Notifications
 from hearth.residents.models import Refused
 from hearth.skills.validation import Validation
 from hearth.work.routines import Routines
 
 
 class Supervisor:
-    def __init__(self, executor: Executor, routines: Routines, notifications: Notifications):
+    def __init__(self, executor: Executor, routines: Routines):
         self.executor = executor
         self.routines = routines
-        self.notifications = notifications
         self.validation = Validation(executor.execution.hearth)
         self._guard = threading.Lock()
         self._stop = threading.Event()
@@ -24,7 +22,6 @@ class Supervisor:
             "supervisor": "stopped",
             "executor_error": None,
             "scheduler_error": None,
-            "notification_error": None,
             "validation_error": None,
         }
 
@@ -51,7 +48,6 @@ class Supervisor:
                 supervisor="running",
                 executor_error=None,
                 scheduler_error=None,
-                notification_error=None,
                 validation_error=None,
             )
             self._thread = threading.Thread(
@@ -112,13 +108,6 @@ class Supervisor:
                     self._set("executor_error", None)
                 except Exception as error:
                     self._set("executor_error", type(error).__name__)
-                if self._stop.is_set():
-                    break
-                try:
-                    self.notifications.step()
-                    self._set("notification_error", None)
-                except Exception as error:
-                    self._set("notification_error", type(error).__name__)
                 self._stop.wait(0.5)
         except BaseException as error:
             failed = True
