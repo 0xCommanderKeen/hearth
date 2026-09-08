@@ -21,7 +21,11 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   amount its own row records — a reconciled run is not counted twice, and a run whose
   usage is still unknown is named as unknown and keeps the hold it placed — and Townhall
   reads it as "Cost by origin" beside the task list. An upgraded store reads each of its
-  letters' states back from its own rows rather than being told or left silent.
+  letters' states back from its own rows rather than being told or left silent. The loop
+  was then walked once on the real subscription runtime before anything was built on it:
+  one resident asked a colleague for a fact it had no other way to learn, the colleague
+  answered without being started, and the asker quoted the answer one run later, for
+  157,062 microdollars across three runs (`docs/letters-journey.md`).
 
 - A letter is now delivered by being worked (schema 8, context 8). No watcher, poller or
   inbox drain: the supervision tick that admits routine occurrences admits queued letter
