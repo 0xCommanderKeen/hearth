@@ -82,53 +82,58 @@ def test_newer_store_and_foreign_layout_are_refused(tmp_path):
     assert not (tmp_path / "other.db.upgrading").exists()
 
 
-def retired_runtime_store(path):
-    """A version-1 store carrying one simulated run and one subscription run."""
-    pre_memory_store(path)
+def simulated_store(path, *, unfinished=False):
+    """A store recorded against a runtime this release no longer ships."""
+    pre_memory_store(path, runtime_kind="inline_mock")
     db = sqlite3.connect(path, isolation_level=None)
     db.execute("BEGIN")
-    for run, kind, status in (("simulated", "inline_mock", "succeeded"), ("real", KIND, "failed")):
-        db.execute(
-            "INSERT INTO tasks VALUES (?, 'karen', 'Read the notes', ?, 1)", (run + "-task", status)
-        )
-        db.execute(
-            "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
-            "reserved, budget_day, created_at, finished_at, runtime_kind, runtime_version, "
-            "input_digest) VALUES (?, ?, 'karen', 1, ?, ?, 0, '2026-09-08', 1, 2, ?, 1, ?)",
-            (run, run + "-task", run + "-token", status, kind, "a" * 64),
-        )
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
     db.execute(
-        "INSERT INTO artifacts VALUES ('simulated-artifact', 'simulated', 'simulated.md', ?, 3, 1)",
-        ("b" * 64,),
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, runtime_kind, "
+        "runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, ?, "
+        "'inline_mock', 1, ?)",
+        (None if unfinished else 2, "a" * 64),
     )
-    db.execute("UPDATE runs SET artifact_id='simulated-artifact' WHERE id='simulated'")
+    if unfinished:
+        db.execute("UPDATE runs SET status='running', actual_cost=NULL, usage_known=0 WHERE id='r'")
+        db.execute("UPDATE tasks SET status='running' WHERE id='t'")
     db.commit()
     db.close()
 
 
-def test_upgrade_retires_runs_recorded_against_a_runtime_that_no_longer_exists(tmp_path):
+def test_a_simulated_store_adopts_the_one_runtime_and_keeps_its_history(tmp_path):
     path = tmp_path / "hearth.db"
-    retired_runtime_store(path)
-    Database(path).initialize()
-    db = sqlite3.connect(path)
-    # Relabelling the run would claim work happened where it did not, so it goes,
-    # and everything that referenced it goes with it.
-    assert [row[0] for row in db.execute("SELECT id FROM runs")] == ["real"]
-    assert db.execute("SELECT count(*) FROM artifacts").fetchone() == (0,)
-    assert [row[0] for row in db.execute("SELECT id FROM tasks")] == ["real-task"]
-    retired = json.loads(
-        db.execute("SELECT detail FROM audit WHERE kind='runtime_runs_retired'").fetchone()[0]
-    )
-    assert retired["runs"] == ["simulated"] and retired["kept"] == "hearth.db.before-v1"
-    assert retired["dependent_rows"] == 2
-    kept = sqlite3.connect(tmp_path / "hearth.db.before-v1")
-    assert kept.execute("SELECT count(*) FROM runs").fetchone() == (2,)
-
-
-def test_upgrade_drops_the_process_boundary_and_pins_the_one_runtime(tmp_path):
-    path = tmp_path / "hearth.db"
-    pre_memory_store(path, runtime_kind="inline_mock")
+    simulated_store(path)
     Database(path).initialize()
     assert Database(path).runtime_kind() == KIND
     db = sqlite3.connect(path)
+    # Relabelling the run would claim the work happened somewhere it did not.
+    assert db.execute("SELECT runtime_kind, actual_cost FROM runs").fetchone() == (
+        "inline_mock",
+        2000,
+    )
     assert db.execute("SELECT 1 FROM system_meta WHERE key='process_boundary'").fetchone() is None
+    detail = db.execute("SELECT detail FROM audit WHERE kind='runtime_kind_changed'").fetchone()[0]
+    assert json.loads(detail) == {"from": "inline_mock", "to": KIND}
+    Database(path).initialize()  # idempotent: adoption happens once
+    assert db.execute(
+        "SELECT count(*) FROM audit WHERE kind='runtime_kind_changed'"
+    ).fetchone() == (1,)
+
+
+def test_work_left_in_flight_by_a_removed_runtime_ends_with_its_usage_unknown(tmp_path):
+    path = tmp_path / "hearth.db"
+    simulated_store(path, unfinished=True)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    run = db.execute("SELECT * FROM runs").fetchone()
+    # No surviving runtime can observe that work, and no cost may be invented for it.
+    assert run["status"] == "cancelled" and run["finished_at"] is not None
+    assert run["actual_cost"] is None and not run["usage_known"]
+    assert db.execute("SELECT status FROM tasks").fetchone()[0] == "cancelled"
+    assert db.execute("SELECT reason FROM pauses").fetchone()[0] == "usage_unknown"
+    detail = db.execute("SELECT detail FROM audit WHERE kind='run.cancelled'").fetchone()[0]
+    assert json.loads(detail)["reason"] == "runtime_removed"

@@ -4,7 +4,16 @@ The selected authentication is Codex/ChatGPT subscription, with no API-key fallb
 This opt-in probe runs the actual Linux arm64 CLI 0.145.0 on the development Mac's
 Docker Desktop VM. All authentication, model metadata, notes, responses and token
 usage are synthetic. It neither establishes account/model access nor consumes a
-subscription. The application still runs mocks only.
+subscription; the application itself runs the real Codex subscription runtime and
+never this fixture.
+
+The `source_sha256` digests in
+[the recorded report](evidence/codex-subscription-2026-09-06.json) name the files as
+they stood on 2026-09-06. `scripts/probe-codex-subscription.py` has since had one
+import moved (`hearth.integrations.mock.container` became
+`hearth.integrations.codex.container` when the mock package was removed), so its
+digest no longer matches; the recorded run is unchanged and a fresh run re-records
+the current digests.
 
 Download the pinned public npm archive to a temporary path, then run from the
 checkout with its development environment:

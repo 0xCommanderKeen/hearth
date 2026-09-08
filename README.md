@@ -34,7 +34,8 @@ Hearth stores its local state in ignored `.hearth`. Use `HEARTH_DATA=/some/path`
 for a separate instance. A store from an older Hearth release is upgraded on start
 and the original is kept beside it as `hearth.db.before-v<N>`; a file that is not a
 Hearth store is refused untouched. A store recorded against a runtime this release
-no longer ships keeps those runs only in the preserved original.
+no longer ships adopts the one runtime on start; its finished runs keep their own
+pin, and work a removed runtime left in flight ends as cancelled with usage unknown.
 
 ## Open the application
 

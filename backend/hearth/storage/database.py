@@ -1,6 +1,8 @@
 """One database transaction owns each state change and its corresponding audit fact."""
 
+import json
 import sqlite3
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -11,9 +13,53 @@ from hearth.storage.migration import upgrade
 from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS.
-SCHEMA_VERSION = 3
-# Hearth ships one runtime. Every store and every run records that one kind.
+SCHEMA_VERSION = 2
+# Hearth ships one runtime, and every new store and run records that one kind.
 RUNTIME_KIND = "codex_subscription"
+# Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on
+# start; its finished runs keep their own pin, because that is where the work happened.
+HISTORICAL_RUNTIME_KINDS = ("inline_mock", "process_mock", "codex_mock")
+
+
+def _adopt_the_one_runtime(connection: sqlite3.Connection, previous: str) -> None:
+    """Move a store off a runtime this release no longer ships, keeping its history.
+
+    Finished runs keep their own pin: relabelling them would claim work happened
+    where it did not. Work that was still in flight cannot be observed by any
+    runtime that remains, so it ends here as cancelled with its usage unknown —
+    visible to the operator to reconcile, never quietly settled at zero.
+    """
+    now = int(time.time())
+
+    def record(kind: str, resource: str, detail: dict) -> None:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (kind, resource, now, json.dumps(detail, sort_keys=True)),
+        )
+
+    connection.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (RUNTIME_KIND,))
+    # One runtime leaves no boundary to choose.
+    connection.execute("DELETE FROM system_meta WHERE key='process_boundary'")
+    record("runtime_kind_changed", "hearth.db", {"from": previous, "to": RUNTIME_KIND})
+    for run in connection.execute(
+        "SELECT id, task_id, resident_id FROM runs WHERE runtime_kind != ? AND finished_at IS NULL",
+        (RUNTIME_KIND,),
+    ).fetchall():
+        connection.execute(
+            "UPDATE runs SET status='cancelled', finished_at=? WHERE id=?", (now, run["id"])
+        )
+        connection.execute("UPDATE tasks SET status='cancelled' WHERE id=?", (run["task_id"],))
+        changed = connection.execute(
+            "INSERT OR IGNORE INTO pauses VALUES (?, ?, ?, ?)",
+            (run["resident_id"], "usage_unknown", run["id"], now),
+        ).rowcount
+        record("run.cancelled", run["id"], {"task_id": run["task_id"], "reason": "runtime_removed"})
+        if changed:
+            record(
+                "resident.paused",
+                run["resident_id"],
+                {"reason": "usage_unknown", "run_id": run["id"]},
+            )
 
 
 def schema_matches(connection: sqlite3.Connection) -> bool:
@@ -73,6 +119,9 @@ class Database:
             stored = connection.execute(
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
             ).fetchone()
+            if stored is not None and stored[0] in HISTORICAL_RUNTIME_KINDS:
+                _adopt_the_one_runtime(connection, stored[0])
+                stored = (RUNTIME_KIND,)
             if stored is None or stored[0] != RUNTIME_KIND:
                 raise Refused("runtime_configuration_invalid")
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:

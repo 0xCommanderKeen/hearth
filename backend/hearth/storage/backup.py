@@ -34,7 +34,13 @@ from hearth.skills.assignments import read_assignments, run_skills
 from hearth.skills.catalog import checked_revision
 from hearth.skills.evaluation import verify_authoring_backup
 from hearth.storage.artifacts import Artifact, Artifacts, sync_directory
-from hearth.storage.database import RUNTIME_KIND, SCHEMA_VERSION, Database, schema_matches
+from hearth.storage.database import (
+    HISTORICAL_RUNTIME_KINDS,
+    RUNTIME_KIND,
+    SCHEMA_VERSION,
+    Database,
+    schema_matches,
+)
 
 FORMAT = 1
 STORES = {
@@ -224,13 +230,20 @@ def _check_database(root: Path) -> dict:
         validate_provisioning(db)
         validate_windows(db)
         for run in db.execute("SELECT * FROM runs"):
-            if (
-                run["runtime_kind"] != selected[0]
-                or run["runtime_version"] != 1
-                or not re.fullmatch(r"[0-9a-f]{64}", run["input_digest"])
+            if run["runtime_version"] != 1 or not re.fullmatch(
+                r"[0-9a-f]{64}", run["input_digest"]
             ):
                 raise Refused("backup_runtime_invalid")
-            # Every run is priced: settled provider evidence is the whole record.
+            if run["runtime_kind"] != selected[0]:
+                # A runtime this release no longer ships took its evidence with it.
+                # Such a run is finished history; nothing here can reinterpret it.
+                if (
+                    run["runtime_kind"] not in HISTORICAL_RUNTIME_KINDS
+                    or run["finished_at"] is None
+                ):
+                    raise Refused("backup_runtime_invalid")
+                continue
+            # Every run on the current runtime is priced: its receipt is the record.
             codex_accounting.verify_stored(db, run)
         rows = db.execute("SELECT * FROM artifacts").fetchall()
         for row in rows:

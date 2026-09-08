@@ -72,6 +72,24 @@ def test_unsettled_cancellation_is_never_copied_and_the_copy_cannot_execute(syst
     assert hearth.run(run.id).status == "cancelled"
 
 
+def test_simulated_history_is_kept_but_cannot_borrow_the_current_runtime(system, tmp_path):
+    import sqlite3
+
+    hearth, executor, run, root = system
+    executor.step()
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute("DELETE FROM run_usage WHERE run_id=?", (run.id,))
+        db.execute("DELETE FROM run_pricing WHERE run_id=?", (run.id,))
+        db.execute("UPDATE runs SET runtime_kind='inline_mock' WHERE id=?", (run.id,))
+    # A run pinned to a runtime this release no longer ships is finished history.
+    assert capture(root, tmp_path / "backup")["verified"]["runs"] == 1
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute("UPDATE runs SET runtime_kind='codex_subscription' WHERE id=?", (run.id,))
+    # Claiming the current runtime means producing that runtime's receipt.
+    with pytest.raises(Refused):
+        capture(root, tmp_path / "second")
+
+
 def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_path):
     _, executor, _, root = system
     executor.step()

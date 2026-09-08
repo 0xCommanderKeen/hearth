@@ -1,5 +1,11 @@
 # ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades."""
+"""The complete schema for a fresh Hearth database; no historical upgrades.
+
+`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
+writes only `codex_subscription`; the rest are history a forward-upgraded store may
+still carry, and a run's own pin is the honest record of where its work happened.
+See `database.HISTORICAL_RUNTIME_KINDS`.
+"""
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -321,7 +327,7 @@ SCHEMA = (
         cancellation_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancellation_requested IN (0,1)),
         launch_attempted INTEGER NOT NULL DEFAULT 0 CHECK (launch_attempted IN (0,1)),
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
-        runtime_kind TEXT NOT NULL CHECK(runtime_kind='codex_subscription'),
+        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription')),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)
