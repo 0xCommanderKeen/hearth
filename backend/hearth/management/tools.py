@@ -498,13 +498,17 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
         raise Refused("management_tool_not_permitted")
     if tool in LETTER_TOOLS:
-        # The post is the run's own: the grant it was admitted with may write, and the
-        # letter it is working may be answered. A run with neither end sees neither tool
-        # and is refused the same way it would be refused a tool it was never offered.
+        # The post is the run's own. Writing answers for itself, under the grant the run
+        # was admitted with, and refuses with the reason the sender needs to act on it.
+        # The other two exist only for a run that holds an end of a letter, and a run
+        # holding neither is refused them exactly as it would be a tool never offered.
         scope = run_letter_scope(db, authority["run_id"], int(hearth.clock()))
-        if not (scope["send"] or scope["reply"]):
-            raise Refused("management_tool_not_permitted")
-        if tool == "hearth_letters_reply" and not scope["reply"]:
+        permitted = {
+            "hearth_letters_send": True,
+            "hearth_letters_read": scope["send"] or scope["reply"],
+            "hearth_letters_reply": scope["reply"],
+        }
+        if not permitted[tool]:
             raise Refused("management_tool_not_permitted")
     # A run admitted for its own memory holds no management authority and no management tool.
     elif tool not in MEMORY_TOOLS and not authority["grant"]["enabled"]:
