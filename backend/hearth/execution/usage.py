@@ -1,4 +1,8 @@
-"""Admission pins and immutable SQLite receipts for provider usage accounting."""
+"""Admission pins and immutable SQLite receipts for provider usage accounting.
+
+Also what those receipts add up to when the operator asks a question rather than about a
+run: `by_origin` gathers the runs of one chain under the task it rolls up to.
+"""
 
 import hashlib
 import json
@@ -11,6 +15,9 @@ from hearth.integrations.interface import (
     validate_receipt_pins,
 )
 from hearth.residents.models import Refused
+
+# What one page of the origin report carries, so the operator's answer stays bounded.
+MAX_ORIGINS = 100
 
 
 def pricing(db, run_id: str) -> dict | None:
@@ -92,10 +99,6 @@ def verify_stored(db, run) -> None:
         raise Refused("backup_runtime_invalid")
 
 
-# What one page of the origin report carries, so the operator's answer stays bounded.
-MAX_ORIGINS = 100
-
-
 def by_origin(db, *, limit: int = 30, offset: int = 0) -> dict:
     """What each question cost, gathered under the task the whole chain rolls up to.
 
@@ -111,9 +114,12 @@ def by_origin(db, *, limit: int = 30, offset: int = 0) -> dict:
     unknown is reported as unknown rather than as nothing — its resident keeps the hold
     the unknown usage placed, and this report neither adds to nor releases it.
     """
-    if type(limit) is not int or not 1 <= limit <= MAX_ORIGINS or type(offset) is not int:
-        raise Refused("invalid_origin_page")
-    if offset < 0:
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= MAX_ORIGINS
+        or type(offset) is not int
+        or offset < 0
+    ):
         raise Refused("invalid_origin_page")
     rows = db.execute(
         "SELECT COALESCE(l.root_task_id,r.task_id) AS root_task_id,"
