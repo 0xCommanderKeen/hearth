@@ -37,15 +37,17 @@ class RuntimeSpec:
 
     `live` is the kind Hearth can actually start work on in this release; a kind that
     is not live is history a store may still carry on its finished runs. `receipts`
-    names the module that reads that provider's original evidence, and a kind without
-    one settles no money. `replayable_start` records that the adapter's `start` is
-    idempotent for the same run and instruction, so a lost start reply is re-observed
-    rather than re-launched.
+    names the module that reads that provider's original evidence; a kind without one
+    settles no money, so it prices and dispatches nothing. `replayable_start` records
+    that the adapter's `start` is idempotent for the same run and instruction, so a lost
+    start reply is re-observed rather than re-launched. `label` is how the kind is named
+    to an operator.
     """
 
     kind: str
     live: bool
     replayable_start: bool
+    label: str
     module: str | None = None
     runtime: str | None = None
     receipts: str | None = None
@@ -59,13 +61,20 @@ class RuntimeSpec:
 RUNTIMES: dict[str, RuntimeSpec] = {
     # The three kinds Hearth used to ship. No adapter remains, so nothing starts,
     # prices or dispatches on them (`docs/adr/0014-one-runtime-and-no-mocks.md`).
-    "inline_mock": RuntimeSpec("inline_mock", live=False, replayable_start=False),
-    "process_mock": RuntimeSpec("process_mock", live=False, replayable_start=False),
-    "codex_mock": RuntimeSpec("codex_mock", live=False, replayable_start=False),
+    "inline_mock": RuntimeSpec(
+        "inline_mock", live=False, replayable_start=False, label="retired inline mock"
+    ),
+    "process_mock": RuntimeSpec(
+        "process_mock", live=False, replayable_start=False, label="retired process mock"
+    ),
+    "codex_mock": RuntimeSpec(
+        "codex_mock", live=False, replayable_start=False, label="retired Codex mock"
+    ),
     "codex_subscription": RuntimeSpec(
         "codex_subscription",
         live=True,
         replayable_start=True,
+        label="Codex subscription",
         module="hearth.integrations.codex.subscription",
         runtime="CodexLiveRuntime",
         receipts="hearth.integrations.codex.receipts",
@@ -76,6 +85,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         "claude_subscription",
         live=True,
         replayable_start=True,
+        label="Claude subscription",
         module="hearth.integrations.claude.subscription",
         runtime="ClaudeLiveRuntime",
     ),
@@ -90,6 +100,12 @@ def live(kind: str) -> bool:
 
 def live_kinds() -> tuple[str, ...]:
     return tuple(kind for kind, spec in RUNTIMES.items() if spec.live)
+
+
+def label(kind: str) -> str:
+    """How a runtime kind is named to an operator; the kind itself if nothing names it."""
+    spec = RUNTIMES.get(kind)
+    return spec.label if spec is not None else kind
 
 
 def pricing_pin(kind: str, mode: str | None = None) -> dict | None:
@@ -155,7 +171,9 @@ def runtime_receipt(runtime: Runtime, run_id: str) -> dict:
 
 
 def supports_dispatch(kind: str, version: int) -> bool:
-    return version == 1 and live(kind)
+    """Work is dispatched only to a runtime whose evidence Hearth can read back."""
+    spec = RUNTIMES.get(kind)
+    return version == 1 and spec is not None and spec.receipted
 
 
 def receipt_requests(raw: str) -> list:

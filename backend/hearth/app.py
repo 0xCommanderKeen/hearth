@@ -33,8 +33,9 @@ from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.claude.subscription import ClaudeLiveRuntime
+from hearth.integrations.codex.subscription import KIND as CODEX_KIND
 from hearth.integrations.codex.subscription import CodexLiveRuntime
-from hearth.integrations.interface import Runtime
+from hearth.integrations.interface import Runtime, live
 from hearth.management.api import mount_management
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
@@ -83,11 +84,18 @@ def create_app(
         # before letters existed will never run Karen's setup again.
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
+    kind = database.runtime_kind()
     if runtime is not None:
         adapter: Runtime = runtime(data)
-    elif database.runtime_kind() == CLAUDE_KIND:
+    elif kind == CLAUDE_KIND:
         adapter = ClaudeLiveRuntime(data, binary=claude_binary, config_dir=claude_config_dir)
+    elif live(kind) and kind != CODEX_KIND:
+        # A live kind nobody built an adapter for refuses here rather than quietly
+        # opening on another provider's.
+        raise Refused("runtime_configuration_invalid")
     else:
+        # A quarantined copy keeps the runtime it recorded, which this release may no
+        # longer ship; it is opened to be read and starts nothing either way.
         adapter = CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home)
     executor = Executor(execution, adapter)
     inbox = Inbox(hearth)

@@ -12,7 +12,10 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   checks the pinned CLI version, checks that the private `CLAUDE_CONFIG_DIR` reports a
   login, and pins the binary's sha256 — refusing `claude_subscription_version_unsupported`,
   `claude_subscription_login_required` or `claude_subscription_binary_changed` and
-  writing nothing when it does. No run executes on it yet. `docs/claude-runtime.md`
+  writing nothing when it does. No run executes on it yet, and a runtime that cannot
+  price its work admits none: a store configured for Claude refuses `run_pricing_required`
+  at admission until its price schedule lands, rather than creating runs that could only
+  settle at a number nobody can check. `docs/claude-runtime.md`
   records the spike and every flag measurement behind it, including the two that came
   back against the plan: `--bare` cannot run under a subscription at all, and
   `--max-budget-usd` stops a session only after a request has already been billed past it.

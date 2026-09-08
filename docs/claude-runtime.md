@@ -156,5 +156,9 @@ Hearth builds the adapter its own store records. On a store whose `runtime_kind`
 into `system_meta.claude_live_binary` with a `runtime.claude_subscription_configured`
 audit fact, and refuses by name — `claude_subscription_configuration_required`,
 `claude_subscription_version_unsupported`, `claude_subscription_login_required`,
-`claude_subscription_binary_changed` — writing nothing when it does. No run executes on
-this runtime yet; that is #146.
+`claude_subscription_binary_changed` — writing nothing when it does.
+
+No run executes on this runtime yet; that is #146. Until its price schedule lands, a
+store configured for Claude refuses `run_pricing_required` when a task is admitted: a
+runtime whose evidence Hearth cannot read cannot price the work it does, and a run
+admitted without a pinned schedule could only settle at a number nobody can check.

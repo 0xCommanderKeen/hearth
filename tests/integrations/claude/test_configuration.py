@@ -6,6 +6,7 @@ The CLI is never really spawned: a synthetic executable answers `--version` and
 
 import json
 import sys
+from dataclasses import replace
 
 import pytest
 from hearth.app import create_app
@@ -101,6 +102,16 @@ def test_a_config_dir_that_does_not_exist_refuses_before_the_cli_can_create_one(
     assert pins(database) == (None, [])
 
 
+def test_a_binary_that_cannot_answer_is_a_configuration_refusal(tmp_path):
+    data, database, _, config_dir = configured(tmp_path)
+    unrunnable = synthetic_cli(tmp_path / "unrunnable-claude")
+    unrunnable.chmod(0o600)
+    for path in (tmp_path / "not-installed", unrunnable):
+        with pytest.raises(Refused, match="claude_subscription_configuration_required"):
+            ClaudeLiveRuntime(data, binary=path, config_dir=config_dir)
+    assert pins(database) == (None, [])
+
+
 def test_an_unreadable_login_answer_refuses_rather_than_assuming_a_login(tmp_path):
     data, database, binary, config_dir = configured(tmp_path)
     broken = synthetic_cli(tmp_path / "broken-claude")
@@ -158,3 +169,27 @@ def test_the_application_builds_the_adapter_its_own_store_records(tmp_path):
     # Unconfigured, it refuses by name rather than falling back to the other runtime.
     with pytest.raises(Refused, match="claude_subscription_configuration_required"):
         create_app(data, "operator-token-16+", supervise=False)
+
+
+def test_a_store_on_a_live_kind_with_no_adapter_refuses_rather_than_opening_on_another(
+    tmp_path, monkeypatch
+):
+    """A third live kind must not quietly get another provider's adapter."""
+    from hearth.integrations import interface
+
+    data, _, binary, config_dir = configured(tmp_path)
+    monkeypatch.setitem(
+        interface.RUNTIMES,
+        "invented_subscription",
+        replace(interface.RUNTIMES[KIND], kind="invented_subscription", module=None, runtime=None),
+    )
+    with Database(data / "hearth.db").transaction(write=True) as db:
+        db.execute("UPDATE system_meta SET value='invented_subscription' WHERE key='runtime_kind'")
+    with pytest.raises(Refused, match="runtime_configuration_invalid"):
+        create_app(
+            data,
+            "operator-token-16+",
+            supervise=False,
+            claude_binary=binary,
+            claude_config_dir=config_dir,
+        )

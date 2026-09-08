@@ -1,6 +1,16 @@
 # One runtime, and no mocks in the product
 
-Status: accepted, 2026-09-08.
+Status: accepted, 2026-09-08; amended 2026-09-09.
+
+**Amendment (#144, slice #145).** "The Codex subscription is the only runtime Hearth
+ships" is no longer true: `claude_subscription` joined `integrations/interface.py`'s
+registry as a second live kind, `runs.runtime_kind` admits it (schema 10) and
+`from_env` also reads `HEARTH_CLAUDE_BINARY` / `HEARTH_CLAUDE_CONFIG_DIR`. Everything
+else here stands, and the reasoning below is why it can: what this ADR removed was the
+*pretending*, not the count. A runtime kind is now real or it is history, one registry
+says which, and the mock kinds keep exactly the answers they have here. Runtime as a
+resident-level fact, and the second runtime's authority consequences, are recorded in
+their own ADR by #148.
 
 Hearth grew up before it had a runtime. To have anything to build against it shipped
 four: `inline_mock` (the default for every unconfigured store), `process_mock`, a pinned

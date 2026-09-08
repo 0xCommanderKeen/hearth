@@ -44,23 +44,11 @@ class ClaudeLiveRuntime:
         # a missing private login is a refusal rather than a new empty login.
         if not self.config_dir.is_dir():
             raise Refused("claude_subscription_login_required")
-        env = environment(self.config_dir)
-        version = subprocess.check_output(
-            [str(self.binary), "--version"], env=env, text=True, timeout=PROBE_TIMEOUT
-        ).strip()
-        if version != VERSION:
+        if self._probe("--version").strip() != VERSION:
             raise Refused("claude_subscription_version_unsupported")
-        try:
-            status = subprocess.check_output(
-                [str(self.binary), "auth", "status", "--json"],
-                env=env,
-                text=True,
-                timeout=PROBE_TIMEOUT,
-            )
-        except subprocess.CalledProcessError:
-            # The answer is not evidence of a login, and its output is never kept.
-            raise Refused("claude_subscription_login_required") from None
-        if not logged_in(status):
+        # Only `loggedIn` is read; the rest of that answer names the account and is
+        # never kept, logged or passed on.
+        if not logged_in(self._probe("auth", "status", "--json")):
             raise Refused("claude_subscription_login_required")
         pin = hashlib.sha256(self.binary.read_bytes()).hexdigest()
         with self.database.transaction(write=True) as db:
@@ -79,6 +67,20 @@ class ClaudeLiveRuntime:
             elif previous[0] != pin:
                 raise Refused("claude_subscription_binary_changed")
         self.root.mkdir(mode=0o700, exist_ok=True)
+
+    def _probe(self, *arguments: str) -> str:
+        """Ask the pinned CLI one question. A CLI that cannot answer is not configured."""
+        try:
+            return subprocess.check_output(
+                [str(self.binary), *arguments],
+                env=environment(self.config_dir),
+                text=True,
+                timeout=PROBE_TIMEOUT,
+            )
+        except OSError, subprocess.SubprocessError:
+            # A missing, unrunnable or unanswering binary is an operator's configuration
+            # to fix, and no answer of any kind is evidence of a version or a login.
+            raise Refused("claude_subscription_configuration_required") from None
 
     # A configured runtime still starts nothing in this release. The worker, the
     # stream-json receipt and cancellation arrive with #146; until then every call

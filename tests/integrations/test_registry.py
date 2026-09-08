@@ -8,6 +8,7 @@ from hearth.integrations.interface import (
     RuntimeSpec,
     cancellation_receipt,
     encode_receipt,
+    label,
     live,
     live_kinds,
     pricing_pin,
@@ -16,7 +17,7 @@ from hearth.integrations.interface import (
 )
 from hearth.residents.models import Refused
 
-# The answers the six hard-coded kind checks gave before the registry replaced them.
+# The answers the hard-coded kind checks gave before the registry replaced them.
 # A change here is a change to what Hearth will start, price or dispatch.
 EXPECTED = {
     "inline_mock": (False, False, False, None),
@@ -32,10 +33,10 @@ def test_the_registry_keeps_every_answer_each_call_site_had(kind):
     spec = RUNTIMES[kind]
     assert isinstance(spec, RuntimeSpec)
     assert (spec.live, spec.receipted, spec.replayable_start, spec.receipts) == EXPECTED[kind]
-    assert spec.kind == kind
+    assert spec.kind == kind and spec.label
     assert live(kind) is spec.live
-    assert supports_dispatch(kind, 1) is spec.live
-    # A kind Hearth cannot start is not dispatched at any version.
+    # Work is dispatched only where its evidence can be read back.
+    assert supports_dispatch(kind, 1) is spec.receipted
     assert supports_dispatch(kind, 2) is False
 
 
@@ -52,6 +53,7 @@ def test_only_a_receipted_kind_is_priced():
 
 def test_an_unknown_kind_is_answered_as_nothing_rather_than_as_the_one_that_ships():
     assert live("nothing_hearth_ships") is False
+    assert label("nothing_hearth_ships") == "nothing_hearth_ships"
     assert supports_dispatch("nothing_hearth_ships", 1) is False
     assert pricing_pin("nothing_hearth_ships") is None
     assert validate_receipt_pins("nothing_hearth_ships", {}, {}, cancelled=True) is False
