@@ -1,10 +1,8 @@
 """One consistent operator snapshot. Credentials and ownership tokens never leave it."""
 
 import json
-from dataclasses import asdict
 
 from hearth.authority.household import household_state
-from hearth.authority.permissions import _approval
 from hearth.inputs.selection import input_summary
 from hearth.management.authority import management_summary
 from hearth.residents.journal import run_journal_summary
@@ -118,8 +116,8 @@ def snapshot(hearth: Hearth) -> dict:
             "notifications": [
                 dict(row) | {"payload": json.loads(row["payload"])}
                 for row in db.execute(
-                    "SELECT * FROM deliveries ORDER BY "
-                    "status IN ('pending','retry') DESC, created_at DESC, id DESC LIMIT 100"
+                    "SELECT * FROM notifications ORDER BY "
+                    "read_at IS NULL DESC, created_at DESC, id DESC LIMIT 100"
                 )
             ],
             "routines": [
@@ -136,30 +134,5 @@ def snapshot(hearth: Hearth) -> dict:
                     "SELECT * FROM occurrences ORDER BY scheduled_at DESC, routine_id LIMIT 100"
                 )
             ],
-            "publication_policies": [
-                dict(row)
-                for row in db.execute(
-                    "SELECT resident_id, revision, enabled FROM publication_policies "
-                    "ORDER BY resident_id"
-                )
-            ],
-            "approvals": [
-                asdict(_approval(row))
-                for row in db.execute(
-                    "SELECT approvals.* FROM approvals LEFT JOIN publication_actions a "
-                    "ON a.id = approvals.id ORDER BY "
-                    "COALESCE(a.status IN ('executing','unknown'), 0) DESC, "
-                    "approvals.status = 'pending' DESC, "
-                    "approvals.created_at DESC, approvals.id DESC LIMIT 100"
-                )
-            ],
-            "actions": [
-                dict(row)
-                for row in db.execute(
-                    "SELECT id, status, reason FROM publication_actions "
-                    "ORDER BY status IN ('executing','unknown') DESC, "
-                    "updated_at DESC, id DESC LIMIT 100"
-                )
-            ],
-            "limits": {"tasks": 100, "runs": 100, "activity": 30, "approvals": 100, "actions": 100},
+            "limits": {"tasks": 100, "runs": 100, "activity": 30, "notifications": 100},
         }

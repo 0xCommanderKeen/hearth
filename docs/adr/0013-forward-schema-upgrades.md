@@ -27,6 +27,18 @@ in `storage/migration.DROPS`, and rewrites a value the new layout no longer admi
 through an expression in `storage/migration.REWRITES`. Every other drop still fails
 before replacing anything, so a column cannot be lost by an accidental edit to `SCHEMA`.
 
+**Amended 2026-09-08** (mock-removal slice #155). Removing a feature removes tables,
+not only columns, and renaming one is how a table earns a truthful name. A rebuild now
+copies a table from the name it had when `storage/migration.RENAMES` says a later
+version renamed it — the entry names that version, so it stops applying to stores that
+already carry the new name instead of skipping the table they have — and drops a table
+only when the release names it in
+`storage/migration.DROPPED_TABLES`; every other table the old store carries and the new
+layout lacks fails the upgrade before anything is replaced. Data a removed feature makes
+meaningless is deleted by an explicit versioned step (`_drop_approval_notifications`),
+in the same rebuild, with an audit fact naming what went and why — never silently
+through a table the copy loop happens to skip.
+
 **Also decided.** A store's runtime kind may change on start when no run is unfinished;
 finished runs keep the runtime pins they were admitted with. The container process
 boundary stays immutable. The requirement to update `docs/implementation.md` at every

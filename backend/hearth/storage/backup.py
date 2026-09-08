@@ -373,12 +373,11 @@ def capture(data: Path, destination: Path) -> dict:
     if not database.path.is_file() or database.path.is_symlink():
         raise Refused("backup_database_missing")
     with _destination(destination) as temporary, ExitStack() as stack:
-        for suffix in (".executor.lock", ".publication.lock", ".notifications.lock"):
-            lock = stack.enter_context(database.path.with_suffix(suffix).open("a"))
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise Refused("backup_workers_busy") from None
+        lock = stack.enter_context(database.path.with_suffix(".executor.lock").open("a"))
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused("backup_workers_busy") from None
         # The reserved write transaction freezes scheduler/API mutations too. A
         # separate read connection backs up the same stable state via SQLite's API.
         # A backup is a read operation even for quarantined copies. Reserve a

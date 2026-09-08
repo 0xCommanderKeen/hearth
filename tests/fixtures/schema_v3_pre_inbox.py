@@ -1,11 +1,7 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 3, before approvals went and the
+inbox became a table of its own; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -173,6 +169,14 @@ SCHEMA = (
         concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100),
         journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000)
     )""",
+    """CREATE TABLE approvals (
+        id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        payload TEXT NOT NULL, digest TEXT NOT NULL,
+        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','denied','expired')),
+        decided_at INTEGER
+    )""",
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
@@ -204,9 +208,12 @@ SCHEMA = (
         memory_writable INTEGER NOT NULL DEFAULT 0 CHECK (memory_writable IN (0,1)),
         PRIMARY KEY (resident_id, revision)
     )""",
-    """CREATE TABLE notifications (
+    """CREATE TABLE deliveries (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, resource_id TEXT NOT NULL,
-        payload TEXT NOT NULL, created_at INTEGER NOT NULL, read_at INTEGER,
+        payload TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','retry','delivered','obsolete')),
+        attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL,
+        delivered_at INTEGER, reason TEXT,
         UNIQUE(kind, resource_id)
     )""",
     """CREATE TABLE memory_revisions (
@@ -246,6 +253,22 @@ SCHEMA = (
     """CREATE TABLE pauses (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), reason TEXT NOT NULL,
         run_id TEXT NOT NULL REFERENCES runs(id), created_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE publication_actions (
+        id TEXT PRIMARY KEY REFERENCES approvals(id),
+        destination TEXT NOT NULL REFERENCES publication_targets(id),
+        digest TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('executing','unknown','completed','refused')),
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        reason TEXT, receipt TEXT
+    )""",
+    """CREATE TABLE publication_policies (
+        resident_id TEXT PRIMARY KEY REFERENCES residents(id),
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        enabled INTEGER NOT NULL CHECK (enabled IN (0,1))
+    )""",
+    """CREATE TABLE publication_targets (
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK (revision > 0)
     )""",
     """CREATE TABLE residents (
         id TEXT PRIMARY KEY,
@@ -323,4 +346,6 @@ SCHEMA = (
         WHERE status IN ('starting','running','stopping','interrupted')""",
     """CREATE UNIQUE INDEX active_task ON runs(task_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",
+    """CREATE UNIQUE INDEX publication_claim ON publication_actions(destination)
+        WHERE status IN ('executing','unknown')""",
 )

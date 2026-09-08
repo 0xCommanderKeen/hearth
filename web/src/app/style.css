@@ -981,17 +981,6 @@ table.ledger {
   font-size: 11px;
   color: var(--muted);
 }
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-.two-col > * {
-  min-width: 0;
-  margin-bottom: 0;
-}
-
 /* ---------- household ---------- */
 .household-policy .section-title strong {
   font-family: var(--mono);
@@ -1035,6 +1024,17 @@ table.ledger {
 /* ---------- inbox ---------- */
 .inbox .tasks h3 {
   font-size: 13.5px;
+}
+.inbox .tasks > li.unread h3 {
+  font-weight: 600;
+}
+.inbox .tasks h3 .nav-badge {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.inbox .tasks > li > button {
+  margin-left: 14px;
+  font-size: 13px;
 }
 
 /* ---------- hamlet ---------- */
@@ -1114,8 +1114,7 @@ table.ledger {
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {
   .workspace,
-  .profile-facts,
-  .two-col {
+  .profile-facts {
     grid-template-columns: 1fr;
   }
 }
@@ -1193,7 +1192,6 @@ table.ledger {
 .management-intro h2,
 .provisioning[aria-label="New resident setup"] > .eyebrow,
 .provisioning[aria-label="New resident setup"] > h2,
-.approvals > .eyebrow,
 section[aria-label="Daily routines"] > .eyebrow {
   display: none;
 }

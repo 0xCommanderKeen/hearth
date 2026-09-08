@@ -10,7 +10,7 @@ from hearth.execution.context import read_context
 from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
-from hearth.observation.notifications import enqueue
+from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.memory import Memory
@@ -235,7 +235,7 @@ class Execution:
                 }
                 | ({"accounting": pricing | {"receipt_sha256": receipt_digest}} if pricing else {}),
             )
-            enqueue(db, "run." + evidence.status, run_id, now)
+            record(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
 
     def artifact(self, artifact_id: str) -> tuple[Artifact, str]:

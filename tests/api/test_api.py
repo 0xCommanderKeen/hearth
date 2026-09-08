@@ -186,81 +186,31 @@ def test_active_work_remains_visible_when_recent_history_is_full(client):
     assert any(task["id"] == old.task_id for task in state["tasks"])
 
 
-def proposal(client):
+def test_inbox_records_a_finished_run_and_only_the_operator_marks_it_read(client):
     seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     run = client.app.state.executor.step()[0]
+    notification = client.get("/api/state", headers=AUTH).json()["notifications"][0]
+    assert notification["resource_id"] == run.id and notification["read_at"] is None
+    route = "/api/notifications/" + notification["id"] + "/read"
+    assert client.post(route, json={"read": True}).status_code == 401
+    assert client.post(route, headers=AUTH, json={"read": "yes"}).status_code == 422
     assert (
         client.post(
-            "/api/residents/reader/publication-policy",
+            "/api/notifications/00000000-0000-4000-8000-000000000000/read",
             headers=AUTH,
-            json={"enabled": True, "expected_revision": 0},
+            json={"read": True},
         ).status_code
-        == 200
+        == 404
     )
-    body = {"artifact_id": run.artifact_id, "expires_at": int(time.time()) + 600}
-    headers = {**AUTH, "Idempotency-Key": "approval-request"}
-    response = client.post("/api/approvals", headers=headers, json=body)
-    assert response.status_code == 201
-    assert client.post("/api/approvals", headers=headers, json=body).json() == response.json()
-    return response.json()
-
-
-def test_approval_operator_journey(client):
-    request = proposal(client)
-    route = "/api/approvals/" + request["id"]
-    assert client.get(route).status_code == 401
-    assert client.post(route + "/decision", json={}).status_code == 401
-    assert client.post(route + "/execute").status_code == 401
-    preview = client.get(route, headers=AUTH).json()
-    assert preview["approval"] == request
-    assert "Synthetic note: drafted the Hearth foundation." in preview["content"]
-    assert client.post(route + "/execute", headers=AUTH).status_code == 409
-    decision = {"reviewed_digest": request["digest"], "approve": True}
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "approved"
-    )
-    action = client.post(route + "/execute", headers=AUTH).json()
-    assert action["status"] == "completed"
-    assert client.post(route + "/execute", headers=AUTH).json() == action
-    state = client.get("/api/state", headers=AUTH).json()
-    assert state["approvals"][0]["status"] == "approved"
-    assert state["actions"][0]["status"] == "completed"
-    assert state["publication_policies"][0]["enabled"] == 1
-
-
-def test_api_denied_and_revoked_permission_cannot_publish(client):
-    request = proposal(client)
-    route = "/api/approvals/" + request["id"]
-    decision = {"reviewed_digest": request["digest"], "approve": False}
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
-    )
-    decision["approve"] = True
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
-    )
-    assert client.post(route + "/execute", headers=AUTH).status_code == 409
-
-
-def test_api_strict_policy_and_decision_payload(client):
-    request = proposal(client)
-    assert (
-        client.post(
-            "/api/residents/reader/publication-policy",
-            headers=AUTH,
-            json={"enabled": "false", "expected_revision": 1},
-        ).status_code
-        == 422
-    )
-    assert (
-        client.post(
-            "/api/approvals/" + request["id"] + "/decision",
-            headers=AUTH,
-            json={"reviewed_digest": "a" * 64, "approve": True},
-        ).status_code
-        == 409
+    read = client.post(route, headers=AUTH, json={"read": True})
+    assert read.status_code == 200 and read.json()["read_at"] is not None
+    assert client.get("/api/state", headers=AUTH).json()["notifications"][0]["read_at"] is not None
+    # The record stays in the inbox either way; only the mark changes.
+    assert client.post(route, headers=AUTH, json={"read": False}).json()["read_at"] is None
+    assert client.get("/api/state", headers=AUTH).json()["notifications"][0]["kind"] == (
+        "run.succeeded"
     )
 
 
@@ -296,16 +246,15 @@ def test_daily_routine_api_runs_through_background_executor(tmp_path):
         assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 409
 
 
-def test_notification_payload_and_delivery_are_authenticated_observation(client):
+def test_notification_payload_is_authenticated_observation(client):
     seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     client.app.state.executor.step()
     state = client.get("/api/state", headers=AUTH).json()
-    delivery = state["notifications"][0]
-    assert delivery["status"] == "pending"
-    assert set(delivery["payload"]) == {"kind", "resource_id", "link"}
-    assert delivery["payload"]["link"].startswith("/#run-")
+    notification = state["notifications"][0]
+    assert set(notification["payload"]) == {"kind", "resource_id", "link"}
+    assert notification["payload"]["link"].startswith("/#run-")
     assert client.get("/api/state").status_code == 401
 
 

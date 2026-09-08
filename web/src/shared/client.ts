@@ -268,21 +268,13 @@ export type Routine = {
   local_time: string;
   timezone: string;
 };
-export type Approval = {
+export type InboxNotification = {
   id: string;
-  artifact_id: string;
-  resident_id: string;
-  digest: string;
-  expires_at: number;
-  status: string;
-  payload: {
-    action: string;
-    destination: string;
-    sha256: string;
-    resident_revision: number;
-    policy_revision: number;
-    destination_revision: number;
-  };
+  kind: string;
+  resource_id: string;
+  created_at: number;
+  read_at: number | null;
+  payload: { link: string };
 };
 export type Resident = InputProvenance & {
   lifecycle?: ResidentLifecycle;
@@ -449,16 +441,7 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
-  notifications?: {
-    id: string;
-    kind: string;
-    resource_id: string;
-    status: string;
-    attempts: number;
-    next_at: number;
-    reason: string | null;
-    payload: { link: string };
-  }[];
+  notifications?: InboxNotification[];
   routines?: Routine[];
   occurrences?: {
     routine_id: string;
@@ -466,13 +449,6 @@ export type Snapshot = {
     status: string;
     task_id: string | null;
   }[];
-  approvals?: Approval[];
-  publication_policies?: {
-    resident_id: string;
-    revision: number;
-    enabled: number;
-  }[];
-  actions?: { id: string; status: string; reason: string | null }[];
   activity: {
     sequence: number;
     kind: string;
@@ -964,40 +940,11 @@ export class Client {
       body: JSON.stringify(body),
     });
   }
-  publicationPolicy(resident: string, enabled: boolean, revision: number) {
-    return this.request(
-      `/api/residents/${encodeURIComponent(resident)}/publication-policy`,
-      {
-        method: "POST",
-        body: JSON.stringify({ enabled, expected_revision: revision }),
-      },
+  markNotification(id: string, read: boolean) {
+    return this.request<InboxNotification>(
+      `/api/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST", body: JSON.stringify({ read }) },
     );
-  }
-  propose(id: string, artifact: string, expires: number) {
-    return this.request<Approval>("/api/approvals", {
-      method: "POST",
-      headers: { "Idempotency-Key": id },
-      body: JSON.stringify({ artifact_id: artifact, expires_at: expires }),
-    });
-  }
-  review(id: string) {
-    return this.request<{ approval: Approval; content: string }>(
-      `/api/approvals/${encodeURIComponent(id)}`,
-    );
-  }
-  decide(approval: Approval, approve: boolean) {
-    return this.request<Approval>(
-      `/api/approvals/${encodeURIComponent(approval.id)}/decision`,
-      {
-        method: "POST",
-        body: JSON.stringify({ reviewed_digest: approval.digest, approve }),
-      },
-    );
-  }
-  execute(id: string) {
-    return this.request(`/api/approvals/${encodeURIComponent(id)}/execute`, {
-      method: "POST",
-    });
   }
 
   async submit(pending: PendingTask) {

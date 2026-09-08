@@ -20,10 +20,8 @@ Verify operational guarantees through the owning interfaces. Tests marked pendin
 | Zero exit without valid output | Runtime completion is not task success | `test_execution.py`: successful output required (mock; semantic quality remains pending) |
 | Missing usage | Unknown, not zero; pause capped execution | `test_execution.py`: unknown usage pauses admission; operator resume cannot clear it (`test_pause.py`) |
 | Midnight with unresolved reservation | Carry unresolved exposure into new admission | Foundation tests |
-| Approval races expiry or changed payload | First valid exact-action decision only | `test_authority.py`: concurrent decisions, exclusive expiry, reviewed digest and revision checks |
-| Agent tries bypassing approval | Credential/tool path refuses action | Broker mock behavior tested in `test_authority.py`; runtime-origin bypass enforcement still pending |
-| Side effect accepted, acknowledgement lost | Reconcile; no blind non-idempotent retry | Broker mock behavior tested in `test_authority.py`; runtime-origin bypass enforcement still pending |
-| Notification accepted, acknowledgement lost | Durable at-least-once retry with dedupe ID | `test_notifications.py`: stable identity, durable backoff and checksummed receipt recovery (local mock) |
+| Notification raised but the store fails | The work does not finish either | `test_notifications.py`: an injected inbox failure rolls back the run's terminal state and artifact |
+| The same event is reported twice | One event is one inbox record | `test_notifications.py`: repeated `record` keeps the first notification and audits once |
 | Schedule replay/DST/catch-up | Unique occurrence and bounded catch-up | `test_routines.py`: concurrent/restarted ticks, fold/gap, latest-only catch-up, overlap skipping |
 | SSE gap or stale evidence | Reset snapshot / explicit unknown | `test_api.py` plus browser tests: epoch/cursor reset, unknown ownership, stale connection display |
 | Disk full or missing artifact | No false durable success | Injected write/audit failures and missing/corrupt artifact tests pass; actual-host disk exhaustion remains pending |

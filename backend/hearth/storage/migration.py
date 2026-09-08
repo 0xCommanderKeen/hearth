@@ -2,11 +2,13 @@
 
 Hearth never imports foreign data, but its own stores upgrade forward. An upgrade
 copies every row of every current table from the old file into a freshly created
-current-schema file, fills the columns the old layout lacked from `FILLS`, rewrites
+current-schema file, reading a table renamed since that store's version from the name it
+had through `RENAMES`, fills the columns the old layout lacked from `FILLS`, rewrites
 values the current layout no longer admits through `REWRITES`, verifies references and
 layout, and only then replaces the original. A column the old layout had and the new
-one does not is lost data unless the release listed it in `DROPS`; any other drop
-refuses. The original is kept next to it as `hearth.db.before-v{N}` so nothing is lost
+one does not is lost data unless the release listed it in `DROPS`, and so is a whole
+table unless the release listed it in `DROPPED_TABLES`; any other drop refuses. The
+original is kept next to it as `hearth.db.before-v{N}` so nothing is lost
 if the new file is wrong.
 """
 
@@ -31,8 +33,49 @@ DROPS: frozenset[tuple[str, str]] = frozenset(
     {
         # One runtime ships; every artifact is a real one, so the flag said nothing.
         ("artifacts", "simulated"),
+        # A notification is written in the same transaction as the fact it reports, so
+        # there is no delivery left to attempt, retry, confirm or let go stale. What
+        # remains of a notification is the record itself and whether it was read.
+        ("notifications", "status"),
+        ("notifications", "attempts"),
+        ("notifications", "next_at"),
+        ("notifications", "delivered_at"),
+        ("notifications", "reason"),
+        ("notifications", "expires_at"),
     }
 )
+
+# A table a release deliberately removed, with the rows it held. An upgrade refuses to
+# drop any other table, so one cannot be lost by an accidental edit to SCHEMA.
+DROPPED_TABLES: frozenset[str] = frozenset(
+    {
+        # Approvals and publication had no real effect behind them; they return with
+        # the first one that does.
+        "approvals",
+        "publication_actions",
+        "publication_policies",
+        "publication_targets",
+    }
+)
+
+# current table -> (the name it had, the version that renamed it). A store older than
+# that version is read from the old name; one at or past it already carries the new name,
+# so the entry stops applying rather than skipping a table the store actually has.
+RENAMES: dict[str, tuple[str, int]] = {
+    # The inbox is the durable record an operator reads, not a queue of pending work
+    # for an adapter.
+    "notifications": ("deliveries", 4),
+}
+
+
+def _source_tables(from_version: int) -> dict[str, str]:
+    """current table -> the table an upgrade from `from_version` reads its rows out of."""
+    return {
+        table: previous
+        for table, (previous, renamed_at) in RENAMES.items()
+        if from_version < renamed_at
+    }
+
 
 # (table, column) -> SQL expression replacing the old column value on the way in, for a
 # value the current layout no longer admits.
@@ -53,9 +96,30 @@ REWRITES: dict[tuple[str, str], str] = {
 # interrupted while holding its resident's slot and reservation.
 CONTEXT_REWRITTEN_AT = 3
 
+# Upgrading from a version below this removes approvals, so a notification announcing
+# one names a review the store no longer holds and can no longer open.
+APPROVALS_REMOVED_AT = 4
+
 
 class UpgradeError(RuntimeError):
     """The store cannot be brought to the current layout; the original is untouched."""
+
+
+def _drop_approval_notifications(connection: sqlite3.Connection, now: int) -> None:
+    """Forget inbox entries about a review this release can neither show nor decide."""
+    removed = connection.execute(
+        "DELETE FROM notifications WHERE kind = 'approval.requested'"
+    ).rowcount
+    if removed:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "notifications_removed",
+                "approval.requested",
+                now,
+                json.dumps({"count": removed, "reason": "approvals_removed"}, sort_keys=True),
+            ),
+        )
 
 
 def _release_unlaunched_runs(connection: sqlite3.Connection, now: int) -> None:
@@ -133,10 +197,15 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 ).fetchall()
             ):
                 raise UpgradeError("Not a Hearth store; refusing to upgrade")
+            sources = _source_tables(from_version)
+            lost = old_tables - set(_tables(new)) - set(sources.values()) - DROPPED_TABLES
+            if lost:
+                raise UpgradeError(f"Upgrade would drop tables {sorted(lost)}")
             for table in _tables(new):
-                if table not in old_tables:
+                source = sources.get(table, table)
+                if source not in old_tables:
                     continue
-                old_columns = {row["name"] for row in _columns(old, table)}
+                old_columns = {row["name"] for row in _columns(old, source)}
                 select: list[str] = []
                 insert: list[str] = []
                 for column in _columns(new, table):
@@ -158,11 +227,11 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 if dropped:
                     raise UpgradeError(f"Upgrade would drop {table} columns {sorted(dropped)}")
                 try:
-                    rows = old.execute(f'SELECT {", ".join(select)} FROM "{table}"').fetchall()
+                    rows = old.execute(f'SELECT {", ".join(select)} FROM "{source}"').fetchall()
                 except sqlite3.Error as error:
                     # A rewrite met a value it could not read. Report it as an upgrade
                     # failure rather than leaking SQLite's exception to the caller.
-                    raise UpgradeError(f"Cannot read {table} for upgrade: {error}") from error
+                    raise UpgradeError(f"Cannot read {source} for upgrade: {error}") from error
                 if rows:
                     new.executemany(
                         f'INSERT INTO "{table}" ({", ".join(insert)}) '
@@ -187,6 +256,8 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
             )
             if from_version < CONTEXT_REWRITTEN_AT:
                 _release_unlaunched_runs(new, at)
+            if from_version < APPROVALS_REMOVED_AT:
+                _drop_approval_notifications(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

@@ -7,7 +7,6 @@ import {
   type Snapshot,
 } from "../shared/client";
 import "./style.css";
-import { Approvals } from "../features/approvals/Approvals";
 import { RoutinePanel } from "../features/routines/Routines";
 import { UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
@@ -115,7 +114,7 @@ type Page =
   | "management"
   | "tasks"
   | "routines"
-  | "approvals"
+  | "inbox"
   | "activity"
   | "hamlet";
 
@@ -131,7 +130,6 @@ export function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [instruction, setInstruction] = useState("Summarize today’s notes.");
-  const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
   const [output, setOutput] = useState<{
     content: string;
     residentId?: string;
@@ -301,15 +299,11 @@ export function App() {
           "#management",
           "#tasks",
           "#routines",
-          "#approvals",
+          "#inbox",
           "#activity",
         ].includes(hash)
       ) {
         setView(hash.slice(1) as Page);
-      }
-      if (hash.startsWith("#approval-")) {
-        setView("approvals");
-        setLinkedApproval(hash.slice(10));
       }
       if (hash.startsWith("#run-") && client) {
         setView("tasks");
@@ -329,7 +323,7 @@ export function App() {
   }, [client]);
   useEffect(() => {
     const hash = window.location.hash.replace(/^#runs\//, "#run-");
-    if (hash.startsWith("#approval-") || hash.startsWith("#run-"))
+    if (hash.startsWith("#run-"))
       document
         .getElementById(hash.slice(1))
         ?.scrollIntoView?.({ block: "center" });
@@ -353,8 +347,8 @@ export function App() {
     snapshot?.runs.filter((r) =>
       ["starting", "running", "stopping", "interrupted"].includes(r.status),
     ).length ?? 0;
-  const pendingApprovals =
-    snapshot?.approvals?.filter((a) => a.status === "pending").length ?? 0;
+  const notifications = snapshot?.notifications ?? [];
+  const unread = notifications.filter((n) => n.read_at === null).length;
   const troubledRuns =
     snapshot?.runs.filter((r) =>
       ["failed", "interrupted"].includes(r.status),
@@ -364,14 +358,8 @@ export function App() {
   const pausedResidents = residents.filter(
     (r) => r.presence === "paused" || r.pause_reason,
   );
-  const unconfirmedDeliveries =
-    snapshot?.notifications?.filter((n) => n.status === "retry").length ?? 0;
   const attentionCount =
-    pendingApprovals +
-    troubledRuns.length +
-    failedSetups.length +
-    pausedResidents.length +
-    unconfirmedDeliveries;
+    troubledRuns.length + failedSetups.length + pausedResidents.length;
 
   const pageTitle =
     view === "resident"
@@ -393,20 +381,20 @@ export function App() {
     management: "Which residents may create and assign work, within limits.",
     tasks: "Every assignment and its result.",
     routines: "Scheduled work.",
-    approvals: "Actions waiting for your decision.",
+    inbox: "Everything Hearth has told you, unread first.",
     activity: "Everything Hearth recorded, newest first.",
     hamlet: "Your residents at home.",
   }[view];
 
   const navGroups: { label?: string; pages: Page[] }[] = [
-    { pages: ["townhall", "residents", "tasks", "approvals", "activity"] },
+    { pages: ["townhall", "residents", "tasks", "inbox", "activity"] },
     { label: "Library", pages: ["skills", "inputs", "routines", "management"] },
     { label: "Village", pages: ["hamlet"] },
   ];
   const navLabel = (page: Page) =>
     page === "townhall" ? "Townhall" : page[0].toUpperCase() + page.slice(1);
   const navBadge = (page: Page) =>
-    page === "tasks" ? active : page === "approvals" ? pendingApprovals : 0;
+    page === "tasks" ? active : page === "inbox" ? unread : 0;
   const isSelected = (page: Page) =>
     view === page ||
     (page === "residents" && (view === "resident" || view === "new-resident"));
@@ -605,18 +593,6 @@ export function App() {
             {view === "townhall" && attentionCount > 0 && (
               <section className="attention" aria-label="Needs your attention">
                 <ul>
-                  {pendingApprovals > 0 && (
-                    <li>
-                      <span>
-                        <strong>
-                          {pendingApprovals} approval
-                          {pendingApprovals === 1 ? "" : "s"}
-                        </strong>
-                        waiting for your decision.
-                      </span>
-                      <a href="#approvals">Review →</a>
-                    </li>
-                  )}
                   {troubledRuns.map((run) => (
                     <li key={run.id}>
                       <span>
@@ -662,18 +638,6 @@ export function App() {
                       </a>
                     </li>
                   ))}
-                  {unconfirmedDeliveries > 0 && (
-                    <li>
-                      <span>
-                        <strong>
-                          {unconfirmedDeliveries} notification
-                          {unconfirmedDeliveries === 1 ? "" : "s"}
-                        </strong>
-                        with unconfirmed delivery.
-                      </span>
-                      <a href="#activity">See inbox →</a>
-                    </li>
-                  )}
                 </ul>
               </section>
             )}
@@ -1056,15 +1020,6 @@ export function App() {
                 act={act}
               />
             )}
-            {view === "approvals" && (
-              <Approvals
-                linkedId={linkedApproval}
-                client={client}
-                snapshot={snapshot}
-                busy={busy}
-                act={act}
-              />
-            )}
             {output &&
               (view === "tasks" ||
                 (view === "resident" && output.residentId === residentId)) && (
@@ -1128,79 +1083,81 @@ export function App() {
               </div>
             )}
 
-            {(view === "activity" || view === "townhall") && (
-              <div className="two-col">
-                <section className="output inbox" aria-label="Notifications">
-                  <div className="section-title">
-                    <div>
-                      <h2>Inbox</h2>
-                    </div>
-                    <span className="eyebrow">Local delivery</span>
+            {view === "inbox" && (
+              <section className="output inbox" aria-label="Inbox">
+                <div className="section-title">
+                  <div>
+                    <h2>Inbox</h2>
                   </div>
-                  <p>
-                    Delivery status is separate from work status. These
-                    notifications stay local and never approve an action.
-                  </p>
-                  {!snapshot.notifications?.length && (
-                    <p className="muted">
-                      Results and approval requests will appear here.
-                    </p>
-                  )}
-                  <ul className="tasks">
-                    {snapshot.notifications?.map((n) => (
-                      <li key={n.id}>
-                        <h3>
-                          {n.kind === "approval.requested"
-                            ? "An action needs review"
-                            : n.kind.replace("run.", "Run ")}
-                        </h3>
-                        <p>
-                          {n.status === "retry"
-                            ? "Delivery unconfirmed; retry scheduled"
-                            : n.status === "pending"
-                              ? "Waiting for delivery confirmation"
-                              : n.status === "obsolete"
-                                ? "No longer current"
-                                : "Delivered to the local inbox"}{" "}
-                          · {n.attempts} attempts
-                        </p>
-                        {n.status !== "obsolete" && (
-                          <a
-                            href={`/#${n.kind === "approval.requested" ? "approval" : "run"}-${encodeURIComponent(n.resource_id)}`}
-                            onClick={() => {
-                              if (n.kind === "approval.requested")
-                                setView("approvals");
-                            }}
-                          >
-                            {n.kind === "approval.requested"
-                              ? "Open approval review"
-                              : "Open run and result"}
-                          </a>
+                  <span className="eyebrow">
+                    {unread} unread · showing {notifications.length}
+                  </span>
+                </div>
+                <p>
+                  Everything Hearth raises is recorded here and stays here.
+                  Reading one only marks it read.
+                </p>
+                {!notifications.length && (
+                  <p className="muted">Run results will appear here.</p>
+                )}
+                <ul className="tasks">
+                  {notifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className={n.read_at === null ? "unread" : ""}
+                    >
+                      <h3>
+                        {n.kind.replace("run.", "Run ")}
+                        {n.read_at === null && (
+                          <span className="nav-badge">New</span>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-                <section className="activity" aria-label="Recent activity">
-                  <h2>Recent activity</h2>
-                  {snapshot.activity
-                    .slice(0, view === "activity" ? 50 : 8)
-                    .map((item) => (
-                      <div key={item.sequence}>
-                        <time>{clock(item.at)}</time>
-                        <span>
-                          {item.kind
-                            .replaceAll(".", " · ")
-                            .replaceAll("_", " ")}
-                        </span>
-                        <span className="audit-sequence">#{item.sequence}</span>
-                      </div>
-                    ))}
-                  {!snapshot.activity.length && (
-                    <p className="muted">Nothing has happened yet.</p>
-                  )}
-                </section>
-              </div>
+                      </h3>
+                      <p>
+                        <time>{clock(n.created_at)}</time>
+                      </p>
+                      <a
+                        href={`/#run-${encodeURIComponent(n.resource_id)}`}
+                        onClick={() => setView("tasks")}
+                        aria-label={`Open the run ${n.resource_id} and its result`}
+                      >
+                        Open run and result
+                      </a>
+                      <button
+                        className="quiet"
+                        disabled={busy}
+                        aria-label={`Mark the ${n.kind.replace("run.", "run ")} notice for ${n.resource_id} ${n.read_at === null ? "read" : "unread"}`}
+                        onClick={() =>
+                          act(() =>
+                            client.markNotification(n.id, n.read_at === null),
+                          )
+                        }
+                      >
+                        {n.read_at === null ? "Mark read" : "Mark unread"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {(view === "activity" || view === "townhall") && (
+              <section className="activity" aria-label="Recent activity">
+                <h2>Recent activity</h2>
+                {snapshot.activity
+                  .slice(0, view === "activity" ? 50 : 8)
+                  .map((item) => (
+                    <div key={item.sequence}>
+                      <time>{clock(item.at)}</time>
+                      <span>
+                        {item.kind.replaceAll(".", " · ").replaceAll("_", " ")}
+                      </span>
+                      <span className="audit-sequence">#{item.sequence}</span>
+                    </div>
+                  ))}
+                {!snapshot.activity.length && (
+                  <p className="muted">Nothing has happened yet.</p>
+                )}
+              </section>
             )}
           </>
         )}

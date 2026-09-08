@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { App } from "./App";
 import { Client, RequestError, type Snapshot } from "../shared/client";
@@ -299,30 +300,37 @@ it("keeps a newer streamed snapshot when an older snapshot arrives later", async
   );
 });
 
-it("shows delivery uncertainty and opens Townhall without deciding", async () => {
+it("keeps a run notification in the inbox until the operator marks it read", async () => {
   addReader();
   state.notifications = [
     {
-      id: "delivery",
-      kind: "approval.requested",
-      resource_id: "review",
-      status: "retry",
-      attempts: 2,
-      next_at: 2_000_000_000,
-      reason: "mock_delivery_unconfirmed",
-      payload: { link: "/#approval-review" },
+      id: "notice",
+      kind: "run.succeeded",
+      resource_id: "older",
+      created_at: 1_788_640_000,
+      read_at: null,
+      payload: { link: "/#run-older" },
     },
   ];
-  const decide = vi.spyOn(Client.prototype, "decide");
+  const mark = vi
+    .spyOn(Client.prototype, "markNotification")
+    .mockResolvedValue({ ...state.notifications[0], read_at: 1_788_640_060 });
   await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /^Inbox/ }));
+  const inbox = await screen.findByRole("region", { name: "Inbox" });
+  expect(inbox.textContent).toContain("Run succeeded");
+  // Each row names the run it acts on, so the repeated controls stay distinguishable.
   expect(
-    screen.getByText(/Delivery unconfirmed; retry scheduled/),
-  ).toBeTruthy();
-  const link = screen.getByRole("link", { name: "Open approval review" });
-  expect(link.getAttribute("href")).toBe("/#approval-review");
-  fireEvent.click(link);
-  await screen.findByRole("region", { name: "Approvals" });
-  expect(decide).not.toHaveBeenCalled();
+    within(inbox)
+      .getByRole("link", { name: "Open the run older and its result" })
+      .getAttribute("href"),
+  ).toBe("/#run-older");
+  fireEvent.click(
+    within(inbox).getByRole("button", {
+      name: "Mark the run succeeded notice for older read",
+    }),
+  );
+  await waitFor(() => expect(mark).toHaveBeenCalledWith("notice", true));
 });
 
 it.each(["/#run-older", "/#runs/older"])(

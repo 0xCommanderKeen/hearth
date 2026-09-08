@@ -11,6 +11,7 @@ from hearth.storage.migration import UpgradeError
 
 from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
 from tests.fixtures.schema_v2_pre_simulated import SCHEMA as SCHEMA_V2
+from tests.fixtures.schema_v3_pre_inbox import SCHEMA as SCHEMA_V3
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -331,3 +332,139 @@ def test_an_unlisted_dropped_column_refuses_the_upgrade(tmp_path):
     with pytest.raises(UpgradeError, match="would drop residents columns"):
         Database(path).initialize()
     assert path.read_bytes() == before
+
+
+def version_3_store(path):
+    """A version-3 store with an inbox of deliveries and an approval waiting on one."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    for statement in SCHEMA_V3:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    db.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit, created_at)"
+        " VALUES ('karen', 1, 'Karen', 'Reads notes', 1000000, 1)"
+    )
+    db.execute("INSERT INTO publication_policies VALUES ('karen', 1, 1)")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30)"
+    )
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, artifact_id, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, 2, 'a', "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    db.execute("INSERT INTO artifacts VALUES ('a', 'r', 'r.md', ?, 12)", ("b" * 64,))
+    db.execute(
+        "INSERT INTO approvals VALUES ('review', 'a', 'karen', '{}', ?, 9, 2, 'approved', 3)",
+        ("d" * 64,),
+    )
+    db.execute(
+        "INSERT INTO publication_actions VALUES "
+        "('review', 'mock-noticeboard', ?, 'completed', 3, 4, NULL, NULL)",
+        ("d" * 64,),
+    )
+    db.execute(
+        "INSERT INTO deliveries VALUES ('n1', 'run.succeeded', 'r', ?, 2, 700, 'delivered', "
+        "1, 2, 3, NULL)",
+        (json.dumps({"kind": "run.succeeded", "resource_id": "r", "link": "/#run-r"}),),
+    )
+    db.execute(
+        "INSERT INTO deliveries VALUES ('n2', 'approval.requested', 'review', ?, 2, 9, 'pending', "
+        "0, 2, NULL, NULL)",
+        (json.dumps({"kind": "approval.requested", "resource_id": "review", "link": "/#a"}),),
+    )
+    db.execute("PRAGMA user_version = 3")
+    db.commit()
+    db.close()
+
+
+def test_the_version_3_store_operators_actually_have_upgrades(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_3_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    assert (tmp_path / "hearth.db.before-v3").exists()
+    # The household is untouched by the loss of a feature that never had an effect.
+    assert db.execute("SELECT id, run_id, size FROM artifacts").fetchone() == ("a", "r", 12)
+    assert db.execute("SELECT status, artifact_id FROM runs").fetchone() == ("succeeded", "a")
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert not tables & {
+        "approvals",
+        "publication_actions",
+        "publication_policies",
+        "publication_targets",
+        "deliveries",
+    }
+
+
+def test_the_inbox_keeps_its_run_history_and_forgets_the_reviews(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_3_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    rows = [dict(row) for row in db.execute("SELECT * FROM notifications")]
+    # A delivered notification is not a read one: nobody in the household read it.
+    assert [(row["id"], row["kind"], row["read_at"]) for row in rows] == [
+        ("n1", "run.succeeded", None)
+    ]
+    assert rows[0]["created_at"] == 2
+    assert json.loads(rows[0]["payload"])["link"] == "/#run-r"
+    detail = db.execute("SELECT detail FROM audit WHERE kind='notifications_removed'").fetchone()[0]
+    assert json.loads(detail) == {"count": 1, "reason": "approvals_removed"}
+
+
+def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):
+    path = tmp_path / "hearth.db"
+    pre_memory_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("CREATE TABLE letters (id TEXT PRIMARY KEY)")
+    db.close()
+    before = path.read_bytes()
+    with pytest.raises(UpgradeError, match=r"would drop tables \['letters'\]"):
+        Database(path).initialize()
+    assert path.read_bytes() == before
+
+
+def test_a_renamed_table_is_still_copied_once_stores_carry_the_new_name(tmp_path):
+    """The release after this one must not read the inbox out of a table nobody has."""
+    from hearth.observation.notifications import record
+    from hearth.storage.migration import upgrade
+
+    path = tmp_path / "hearth.db"
+    Database(path).initialize()
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit, created_at)"
+        " VALUES ('karen', 1, 'Karen', 'Reads notes', 1000000, 1)"
+    )
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, 2, "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    record(db, "run.succeeded", "r", 2)
+    db.commit()
+    db.close()
+    # A store already at the current layout, rebuilt as a later release would rebuild it.
+    upgrade(path, from_version=SCHEMA_VERSION, to_version=SCHEMA_VERSION)
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT kind, resource_id FROM notifications").fetchall() == [
+        ("run.succeeded", "r")
+    ]

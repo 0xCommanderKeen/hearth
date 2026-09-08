@@ -14,7 +14,7 @@ from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # Hearth ships one runtime, and every new store and run records that one kind.
 RUNTIME_KIND = "codex_subscription"
 # Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on
@@ -107,7 +107,6 @@ class Database:
                 connection.execute(
                     "INSERT INTO system_meta VALUES ('runtime_kind', ?)", (RUNTIME_KIND,)
                 )
-                connection.execute("INSERT INTO publication_targets VALUES ('mock-noticeboard', 1)")
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             elif version > SCHEMA_VERSION:
                 raise RuntimeError("Hearth database is newer than this release; upgrade Hearth")
