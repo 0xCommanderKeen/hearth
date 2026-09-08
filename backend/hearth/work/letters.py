@@ -546,8 +546,13 @@ def settle_letter(
     return state
 
 
-def _view(row, *, excerpt: int = 500) -> dict:
-    """One letter as a reader of a list of them sees it, with its answer if it has one."""
+def _view(row, *, excerpt: int = 500, answer_text: bool = True) -> dict:
+    """One letter as a reader of a list of them sees it, with its answer if it has one.
+
+    A reader that is already handed the answer in a list of its own — a sender reading
+    its own post — is shown who answered and when, and not the body a second time. One
+    call carries three bounded lists, and an answer is up to `MAX_REPLY` of them.
+    """
     instruction = row["instruction"]
     return {
         "task_id": row["task_id"],
@@ -572,8 +577,8 @@ def _view(row, *, excerpt: int = 500) -> dict:
             "resident_id": row["reply_resident"],
             "run_id": row["reply_run"],
             "written_at": row["reply_at"],
-            "text": row["reply_text"],
-        },
+        }
+        | ({"text": row["reply_text"]} if answer_text else {}),
     }
 
 
@@ -637,7 +642,9 @@ def read_letters(
         "offset": offset,
         "received": [_view(row) for row in received[:limit]],
         "received_truncated": len(received) > limit,
-        "sent": [_view(row) for row in sent[:limit]],
+        # The answers themselves are the next list; here a sent letter says who answered
+        # it and when, so one call does not carry the same text twice.
+        "sent": [_view(row, answer_text=False) for row in sent[:limit]],
         "sent_truncated": len(sent) > limit,
         "replies": [
             {
@@ -656,17 +663,37 @@ def read_letters(
     }
 
 
+def _is_example(db, run_id: str) -> bool:
+    """Is this run one case of a skill example rather than a working day of its own?"""
+    return (
+        db.execute("SELECT 1 FROM skill_validation_cases WHERE run_id=?", (run_id,)).fetchone()
+        is not None
+    )
+
+
 def run_replies(db, run_id: str) -> list[dict]:
     """The answers this run opens with: replies to its resident's own letters, newest first.
 
     A sender is never woken by an answer — it reads one on its next run, and this is
-    that reading. The window runs from the instant the resident's previous run began,
-    included, up to the instant this one was admitted, excluded. Hearth keeps time in
-    whole seconds, and half-open the same way at both ends is what makes those seconds
-    add up: an answer written in the same second a run was admitted may have arrived
-    just after that run's context was built, so it belongs to the run after it, which
-    takes that same instant as its own lower edge. No answer is read twice and none is
-    lost between two runs.
+    that reading. The window runs from the second the resident's previous opening run
+    began, included, up to the second this one was admitted, excluded. Half-open the
+    same way at both ends is what makes those seconds add up: an answer written in the
+    same second a run was admitted may have arrived just after that run's context was
+    built, so it belongs to the run after it, which takes that same second as its own
+    lower edge, and nothing falls between two windows.
+
+    Hearth keeps time in whole seconds, so the one thing this cannot separate is two
+    runs of the same resident admitted within one second: they share a window and may
+    open with the same answer. Repeating an answer to a question this resident asked is
+    the safe direction; the alternative is losing it, and no ordering of two rows
+    written in the same second is more honest than the second they share.
+
+    A skill example is not one of these runs. It rehearses exactly what its request
+    named — the memory revision it pinned, the input set it chose — so that the same
+    candidate can be judged twice and compared; a colleague's answer to an unrelated
+    question is not part of that request. It opens with none, and it is skipped when
+    the next real run looks back for where to start, so an answer that arrived while an
+    example ran still reaches the run that asked for it.
 
     Both edges are read from stored facts and neither moves afterwards. The far edge is
     this run's own admission, for the same reason the offered tool set is bounded there:
@@ -676,13 +703,13 @@ def run_replies(db, run_id: str) -> list[dict]:
     admitted with, so renaming anybody cannot move a digest either.
     """
     run = db.execute("SELECT resident_id,created_at FROM runs WHERE id=?", (run_id,)).fetchone()
-    if run is None:
+    if run is None or _is_example(db, run_id):
         return []
     previous = db.execute(
-        "SELECT created_at FROM runs WHERE resident_id=? AND (created_at,id)<(?,?) "
-        "ORDER BY created_at DESC,id DESC LIMIT 1",
-        (run["resident_id"], run["created_at"], run_id),
-    ).fetchone()
+        "SELECT MAX(r.created_at) FROM runs r WHERE r.resident_id=? AND r.created_at<? "
+        "AND NOT EXISTS(SELECT 1 FROM skill_validation_cases c WHERE c.run_id=r.id)",
+        (run["resident_id"], run["created_at"]),
+    ).fetchone()[0]
     return [
         {
             "letter_id": row["task_id"],
@@ -702,7 +729,7 @@ def run_replies(db, run_id: str) -> list[dict]:
             "ORDER BY p.written_at DESC,p.task_id DESC LIMIT ?",
             (
                 run["resident_id"],
-                previous["created_at"] if previous is not None else 0,
+                previous if previous is not None else 0,
                 run["created_at"],
                 MAX_RUN_REPLIES,
             ),

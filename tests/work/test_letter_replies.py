@@ -377,7 +377,15 @@ def test_an_answer_written_by_a_run_that_then_fails_still_reaches_its_sender(hou
     assert letter_row(hearth, receipt["task_id"])["state"] == "replied"
     assert facts(hearth, "letter.replied")[0]["detail"]["run_status"] == "failed"
     with hearth.database.transaction() as db:
-        assert [reply["text"] for reply in read_letters(db, "karen")["replies"]] == [ANSWER]
+        post = read_letters(db, "karen")
+    assert [reply["text"] for reply in post["replies"]] == [ANSWER]
+    # One call does not carry the same answer twice: the letter Karen sent names who
+    # answered it and when, and the answer itself is in the replies beside it.
+    assert post["sent"][0]["reply"] == {
+        "resident_id": "reporter",
+        "run_id": answering.id,
+        "written_at": NOW,
+    }
 
 
 def test_a_letter_nobody_started_expires_and_the_sender_reads_that_state(household):
