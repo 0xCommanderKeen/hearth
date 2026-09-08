@@ -20,6 +20,13 @@ it as `hearth.db.before-v<N>`. A file that is not a Hearth store, or one from a 
 release, is refused without being touched. A rebuild that would drop a column or has no
 fill for a new required column fails before replacing anything.
 
+**Amended 2026-09-08** (mock-removal slice #153). A release sometimes has to remove a
+column or rename a stored value, and the blanket refusal made that impossible without
+abandoning existing stores. A rebuild now drops a column only when the release named it
+in `storage/migration.DROPS`, and rewrites a value the new layout no longer admits only
+through an expression in `storage/migration.REWRITES`. Every other drop still fails
+before replacing anything, so a column cannot be lost by an accidental edit to `SCHEMA`.
+
 **Also decided.** A store's runtime kind may change on start when no run is unfinished;
 finished runs keep the runtime pins they were admitted with. The container process
 boundary stays immutable. The requirement to update `docs/implementation.md` at every
