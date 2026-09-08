@@ -206,3 +206,50 @@ it("keeps the confirmed ready receipt if opening its profile fails", async () =>
   );
   expect(screen.queryByText("Retry same setup")).toBeNull();
 });
+it("proposes one dollar a day and provisions that unless the operator edits it", async () => {
+  const client = new Client("synthetic-provision-token");
+  vi.spyOn(client, "request").mockResolvedValue(options);
+  vi.spyOn(client, "skills").mockResolvedValue([]);
+  const provision = vi
+    .spyOn(client, "provision")
+    .mockImplementation(async (id, body) => ({
+      command_id: id,
+      resident_id: "reporter",
+      status: "ready",
+      reason: null,
+      creator: "operator",
+      manager: "operator",
+      originating_run_id: null,
+      created_at: 1,
+      routine_id: null,
+      task_id: null,
+      setup: body,
+    }));
+  render(
+    <NewResident
+      client={client}
+      readOnly={false}
+      commandId=""
+      onCreated={async () => {}}
+    />,
+  );
+  await screen.findByLabelText("Resident name");
+  const allowance = screen.getByLabelText(
+    "Resident daily allowance ($)",
+  ) as HTMLInputElement;
+  expect(allowance.value).toBe("1");
+  fireEvent.change(screen.getByLabelText("Resident name"), {
+    target: { value: "Reporter" },
+  });
+  fireEvent.change(screen.getByLabelText("Purpose"), {
+    target: { value: "Notes" },
+  });
+  fireEvent.change(screen.getByLabelText("Creation reason"), {
+    target: { value: "Synthetic" },
+  });
+  fireEvent.click(screen.getByText("Create resident", { exact: true }));
+  await waitFor(() => expect(provision).toHaveBeenCalledOnce());
+  expect(provision.mock.calls[0][1].daily_limit).toBe(1_000_000);
+  fireEvent.change(allowance, { target: { value: "0.25" } });
+  expect(allowance.value).toBe("0.25");
+});
