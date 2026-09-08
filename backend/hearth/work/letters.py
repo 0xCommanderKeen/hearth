@@ -434,9 +434,8 @@ def reply_to_letter(
     )
 
 
-def _view(db, row, *, excerpt: int = 500) -> dict:
+def _view(row, *, excerpt: int = 500) -> dict:
     """One letter as a reader of a list of them sees it, with its answer if it has one."""
-    reply = db.execute("SELECT * FROM letter_replies WHERE task_id=?", (row["task_id"],)).fetchone()
     instruction = row["instruction"]
     return {
         "task_id": row["task_id"],
@@ -454,25 +453,26 @@ def _view(db, row, *, excerpt: int = 500) -> dict:
         "instruction": instruction[:excerpt],
         "instruction_truncated": len(instruction) > excerpt,
         "reply": None
-        if reply is None
+        if row["reply_run"] is None
         else {
-            "resident_id": reply["resident_id"],
-            "run_id": reply["run_id"],
-            "written_at": reply["written_at"],
-            "text": reply["text"],
+            "resident_id": row["reply_resident"],
+            "run_id": row["reply_run"],
+            "written_at": row["reply_at"],
+            "text": row["reply_text"],
         },
     }
 
 
+# One letter, the task it is and the answer it has, if it has one.
 _LETTERS = (
-    "SELECT l.*,t.resident_id AS recipient,t.status,t.instruction "
+    "SELECT l.*,t.resident_id AS recipient,t.status,t.instruction,"
+    "p.run_id AS reply_run,p.resident_id AS reply_resident,"
+    "p.text AS reply_text,p.written_at AS reply_at "
     "FROM letters l JOIN tasks t ON t.id=l.task_id "
+    "LEFT JOIN letter_replies p ON p.task_id=l.task_id "
 )
-_ANSWERED = (
-    "SELECT l.*,p.text,p.written_at,p.run_id AS reply_run,t.resident_id AS recipient "
-    "FROM letters l JOIN tasks t ON t.id=l.task_id "
-    "JOIN letter_replies p ON p.task_id=l.task_id "
-)
+# Only the answered ones, ordered by when the answer was written.
+_ANSWERED = _LETTERS.replace("LEFT JOIN letter_replies", "JOIN letter_replies")
 
 
 def read_letters(db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE) -> dict:
@@ -500,7 +500,7 @@ def read_letters(db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE)
         "resident_id": resident_id,
         "since": since,
         "limit": limit,
-        "received": [_view(db, row) for row in received[:limit]],
+        "received": [_view(row) for row in received[:limit]],
         "received_truncated": len(received) > limit,
         "replies": [
             {
@@ -510,8 +510,8 @@ def read_letters(db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE)
                 "run_id": row["reply_run"],
                 "root_task_id": row["root_task_id"],
                 "depth": row["depth"],
-                "written_at": row["written_at"],
-                "text": row["text"],
+                "written_at": row["reply_at"],
+                "text": row["reply_text"],
             }
             for row in replies[:limit]
         ],
@@ -532,13 +532,13 @@ def operator_letters(db, resident_id: str, *, limit: int = 30, offset: int = 0) 
         "limit": limit,
         "offset": offset,
         "inbox": [
-            _view(db, row)
+            _view(row)
             for row in db.execute(
                 _LETTERS + "WHERE t.resident_id=? " + order, (resident_id, limit, offset)
             )
         ],
         "sent": [
-            _view(db, row)
+            _view(row)
             for row in db.execute(
                 _LETTERS + "WHERE l.sender_resident_id=? " + order, (resident_id, limit, offset)
             )
