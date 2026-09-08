@@ -294,6 +294,7 @@ export type Resident = InputProvenance & {
   operator_paused?: number | boolean;
   control_revision?: number;
   memory_revision?: number;
+  letters_accept?: number | boolean;
   skills?: AssignedSkill[];
   skills_error?: string | null;
 };
@@ -403,12 +404,85 @@ export type ResidentDeclaration = {
     skill_text: string;
   };
 };
+/** What a letter came to. A letter still open is `pending` and nothing else. */
+export type LetterState =
+  "pending" | "replied" | "unanswered" | "failed" | "expired";
+/** One hop of a chain. `sender` is null on the ordinary task a chain started from. */
+export type LetterHop = {
+  task_id: string;
+  resident_id: string;
+  resident_name: string;
+  title: string;
+  state: LetterState | null;
+  depth: number | null;
+  sender: string | null;
+  sender_name: string | null;
+};
+export type Letter = {
+  task_id: string;
+  title: string;
+  sender: string;
+  sender_resident_id: string | null;
+  sender_run_id: string | null;
+  recipient_resident_id: string;
+  parent_task_id: string | null;
+  root_task_id: string;
+  depth: number;
+  created_at: number;
+  expires_at: number;
+  status: string;
+  state: LetterState;
+  settled_at: number | null;
+  instruction: string;
+  instruction_truncated: boolean;
+  reply: {
+    resident_id: string;
+    run_id: string;
+    written_at: number;
+    text?: string;
+  } | null;
+};
+export type ResidentLetters = {
+  resident_id: string;
+  limit: number;
+  offset: number;
+  inbox: Letter[];
+  sent: Letter[];
+};
+export type LetterDraft = {
+  title: string;
+  detail: string;
+  expires_at?: number;
+};
+export type LetterReceipt = {
+  command_id: string;
+  resident_id: string;
+  task_id: string;
+  sender: string;
+  root_task_id: string;
+  depth: number;
+  expires_at: number;
+  status: string;
+};
+/** A letter written or a letter answered, both ends named. A null id is the operator. */
+export type LetterEvent = {
+  kind: "letter_sent" | "letter_replied";
+  task_id: string;
+  at: number;
+  from_resident_id: string | null;
+  to_resident_id: string | null;
+  title: string;
+  state: LetterState;
+  root_task_id: string;
+  depth: number;
+};
 export type Task = {
   id: string;
   resident_id: string;
   instruction: string;
   status: string;
   created_at: number;
+  lineage?: LetterHop[];
 };
 export type Run = InputProvenance & {
   management?: {
@@ -431,6 +505,11 @@ export type Run = InputProvenance & {
   journal_written?: number | null;
   skills?: AssignedSkill[];
   skills_error?: string | null;
+  letters_refused?: {
+    at: number;
+    reason: string;
+    details: Record<string, unknown>;
+  }[];
 };
 export type Snapshot = {
   provisioning?: (Omit<ProvisionReceipt, "setup"> & { name: string })[];
@@ -442,6 +521,7 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
+  letters?: LetterEvent[];
   notifications?: InboxNotification[];
   routines?: Routine[];
   occurrences?: {
@@ -886,6 +966,24 @@ export class Client {
   journal(id: string, limit = 20, offset = 0) {
     return this.request<ResidentJournal>(
       `/api/residents/${encodeURIComponent(id)}/journal?limit=${limit}&offset=${offset}`,
+    );
+  }
+  letters(id: string, limit = 20, offset = 0) {
+    return this.request<ResidentLetters>(
+      `/api/residents/${encodeURIComponent(id)}/letters?limit=${limit}&offset=${offset}`,
+    );
+  }
+  // The operator writes with its own hand. No grant bounds it; the receiver's door, its
+  // archive state and the household's own reach refuse the letter exactly as they would
+  // refuse a resident's, and the refusal comes back as this request's own error.
+  sendLetter(to: string, command: string, letter: LetterDraft) {
+    return this.request<LetterReceipt>(
+      `/api/residents/${encodeURIComponent(to)}/letters`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": command },
+        body: JSON.stringify(letter),
+      },
     );
   }
   saveMemory(id: string, text: string, revision: number) {

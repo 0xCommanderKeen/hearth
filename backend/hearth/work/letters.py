@@ -11,6 +11,8 @@ says about a parent is trusted, so a forged or omitted parent cannot lengthen a 
 revisit a resident or attribute cost to the wrong origin.
 """
 
+import json
+
 from hearth.authority.household import _day_window, read_letter_policy
 from hearth.residents.models import Refused, bounded_text, identifier
 from hearth.work.service import ADMISSION_WAITS, _audit, _queue_task
@@ -958,3 +960,139 @@ def validate_letters(db) -> None:
             or row["recipient"] != row["resident_id"]
         ):
             raise Refused("backup_letters_invalid")
+
+
+# What the post did, newest first. Both are rows the letters machinery already wrote:
+# `letter_sent` is a letter, `letter_replied` is an answer to one. A view that draws a
+# villager walking to a neighbour's door draws it from these and from nothing else, so
+# it can never show a walk that did not happen.
+#
+# Clocks here are whole seconds, and a letter answered inside the second it arrived
+# carries the same stamp as its own arrival. `after` breaks that tie in the only order
+# the two facts can have happened in: nothing is answered before it is written.
+_EVENTS = (
+    "SELECT 'letter_sent' AS kind,0 AS after,l.task_id AS task_id,l.created_at AS at,"
+    "l.sender_resident_id AS from_resident_id,t.resident_id AS to_resident_id,"
+    "l.title AS title,l.state AS state,l.root_task_id AS root_task_id,l.depth AS depth "
+    "FROM letters l JOIN tasks t ON t.id=l.task_id "
+    "UNION ALL "
+    "SELECT 'letter_replied',1,l.task_id,p.written_at,p.resident_id,l.sender_resident_id,"
+    "l.title,l.state,l.root_task_id,l.depth "
+    "FROM letter_replies p JOIN letters l ON l.task_id=p.task_id "
+    "ORDER BY at DESC,after DESC,task_id DESC LIMIT ?"
+)
+# How many of them one snapshot carries. A village replays what it has not drawn yet, so
+# this is a window on recent post rather than the household's whole correspondence.
+MAX_EVENTS = 30
+
+
+def letter_events(db, limit: int = MAX_EVENTS) -> list[dict]:
+    """Both ends of every recent letter and every recent answer, newest first.
+
+    A letter the operator wrote has no sending resident, and an answer to one has no
+    receiving resident: `from_resident_id` and `to_resident_id` are null exactly where
+    the operator stands, because there is no villager at that end of the walk.
+    """
+    return [
+        {key: value for key, value in dict(row).items() if key != "after"}
+        for row in db.execute(_EVENTS, (limit,))
+    ]
+
+
+def resident_names(db) -> dict[str, str]:
+    """Every resident's current display name, so a chain can be read by name."""
+    return {
+        row["resident_id"]: row["name"]
+        for row in db.execute(
+            "SELECT d.resident_id,d.name FROM declarations d "
+            "JOIN residents r ON r.id=d.resident_id AND r.revision=d.revision"
+        )
+    }
+
+
+def task_lineage(db, task_id: str, names: dict[str, str] | None = None) -> list[dict]:
+    """The chain a letter belongs to, root first, ending at this task.
+
+    Only a letter has one; an ordinary task is a chain of one hop and needs no
+    breadcrumb. Every hop is read from the stored lineage — who worked it, who wrote it
+    and what it came to — never from anything a caller said, and the walk stops at a task
+    it has already seen so an edited parent cannot hold the reader in a loop.
+    """
+    if db.execute("SELECT 1 FROM letters WHERE task_id=?", (task_id,)).fetchone() is None:
+        return []
+    if names is None:
+        names = resident_names(db)
+    chain: list[dict] = []
+    seen: set[str] = set()
+    current: str | None = task_id
+    while current is not None and current not in seen:
+        seen.add(current)
+        row = db.execute(
+            "SELECT t.id,t.resident_id,t.instruction,l.title,l.state,l.depth,"
+            "l.parent_task_id,l.sender_resident_id FROM tasks t "
+            "LEFT JOIN letters l ON l.task_id=t.id WHERE t.id=?",
+            (current,),
+        ).fetchone()
+        if row is None:
+            break
+        letter = row["depth"] is not None
+        sender = row["sender_resident_id"] or (OPERATOR if letter else None)
+        chain.append(
+            {
+                "task_id": row["id"],
+                "resident_id": row["resident_id"],
+                "resident_name": names.get(row["resident_id"], row["resident_id"]),
+                "title": row["title"] if letter else row["instruction"][:MAX_TITLE],
+                "state": row["state"],
+                "depth": row["depth"],
+                "sender": sender,
+                "sender_name": None if sender is None else names.get(sender, sender),
+            }
+        )
+        current = row["parent_task_id"] if letter else None
+    chain.reverse()
+    return chain
+
+
+# A letter a run was refused leaves no task, no letter and no hold, so the only durable
+# trace of it is the run's own tool evidence: the audit fact naming the call, and the
+# response the resident actually read. One pass answers every run the snapshot shows,
+# rather than one pass per run.
+_REFUSED_SENDS = (
+    "SELECT a.resource_id AS run_id,a.at AS at,c.response AS response FROM audit a "
+    "JOIN management_calls c ON c.run_id=a.resource_id "
+    "AND c.call_id=json_extract(a.detail,'$.call_id') "
+    "WHERE a.kind='management.tool_completed' "
+    "AND json_extract(a.detail,'$.tool')='hearth_letters_send' "
+    "AND json_extract(a.detail,'$.success')=0 AND a.resource_id IN ({placeholders}) "
+    "ORDER BY a.sequence"
+)
+
+
+def refused_sends(db, run_ids) -> dict[str, list[dict]]:
+    """Every letter these runs tried to write and were refused, with the reason given.
+
+    The operator reads the structured reason the resident read, not a summary of it:
+    `letters_not_accepted` names a door that is shut, `letter_daily_limit_reached` names
+    a day that filled and says how full. A response this reader cannot parse is left out
+    rather than reported as a refusal of some other shape.
+    """
+    run_ids = list(run_ids)
+    if not run_ids:
+        return {}
+    query = _REFUSED_SENDS.format(placeholders=",".join("?" * len(run_ids)))
+    found: dict[str, list[dict]] = {}
+    for row in db.execute(query, run_ids):
+        try:
+            reason = json.loads(json.loads(row["response"])["contentItems"][0]["text"])
+        except ValueError, TypeError, LookupError:
+            continue
+        # A response that parses to something other than an object naming an error is a
+        # shape this reader has no reading of; it is left out rather than reported.
+        if not isinstance(reason, dict) or "error" not in reason:
+            continue
+        code = reason.pop("error")
+        found.setdefault(row["run_id"], []).append(
+            {"at": row["at"], "reason": code, "details": reason}
+        )
+    return found
