@@ -319,12 +319,17 @@ it("keeps a run notification in the inbox until the operator marks it read", asy
   fireEvent.click(screen.getByRole("link", { name: /^Inbox/ }));
   const inbox = await screen.findByRole("region", { name: "Inbox" });
   expect(inbox.textContent).toContain("Run succeeded");
+  // Each row names the run it acts on, so the repeated controls stay distinguishable.
   expect(
     within(inbox)
-      .getByRole("link", { name: "Open run and result" })
+      .getByRole("link", { name: "Open the run older and its result" })
       .getAttribute("href"),
   ).toBe("/#run-older");
-  fireEvent.click(within(inbox).getByRole("button", { name: "Mark read" }));
+  fireEvent.click(
+    within(inbox).getByRole("button", {
+      name: "Mark the run succeeded notice for older read",
+    }),
+  );
   await waitFor(() => expect(mark).toHaveBeenCalledWith("notice", true));
 });
 

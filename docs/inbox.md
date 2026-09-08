@@ -3,8 +3,8 @@
 Every notification Hearth raises lands in the inbox and stays there. A run that
 succeeds, fails or is cancelled writes one row of `notifications` in the same
 transaction as its terminal state, its artifact reference and its audit fact, so the
-inbox can never claim work that did not happen, and work can never finish without the
-operator being told. If the write fails, the run does not finish either.
+inbox can never claim work that did not happen, and no run the executor settles finishes
+without the operator being told. If the write fails, the run does not finish either.
 
 One event is one notification: `(kind, resource_id)` is unique, so a caller that
 retries its own transaction cannot fill the inbox with copies of the same news. The
@@ -17,8 +17,8 @@ with `{"read": true}` marks it; the same call with `false` puts it back. Marking
 idempotent and audits once per change (`notification.read` / `notification.unread`),
 and a restored copy refuses it like every other mutation: the copy may show its inbox,
 never change it. Nothing is deleted, expired or archived — the inbox is the durable
-record of what Hearth has told the household, and Townhall's Inbox page shows it
-newest first with the unread count on the nav.
+record of what Hearth has told the household, and Townhall's Inbox page shows it unread
+first, then newest, with the unread count on the nav.
 
 ## Forwarding
 

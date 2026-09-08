@@ -17,7 +17,7 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from hearth.residents.models import Refused, identifier
 from hearth.work.service import Hearth, _audit
@@ -39,6 +39,7 @@ def _notification(row: sqlite3.Row) -> Notification:
     return Notification(**(dict(row) | {"payload": json.loads(row["payload"])}))
 
 
+@runtime_checkable
 class Forwarder(Protocol):
     """Relays one inbox notification onward; the inbox keeps the record either way."""
 

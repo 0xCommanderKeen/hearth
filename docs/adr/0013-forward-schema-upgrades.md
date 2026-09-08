@@ -29,8 +29,10 @@ before replacing anything, so a column cannot be lost by an accidental edit to `
 
 **Amended 2026-09-08** (mock-removal slice #155). Removing a feature removes tables,
 not only columns, and renaming one is how a table earns a truthful name. A rebuild now
-copies a table from the name it had when the release lists it in
-`storage/migration.RENAMES`, and drops a table only when the release names it in
+copies a table from the name it had when `storage/migration.RENAMES` says a later
+version renamed it — the entry names that version, so it stops applying to stores that
+already carry the new name instead of skipping the table they have — and drops a table
+only when the release names it in
 `storage/migration.DROPPED_TABLES`; every other table the old store carries and the new
 layout lacks fails the upgrade before anything is replaced. Data a removed feature makes
 meaningless is deleted by an explicit versioned step (`_drop_approval_notifications`),

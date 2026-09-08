@@ -2,8 +2,8 @@
 
 Hearth never imports foreign data, but its own stores upgrade forward. An upgrade
 copies every row of every current table from the old file into a freshly created
-current-schema file, reading a renamed table from the name it had through `RENAMES`,
-fills the columns the old layout lacked from `FILLS`, rewrites
+current-schema file, reading a table renamed since that store's version from the name it
+had through `RENAMES`, fills the columns the old layout lacked from `FILLS`, rewrites
 values the current layout no longer admits through `REWRITES`, verifies references and
 layout, and only then replaces the original. A column the old layout had and the new
 one does not is lost data unless the release listed it in `DROPS`, and so is a whole
@@ -58,12 +58,24 @@ DROPPED_TABLES: frozenset[str] = frozenset(
     }
 )
 
-# current table -> the name it was stored under before. Its rows are read from there.
-RENAMES: dict[str, str] = {
+# current table -> (the name it had, the version that renamed it). A store older than
+# that version is read from the old name; one at or past it already carries the new name,
+# so the entry stops applying rather than skipping a table the store actually has.
+RENAMES: dict[str, tuple[str, int]] = {
     # The inbox is the durable record an operator reads, not a queue of pending work
     # for an adapter.
-    "notifications": "deliveries",
+    "notifications": ("deliveries", 4),
 }
+
+
+def _source_tables(from_version: int) -> dict[str, str]:
+    """current table -> the table an upgrade from `from_version` reads its rows out of."""
+    return {
+        table: previous
+        for table, (previous, renamed_at) in RENAMES.items()
+        if from_version < renamed_at
+    }
+
 
 # (table, column) -> SQL expression replacing the old column value on the way in, for a
 # value the current layout no longer admits.
@@ -185,11 +197,12 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 ).fetchall()
             ):
                 raise UpgradeError("Not a Hearth store; refusing to upgrade")
-            lost = old_tables - set(_tables(new)) - set(RENAMES.values()) - DROPPED_TABLES
+            sources = _source_tables(from_version)
+            lost = old_tables - set(_tables(new)) - set(sources.values()) - DROPPED_TABLES
             if lost:
                 raise UpgradeError(f"Upgrade would drop tables {sorted(lost)}")
             for table in _tables(new):
-                source = RENAMES.get(table, table)
+                source = sources.get(table, table)
                 if source not in old_tables:
                     continue
                 old_columns = {row["name"] for row in _columns(old, source)}

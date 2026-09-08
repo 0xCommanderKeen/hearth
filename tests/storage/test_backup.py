@@ -214,12 +214,12 @@ def test_incompatible_database_cannot_be_published_as_a_current_backup(system, t
 
 
 def test_backup_carries_the_household_and_nothing_beside_it(system, tmp_path):
-    """Local development scaffolding beside the data is not part of the household."""
+    """Whatever else sits in the data directory is not part of the household."""
     _, executor, run, root = system
     executor.step()
-    for scaffolding in ("mock-inbox", "mock-noticeboard"):
-        (root / scaffolding).mkdir()
-        (root / scaffolding / "synthetic.md").write_text("local scaffolding")
+    for beside in ("scratch", "notes"):
+        (root / beside).mkdir()
+        (root / beside / "synthetic.md").write_text("something else on the disk")
     backup = tmp_path / "backup"
     manifest = capture(root, backup)
     assert set(manifest["files"]) == {"hearth.db", "artifacts/" + run.id + ".md"}
@@ -229,15 +229,15 @@ def test_backup_carries_the_household_and_nothing_beside_it(system, tmp_path):
         "artifacts",
     }
     restore(backup, tmp_path / "restored")
-    assert not (tmp_path / "restored" / "mock-inbox").exists()
-    assert not (tmp_path / "restored" / "mock-noticeboard").exists()
+    assert not (tmp_path / "restored" / "scratch").exists()
+    assert not (tmp_path / "restored" / "notes").exists()
 
 
-def test_a_backup_carrying_a_retired_store_is_refused(system, tmp_path):
+def test_a_backup_carrying_an_unknown_store_is_refused(system, tmp_path):
     _, executor, _, root = system
     executor.step()
     backup = tmp_path / "backup"
     capture(root, backup)
-    (backup / "mock-inbox").mkdir()
+    (backup / "scratch").mkdir()
     with pytest.raises(Refused, match="backup_path_invalid"):
         verify(backup)

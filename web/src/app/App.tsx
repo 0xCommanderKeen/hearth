@@ -359,7 +359,7 @@ export function App() {
     (r) => r.presence === "paused" || r.pause_reason,
   );
   const attentionCount =
-    unread + troubledRuns.length + failedSetups.length + pausedResidents.length;
+    troubledRuns.length + failedSetups.length + pausedResidents.length;
 
   const pageTitle =
     view === "resident"
@@ -381,7 +381,7 @@ export function App() {
     management: "Which residents may create and assign work, within limits.",
     tasks: "Every assignment and its result.",
     routines: "Scheduled work.",
-    inbox: "Everything Hearth has told you, newest first.",
+    inbox: "Everything Hearth has told you, unread first.",
     activity: "Everything Hearth recorded, newest first.",
     hamlet: "Your residents at home.",
   }[view];
@@ -593,18 +593,6 @@ export function App() {
             {view === "townhall" && attentionCount > 0 && (
               <section className="attention" aria-label="Needs your attention">
                 <ul>
-                  {unread > 0 && (
-                    <li>
-                      <span>
-                        <strong>
-                          {unread} unread notification
-                          {unread === 1 ? "" : "s"}
-                        </strong>
-                        in your inbox.
-                      </span>
-                      <a href="#inbox">Open inbox →</a>
-                    </li>
-                  )}
                   {troubledRuns.map((run) => (
                     <li key={run.id}>
                       <span>
@@ -1102,7 +1090,7 @@ export function App() {
                     <h2>Inbox</h2>
                   </div>
                   <span className="eyebrow">
-                    {unread} unread · {notifications.length} kept
+                    {unread} unread · showing {notifications.length}
                   </span>
                 </div>
                 <p>
@@ -1120,7 +1108,9 @@ export function App() {
                     >
                       <h3>
                         {n.kind.replace("run.", "Run ")}
-                        {n.read_at === null && <span className="pip">New</span>}
+                        {n.read_at === null && (
+                          <span className="nav-badge">New</span>
+                        )}
                       </h3>
                       <p>
                         <time>{clock(n.created_at)}</time>
@@ -1128,12 +1118,14 @@ export function App() {
                       <a
                         href={`/#run-${encodeURIComponent(n.resource_id)}`}
                         onClick={() => setView("tasks")}
+                        aria-label={`Open the run ${n.resource_id} and its result`}
                       >
                         Open run and result
                       </a>
                       <button
                         className="quiet"
                         disabled={busy}
+                        aria-label={`Mark the ${n.kind.replace("run.", "run ")} notice for ${n.resource_id} ${n.read_at === null ? "read" : "unread"}`}
                         onClick={() =>
                           act(() =>
                             client.markNotification(n.id, n.read_at === null),

@@ -268,7 +268,7 @@ export type Routine = {
   local_time: string;
   timezone: string;
 };
-export type Notification = {
+export type InboxNotification = {
   id: string;
   kind: string;
   resource_id: string;
@@ -441,7 +441,7 @@ export type Snapshot = {
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
-  notifications?: Notification[];
+  notifications?: InboxNotification[];
   routines?: Routine[];
   occurrences?: {
     routine_id: string;
@@ -941,7 +941,7 @@ export class Client {
     });
   }
   markNotification(id: string, read: boolean) {
-    return this.request<Notification>(
+    return this.request<InboxNotification>(
       `/api/notifications/${encodeURIComponent(id)}/read`,
       { method: "POST", body: JSON.stringify({ read }) },
     );

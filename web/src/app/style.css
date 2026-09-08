@@ -981,17 +981,6 @@ table.ledger {
   font-size: 11px;
   color: var(--muted);
 }
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-.two-col > * {
-  min-width: 0;
-  margin-bottom: 0;
-}
-
 /* ---------- household ---------- */
 .household-policy .section-title strong {
   font-family: var(--mono);
@@ -1039,15 +1028,8 @@ table.ledger {
 .inbox .tasks > li.unread h3 {
   font-weight: 600;
 }
-.inbox .pip {
+.inbox .tasks h3 .nav-badge {
   margin-left: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 99px;
-  background: var(--accent-soft);
-  color: #8f3d1e;
   vertical-align: middle;
 }
 .inbox .tasks > li > button {
@@ -1132,8 +1114,7 @@ table.ledger {
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {
   .workspace,
-  .profile-facts,
-  .two-col {
+  .profile-facts {
     grid-template-columns: 1fr;
   }
 }

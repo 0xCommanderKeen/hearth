@@ -8,10 +8,10 @@ python -m hearth verify-backup --source /private/tmp/hearth-backup
 python -m hearth restore --source /private/tmp/hearth-backup --destination /private/tmp/hearth-restored
 ```
 
-Capture excludes executor, action broker and notification workers with their
-existing locks, then holds a SQLite write transaction while SQLite's backup API
-copies the database and the covered stores are copied. Scheduler and API writes
-are therefore frozen too. Busy workers cause a refusal; retry the command later.
+Capture excludes the executor with its existing lock, then holds a SQLite write
+transaction while SQLite's backup API copies the database and the covered stores are
+copied. Scheduler and API writes are therefore frozen too. A busy executor causes a
+refusal; retry the command later.
 A run that is priced but not yet settled refuses capture: its provider evidence is
 still in flight and nothing here can copy it.
 A backup is the household, not the directory it happens to live in: `hearth.db`,

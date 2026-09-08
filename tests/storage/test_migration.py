@@ -434,3 +434,37 @@ def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):
     with pytest.raises(UpgradeError, match=r"would drop tables \['letters'\]"):
         Database(path).initialize()
     assert path.read_bytes() == before
+
+
+def test_a_renamed_table_is_still_copied_once_stores_carry_the_new_name(tmp_path):
+    """The release after this one must not read the inbox out of a table nobody has."""
+    from hearth.observation.notifications import record
+    from hearth.storage.migration import upgrade
+
+    path = tmp_path / "hearth.db"
+    Database(path).initialize()
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit, created_at)"
+        " VALUES ('karen', 1, 'Karen', 'Reads notes', 1000000, 1)"
+    )
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, 2, "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    record(db, "run.succeeded", "r", 2)
+    db.commit()
+    db.close()
+    # A store already at the current layout, rebuilt as a later release would rebuild it.
+    upgrade(path, from_version=SCHEMA_VERSION, to_version=SCHEMA_VERSION)
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT kind, resource_id FROM notifications").fetchall() == [
+        ("run.succeeded", "r")
+    ]
