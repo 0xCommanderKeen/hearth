@@ -8,7 +8,7 @@ import sys
 import pytest
 from hearth.execution.context import read_context
 from hearth.execution.lifecycle import Execution
-from hearth.integrations.codex.subscription import KIND, CodexLiveRuntime
+from hearth.integrations.codex.subscription import CodexLiveRuntime
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration
 from hearth.storage.artifacts import Artifacts

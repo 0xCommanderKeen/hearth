@@ -25,11 +25,12 @@ class Runtime(Protocol):
 
 
 def pricing_pin(kind: str, mode: str | None = None) -> dict | None:
-    if kind == "codex_subscription" or mode is not None:
-        from hearth.integrations.codex.receipts import pricing_pin
+    """The subscription bills at the standard tier; a requested mode cannot change it."""
+    if kind != "codex_subscription":
+        return None
+    from hearth.integrations.codex.receipts import pricing_pin
 
-        return pricing_pin("standard" if kind == "codex_subscription" else (mode or "standard"))
-    return None
+    return pricing_pin("standard")
 
 
 def validate_pricing(value: dict) -> None:

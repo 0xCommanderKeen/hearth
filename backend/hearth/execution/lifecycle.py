@@ -1,4 +1,4 @@
-"""One supervised lifecycle for mock execution, recovery, and terminal accounting."""
+"""One supervised lifecycle for execution, recovery, and terminal accounting."""
 
 import fcntl
 import json

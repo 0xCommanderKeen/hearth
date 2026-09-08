@@ -1,13 +1,16 @@
 """In-run memory and journal tools, and the journal the next run opens with."""
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 from hearth.app import create_app
 from hearth.authority.household import Household
 from hearth.execution.context import read_context
-from hearth.integrations.interface import Evidence
+from hearth.execution.usage import binding as usage_binding
+from hearth.integrations.codex.pricing import MODEL
+from hearth.integrations.codex.subscription import KIND
+from hearth.integrations.interface import encode_receipt
 from hearth.management.authority import Management
 from hearth.management.bootstrap import bootstrap
 from hearth.management.bridge import BoundRun, Bridge
@@ -58,8 +61,83 @@ def working_run(app, resident_id: str, key: str):
     return run, call
 
 
+def native_terminal(pin) -> dict:
+    """The app-server evidence the management runtime seals this run's one turn with."""
+    thread, turn = pin["thread_id"], pin["turn_id"]
+    return {
+        "protocol": "codex-app-server-0.153.4",
+        "launched": True,
+        "cancelled": False,
+        "error": None,
+        "exit_code": -15,
+        "catalog_sha256": pin["catalog_sha256"],
+        "tools_sha256": pin["tools_sha256"],
+        "events": [
+            {"method": "thread/started", "params": {"thread": {"id": thread, "model": MODEL}}},
+            {"method": "turn/started", "params": {"threadId": thread, "turn": {"id": turn}}},
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread,
+                    "turnId": turn,
+                    "tokenUsage": {
+                        "total": {
+                            "totalTokens": 30,
+                            "inputTokens": 20,
+                            "outputTokens": 10,
+                            "cachedInputTokens": 0,
+                            "reasoningOutputTokens": 0,
+                        }
+                    },
+                },
+            },
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": thread,
+                    "turn": {
+                        "id": turn,
+                        "status": "completed",
+                        "error": None,
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "# Daily summary",
+                                "phase": "final_answer",
+                            }
+                        ],
+                    },
+                },
+            },
+        ],
+    }
+
+
 def settle(app, run) -> None:
-    app.state.execution.finish(run.id, run.owner_token, Evidence("succeeded", "# synthetic", 1))
+    """End the run the way its runtime does: every run is priced from a real receipt."""
+    hearth = app.state.hearth
+    with hearth.database.transaction(write=True) as db:
+        # A run that never reached pin_configuration still needs its launch pins.
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=COALESCE(catalog_sha256,?), "
+            "tools_sha256=COALESCE(tools_sha256,?) WHERE run_id=?",
+            ("b" * 64, "c" * 64, run.id),
+        )
+        pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+        bound = usage_binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+        binary = db.execute(
+            "SELECT value FROM system_meta WHERE key='codex_live_binary'"
+        ).fetchone()[0]
+    receipt = {
+        "kind": KIND,
+        "protocol": "management",
+        "binding": asdict(bound),
+        "binary": binary,
+        "terminal": native_terminal(pin),
+    }
+    app.state.execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
 
 
 def pinned_context(hearth, run_id: str) -> dict:

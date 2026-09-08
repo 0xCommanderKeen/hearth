@@ -1,4 +1,4 @@
-"""Read one pinned mock input within the caller's authorized database snapshot."""
+"""Read one pinned run input within the caller's authorized database snapshot."""
 
 import sqlite3
 
