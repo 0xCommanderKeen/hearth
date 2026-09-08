@@ -16,6 +16,7 @@ from hearth.api.auth import OperatorAuth
 from hearth.api.requests import (
     DeclarationPost,
     HouseholdPost,
+    LetterPost,
     MemoryPost,
     PausePost,
     ReadPost,
@@ -204,6 +205,27 @@ def create_app(
     def journal(resident_id: str, limit: int = PAGE, offset: int = 0):
         return Journal(hearth).read(resident_id, limit=limit, offset=offset)
 
+    # The operator writes with its own hand: no grant bounds it, because there is no
+    # resident whose authority it could escalate. The receiver's door, its archive state
+    # and the household's own reach hold exactly as they do for a resident's letter.
+    @app.post("/api/residents/{resident_id}/letters", status_code=201)
+    def send_letter(
+        resident_id: str,
+        body: LetterPost,
+        idempotency_key: str = Header(min_length=1, max_length=128),
+    ):
+        return hearth.send_operator_letter(
+            idempotency_key,
+            resident_id,
+            body.title,
+            body.detail,
+            expires_at=body.expires_at,
+        )
+
+    @app.get("/api/residents/{resident_id}/letters")
+    def letters(resident_id: str, limit: int = 30, offset: int = 0):
+        return hearth.letters(resident_id, limit=limit, offset=offset)
+
     @app.put("/api/residents/{resident_id}")
     def save_resident(resident_id: str, body: DeclarationPost):
         if body.expected_revision == 0:
@@ -214,6 +236,9 @@ def create_app(
             # expected revision still refuses a save that raced a change to it.
             if values["memory_writable"] is None:
                 values["memory_writable"] = hearth.declared_memory_writable(db, resident_id)
+            # An omitted letters.accept likewise keeps the door exactly as it stands.
+            if values["letters_accept"] is None:
+                values["letters_accept"] = hearth.declared_letters_accept(db, resident_id)
             return asdict(
                 hearth.save_resident_in_transaction(
                     db,
@@ -256,6 +281,16 @@ def create_app(
             "task_id": run.task_id,
             "status": run.status,
         }
+
+    # What one question cost, gathered under the task its whole chain rolls up to. A
+    # letter is worked by its receiver, on that resident's allowance, so this is the only
+    # place the operator can see the price of an answer rather than of a run.
+    @app.get("/api/usage/origins")
+    def usage_origins(limit: int = 30, offset: int = 0):
+        from hearth.execution.usage import by_origin
+
+        with database.transaction() as db:
+            return by_origin(db, limit=limit, offset=offset)
 
     @app.get("/api/runs/{run_id}")
     def inspect_run(run_id: str):

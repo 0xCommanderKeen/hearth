@@ -10,6 +10,13 @@ from hearth.residents.lifecycle import lifecycle_summary
 from hearth.residents.memory import run_memory_writes
 from hearth.residents.provisioning import profile_summary
 from hearth.skills.assignments import skill_summary
+from hearth.work.letters import (
+    MAX_EVENTS,
+    letter_events,
+    refused_sends,
+    resident_names,
+    task_lineage,
+)
 from hearth.work.service import ACTIVE_RUNS, Hearth
 
 
@@ -19,7 +26,7 @@ def snapshot(hearth: Hearth) -> dict:
         cursor = db.execute("SELECT COALESCE(MAX(sequence), 0) FROM audit").fetchone()[0]
         residents = []
         for row in db.execute("""SELECT r.id, r.revision, d.name, d.purpose, d.daily_limit,
-                             d.budget_timezone,
+                             d.budget_timezone, d.letters_accept,
                              (SELECT COALESCE(MAX(revision),0) FROM memory_revisions m
                               WHERE m.resident_id=r.id) AS memory_revision,
                              p.reason AS safety_hold_reason FROM residents r
@@ -52,6 +59,9 @@ def snapshot(hearth: Hearth) -> dict:
             resident.update(skill_summary(db, row["id"]))
             resident.update(input_summary(db, row["id"]))
             residents.append(resident)
+        # Names are read once for the whole projection: a chain is read by name, and a
+        # hundred tasks would otherwise ask the same question a hundred times.
+        names = resident_names(db)
         tasks = [
             dict(row)
             for row in db.execute(
@@ -60,6 +70,10 @@ def snapshot(hearth: Hearth) -> dict:
                 "AND finished_at IS NOT NULL) DESC, created_at DESC, id DESC LIMIT 100"
             )
         ]
+        for task in tasks:
+            # A letter says which chain it belongs to; an ordinary task is its own chain
+            # and carries none, so the operator sees a breadcrumb only where one exists.
+            task["lineage"] = task_lineage(db, task["id"], names)
         runs = [
             dict(row)
             for row in db.execute(f"""SELECT id, task_id, resident_id,
@@ -80,7 +94,11 @@ def snapshot(hearth: Hearth) -> dict:
                    (usage_known=0 AND finished_at IS NOT NULL) DESC,
                    created_at DESC, id DESC LIMIT 100""")
         ]
+        # A refused send writes nothing, so it exists only as the run's own tool
+        # evidence. Reading them all at once keeps a hundred runs to one pass.
+        refusals = refused_sends(db, [run["id"] for run in runs])
         for run in runs:
+            run["letters_refused"] = refusals.get(run["id"], [])
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
             run["management"] = management_summary(db, run["id"], run=True)
@@ -112,6 +130,9 @@ def snapshot(hearth: Hearth) -> dict:
             ],
             "tasks": tasks,
             "runs": runs,
+            # What the post did, both ends named. A village draws its walks from these
+            # and from nothing else.
+            "letters": letter_events(db),
             "activity": audit,
             "notifications": [
                 dict(row) | {"payload": json.loads(row["payload"])}
@@ -134,5 +155,11 @@ def snapshot(hearth: Hearth) -> dict:
                     "SELECT * FROM occurrences ORDER BY scheduled_at DESC, routine_id LIMIT 100"
                 )
             ],
-            "limits": {"tasks": 100, "runs": 100, "activity": 30, "notifications": 100},
+            "limits": {
+                "tasks": 100,
+                "runs": 100,
+                "activity": 30,
+                "notifications": 100,
+                "letters": MAX_EVENTS,
+            },
         }

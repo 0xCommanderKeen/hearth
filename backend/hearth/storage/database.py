@@ -14,7 +14,7 @@ from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 9
 # Hearth ships one runtime, and every new store and run records that one kind.
 RUNTIME_KIND = "codex_subscription"
 # Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on
@@ -29,7 +29,12 @@ def _adopt_the_one_runtime(connection: sqlite3.Connection, previous: str) -> Non
     where it did not. Work that was still in flight cannot be observed by any
     runtime that remains, so it ends here as cancelled with its usage unknown —
     visible to the operator to reconcile, never quietly settled at zero.
+
+    A letter that work was answering ends with it, in this same transaction: its
+    sender asked a question and is owed a word for it, and `failed` is that word.
     """
+    from hearth.work.letters import settle_letter
+
     now = int(time.time())
 
     def record(kind: str, resource: str, detail: dict) -> None:
@@ -50,6 +55,16 @@ def _adopt_the_one_runtime(connection: sqlite3.Connection, previous: str) -> Non
             "UPDATE runs SET status='cancelled', finished_at=? WHERE id=?", (now, run["id"])
         )
         connection.execute("UPDATE tasks SET status='cancelled' WHERE id=?", (run["task_id"],))
+        settle_letter(
+            connection,
+            run["task_id"],
+            run_id=run["id"],
+            resident_id=run["resident_id"],
+            status="cancelled",
+            artifact_id=None,
+            now=now,
+            reason="runtime_removed",
+        )
         changed = connection.execute(
             "INSERT OR IGNORE INTO pauses VALUES (?, ?, ?, ?)",
             (run["resident_id"], "usage_unknown", run["id"], now),

@@ -61,11 +61,13 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
     sent = inputs[0][1]
     assert json.loads(sent) == expected
     assert expected["purpose"] == "Original synthetic purpose"
-    assert expected["resident_revision"] == 1 and expected["context_version"] == 7
+    assert expected["resident_revision"] == 1 and expected["context_version"] == 9
     assert expected["instruction"] == "Summarize the synthetic notes"
     assert expected["notes"] == []
-    # Reader is unchanged: it opens with no journal and cannot write its memory.
+    # Reader is unchanged: it opens with no journal, cannot write its memory, and is
+    # working its own task rather than answering anybody's letter.
     assert expected["journal"] == [] and expected["memory_writable"] is False
+    assert expected["letter"] is None and expected["replies"] == []
     assert set(expected) == {
         "context_version",
         "skills",
@@ -80,6 +82,9 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
         "resident_revision",
         "purpose",
         "instruction",
+        "letter",
+        "replies",
+        "replies_usage",
         "notes",
         "inputs",
         "input_state",

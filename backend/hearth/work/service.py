@@ -27,6 +27,25 @@ from hearth.storage.database import Database
 
 COMMAND_LIFETIME = 30 * 24 * 60 * 60
 ACTIVE_RUNS = "('starting', 'running', 'stopping', 'interrupted')"
+# Refusals that mean "not now", not "not ever": a bounded admission pass leaves the task
+# queued for a later one rather than reporting a fault. Anything else is a real integrity
+# or policy failure and reaches the caller.
+ADMISSION_WAITS = frozenset(
+    {
+        "resident_busy",
+        "resident_paused",
+        "resident_archived",
+        # A resident whose setup never finished can still be retried into being ready.
+        # Reporting it every pass would hold an error open for as long as the work is
+        # queued and hide any real fault the same pass hits.
+        "resident_setup_incomplete",
+        "capacity_exhausted",
+        "budget_exhausted",
+        "household_budget_exhausted",
+        "household_concurrency_limit",
+        "task_already_admitted",
+    }
+)
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
@@ -69,6 +88,74 @@ class Hearth:
             (resident_id,),
         ).fetchone()
         return bool(row[0]) if row else False
+
+    def declared_letters_accept(self, db, resident_id: str) -> bool:
+        """The current declared letters.accept, so an omitted door keeps what is open."""
+        row = db.execute(
+            "SELECT d.letters_accept FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def send_letter_in_transaction(
+        self,
+        db,
+        sender_run: str,
+        to: str,
+        title: str,
+        detail: str,
+        operation_id: str,
+        *,
+        expires_at: int | None = None,
+    ) -> dict:
+        """Queue one letter for another resident, or refuse without writing anything."""
+        from hearth.work.letters import send_letter
+
+        return send_letter(
+            db,
+            self,
+            sender_run=sender_run,
+            to=to,
+            title=title,
+            detail=detail,
+            operation_id=operation_id,
+            expires_at=expires_at,
+        )
+
+    def send_operator_letter(
+        self, command_id: str, to: str, title: str, detail: str, *, expires_at: int | None = None
+    ) -> dict:
+        """Queue one letter the operator wrote, under the receiver's own door and rules."""
+        from hearth.work.letters import send_operator_letter
+
+        with self.database.transaction(write=True) as db:
+            return send_operator_letter(
+                db,
+                self,
+                command_id=command_id,
+                to=to,
+                title=title,
+                detail=detail,
+                expires_at=expires_at,
+            )
+
+    def reply_to_letter_in_transaction(
+        self, db, run_id: str, letter_id: str, text: str, operation_id: str
+    ) -> dict:
+        """Record one run's single answer to the letter it is working."""
+        from hearth.work.letters import reply_to_letter
+
+        return reply_to_letter(
+            db, self, run_id=run_id, letter_id=letter_id, text=text, operation_id=operation_id
+        )
+
+    def letters(self, resident_id: str, *, limit: int = 30, offset: int = 0) -> dict:
+        """One resident's inbox and everything it has written, for the operator."""
+        from hearth.work.letters import operator_letters
+
+        with self.database.transaction() as db:
+            return operator_letters(db, resident_id, limit=limit, offset=offset)
 
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
@@ -115,8 +202,9 @@ class Hearth:
                 now=now,
             )
         writable = declaration.memory_writable
+        accepts = declaration.letters_accept
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -127,6 +215,7 @@ class Hearth:
                 declaration.budget_timezone,
                 declaration.skill_text,
                 int(writable),
+                int(accepts),
             ),
         )
         _audit(
@@ -134,7 +223,7 @@ class Hearth:
             "resident.saved",
             resident_id,
             now,
-            {"revision": revision, "memory_writable": writable},
+            {"revision": revision, "memory_writable": writable, "letters_accept": accepts},
         )
         return Resident(resident_id, revision, declaration)
 
@@ -182,6 +271,7 @@ class Hearth:
                     row["budget_timezone"],
                     row["skill_text"],
                     bool(row["memory_writable"]),
+                    bool(row["letters_accept"]),
                 ),
             )
 
@@ -282,6 +372,11 @@ class Hearth:
             raise Refused("task_not_found")
         if task["status"] != "queued":
             raise Refused("task_already_admitted")
+        # No money is spent answering a stale question. The letter is closed as failed by
+        # the sweep that owns that write; admission only refuses to start it.
+        letter = db.execute("SELECT expires_at FROM letters WHERE task_id=?", (task_id,)).fetchone()
+        if letter is not None and now >= letter["expires_at"]:
+            raise Refused("letter_expired")
         resident_id = task["resident_id"]
         if db.execute(
             "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",

@@ -24,6 +24,16 @@ requires only that the run is finished and names a kind Hearth actually shipped.
 Restored stores stay held. Authenticated run inspection exposes the pricing pins and
 request token counts; the browser labels the amount as API-equivalent USD.
 
+One run is not one question. A letter is worked by the resident it reached, on that
+resident's own allowance, so a question can spend as many allowances as its chain has
+hops. `GET /api/usage/origins` gathers every run under the task its chain rolls up to —
+the letter's own root, written from the sender's admitted lineage, and an ordinary task
+is its own origin — and Townhall reads it beside the task list as "Cost by origin". Each
+run is counted once, at the amount its own row records, so a reconciled run is neither
+counted twice nor counted as both known and unknown. A run whose usage is still unknown
+is reported as unknown rather than as costing nothing, and keeps the hold it placed on
+its resident: this report reads, and releases nothing.
+
 A trusted worker must establish terminal process ownership and freeze collector
 handoff; copying a journal alone does not prove those boundaries or account usage.
 Tests use real temporary SQLite and the fake runtime's provider-shaped journals.

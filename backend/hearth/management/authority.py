@@ -26,8 +26,12 @@ class GrantPolicy(BaseModel):
             "manage_lifecycle",
             "assign_skills",
             "writable_memory",
+            "send_letters",
         ]
-    ] = Field(default_factory=list, max_length=8)
+    ] = Field(default_factory=list, max_length=9)
+    # Whom this resident may write to. Empty means every resident that opens its own
+    # letters door; a listed set narrows that and never widens anything else.
+    letter_recipient_ids: list[str] = Field(default_factory=list, max_length=20)
     max_residents: int = Field(default=5, ge=0, le=20)
     max_daily_limit: int = Field(default=1_000_000, ge=0, le=10_000_000)
     max_reserve: int = Field(default=500_000, ge=1, le=2_000_000)
@@ -92,7 +96,17 @@ class Management:
             raise Refused("management_profile_unavailable")
         for item in body.input_set_ids:
             read_input(db, item)
-        for values in (body.profiles, body.input_set_ids, body.capabilities):
+        # A named recipient is checked for shape, not existence: an operator may write
+        # the allowlist before the resident exists, and the send itself refuses a
+        # recipient that is missing, archived or does not accept letters.
+        for item in body.letter_recipient_ids:
+            identifier(item)
+        for values in (
+            body.profiles,
+            body.input_set_ids,
+            body.capabilities,
+            body.letter_recipient_ids,
+        ):
             if len(values) != len(set(values)):
                 raise Refused("management_duplicate_scope")
         policy = body.model_dump(exclude={"expected_revision"})
@@ -117,13 +131,30 @@ class Management:
         return result
 
 
-def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
-    """A run reaches the native tools with a management grant, with writable memory, or not.
+def works_a_letter(db, run_id: str) -> bool:
+    """Is the task this run was admitted for a letter someone is owed an answer to?"""
+    return (
+        db.execute(
+            "SELECT 1 FROM letters l JOIN runs r ON r.task_id=l.task_id WHERE r.id=?", (run_id,)
+        ).fetchone()
+        is not None
+    )
 
-    Both pin a row here, because both need the tool transport; only the granted one pins a
-    grant revision. A run pinned without one carries no management authority at all, whatever
-    the operator grants afterwards.
+
+def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
+    """A run reaches the native tools with a grant, with writable memory, with post, or not.
+
+    All of them pin a row here, because all of them need the tool transport; only the
+    granted one pins a grant revision. A run pinned without one carries no management
+    authority at all, whatever the operator grants afterwards.
+
+    The letter half of the gate is exactly `run_letter_scope`'s `post`: the letter this run
+    was admitted to answer, or any letter this resident already had an end of. A resident
+    that has only ever received letters holds no grant and may still read its own post, and
+    a run with no row here would be launched with no native surface to read it on.
     """
+    from hearth.work.letters import holds_post
+
     grant = read_grant(db, resident_id)
     if grant["enabled"]:
         policy = {
@@ -133,7 +164,7 @@ def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writab
             "INSERT INTO run_management VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, grant["revision"], digest(policy), now + 600),
         )
-    elif memory_writable:
+    elif memory_writable or works_a_letter(db, run_id) or holds_post(db, run_id):
         db.execute(
             "INSERT INTO run_management VALUES (?,?,NULL,NULL,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, now + 600),
@@ -141,6 +172,8 @@ def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writab
 
 
 def validate_management(db) -> None:
+    from hearth.work.letters import holds_post
+
     for row in db.execute("SELECT * FROM management_grant_revisions"):
         try:
             policy = GrantPolicy.model_validate(json.loads(row["policy"])).model_dump()
@@ -149,20 +182,27 @@ def validate_management(db) -> None:
         except ValueError, TypeError:
             raise Refused("management_grant_corrupt") from None
     for row in db.execute(
-        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256,d.memory_writable "
+        "SELECT p.*,r.resident_id AS owner,r.created_at,g.sha256,d.memory_writable,"
+        "EXISTS(SELECT 1 FROM letters l WHERE l.task_id=r.task_id) AS letter "
         "FROM run_management p JOIN runs r ON r.id=p.run_id "
         "LEFT JOIN management_grant_revisions g "
         "ON g.resident_id=p.resident_id AND g.revision=p.grant_revision "
         "LEFT JOIN declarations d ON d.resident_id=r.resident_id AND d.revision=r.resident_revision"
-    ):
+    ).fetchall():
         if (
             row["resident_id"] != row["owner"]
             or row["grant_sha256"] != row["sha256"]
             or row["expires_at"] != row["created_at"] + 600
         ):
             raise Refused("management_admission_changed")
-        # A pin without a grant revision exists only for a run that could write its own memory.
-        if row["grant_revision"] is None and not row["memory_writable"]:
+        # A pin without a grant revision exists only for a run that could write its own
+        # memory, answer the letter it was admitted for, or read its own post.
+        if (
+            row["grant_revision"] is None
+            and not row["memory_writable"]
+            and not row["letter"]
+            and not holds_post(db, row["run_id"])
+        ):
             raise Refused("management_admission_changed")
 
 

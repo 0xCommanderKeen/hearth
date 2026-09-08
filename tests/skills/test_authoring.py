@@ -955,3 +955,100 @@ def test_invalid_arguments_bound_many_errors_without_echoing_private_values(tmp_
     assert secret not in json.dumps(refusal)
     assert len(json.dumps(refusal)) < 2048
     assert client.get("/api/skills", headers=AUTH).json() == before
+
+
+def test_a_skill_example_opens_with_none_of_the_household_post(tmp_path):
+    """An example is a rehearsal on exactly what its request named, and nothing else.
+
+    A colleague's answer to an unrelated question would make the same candidate read
+    differently from one week to the next, so an example run opens with no replies even
+    when the resident it runs as has answers waiting.
+    """
+    from hearth.execution.context import read_context
+    from hearth.residents.memory import MemoryFiles
+    from hearth.residents.models import Declaration
+    from hearth.skills.validation import Validation
+    from hearth.work.letters import deliver_letters, run_replies
+
+    app, client, karen, bridge = manager(tmp_path)
+    hearth = app.state.hearth
+    now = int(hearth.clock())
+    hearth.clock = lambda: now
+    hearth.save_resident(
+        "reporter",
+        Declaration("Reporter", "Answers one question", 1_000_000, letters_accept=True),
+        expected_revision=0,
+    )
+    _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
+    _, pending = call(
+        bridge,
+        "hearth_skills_validate",
+        {
+            "operation_id": "validate",
+            "skill_id": saved["skill_id"],
+            "revision": 1,
+            "reserve": 10000,
+        },
+        "validate",
+    )
+    # Karen asks a colleague a question from this very run, and it is answered.
+    ok, letter = call(
+        bridge,
+        "hearth_letters_send",
+        {
+            "operation_id": "letter-1",
+            "to": "reporter",
+            "title": "One question",
+            "detail": "Name one fact about the orchard.",
+        },
+        "letter",
+    )
+    assert ok, letter
+    assert deliver_letters(hearth) == [letter["task_id"]]
+    with hearth.database.transaction() as db:
+        answering = db.execute(
+            "SELECT id FROM runs WHERE task_id=?", (letter["task_id"],)
+        ).fetchone()[0]
+    with hearth.database.transaction(write=True) as db:
+        hearth.reply_to_letter_in_transaction(
+            db, answering, letter["task_id"], "The orchard has 412 pear trees.", "answer-1"
+        )
+    assert settle_karen(app, bridge).status == "succeeded"
+
+    hearth.clock = lambda: now + 120
+    Validation(hearth).step()
+    case = client.get("/api/skill-validations/" + pending["validation_id"], headers=AUTH).json()
+    example = next(one["run_id"] for one in case["cases"] if one["run_id"])
+    memory = MemoryFiles(hearth.database.path.parent / "memory")
+    with hearth.database.transaction() as db:
+        assert run_replies(db, example) == []
+        assert read_context(db, example, memory)["replies"] == []
+
+    # And the answer is not lost behind the example: the next working run of the same
+    # resident looks past it and opens with what arrived while it ran. The example is
+    # cancelled before it ever launched, so it settles at zero with its own receipt.
+    from hearth.execution.usage import binding, runtime_pins
+    from hearth.integrations import interface
+    from hearth.integrations.interface import Evidence
+
+    owner = hearth.run(example).owner_token
+    app.state.execution.cancel(example)
+    with hearth.database.transaction() as db:
+        row = db.execute("SELECT * FROM runs WHERE id=?", (example,)).fetchone()
+        cancelled = interface.cancellation_receipt(
+            row["runtime_kind"], binding(db, row), runtime_pins(db, example)
+        )
+    app.state.execution.finish(
+        example, owner, Evidence("cancelled", cost=0), _usage_receipt=cancelled
+    )
+    hearth.clock = lambda: now + 240
+    task = hearth.submit(
+        "after-the-example",
+        karen["resident_id"],
+        "Write today's report.",
+        expires_at=now + 900,
+    )
+    working = hearth.admit(task.task_id, reserve=100000)
+    with hearth.database.transaction() as db:
+        opened = read_context(db, working.id, memory)["replies"]
+    assert [reply["letter_id"] for reply in opened] == [letter["task_id"]]

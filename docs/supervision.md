@@ -5,9 +5,16 @@ nonblocking file lock beside the canonical database path. A second supervising A
 process fails startup before its background work begins. Path aliases resolve to
 the same lock. Restored copies cannot acquire supervision and remain read-only.
 
-The worker owns routine ticks, queued routine admission, runtime supervision and
-pending skill validations. Errors expose their class through authenticated health,
-not their private text; executor, scheduler and validation errors stay separate.
+The worker owns the letter pass, routine ticks, queued routine admission, runtime
+supervision and pending skill validations. The letter pass is the whole of letter
+delivery: it closes letters that went stale before anyone started them, then admits
+the ones still worth working through the same admission operation a routine
+occurrence uses, so each is bounded by the receiver's allocation, the shared
+household allowance and the receiver's own pause and archive state. A receiver that
+is paused, busy or spent keeps its letter queued for a later pass. There is no
+letter watcher, poller or inbox drain. Errors expose their class through
+authenticated health, not their private text; executor, scheduler, validation and
+letter errors stay separate.
 There is no notification pass: a notification is written in the same transaction as
 the fact it reports, so nothing periodic has to deliver it. Existing per-operation
 locks and durable run ownership tokens remain necessary for standalone operations,

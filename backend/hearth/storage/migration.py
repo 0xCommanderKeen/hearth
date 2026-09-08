@@ -27,6 +27,16 @@ from hearth.storage.schema import SCHEMA
 FILLS: dict[tuple[str, str], str] = {
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",
+    # A household that never had letters keeps the shipped defaults: two hops, one day.
+    ("household_policy", "max_letter_depth"): "2",
+    ("household_policy", "letter_ttl_seconds"): "86400",
+    # A household that never had the cap keeps the shipped one: five letters a day is
+    # already more than a resident can work while doing anything else.
+    ("household_policy", "letter_daily_limit"): "5",
+    # Every letter arrives open; what became of the ones that already ended is read from
+    # the store's own rows afterwards, by `_settle_stored_letters`, where every table it
+    # has to consult exists.
+    ("letters", "state"): "'pending'",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is
@@ -121,8 +131,10 @@ REWRITES: dict[tuple[str, str], str] = {
 # Upgrading from a version below this changes the run context Hearth builds, so the
 # instruction an admitted run would now be launched with no longer matches the digest it
 # reserved against. Such a run cannot start, and on the next pass it would settle as
-# interrupted while holding its resident's slot and reservation.
-CONTEXT_REWRITTEN_AT = 3
+# interrupted while holding its resident's slot and reservation. The context gained the
+# rendered letter at version 8 and the replies a sender opens with at version 9, so
+# every store below that is rebuilt this way.
+CONTEXT_REWRITTEN_AT = 9
 
 # Upgrading from a version below this removes approvals, so a notification announcing
 # one names a review the store no longer holds and can no longer open.
@@ -131,6 +143,17 @@ APPROVALS_REMOVED_AT = 4
 # Upgrading from a version below this removes the service evaluator that owned skill
 # example runs. Skill examples now run as the resident that asked for them.
 EVALUATOR_REMOVED_AT = 5
+
+# Upgrading from a version below this adds the letter scope to the management grant.
+# A stored grant is a digested document, so the new field has to be written into every
+# recorded revision and into the admissions that pinned one, or the grant reads as
+# tampered with and every granted run loses its authority.
+LETTERS_ADDED_AT = 6
+
+# Upgrading from a version below this gives every letter the one word for what became of
+# it. A store that already worked letters knows the answer from its own rows, so the
+# state is read back from them rather than invented or left saying nothing.
+LETTER_STATES_ADDED_AT = 9
 
 # The pinned request fields of a `skill_validations` row before and at version 5, frozen
 # here: the rename moves what the stored digest covers, so the old digest is verified and
@@ -174,6 +197,13 @@ VALIDATION_REQUEST_FIELDS_V5 = (
 
 def _digest(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _policy_digest(value: dict) -> str:
+    """`management.authority.digest`, repeated here so an upgrade imports no service."""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 class UpgradeError(RuntimeError):
@@ -273,6 +303,107 @@ def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
             ("resident.lifecycle_saved", evaluator, now, json.dumps(lifecycle, sort_keys=True)),
         )
     _fact(connection, "resident.archived", evaluator, now)
+
+
+def _open_grants_to_letters(connection: sqlite3.Connection, now: int) -> None:
+    """Write the letter scope into every stored grant, empty, and into what pinned one.
+
+    A grant is a digested document, so a new field changes what every recorded revision
+    hashes to. The old digest is verified before the new one is written — a revision an
+    operator had edited in the file stays refused rather than being blessed by the
+    rebuild — and each admission that pinned that revision moves to the new digest, so a
+    run already in flight keeps exactly the authority it was admitted with. The scope
+    arrives empty: an upgrade opens no doors, and no grant gains `send_letters` here.
+    """
+    changed = 0
+    for row in connection.execute("SELECT * FROM management_grant_revisions").fetchall():
+        try:
+            policy = json.loads(row["policy"])
+            if not isinstance(policy, dict):
+                raise ValueError
+        except ValueError:
+            raise UpgradeError(f"Management grant {row['resident_id']} is unreadable") from None
+        if _policy_digest(policy) != row["sha256"]:
+            raise UpgradeError(
+                f"Stored management grant {row['resident_id']} was changed in the file"
+            )
+        policy["letter_recipient_ids"] = []
+        sha256 = _policy_digest(policy)
+        connection.execute(
+            "UPDATE management_grant_revisions SET policy=?,sha256=? "
+            "WHERE resident_id=? AND revision=?",
+            (json.dumps(policy, sort_keys=True), sha256, row["resident_id"], row["revision"]),
+        )
+        connection.execute(
+            "UPDATE run_management SET grant_sha256=? WHERE resident_id=? AND grant_revision=?",
+            (sha256, row["resident_id"], row["revision"]),
+        )
+        changed += 1
+    if changed:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "management.grants_rescoped",
+                "management",
+                now,
+                json.dumps({"count": changed, "reason": "letters_added"}, sort_keys=True),
+            ),
+        )
+
+
+def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
+    """Give every letter that already ended the word for what it came to.
+
+    The store knows this without being told: a letter with an answer was `replied` to,
+    one whose run succeeded without writing one went `unanswered`, one whose task failed
+    with no run at all `expired` before anybody started it, and any other closed letter
+    `failed` — with the run that was working it, or with the cancel that ended it before
+    one ever did. A letter still open keeps saying so.
+
+    Cancelling is not going stale, so an unworked cancelled letter is `failed` rather
+    than `expired`: the sender's question ended, but its shelf life never ran out, and a
+    store that said otherwise would contradict its own rows on the next validation.
+
+    When it ended is the run's own finish, or the shelf life for one nothing ever
+    started; an upgrade never invents a time later than the fact it records, so a shelf
+    life still ahead of this upgrade settles at the upgrade instead.
+    """
+    settled = 0
+    for row in connection.execute(
+        "SELECT l.task_id,l.expires_at,t.status,"
+        "EXISTS(SELECT 1 FROM letter_replies p WHERE p.task_id=l.task_id) AS answered,"
+        "(SELECT MAX(finished_at) FROM runs r WHERE r.task_id=l.task_id) AS finished,"
+        "EXISTS(SELECT 1 FROM runs r WHERE r.task_id=l.task_id) AS worked "
+        "FROM letters l JOIN tasks t ON t.id=l.task_id "
+        "WHERE t.status IN ('succeeded','failed','cancelled')"
+    ).fetchall():
+        if row["answered"]:
+            state = "replied"
+        elif row["status"] == "succeeded":
+            state = "unanswered"
+        elif not row["worked"] and row["status"] == "failed":
+            state = "expired"
+        else:
+            state = "failed"
+        connection.execute(
+            "UPDATE letters SET state=?,settled_at=? WHERE task_id=?",
+            (
+                state,
+                row["finished"] if row["finished"] is not None else min(row["expires_at"], now),
+                row["task_id"],
+            ),
+        )
+        settled += 1
+    if settled:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "letters_settled",
+                "letters",
+                now,
+                json.dumps({"count": settled, "reason": "letter_states_added"}, sort_keys=True),
+            ),
+        )
 
 
 def _fact(
@@ -428,6 +559,10 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 _drop_approval_notifications(new, at)
             if from_version < EVALUATOR_REMOVED_AT:
                 _retire_skill_evaluator(new, at)
+            if from_version < LETTERS_ADDED_AT:
+                _open_grants_to_letters(new, at)
+            if from_version < LETTER_STATES_ADDED_AT:
+                _settle_stored_letters(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

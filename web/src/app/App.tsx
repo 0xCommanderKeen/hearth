@@ -8,7 +8,7 @@ import {
 } from "../shared/client";
 import "./style.css";
 import { RoutinePanel } from "../features/routines/Routines";
-import { UsageReport } from "../features/tasks/UsageReport";
+import { UsageByOrigin, UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
 import { Journal } from "../features/residents/Journal";
@@ -22,6 +22,8 @@ import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { ImportResident } from "../features/residents/ImportResident";
+import { Letters } from "../features/letters/Letters";
+import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
@@ -860,6 +862,7 @@ export function App() {
                 )}
                 <section className="task-panel">
                   <h2>Tasks &amp; results</h2>
+                  <UsageByOrigin client={client} busy={busy} act={act} />
                   {!visibleTasks.length ? (
                     <div className="empty">
                       <h3>A quiet beginning.</h3>
@@ -886,6 +889,7 @@ export function App() {
                               <time>{clock(task.created_at)}</time>
                             </div>
                             <h3>{task.instruction}</h3>
+                            {task.lineage && <Lineage hops={task.lineage} />}
                             {run?.memory_revision !== undefined && (
                               <small>
                                 {run.memory_revision === 0
@@ -915,6 +919,33 @@ export function App() {
                                 {run.management.grant_revision} ·{" "}
                                 {run.management.calls} recorded tool calls
                               </p>
+                            )}
+                            {!!run?.letters_refused?.length && (
+                              <div aria-label="Letters this run was refused">
+                                <small>
+                                  Letters refused · nothing was written
+                                </small>
+                                <ul>
+                                  {/* Two letters can be refused in the same second for
+                                      the same reason, so the position in the run's own
+                                      evidence is what tells them apart. */}
+                                  {run.letters_refused.map((refusal, place) => (
+                                    <li key={place}>
+                                      {refusal.reason.replaceAll("_", " ")}
+                                      {Object.entries(refusal.details).map(
+                                        ([key, value]) => (
+                                          <small key={key}>
+                                            {key.replaceAll("_", " ")}:{" "}
+                                            {typeof value === "object"
+                                              ? JSON.stringify(value)
+                                              : String(value)}
+                                          </small>
+                                        ),
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                             {run?.skills_error && (
                               <p className="notice error">
@@ -1053,6 +1084,22 @@ export function App() {
                   client={client}
                   resident={current}
                   busy={busy}
+                  act={act}
+                  openable={openableRun}
+                />
+                {/* Keyed on the resident alone, unlike its neighbours above: the
+                    others hold only server data a remount refetches, while Letters
+                    holds an unsent draft and the frozen identity of a command whose
+                    answer never arrived. Dropping those on a store swap would hand the
+                    operator a fresh command id for a letter Hearth may already hold.
+                    Its list is read on demand and reloaded by the same button. */}
+                <Letters
+                  key={`letters:${current.id}`}
+                  client={client}
+                  resident={current}
+                  residents={residents}
+                  busy={busy}
+                  readOnly={snapshot.restore_hold === true}
                   act={act}
                   openable={openableRun}
                 />

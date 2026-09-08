@@ -76,6 +76,36 @@ def test_api_policy_is_operator_only_and_conflict_aware(tmp_path):
         )
 
 
+def test_letter_reach_and_shelf_life_are_operator_policy_a_client_cannot_reset(tmp_path):
+    from fastapi.testclient import TestClient
+    from hearth.app import create_app
+
+    with TestClient(
+        create_app(tmp_path, "synthetic-operator-token", supervise=False, runtime=fake_runtime())
+    ) as client:
+        auth = {"Authorization": "Bearer synthetic-operator-token"}
+        state = client.get("/api/household", headers=auth).json()
+        assert (state["max_letter_depth"], state["letter_ttl_seconds"]) == (2, 86_400)
+        body = dict(
+            daily_limit=8_000_000,
+            timezone="Europe/Ljubljana",
+            resident_limit=2,
+            concurrency_limit=1,
+            expected_revision=0,
+            max_letter_depth=0,
+            letter_ttl_seconds=3_600,
+        )
+        saved = client.put("/api/household", json=body, headers=auth).json()
+        assert (saved["max_letter_depth"], saved["letter_ttl_seconds"]) == (0, 3_600)
+        # A form that never learned about letters keeps what the operator set.
+        unaware = {key: value for key, value in body.items() if not key.startswith("letter")}
+        unaware.update(expected_revision=saved["revision"], max_letter_depth=None)
+        kept = client.put("/api/household", json=unaware, headers=auth).json()
+        assert (kept["max_letter_depth"], kept["letter_ttl_seconds"]) == (0, 3_600)
+        beyond = {**body, "expected_revision": kept["revision"], "max_letter_depth": 6}
+        assert client.put("/api/household", json=beyond, headers=auth).status_code == 422
+
+
 def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
     from datetime import datetime
 

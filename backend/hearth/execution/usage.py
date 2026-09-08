@@ -1,4 +1,8 @@
-"""Admission pins and immutable SQLite receipts for provider usage accounting."""
+"""Admission pins and immutable SQLite receipts for provider usage accounting.
+
+Also what those receipts add up to when the operator asks a question rather than about a
+run: `by_origin` gathers the runs of one chain under the task it rolls up to.
+"""
 
 import hashlib
 import json
@@ -11,6 +15,9 @@ from hearth.integrations.interface import (
     validate_receipt_pins,
 )
 from hearth.residents.models import Refused
+
+# What one page of the origin report carries, so the operator's answer stays bounded.
+MAX_ORIGINS = 100
 
 
 def pricing(db, run_id: str) -> dict | None:
@@ -90,6 +97,83 @@ def verify_stored(db, run) -> None:
 
     elif run["artifact_id"] is not None:
         raise Refused("backup_runtime_invalid")
+
+
+def by_origin(db, *, limit: int = 30, offset: int = 0) -> dict:
+    """What each question cost, gathered under the task the whole chain rolls up to.
+
+    A letter is worked by the resident it reached, on that resident's own allowance, so
+    the money one question spends is spread across as many runs as the chain has hops.
+    The origin is the root task the letter carries — written from the sender's own
+    admitted lineage, never from anything a caller said — and an ordinary task is its
+    own origin, so every run appears under exactly one of them.
+
+    Each run is counted once, at the one amount its own row records: settlement and an
+    operator's later reconciliation both write `actual_cost` there, so a reconciled run
+    is not counted twice and never as both known and unknown. A run whose usage is still
+    unknown is reported as unknown rather than as nothing — its resident keeps the hold
+    the unknown usage placed, and this report neither adds to nor releases it.
+    """
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= MAX_ORIGINS
+        or type(offset) is not int
+        or offset < 0
+    ):
+        raise Refused("invalid_origin_page")
+    rows = db.execute(
+        "SELECT COALESCE(l.root_task_id,r.task_id) AS root_task_id,"
+        "COUNT(*) AS runs,"
+        "COALESCE(SUM(CASE WHEN r.usage_known=1 THEN r.actual_cost ELSE 0 END),0) AS known_cost,"
+        "SUM(CASE WHEN r.usage_known=0 AND r.finished_at IS NOT NULL THEN 1 ELSE 0 END)"
+        " AS unknown_runs,"
+        "SUM(CASE WHEN r.finished_at IS NULL THEN 1 ELSE 0 END) AS active_runs,"
+        "COALESCE(SUM(CASE WHEN r.finished_at IS NULL THEN r.reserved ELSE 0 END),0) AS reserved,"
+        "MIN(r.created_at) AS started_at,MAX(r.created_at) AS last_at "
+        "FROM runs r LEFT JOIN letters l ON l.task_id=r.task_id "
+        # Grouped by the expression, never by the name it is given: `root_task_id` is
+        # also a column of `letters`, and grouping by that name would gather every
+        # ordinary task into one nameless origin.
+        "GROUP BY COALESCE(l.root_task_id,r.task_id) "
+        "ORDER BY last_at DESC,COALESCE(l.root_task_id,r.task_id) DESC LIMIT ? OFFSET ?",
+        (limit + 1, offset),
+    ).fetchall()
+    origins = []
+    for row in rows[:limit]:
+        origin = db.execute(
+            "SELECT resident_id,substr(instruction,1,200) AS instruction,created_at "
+            "FROM tasks WHERE id=?",
+            (row["root_task_id"],),
+        ).fetchone()
+        origins.append(
+            dict(row)
+            | {
+                "resident_id": origin["resident_id"] if origin else None,
+                "instruction": origin["instruction"] if origin else "",
+                "created_at": origin["created_at"] if origin else row["started_at"],
+                # Who spent time on this question, and how many letters it turned into —
+                # including the ones nobody ever worked, which cost nothing and are still
+                # part of what was asked.
+                "residents_involved": [
+                    name
+                    for (name,) in db.execute(
+                        "SELECT DISTINCT r.resident_id FROM runs r "
+                        "LEFT JOIN letters l ON l.task_id=r.task_id "
+                        "WHERE COALESCE(l.root_task_id,r.task_id)=? ORDER BY r.resident_id",
+                        (row["root_task_id"],),
+                    )
+                ],
+                "letters": db.execute(
+                    "SELECT COUNT(*) FROM letters WHERE root_task_id=?", (row["root_task_id"],)
+                ).fetchone()[0],
+            }
+        )
+    return {
+        "limit": limit,
+        "offset": offset,
+        "origins": origins,
+        "truncated": len(rows) > limit,
+    }
 
 
 def runtime_pins(db, run_id: str | None = None) -> dict:
