@@ -24,6 +24,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.integrations.codex.pricing import MODEL
 from hearth.integrations.codex.subscription import KIND, encode
 from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.interface import Evidence
@@ -43,7 +44,6 @@ USAGE = {
     "output_tokens": 20,
     "reasoning_output_tokens": 0,
 }
-COST = 2_000
 
 
 def fake_runtime(scenario: str = "success"):
@@ -110,7 +110,7 @@ class FakeRuntime:
                     "runtime.codex_subscription_configured",
                     KIND,
                     int(time.time()),
-                    {"binary": BINARY, "version": "fake-runtime", "model": "gpt-6-astra"},
+                    {"binary": BINARY, "version": "fake-runtime", "model": MODEL},
                 )
             elif previous[0] != BINARY:
                 raise Refused("codex_subscription_binary_changed")
