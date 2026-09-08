@@ -37,7 +37,13 @@ from hearth.integrations.claude.config import (
 )
 from hearth.integrations.claude.events import MAX_STREAM, ClaudeEvents, Transcript
 from hearth.integrations.claude.pricing import PRICE_SCHEDULE, estimate_api_equivalent
-from hearth.integrations.durable import folder_lock, publish, read, transferable_lock
+from hearth.integrations.durable import (
+    folder_lock,
+    publish,
+    read,
+    short_string,
+    transferable_lock,
+)
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
@@ -46,6 +52,12 @@ from hearth.work.service import Hearth, _audit
 # The whole of one native receipt. There is no separate final-message file: the
 # session's answer is inside the stream, in the CLI's own `result` event.
 RECEIPT = {"kind", "binding", "binary", "stdout", "exit_code", "cancelled", "launched"}
+# What a session that carried Hearth's own tools records beside the stream: the pins
+# it was launched under, and the code that ended its bridge if anything did. The calls
+# themselves are not here -- they are rows in `management_calls`, written in the same
+# transaction as the work they did, which is the only account of them that can be
+# trusted.
+MANAGEMENT = {"catalog_sha256", "tools_sha256", "error"}
 
 
 def serialized(receipt: dict) -> str:
@@ -97,10 +109,23 @@ def agrees(estimate: int | None, reported: int, rows: int) -> bool:
     return estimate is not None and abs(estimate - reported) <= rows + 1
 
 
+def valid_management(value) -> bool:
+    """The envelope a management session adds: two pins and how its bridge ended."""
+    return (
+        isinstance(value, dict)
+        and set(value) == MANAGEMENT
+        and all(
+            isinstance(value[key], str) and len(value[key]) == 64
+            for key in ("catalog_sha256", "tools_sha256")
+        )
+        and (value["error"] is None or short_string(value["error"]))
+    )
+
+
 def encode(receipt, expected):
     if (
         not isinstance(receipt, dict)
-        or set(receipt) != RECEIPT
+        or set(receipt) not in (RECEIPT, RECEIPT | {"management"})
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
     ):
@@ -112,6 +137,7 @@ def encode(receipt, expected):
         or len(raw.encode()) > MAX_STREAM
         or type(receipt["cancelled"]) is not bool
         or type(receipt["launched"]) is not bool
+        or ("management" in receipt and not valid_management(receipt["management"]))
     ):
         raise Refused("run_usage_invalid")
     digest = hashlib.sha256(raw.encode()).hexdigest()
@@ -233,6 +259,18 @@ class ClaudeLiveRuntime:
                     # for. Hearth's hold stays authoritative; this only stops sooner.
                     "budget_usd": budget(row["reserved"]),
                 }
+            from hearth.integrations.claude.mcp_bridge import pin_configuration
+            from hearth.management.bridge import BoundRun
+
+            # A run admitted to reach Hearth's own tools is pinned to the exact list
+            # its authority offers, before anything is launched. None of it means the
+            # run reaches no tool at all and is launched with `--tools ""`.
+            management = pin_configuration(
+                Hearth(self.database),
+                BoundRun(run_id, request["owner"], request["epoch"], bound.input_digest),
+            )
+            if management is not None:
+                request["management"] = management
             folder.mkdir(mode=0o700)
             with worker_lock(folder) as lock_fd:
                 publish(folder / "request.json", request)
@@ -291,6 +329,51 @@ class ClaudeLiveRuntime:
             publish(folder / "cancel.json", {"cancelled": True})
 
 
+def unlaunched(request: dict, management: dict, code: str) -> dict:
+    """A management session Hearth refused to launch: no stream, no cost, no doubt."""
+    return {
+        "kind": KIND,
+        "binding": request["binding"],
+        "binary": request["sha256"],
+        "stdout": "",
+        "exit_code": None,
+        "cancelled": True,
+        "launched": False,
+        "management": {
+            "catalog_sha256": management["catalog_sha256"],
+            "tools_sha256": management["tools_sha256"],
+            "error": code,
+        },
+    }
+
+
+def trust_session(server, output: bytearray, scanned: int) -> int:
+    """Look for the session's `init` event in what has been read, and check it.
+
+    The CLI reports the servers it connected to and the tools it will offer before the
+    first model turn, so this is the last moment the bridge can be held shut. Returns
+    how much of the stream has been looked at; a session that never reports an `init`
+    event never opens the bridge, and every call it makes is refused.
+    """
+    from hearth.integrations.claude.mcp_bridge import check_session
+
+    while True:
+        end = output.find(b"\n", scanned)
+        if end < 0:
+            return scanned
+        line, scanned = bytes(output[scanned:end]), end + 1
+        try:
+            event = json.loads(line)
+        except ValueError, RecursionError:
+            continue
+        if isinstance(event, dict) and (event.get("type"), event.get("subtype")) == (
+            "system",
+            "init",
+        ):
+            server.trust(*check_session(event, server.offered))
+            return scanned
+
+
 @contextmanager
 def worker_lock(folder, inherited_fd=None):
     """Transfer one flock open-file description to the worker with no unlocked interval."""
@@ -330,7 +413,28 @@ def worker(folder, inherited_fd=None):
             return
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
-        command = session_command(binary, budget_usd=request["budget_usd"])
+        management = request.get("management")
+        server = None
+        failure = None
+        if management is not None:
+            from hearth.integrations.claude.mcp_bridge import configuration_path, open_bridge
+
+            try:
+                # The bridge is opened before the launch, so a run whose authority
+                # changed since admission is refused with nothing spent on it.
+                server = open_bridge(folder, request, Hearth(database))
+            except Refused as error:
+                publish(
+                    folder / "receipt.json",
+                    unlaunched(request, management, error.code),
+                )
+                return
+        command = session_command(
+            binary,
+            budget_usd=request["budget_usd"],
+            tools=server.offered if server is not None else (),
+            mcp_config=configuration_path(folder) if server is not None else None,
+        )
         child = None
         output = bytearray()
         cancelled = False
@@ -360,21 +464,46 @@ def worker(folder, inherited_fd=None):
                     )
             assert child.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
+            scanned = 0
             with selectors.DefaultSelector() as selector:
                 selector.register(child.stdout, selectors.EVENT_READ)
+                if server is not None:
+                    # The bridge's own socket is watched in this one loop, so a tool
+                    # call is answered by the same process that owns the run and
+                    # nothing runs concurrently with the transaction it opens.
+                    server.attach(selector)
                 while time.monotonic() < deadline:
                     if (folder / "cancel.json").exists():
                         cancelled = True
                         break
-                    if not selector.select(0.05):
-                        continue
-                    chunk = os.read(child.stdout.fileno(), 8192)
-                    if not chunk:
-                        eof = True
+                    if server is not None and server.failure is not None:
+                        failure = server.failure
                         break
-                    output.extend(chunk)
-                    if len(output) > MAX_STREAM // 2:
+                    finished = False
+                    for key, _ in selector.select(0.05):
+                        if key.fileobj is not child.stdout:
+                            assert server is not None
+                            server.ready(key)
+                            continue
+                        chunk = os.read(child.stdout.fileno(), 8192)
+                        if not chunk:
+                            eof = finished = True
+                            break
+                        output.extend(chunk)
+                        if len(output) > MAX_STREAM // 2:
+                            finished = True
+                            break
+                    if finished:
                         break
+                    if server is not None and not server.trusted:
+                        try:
+                            scanned = trust_session(server, output, scanned)
+                        except Refused as error:
+                            # The session in front of the bridge is not the session
+                            # that was admitted. It ends now, before its first turn
+                            # can reach a tool.
+                            failure = error.code
+                            break
         except Refused:
             cancelled = True
         finally:
@@ -395,6 +524,8 @@ def worker(folder, inherited_fd=None):
                 except subprocess.TimeoutExpired:
                     os.killpg(child.pid, signal.SIGKILL)
                     child.wait()
+            if server is not None:
+                server.close()
         receipt = {
             "kind": KIND,
             "binding": request["binding"],
@@ -406,6 +537,15 @@ def worker(folder, inherited_fd=None):
             "cancelled": cancelled,
             "launched": child is not None,
         }
+        if management is not None:
+            # A bridge that failed is recorded, never hidden: the session settles as
+            # failed with whatever it spent, and the reason it was stopped is part of
+            # the same evidence as the stream it was stopped in.
+            receipt["management"] = {
+                "catalog_sha256": management["catalog_sha256"],
+                "tools_sha256": management["tools_sha256"],
+                "error": failure,
+            }
         # The receipt has to fit the bound `encode` validates. Replacement characters
         # and JSON escaping can both inflate what was read, so a stream that was within
         # the read cap can still serialize past it. Dropping the tail leaves a

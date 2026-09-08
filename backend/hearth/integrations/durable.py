@@ -16,6 +16,7 @@ shared, because no bundled module uses them.
 """
 
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -51,6 +52,22 @@ def finite_float(value: str) -> float:
 
 def short_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip()) and len(value) <= 256
+
+
+def canonical(value) -> bytes:
+    """One JSON encoding of a value, so two providers digest it identically.
+
+    Byte for byte what `codex/app_server_config.canonical` produces: a tool list
+    admitted on either runtime has to hash to the same `tools_sha256`, or the pin
+    would mean one thing on Codex and another on Claude.
+    """
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False
+    ).encode()
+
+
+def digest(value) -> str:
+    return hashlib.sha256(canonical(value)).hexdigest()
 
 
 def read(path: Path):

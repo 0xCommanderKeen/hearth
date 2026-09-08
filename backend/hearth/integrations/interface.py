@@ -91,10 +91,10 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         module="hearth.integrations.claude.subscription",
         runtime="ClaudeLiveRuntime",
         receipts="hearth.integrations.claude.receipts",
-        # The bridge that carries Hearth's own tools into a Claude session is #147.
-        # Until it lands, a run that was pinned to reach them is refused at admission
-        # rather than launched without the authority its declaration promised.
-        management=False,
+        # Hearth's own tools reach a Claude session over the MCP shim and socket in
+        # `claude/mcp_bridge.py`, answered by the trusted worker with `BoundRun`
+        # authority, so a run pinned to reach them can be admitted here.
+        management=True,
     ),
 }
 
