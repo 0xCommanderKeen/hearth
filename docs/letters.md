@@ -22,8 +22,10 @@ Two independent permissions have to meet, and neither side can waive the other.
   money on a resident the sender does not own.
 - **Receiving** needs the declared door `letters.accept` on the receiver's declaration
   revision. It is **false by default**, is not part of provisioning, and is opened by the
-  operator with `PUT /api/residents/{id}` (`letters_accept: true`) or from Townhall. A
-  sender's grant cannot open it, and opening it grants nobody the right to send.
+  operator with `PUT /api/residents/{id}` (`letters_accept: true`) or `python -m hearth
+  save-resident`. Townhall names a shut door where it matters but has no control that
+  opens one yet. A sender's grant cannot open it, and opening it grants nobody the right
+  to send.
 
 Authority is the grant the **sending run was admitted with**, not whatever the operator
 has granted since: a run admitted without `send_letters` never gains it mid-flight, and a
@@ -148,8 +150,9 @@ covered by the run's `tools_sha256`.
   no sender resident, no run behind it, its own root at depth one.
 - `GET /api/residents/{id}/letters` reads any resident's inbox and sent letters, each with
   its answer.
-- `PUT /api/residents/{id}` with `letters_accept` opens or shuts the door; an omitted
-  field keeps the door exactly as it stands.
+- `PUT /api/residents/{id}` with `letters_accept`, or `python -m hearth save-resident`,
+  opens or shuts the door; an omitted field keeps the door exactly as it stands. This is
+  the only way to open one — the browser reads the door but does not write it.
 - `GET/PUT /api/household` carries `max_letter_depth` (default **2**, `0` shuts the post
   household-wide, maximum 5), `letter_ttl_seconds` (default one day, 60 s to 7 days) and
   `letter_daily_limit` (default 5, `0` shuts the post, maximum 100 — counted in the
@@ -172,8 +175,9 @@ The real journey found both, and an operator setting letters up hits both first:
 
 1. **The receiver's door is closed by default and provisioning does not open it.** A
    resident created through Karen or through provisioning has `letters.accept` false; the
-   operator opens it explicitly afterwards. Until then every letter to it is refused with
-   `letters_not_accepted`, at the sender, writing nothing.
+   operator opens it explicitly afterwards, over the API or the CLI, since Townhall has no
+   control for it. Until then every letter to it is refused with `letters_not_accepted`,
+   at the sender, writing nothing.
 2. **The receiver's daily limit must cover a whole answering run**, letter reservation
    included. Delivery is admission: a receiver whose allocation cannot fit the run keeps
    the letter queued until it can, and if that never happens the letter expires. A limit
