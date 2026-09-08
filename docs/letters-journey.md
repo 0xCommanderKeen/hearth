@@ -78,3 +78,10 @@ It is one letter, one hop, one answer, two residents. It is not evidence of mode
 of many letters in flight, of a receiver declining a letter, or of daily adoption. The
 `unanswered`, `failed` and `expired` states are covered deterministically in
 `tests/work/test_letter_replies.py`; only `replied` was walked here.
+
+`tests/integrations/codex/test_letters_journey.py` walks this same journey deterministically
+in CI, with the same load-bearing shape of reference. [The letters contract](letters.md)
+records what the feature guarantees, including the two operational prerequisites this
+journey found — a receiver's door is closed by default, and its daily limit has to cover a
+whole answering run — and [ADR 0011](adr/0011-letters-between-residents.md) records the
+decision behind it.

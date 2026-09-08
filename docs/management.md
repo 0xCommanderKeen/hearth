@@ -7,8 +7,9 @@ no automatic management grant for newly provisioned residents.
 
 The operator configures each resident's enabled grant, permitted configured runtime
 profiles, named synthetic input sets, creation/work/routine capabilities, managed
-resident count, child daily allowance, per-admission reservation and tool-call
-limit. Empty input scope permits empty inputs only. The existing household limits
+resident count, child daily allowance, per-admission reservation, tool-call
+limit and, with `send_letters`, whom this resident may write to. Empty input scope
+permits empty inputs only. The existing household limits
 and resident admission checks still apply. A daily allowance limits creation
 configuration; later operator changes remain authoritative. Only authenticated
 operator HTTP actions can change grants or household limits. Skill instructions
@@ -98,6 +99,20 @@ audit rollback, reuse and held backup. The worker callback test uses synthetic
 native events. These checks do not establish real provider or host isolation;
 the actual pinned binary probe and bounded real journey are recorded separately
 in the implementation checkpoint.
+
+## Writing to a colleague
+
+`send_letters` is the grant capability that permits one resident to write to another, and
+`letter_recipient_ids` optionally narrows that to a named set — at most twenty, checked for
+shape rather than existence, so an operator may write the allowlist before the recipient
+exists. It widens nothing else: the recipient's own declared `letters.accept` door still
+has to be open, and a grant cannot open it. Neither capability nor door is created by
+instruction text, and the two etiquette skills that say how to ask and how to answer are
+ordinary library entries that grant nothing. Karen's setup carries `send_letters`, the
+**Ask a colleague** skill, and **Answer a letter** seeded into the library for the operator
+that opens a door to assign. [The letters contract](letters.md) records the guards, the
+delivery path, the refusal table and the household settings, and
+[ADR 0011](adr/0011-letters-between-residents.md) records the decision.
 
 ## Shared skill authoring
 
