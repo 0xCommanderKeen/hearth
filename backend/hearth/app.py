@@ -214,6 +214,9 @@ def create_app(
             # expected revision still refuses a save that raced a change to it.
             if values["memory_writable"] is None:
                 values["memory_writable"] = hearth.declared_memory_writable(db, resident_id)
+            # An omitted letters.accept likewise keeps the door exactly as it stands.
+            if values["letters_accept"] is None:
+                values["letters_accept"] = hearth.declared_letters_accept(db, resident_id)
             return asdict(
                 hearth.save_resident_in_transaction(
                     db,

@@ -1,5 +1,6 @@
 """Older Hearth stores upgrade forward in place; foreign or newer stores are refused."""
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -13,6 +14,7 @@ from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
 from tests.fixtures.schema_v2_pre_simulated import SCHEMA as SCHEMA_V2
 from tests.fixtures.schema_v3_pre_inbox import SCHEMA as SCHEMA_V3
 from tests.fixtures.schema_v4_pre_examples import SCHEMA as SCHEMA_V4
+from tests.fixtures.schema_v5_pre_letters import SCHEMA as SCHEMA_V5
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -616,10 +618,10 @@ def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):
     path = tmp_path / "hearth.db"
     pre_memory_store(path)
     db = sqlite3.connect(path, isolation_level=None)
-    db.execute("CREATE TABLE letters (id TEXT PRIMARY KEY)")
+    db.execute("CREATE TABLE postcards (id TEXT PRIMARY KEY)")
     db.close()
     before = path.read_bytes()
-    with pytest.raises(UpgradeError, match=r"would drop tables \['letters'\]"):
+    with pytest.raises(UpgradeError, match=r"would drop tables \['postcards'\]"):
         Database(path).initialize()
     assert path.read_bytes() == before
 
@@ -656,3 +658,106 @@ def test_a_renamed_table_is_still_copied_once_stores_carry_the_new_name(tmp_path
     assert db.execute("SELECT kind, resource_id FROM notifications").fetchall() == [
         ("run.succeeded", "r")
     ]
+
+
+V5_POLICY = {
+    "enabled": True,
+    "profiles": ["codex_subscription"],
+    "input_set_ids": [],
+    "capabilities": ["create_residents", "assign_work"],
+    "max_residents": 5,
+    "max_daily_limit": 1000000,
+    "max_reserve": 500000,
+    "max_calls": 64,
+}
+
+
+def _policy_digest(policy):
+    return hashlib.sha256(
+        json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def version_5_store(path):
+    """A version-5 store with a granted resident and a run admitted against that grant."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V5:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit, created_at)"
+        " VALUES ('karen', 1, 'Karen', 'Manages residents', 1000000, 1)"
+    )
+    _lifecycle(db, "karen", 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30)"
+    )
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Create a reporter', 'starting', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, usage_known, launch_attempted, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'starting', 2000, '2026-09-08', 1, 0, 1, "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    db.execute("INSERT INTO management_grants VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO management_grant_revisions VALUES ('karen', 1, ?, ?)",
+        (json.dumps(V5_POLICY, sort_keys=True), _policy_digest(V5_POLICY)),
+    )
+    db.execute(
+        "INSERT INTO run_management VALUES ('r','karen',1,?,601,NULL,NULL,NULL,NULL)",
+        (_policy_digest(V5_POLICY),),
+    )
+    db.execute("PRAGMA user_version = 5")
+    db.commit()
+    db.close()
+
+
+def test_the_version_5_store_gains_letters_without_opening_a_single_door(tmp_path):
+    from hearth.management.authority import read_grant, validate_management
+    from hearth.work.service import Hearth
+
+    path = tmp_path / "hearth.db"
+    version_5_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    # The household keeps the shipped reach and shelf life; no resident accepts letters.
+    policy = db.execute("SELECT * FROM household_policy").fetchone()
+    assert (policy["max_letter_depth"], policy["letter_ttl_seconds"]) == (2, 86400)
+    assert db.execute("SELECT letters_accept FROM declarations").fetchone()[0] == 0
+    assert db.execute("SELECT count(*) FROM letters").fetchone()[0] == 0
+    # The grant gains the letter scope, empty, and keeps every capability it had.
+    grant = read_grant(db, "karen")
+    assert grant["letter_recipient_ids"] == []
+    assert grant["capabilities"] == ["create_residents", "assign_work"]
+    # The admission that pinned that grant moves with it, so the run keeps its authority.
+    validate_management(db)
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='management.grants_rescoped'").fetchone()[0]
+    ) == {"count": 1, "reason": "letters_added"}
+    assert Hearth(Database(path)).resident("karen").declaration.letters_accept is False
+
+
+def test_a_grant_edited_in_the_file_refuses_the_letters_upgrade(tmp_path):
+    """Rewriting the digest for the new field must not bless a policy somebody changed."""
+    path = tmp_path / "hearth.db"
+    version_5_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute(
+        "UPDATE management_grant_revisions SET policy=?",
+        (json.dumps({**V5_POLICY, "max_reserve": 2000000}, sort_keys=True),),
+    )
+    db.close()
+    before = path.read_bytes()
+    with pytest.raises(UpgradeError, match="was changed in the file"):
+        Database(path).initialize()
+    assert path.read_bytes() == before

@@ -6,10 +6,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class Refused(ValueError):
-    """A domain precondition failed without applying an operational change."""
+    """A domain precondition failed without applying an operational change.
 
-    def __init__(self, code: str):
+    `details` carries the bounded facts a caller needs to act on the refusal — the
+    residents a letter chain already visited, say — never instruction or output text.
+    A refusal that reaches a runtime carries them beside its code.
+    """
+
+    def __init__(self, code: str, details: dict | None = None):
         self.code = code
+        self.details = details or {}
         super().__init__(code)
 
 
@@ -48,6 +54,9 @@ class Declaration:
     skill_text: str = ""
     # The declared memory.writable capability: may this resident's runs write its memory?
     memory_writable: bool = False
+    # The declared letters.accept door: may another resident's letter be queued here?
+    # A sender's grant cannot open it and this door grants no one the right to send.
+    letters_accept: bool = False
 
     def validate(self) -> None:
         bounded_text(self.name, 100, "invalid_name")
@@ -56,6 +65,8 @@ class Declaration:
         validate_skill_text(self.skill_text)
         if type(self.memory_writable) is not bool:
             raise Refused("invalid_memory_capability")
+        if type(self.letters_accept) is not bool:
+            raise Refused("invalid_letters_capability")
         bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
         try:
             ZoneInfo(self.budget_timezone)

@@ -2,6 +2,23 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A letter is a first-class fact (schema 6), and only a fact so far: nothing a resident or
+  an operator can reach sends one yet. An ordinary task addressed to one resident
+  by another, carrying its sender, that sender's run and task, the root the chain rolls
+  up to, its hop depth and when it goes stale. Sending needs the grant capability
+  `send_letters` — which Karen's setup now carries, ahead of the tool that will use it —
+  and an optional recipient allowlist; receiving needs the declared
+  `letters.accept` door, and neither side can waive the other. Authority is the grant the
+  sending run was admitted with, not one edited since. Hearth arbitrates in the
+  service: no self-letter, no archived or absent recipient, no chain past the household's
+  `max_letter_depth` (default 2, `0` closes the post) and never one that revisits a
+  resident — depth and lineage read from the sender's own admitted run, so a forged
+  parent buys nothing. Every letter expires (household `letter_ttl_seconds`, one day by
+  default; a sender may shorten it, never lengthen it), is never admitted after that and
+  is closed as a failed task. Refusals are structured and write nothing, backups carry
+  the lineage, and upgrading writes the new grant scope into every stored grant and the
+  admissions that pinned one without opening a single door.
+
 - Docs describe one runtime and no mocks. The last seven mock documents and ADR 0004 are
   deleted, `implementation.md`'s mock and container-rehearsal checkpoints collapse into
   one record of what the epic shipped, and the remaining incidental mentions of mock

@@ -204,6 +204,9 @@ class Maintenance:
                         if change.memory_writable is None
                         else change.memory_writable
                     ),
+                    # The letters door is operator authority alone; a reconfiguration
+                    # carries it forward rather than quietly closing it.
+                    letters_accept=self.hearth.declared_letters_accept(db, resident_id),
                 ),
                 expected_revision=change.expected_revision,
             )

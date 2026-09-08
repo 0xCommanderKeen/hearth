@@ -13,7 +13,13 @@ DEFAULTS: dict = dict(
     resident_limit=20,
     concurrency_limit=2,
     journal_limit=30,
+    # How many hops a letter chain may take, and how long an unanswered letter is worth
+    # answering. Zero hops disables letters for the whole household.
+    max_letter_depth=2,
+    letter_ttl_seconds=86_400,
 )
+MAX_LETTER_DEPTH = 5
+LETTER_TTL_RANGE = (60, 604_800)
 ACTIVE = "('starting', 'running', 'stopping', 'interrupted')"
 
 
@@ -21,6 +27,15 @@ def read_journal_limit(db) -> int:
     """How many journal entries a resident keeps before older ones roll to files."""
     row = db.execute("SELECT journal_limit FROM household_policy WHERE id=1").fetchone()
     return row[0] if row else DEFAULTS["journal_limit"]
+
+
+def read_letter_policy(db) -> dict:
+    """The household's letter reach and shelf life; a fresh store uses the defaults."""
+    row = db.execute(
+        "SELECT max_letter_depth,letter_ttl_seconds FROM household_policy WHERE id=1"
+    ).fetchone()
+    keys = ("max_letter_depth", "letter_ttl_seconds")
+    return dict(row) if row else {key: DEFAULTS[key] for key in keys}
 
 
 def validate_windows(db) -> None:
@@ -114,6 +129,8 @@ class Household:
         concurrency_limit: int,
         expected_revision: int,
         journal_limit: int | None = None,
+        max_letter_depth: int | None = None,
+        letter_ttl_seconds: int | None = None,
     ) -> dict:
         """Operator-only API. No runtime bridge exposes this authority."""
         microdollars(daily_limit)
@@ -138,14 +155,38 @@ class Household:
                 journal_limit = current["journal_limit"]
             if type(journal_limit) is not int or not 1 <= journal_limit <= 1000:
                 raise Refused("invalid_household_limit")
+            # A client that never learned about letters keeps the household's own reach
+            # and shelf life rather than silently resetting them to the shipped default.
+            if max_letter_depth is None:
+                max_letter_depth = current["max_letter_depth"]
+            if letter_ttl_seconds is None:
+                letter_ttl_seconds = current["letter_ttl_seconds"]
+            if type(max_letter_depth) is not int or not 0 <= max_letter_depth <= MAX_LETTER_DEPTH:
+                raise Refused("invalid_letter_policy")
+            if (
+                type(letter_ttl_seconds) is not int
+                or not LETTER_TTL_RANGE[0] <= letter_ttl_seconds <= LETTER_TTL_RANGE[1]
+            ):
+                raise Refused("invalid_letter_policy")
             revision = expected_revision + 1
             db.execute(
-                "INSERT INTO household_policy VALUES (1,?,?,?,?,?,?) ON CONFLICT(id) "
+                "INSERT INTO household_policy VALUES (1,?,?,?,?,?,?,?,?) ON CONFLICT(id) "
                 "DO UPDATE SET revision=excluded.revision,daily_limit=excluded.daily_limit,"
                 "timezone=excluded.timezone,resident_limit=excluded.resident_limit,"
                 "concurrency_limit=excluded.concurrency_limit,"
-                "journal_limit=excluded.journal_limit",
-                (revision, daily_limit, timezone, resident_limit, concurrency_limit, journal_limit),
+                "journal_limit=excluded.journal_limit,"
+                "max_letter_depth=excluded.max_letter_depth,"
+                "letter_ttl_seconds=excluded.letter_ttl_seconds",
+                (
+                    revision,
+                    daily_limit,
+                    timezone,
+                    resident_limit,
+                    concurrency_limit,
+                    journal_limit,
+                    max_letter_depth,
+                    letter_ttl_seconds,
+                ),
             )
             db.execute(
                 "INSERT INTO audit(kind,resource_id,at,detail) VALUES (?,?,?,?)",
@@ -161,6 +202,8 @@ class Household:
                             resident_limit=resident_limit,
                             concurrency_limit=concurrency_limit,
                             journal_limit=journal_limit,
+                            max_letter_depth=max_letter_depth,
+                            letter_ttl_seconds=letter_ttl_seconds,
                             actor="operator",
                         )
                     ),

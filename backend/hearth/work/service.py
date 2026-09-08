@@ -70,6 +70,40 @@ class Hearth:
         ).fetchone()
         return bool(row[0]) if row else False
 
+    def declared_letters_accept(self, db, resident_id: str) -> bool:
+        """The current declared letters.accept, so an omitted door keeps what is open."""
+        row = db.execute(
+            "SELECT d.letters_accept FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def send_letter_in_transaction(
+        self,
+        db,
+        sender_run: str,
+        to: str,
+        title: str,
+        detail: str,
+        operation_id: str,
+        *,
+        expires_at: int | None = None,
+    ) -> dict:
+        """Queue one letter for another resident, or refuse without writing anything."""
+        from hearth.work.letters import send_letter
+
+        return send_letter(
+            db,
+            self,
+            sender_run=sender_run,
+            to=to,
+            title=title,
+            detail=detail,
+            operation_id=operation_id,
+            expires_at=expires_at,
+        )
+
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
     ) -> Resident:
@@ -115,8 +149,9 @@ class Hearth:
                 now=now,
             )
         writable = declaration.memory_writable
+        accepts = declaration.letters_accept
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -127,6 +162,7 @@ class Hearth:
                 declaration.budget_timezone,
                 declaration.skill_text,
                 int(writable),
+                int(accepts),
             ),
         )
         _audit(
@@ -134,7 +170,7 @@ class Hearth:
             "resident.saved",
             resident_id,
             now,
-            {"revision": revision, "memory_writable": writable},
+            {"revision": revision, "memory_writable": writable, "letters_accept": accepts},
         )
         return Resident(resident_id, revision, declaration)
 
@@ -182,6 +218,7 @@ class Hearth:
                     row["budget_timezone"],
                     row["skill_text"],
                     bool(row["memory_writable"]),
+                    bool(row["letters_accept"]),
                 ),
             )
 
@@ -282,6 +319,11 @@ class Hearth:
             raise Refused("task_not_found")
         if task["status"] != "queued":
             raise Refused("task_already_admitted")
+        # No money is spent answering a stale question. The letter is closed as failed by
+        # the sweep that owns that write; admission only refuses to start it.
+        letter = db.execute("SELECT expires_at FROM letters WHERE task_id=?", (task_id,)).fetchone()
+        if letter is not None and now >= letter["expires_at"]:
+            raise Refused("letter_expired")
         resident_id = task["resident_id"]
         if db.execute(
             "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",

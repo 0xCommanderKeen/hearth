@@ -241,3 +241,68 @@ def test_a_backup_carrying_an_unknown_store_is_refused(system, tmp_path):
     (backup / "scratch").mkdir()
     with pytest.raises(Refused, match="backup_path_invalid"):
         verify(backup)
+
+
+def posted(tmp_path):
+    """Karen writes one letter to a neighbour that accepts them, then her run settles.
+
+    The sender is a granted, admitted management run — a letter's authority is the grant
+    that admission pinned — so it settles through the native receipt like any other.
+    """
+    from hearth.integrations.interface import encode_receipt
+
+    from tests.management.test_runtime import manager_run
+
+    hearth, run, execution, bound, receipt = manager_run(tmp_path)
+    hearth.save_resident(
+        "orchard",
+        Declaration("Orchard", "Synthetic", 1_000_000, letters_accept=True),
+        expected_revision=0,
+    )
+    with hearth.database.transaction(write=True) as db:
+        letter = hearth.send_letter_in_transaction(
+            db, run.id, "orchard", "One question", "Name one fact.", "letter-1"
+        )
+    execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
+    return hearth, letter, run, tmp_path / "data"
+
+
+def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(tmp_path):
+    hearth, receipt, sender, root = posted(tmp_path)
+    capture(root, tmp_path / "backup")
+    restore(tmp_path / "backup", tmp_path / "restored")
+    copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
+    with copy.database.transaction() as db:
+        letter = dict(
+            db.execute("SELECT * FROM letters WHERE task_id=?", (receipt["task_id"],)).fetchone()
+        )
+    assert letter["sender_resident_id"] == sender.resident_id
+    assert letter["sender_run_id"] == sender.id
+    assert letter["root_task_id"] == sender.task_id and letter["depth"] == 1
+    assert letter["expires_at"] == receipt["expires_at"]
+    assert copy.task(receipt["task_id"]).resident_id == "orchard"
+    assert copy.resident("orchard").declaration.letters_accept is True
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "UPDATE letters SET depth=4",
+        "UPDATE letters SET root_task_id=task_id",
+        "UPDATE letters SET sender_resident_id='orchard'",
+        # A parent that is its own child would walk forever if the reader trusted it.
+        "UPDATE letters SET parent_task_id=task_id",
+        # A parent that is not the work the sender was doing invents a hop.
+        "UPDATE letters SET parent_task_id=NULL",
+    ],
+)
+def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(tmp_path, tamper):
+    import sqlite3
+
+    hearth, receipt, _, root = posted(tmp_path)
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
+    with pytest.raises(Refused, match="backup_letters_invalid"):
+        capture(root, tmp_path / "refused")

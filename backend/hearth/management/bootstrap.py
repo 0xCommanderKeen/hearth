@@ -84,6 +84,7 @@ def bootstrap(hearth: Hearth) -> dict:
                     "manage_lifecycle",
                     "assign_skills",
                     "writable_memory",
+                    "send_letters",
                 ],
             },
         )

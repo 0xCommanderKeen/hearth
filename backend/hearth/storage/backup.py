@@ -41,6 +41,7 @@ from hearth.storage.database import (
     Database,
     schema_matches,
 )
+from hearth.work.letters import validate_letters
 
 FORMAT = 1
 # The household is the database, the artifacts it names and every resident's memory
@@ -228,6 +229,7 @@ def _check_database(root: Path) -> dict:
         validate_management(db)
         verify_authoring_backup(db, root)
         validate_provisioning(db)
+        validate_letters(db)
         validate_windows(db)
         for run in db.execute("SELECT * FROM runs"):
             if run["runtime_version"] != 1 or not re.fullmatch(
