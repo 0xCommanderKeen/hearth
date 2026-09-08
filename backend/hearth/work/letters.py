@@ -160,6 +160,26 @@ def _check_daily_cap(db, to: str, now: int, policy: dict) -> None:
         )
 
 
+def holds_post(db, run_id: str) -> bool:
+    """Does this run's resident hold an end of a letter it already had when it was admitted?
+
+    The reading half of `run_letter_scope`'s `post`, asked on its own so that the pin
+    carrying the letter tools is decided by the same question the scope answers. A run
+    offered a tool without a `run_management` row is offered no tool at all.
+    """
+    run = db.execute("SELECT resident_id,created_at FROM runs WHERE id=?", (run_id,)).fetchone()
+    if run is None:
+        return False
+    return (
+        db.execute(
+            "SELECT 1 FROM letters l JOIN tasks t ON t.id=l.task_id "
+            "WHERE (t.resident_id=? OR l.sender_resident_id=?) AND l.created_at<=? LIMIT 1",
+            (run["resident_id"], run["resident_id"], run["created_at"]),
+        ).fetchone()
+        is not None
+    )
+
+
 def run_letter_scope(db, run_id: str, now: int) -> dict:
     """Which letter tools one run is offered, and the letter a reply would answer.
 
@@ -181,15 +201,10 @@ def run_letter_scope(db, run_id: str, now: int) -> dict:
         return {"send": False, "reply": False, "post": False, "letter_id": None}
     letter = db.execute("SELECT task_id FROM letters WHERE task_id=?", (run["task_id"],)).fetchone()
     send = _sending_grant(db, run, now) is not None
-    post = db.execute(
-        "SELECT 1 FROM letters l JOIN tasks t ON t.id=l.task_id "
-        "WHERE (t.resident_id=? OR l.sender_resident_id=?) AND l.created_at<=? LIMIT 1",
-        (run["resident_id"], run["resident_id"], run["created_at"]),
-    ).fetchone()
     return {
         "send": send,
         "reply": letter is not None,
-        "post": send or letter is not None or post is not None,
+        "post": send or letter is not None or holds_post(db, run_id),
         "letter_id": letter["task_id"] if letter is not None else None,
     }
 

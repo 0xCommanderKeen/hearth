@@ -191,6 +191,50 @@ def test_a_resident_without_the_capability_is_offered_no_letter_tool(
         assert db.execute("SELECT count(*) FROM letters").fetchone()[0] == 0
 
 
+def test_a_receiver_only_resident_is_offered_its_own_post_on_an_ordinary_run(
+    household, tmp_path, monkeypatch
+):
+    """A resident that has only ever been written to reads its post outside a letter run.
+
+    It holds no management grant and cannot write its own memory, so the only thing that
+    can carry `hearth_letters_read` to it is a pin taken for the post itself.
+    """
+    app, hearth, karen = household
+    opens_the_door(hearth)
+    writer, write = working_run(app, karen, "asks")
+    receipt = send(write)[1]
+    settle(hearth, writer)
+    reader, answer = letter_run(app, receipt["task_id"], "answers")
+    answer(
+        "reply",
+        "hearth_letters_reply",
+        {"operation_id": "answer-1", "letter_id": receipt["task_id"], "text": "412 pear trees."},
+    )
+    settle(hearth, reader)
+
+    # An ordinary task of its own, with no grant, no writable memory and no letter in hand.
+    later, read = working_run(app, "reporter", "ordinary")
+    with hearth.database.transaction() as db:
+        from hearth.work.letters import run_letter_scope
+
+        scope = run_letter_scope(db, later.id, NOW)
+        assert scope["post"] is True and scope["send"] is False and scope["reply"] is False
+        assert (
+            db.execute("SELECT 1 FROM run_management WHERE run_id=?", (later.id,)).fetchone()
+            is not None
+        )
+    assert offered(hearth, later, tmp_path, monkeypatch) == {"hearth_letters_read"}
+    ok, post = read("post", "hearth_letters_read", {})
+    assert ok and [item["title"] for item in post["received"]] == ["One question"]
+    settle(hearth, later)
+
+    # A copy of that store validates: a grantless pin taken for the post is a healthy pin.
+    from hearth.management.authority import validate_management
+
+    with hearth.database.transaction() as db:
+        validate_management(db)
+
+
 def test_the_letter_call_is_recorded_as_this_run_s_tool_evidence(household):
     app, hearth, karen = household
     opens_the_door(hearth)

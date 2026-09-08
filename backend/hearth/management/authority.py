@@ -142,12 +142,19 @@ def works_a_letter(db, run_id: str) -> bool:
 
 
 def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writable=False) -> None:
-    """A run reaches the native tools with a grant, with writable memory, with a letter, or not.
+    """A run reaches the native tools with a grant, with writable memory, with post, or not.
 
-    All three pin a row here, because all three need the tool transport; only the granted
-    one pins a grant revision. A run pinned without one carries no management authority at
-    all, whatever the operator grants afterwards.
+    All of them pin a row here, because all of them need the tool transport; only the
+    granted one pins a grant revision. A run pinned without one carries no management
+    authority at all, whatever the operator grants afterwards.
+
+    The letter half of the gate is exactly `run_letter_scope`'s `post`: the letter this run
+    was admitted to answer, or any letter this resident already had an end of. A resident
+    that has only ever received letters holds no grant and may still read its own post, and
+    a run with no row here would be launched with no native surface to read it on.
     """
+    from hearth.work.letters import holds_post
+
     grant = read_grant(db, resident_id)
     if grant["enabled"]:
         policy = {
@@ -157,7 +164,7 @@ def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writab
             "INSERT INTO run_management VALUES (?,?,?,?,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, grant["revision"], digest(policy), now + 600),
         )
-    elif memory_writable or works_a_letter(db, run_id):
+    elif memory_writable or works_a_letter(db, run_id) or holds_post(db, run_id):
         db.execute(
             "INSERT INTO run_management VALUES (?,?,NULL,NULL,?,NULL,NULL,NULL,NULL)",
             (run_id, resident_id, now + 600),
@@ -165,6 +172,8 @@ def pin_management(db, run_id: str, resident_id: str, now: int, *, memory_writab
 
 
 def validate_management(db) -> None:
+    from hearth.work.letters import holds_post
+
     for row in db.execute("SELECT * FROM management_grant_revisions"):
         try:
             policy = GrantPolicy.model_validate(json.loads(row["policy"])).model_dump()
@@ -179,7 +188,7 @@ def validate_management(db) -> None:
         "LEFT JOIN management_grant_revisions g "
         "ON g.resident_id=p.resident_id AND g.revision=p.grant_revision "
         "LEFT JOIN declarations d ON d.resident_id=r.resident_id AND d.revision=r.resident_revision"
-    ):
+    ).fetchall():
         if (
             row["resident_id"] != row["owner"]
             or row["grant_sha256"] != row["sha256"]
@@ -187,8 +196,13 @@ def validate_management(db) -> None:
         ):
             raise Refused("management_admission_changed")
         # A pin without a grant revision exists only for a run that could write its own
-        # memory or answer the letter it was admitted for.
-        if row["grant_revision"] is None and not row["memory_writable"] and not row["letter"]:
+        # memory, answer the letter it was admitted for, or read its own post.
+        if (
+            row["grant_revision"] is None
+            and not row["memory_writable"]
+            and not row["letter"]
+            and not holds_post(db, row["run_id"])
+        ):
             raise Refused("management_admission_changed")
 
 
