@@ -1,0 +1,380 @@
+"""Bounded offline reading of the Claude Code stream-json protocol.
+
+Not a runtime and not a billing adapter: it turns one recorded stream plus one
+observed process exit into a `Transcript`, and refuses to guess when the stream's
+own numbers disagree with each other.
+
+Everything about the protocol here was measured against the pinned CLI (2.1.263) on
+2026-09-09 and is written up in `docs/claude-runtime.md`. Four measurements decide
+the shape of this file, and each contradicts something the plan assumed:
+
+1. **`result.usage` is not always the truth.** On a clean success it carries the
+   turn's totals; on a session the CLI stopped for `--max-budget-usd` every field
+   came back `0` while the turn had really been billed. It is therefore never read
+   as usage -- only `usage.iterations` (per-request rows, present when the CLI
+   produced them) and `modelUsage` (per-model totals, truthful in both cases) are.
+2. **An `assistant` message's `usage` is a mid-stream snapshot.** Its
+   `output_tokens` was `1` in a turn that billed `4`. Its cache-creation numbers were
+   final in every recording, and it is the only place the five-minute/one-hour write
+   split appears, so that split -- and nothing else -- is taken from it.
+3. **A session spends a second model.** `modelUsage` named `claude-haiku-4-5`
+   beside the pinned model in every recording, and `total_cost_usd` is the sum of
+   both. So the pinned-model check is about the *turn's* model, from the session's
+   own `init` event and from every assistant message, and the second model's tokens
+   are priced deliberately rather than ignored.
+4. **The CLI emits event types this parser has never seen.** `rate_limit_event`
+   appeared in every recorded session and carries nothing Hearth settles on. Unknown
+   event types are counted and skipped, never interpreted: the authority is the one
+   `result` event, which has to be present, singular and coherent for anything to be
+   priced.
+"""
+
+import json
+from dataclasses import dataclass
+
+from hearth.integrations.durable import (
+    finite_float,
+    reject_constant,
+    short_string,
+    unique_object,
+)
+
+MAX_RECORD = 1024 * 1024
+MAX_STREAM = 4 * 1024 * 1024
+MAX_OUTPUT = 512 * 1024
+MAX_EVENTS = 10_000
+MAX_MESSAGES = 128
+MAX_MODELS = 8
+MAX_TOKENS = 1_000_000_000
+# One session cannot plausibly bill more than this; a larger number is not evidence.
+MAX_COST_MICRODOLLARS = 1_000_000_000
+CONTRACT = "claude-code-stream-json-2026-09-09"
+
+# What the CLI calls each count, in `modelUsage` and in the per-request `iterations`.
+MODEL_USAGE_FIELDS = ("inputTokens", "outputTokens", "cacheReadInputTokens")
+ITERATION_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens")
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """One priced unit of work, carrying the model that spent it.
+
+    The two cache-write fields are the published five-minute and one-hour write
+    tiers, which are priced differently; the CLI reports which one it used.
+    """
+
+    model: str
+    input_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_5m_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class Transcript:
+    status: str
+    model: str | None = None
+    output: str | None = None
+    subtype: str | None = None
+    usage: tuple[TokenUsage, ...] | None = None
+    # What the CLI itself says the session cost, in microdollars: per model, and in
+    # total. Hearth's own estimate is checked against these, never taken from them.
+    reported: tuple[tuple[str, int], ...] | None = None
+    reported_total: int | None = None
+    budget_exhausted: bool = False
+    reason: str | None = None
+    contract: str = CONTRACT
+
+
+def canonical(name: object) -> str | None:
+    """`claude-haiku-4-5-20251001` and `claude-haiku-4-5` are the same price row."""
+    if not short_string(name):
+        return None
+    assert isinstance(name, str)
+    head, _, tail = name.rpartition("-")
+    return head if len(tail) == 8 and tail.isdigit() and head else name
+
+
+def counts(value: object, fields: tuple[str, ...]) -> tuple[int, ...] | None:
+    """Read a fixed set of token counters, refusing anything that is not a count."""
+    if not isinstance(value, dict):
+        return None
+    read = []
+    for field in fields:
+        count = value.get(field)
+        if type(count) is not int or not 0 <= count <= MAX_TOKENS:
+            return None
+        read.append(count)
+    return tuple(read)
+
+
+def write_tiers(value: object) -> tuple[int, int] | None:
+    """The five-minute/one-hour split of a `cache_creation` block, if it is coherent."""
+    if not isinstance(value, dict):
+        return None
+    split = counts(value, ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"))
+    return split if split is None else (split[0], split[1])
+
+
+def microdollars(value: object) -> int | None:
+    """A dollar amount the CLI reported, as microdollars; None if it is not a number."""
+    if type(value) is bool or not isinstance(value, int | float):
+        return None
+    amount = round(float(value) * 1_000_000)
+    return amount if 0 <= amount <= MAX_COST_MICRODOLLARS else None
+
+
+class ClaudeEvents:
+    """One headless session, arbitrary byte chunks, then one observed process exit.
+
+    Unknown event types are counted and skipped. The `result` event is the authority
+    and must appear exactly once, at the end.
+    """
+
+    def __init__(self):
+        self.buffer = bytearray()
+        self.total = 0
+        self.events = 0
+        self.model: str | None = None
+        self.initialized = False
+        self.result: dict | None = None
+        # Per model: how many cache-write tokens each tier holds, summed over the
+        # session's assistant messages. The only place that split is reported.
+        self.tiers: dict[str, list[int]] = {}
+        self.messages = 0
+        self.error: str | None = None
+        self.sealed = False
+
+    def feed(self, chunk: bytes) -> None:
+        if self.sealed:
+            raise ValueError("Transcript already sealed")
+        if self.error:
+            return
+        self.total += len(chunk)
+        if self.total > MAX_STREAM:
+            self.error = "stream_too_large"
+            self.buffer.clear()
+            return
+        self.buffer.extend(chunk)
+        consumed = 0
+        while not self.error:
+            end = self.buffer.find(b"\n", consumed)
+            if end < 0:
+                break
+            if end - consumed > MAX_RECORD:
+                self.error = "record_too_large"
+                break
+            self._record(bytes(self.buffer[consumed:end]))
+            consumed = end + 1
+        if consumed:
+            del self.buffer[:consumed]
+        if not self.error and len(self.buffer) > MAX_RECORD:
+            self.error = "record_too_large"
+        if self.error:
+            self.buffer.clear()
+
+    def _record(self, raw: bytes) -> None:
+        if len(raw) > MAX_RECORD:
+            self.error = "record_too_large"
+            return
+        self.events += 1
+        if self.events > MAX_EVENTS:
+            self.error = "too_many_events"
+            return
+        if not raw.strip():
+            return
+        try:
+            event = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=unique_object,
+                parse_constant=reject_constant,
+                parse_float=finite_float,
+            )
+        except ValueError, RecursionError:
+            self.error = "invalid_json"
+            return
+        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
+            self.error = "invalid_event"
+            return
+        if self.result is not None:
+            self.error = "event_after_terminal"
+            return
+        kind = event["type"]
+        if kind == "system" and event.get("subtype") == "init":
+            self._init(event)
+        elif kind == "assistant":
+            self._assistant(event.get("message"))
+        elif kind == "result":
+            self.result = event
+        # Anything else is a surface Hearth settles nothing on: it is skipped, never
+        # interpreted, and the result event still has to account for the whole session.
+
+    def _init(self, event: dict) -> None:
+        if self.initialized or not short_string(event.get("model")):
+            self.error = "invalid_session"
+            return
+        self.initialized = True
+        self.model = canonical(event["model"])
+        if self.model is None:
+            self.error = "invalid_session"
+
+    def _assistant(self, message: object) -> None:
+        """Record the model and the cache-write split; the counts themselves are not."""
+        self.messages += 1
+        if self.messages > MAX_MESSAGES:
+            self.error = "too_many_events"
+            return
+        if not isinstance(message, dict):
+            self.error = "invalid_message"
+            return
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            self.error = "invalid_message"
+            return
+        creation = counts(usage, ("cache_creation_input_tokens",))
+        split = write_tiers(usage.get("cache_creation"))
+        if creation is None or split is None or sum(split) != creation[0]:
+            self.error = "invalid_message"
+            return
+        if message.get("is_api_error_message") is True:
+            # The CLI writes its own failures as assistant messages with a synthetic
+            # model. They are not API responses, so they name no model and may carry
+            # no usage at all.
+            if creation[0] or counts(usage, ("input_tokens", "output_tokens")) != (0, 0):
+                self.error = "invalid_message"
+            return
+        model = canonical(message.get("model"))
+        if model is None:
+            self.error = "invalid_message"
+            return
+        tiers = self.tiers.setdefault(model, [0, 0])
+        tiers[0] += split[0]
+        tiers[1] += split[1]
+
+    def finish(self, *, exit_code: int | None) -> Transcript:
+        """Seal after EOF and an observed exit; a None exit code means it is unknown."""
+        if self.sealed:
+            raise ValueError("Transcript already sealed")
+        self.sealed = True
+        if self.buffer and not self.error:
+            self._record(bytes(self.buffer))
+        self.buffer.clear()
+        if self.error:
+            return Transcript("invalid", self.model, reason=self.error)
+        if type(exit_code) is not int or self.result is None:
+            return Transcript("incomplete", self.model, reason="termination_unproven")
+        result = self.result
+        raw_subtype = result.get("subtype")
+        subtype: str | None = raw_subtype if isinstance(raw_subtype, str) else None
+        budget = subtype == "error_max_budget_usd" or (
+            result.get("terminal_reason") == "budget_exhausted"
+        )
+        usage, unpriced = self._usage(result)
+        reported, total = self._reported(result)
+
+        def settled(status: str, *, reason: str | None, output: str | None = None) -> Transcript:
+            return Transcript(
+                status, self.model, output, subtype, usage, reported, total, bool(budget), reason
+            )
+
+        if subtype == "success" and result.get("is_error") is False:
+            answer = result.get("result")
+            if exit_code != 0:
+                return settled("incomplete", reason="abnormal_exit")
+            if not isinstance(answer, str) or not answer.strip():
+                return settled("incomplete", reason="missing_message")
+            if len(answer.encode("utf-8", errors="replace")) > MAX_OUTPUT:
+                return settled("invalid", reason="output_too_large")
+            return settled("completed", output=answer, reason=unpriced)
+        return settled("failed", reason=unpriced or subtype or "unreported_failure")
+
+    def _usage(self, result: dict) -> tuple[tuple[TokenUsage, ...] | None, str | None]:
+        """What the session spent, per model, or why the stream cannot say.
+
+        `modelUsage` is the only per-model account the CLI keeps in every outcome.
+        Its rows are totals rather than individual requests, which under the Codex
+        schedule would be unpriceable -- but this schedule has no long-context tier
+        (`pricing.py`), so a total costs exactly what its requests cost. Where the CLI
+        does report the individual requests, in `usage.iterations`, they are used as
+        the rows and their sum has to agree with the total or nothing is priced.
+        """
+        reported = result.get("modelUsage")
+        if not isinstance(reported, dict) or not reported or len(reported) > MAX_MODELS:
+            return None, "model_usage_absent"
+        totals: dict[str, tuple[int, ...]] = {}
+        for key, entry in reported.items():
+            model = canonical(entry.get("canonicalModel") if isinstance(entry, dict) else key)
+            if model is None:
+                model = canonical(key)
+            if model is None or model in totals:
+                return None, "model_usage_invalid"
+            counted = counts(entry, MODEL_USAGE_FIELDS + ("cacheCreationInputTokens",))
+            if counted is None:
+                return None, "model_usage_invalid"
+            totals[model] = counted
+        if self.model is None or self.model not in totals:
+            return None, "pinned_model_absent"
+        if set(self.tiers) - set(totals):
+            return None, "model_usage_invalid"
+        rows: list[TokenUsage] = []
+        # The pinned model first, then the rest by name: the order of the CLI's own
+        # `modelUsage` object is not something Hearth's evidence should depend on.
+        for model in sorted(totals, key=lambda name: (name != self.model, name)):
+            given, produced, read, written = totals[model]
+            tiers = tuple(self.tiers.get(model, (0, 0)))
+            if sum(tiers) != written:
+                # The write tier decides the price (1.25x against 2x), and only the
+                # assistant messages report it. Without it the session is unpriced.
+                return None, "cache_write_tier_unknown"
+            if model == self.model:
+                requests = self._requests(model, result, (given, produced, read, written), tiers)
+                if requests is None:
+                    return None, "request_usage_contradiction"
+                rows.extend(requests)
+                continue
+            rows.append(TokenUsage(model, given, read, tiers[0], tiers[1], produced))
+        return tuple(rows), None
+
+    def _requests(self, model, result, total, tiers) -> list[TokenUsage] | None:
+        """The pinned model's individual requests, when the CLI reported them.
+
+        `usage.iterations` was present on every recorded success and empty on the
+        budget stop. When it is there it must add up to the model's own total, or the
+        stream is contradicting itself and nothing is priced.
+        """
+        given, produced, read, written = total
+        usage = result.get("usage")
+        iterations = usage.get("iterations") if isinstance(usage, dict) else None
+        if iterations is None or iterations == []:
+            return [TokenUsage(model, given, read, tiers[0], tiers[1], produced)]
+        if not isinstance(iterations, list) or len(iterations) > MAX_MESSAGES:
+            return None
+        rows, summed = [], [0, 0, 0, 0, 0]
+        for entry in iterations:
+            counted = counts(entry, ITERATION_FIELDS + ("cache_creation_input_tokens",))
+            split = write_tiers(entry.get("cache_creation") if isinstance(entry, dict) else None)
+            if counted is None or split is None or sum(split) != counted[3]:
+                return None
+            row = (counted[0], counted[1], counted[2], *split)
+            rows.append(TokenUsage(model, row[0], row[2], row[3], row[4], row[1]))
+            for index, count in enumerate(row):
+                summed[index] += count
+        if summed != [given, produced, read, tiers[0], tiers[1]]:
+            return None
+        return rows
+
+    def _reported(self, result: dict):
+        """The CLI's own cost numbers, kept for the cross-check and nothing else."""
+        total = microdollars(result.get("total_cost_usd"))
+        reported = result.get("modelUsage")
+        if not isinstance(reported, dict) or len(reported) > MAX_MODELS:
+            return None, total
+        rows = []
+        for key, entry in reported.items():
+            model = canonical(entry.get("canonicalModel") if isinstance(entry, dict) else key)
+            cost = microdollars(entry.get("costUSD")) if isinstance(entry, dict) else None
+            if model is None or cost is None:
+                return None, total
+            rows.append((model, cost))
+        return tuple(sorted(rows)), total

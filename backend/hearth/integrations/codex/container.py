@@ -1,11 +1,9 @@
 """Durable ownership for the isolated offline Codex CLI and collector containers."""
 
-import fcntl
 import hashlib
 import json
 import os
 import re
-import stat
 import subprocess
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -14,6 +12,7 @@ from pathlib import Path
 from hearth.integrations.codex.events import MAX_STREAM
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
 from hearth.integrations.codex.usage import UsageBinding, publish, read
+from hearth.integrations.durable import folder_lock
 from hearth.residents.models import Refused
 from hearth.storage.artifacts import sync_directory
 
@@ -24,16 +23,7 @@ LABEL = "org.hearth.codex-container"
 @contextmanager
 def container_lock(path: Path):
     """Exclusive ownership of one durable runtime folder, following no link."""
-    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
-    try:
-        fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as lock:
-        info = os.fstat(lock.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise Refused("container_lock_invalid")
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with folder_lock(path, "container_lock_invalid"):
         yield
 
 

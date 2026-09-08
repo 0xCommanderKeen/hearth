@@ -6,7 +6,6 @@ import json
 import os
 import selectors
 import signal
-import stat
 import subprocess
 import sys
 import tempfile
@@ -19,6 +18,7 @@ from hearth.integrations.codex.container import container_lock
 from hearth.integrations.codex.events import MAX_STREAM, CodexEvents
 from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
 from hearth.integrations.codex.usage import UsageBinding, publish, read
+from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
@@ -288,25 +288,8 @@ class CodexLiveRuntime:
 @contextmanager
 def worker_lock(folder, inherited_fd=None):
     """Transfer one flock open-file description to the worker with no unlocked interval."""
-    path = folder / "worker.lock"
-    fd = (
-        inherited_fd
-        if inherited_fd is not None
-        else os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
-    )
-    with os.fdopen(fd, "rb") as lock:
-        actual = os.fstat(fd)
-        expected = path.stat(follow_symlinks=False)
-        if (
-            not stat.S_ISREG(actual.st_mode)
-            or actual.st_nlink != 1
-            or (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino)
-        ):
-            raise Refused("codex_worker_lock_invalid")
-        os.set_inheritable(fd, False)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        # Closing this copy must not explicitly unlock the child's inherited description.
-        yield lock.fileno()
+    with transferable_lock(folder / "worker.lock", "codex_worker_lock_invalid", inherited_fd) as fd:
+        yield fd
 
 
 def worker(folder, inherited_fd=None):
