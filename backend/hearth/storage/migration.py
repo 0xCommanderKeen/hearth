@@ -21,6 +21,11 @@ FILLS: dict[tuple[str, str], str] = {
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",
 }
+# The one runtime Hearth ships. Runs recorded against a runtime that no longer
+# exists cannot be relabelled without lying about where the work happened, so the
+# upgrade leaves them behind with everything that referenced them. Nothing is lost:
+# the original store is kept beside the upgraded one.
+RUNTIME_KIND = "codex_subscription"
 
 
 class UpgradeError(RuntimeError):
@@ -38,6 +43,33 @@ def _tables(db: sqlite3.Connection) -> list[str]:
             "SELECT name FROM sqlite_master WHERE type='table' AND name!='sqlite_sequence'"
         )
     ]
+
+
+def _retired_runs(db: sqlite3.Connection) -> tuple[set[str], set[str]]:
+    """Runs recorded against a removed runtime, and the tasks that only had those."""
+    if "runs" not in _tables(db) or not any(
+        column["name"] == "runtime_kind" for column in _columns(db, "runs")
+    ):
+        return set(), set()
+    rows = db.execute(
+        "SELECT id, task_id FROM runs WHERE runtime_kind != ?", (RUNTIME_KIND,)
+    ).fetchall()
+    return {row["id"] for row in rows}, {row["task_id"] for row in rows}
+
+
+def _prune_references(db: sqlite3.Connection) -> int:
+    """Delete whatever now points at nothing, until the store references only itself.
+
+    The store this upgrade reads passed its own reference check, so every violation
+    here descends from a run this release cannot honour.
+    """
+    removed = 0
+    while violations := db.execute("PRAGMA foreign_key_check").fetchall():
+        for table, rowid, parent, _ in violations:
+            if rowid is None:
+                raise UpgradeError(f"Cannot resolve {table} references to {parent}")
+            removed += db.execute(f'DELETE FROM "{table}" WHERE rowid=?', (rowid,)).rowcount
+    return removed
 
 
 def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None = None) -> Path:
@@ -73,6 +105,7 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 ).fetchall()
             ):
                 raise UpgradeError("Not a Hearth store; refusing to upgrade")
+            retired, abandoned = _retired_runs(old)
             for table in _tables(new):
                 if table not in old_tables:
                     continue
@@ -93,13 +126,48 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 dropped = old_columns - {row["name"] for row in _columns(new, table)}
                 if dropped:
                     raise UpgradeError(f"Upgrade would drop {table} columns {sorted(dropped)}")
-                rows = old.execute(f'SELECT {", ".join(select)} FROM "{table}"').fetchall()
+                condition = (
+                    f" WHERE id NOT IN ({', '.join('?' * len(retired))})"
+                    if table == "runs" and retired
+                    else ""
+                )
+                rows = old.execute(
+                    f'SELECT {", ".join(select)} FROM "{table}"{condition}',
+                    tuple(retired) if condition else (),
+                ).fetchall()
                 if rows:
                     new.executemany(
                         f'INSERT INTO "{table}" ({", ".join(insert)}) '
                         f"VALUES ({', '.join('?' for _ in insert)})",
                         [tuple(row) for row in rows],
                     )
+            # One runtime remains, so the store's own selection and process boundary
+            # are no longer choices an older store can carry forward.
+            new.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (RUNTIME_KIND,))
+            new.execute("DELETE FROM system_meta WHERE key='process_boundary'")
+            if retired:
+                pruned = _prune_references(new)
+                abandoned = {
+                    task
+                    for task in abandoned
+                    if new.execute("SELECT 1 FROM tasks WHERE id=?", (task,)).fetchone()
+                    and not new.execute("SELECT 1 FROM runs WHERE task_id=?", (task,)).fetchone()
+                }
+                for task in abandoned:
+                    new.execute("DELETE FROM tasks WHERE id=?", (task,))
+                pruned += len(abandoned) + _prune_references(new)
+                new.execute(
+                    "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+                    (
+                        "runtime_runs_retired",
+                        "hearth.db",
+                        now if now is not None else int(time.time()),
+                        json.dumps(
+                            {"runs": sorted(retired), "kept": keep.name, "rows_removed": pruned},
+                            sort_keys=True,
+                        ),
+                    ),
+                )
             if new.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise UpgradeError("Upgraded store contains invalid references")
             if not schema_matches(new):

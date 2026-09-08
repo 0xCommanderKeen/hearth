@@ -321,7 +321,7 @@ SCHEMA = (
         cancellation_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancellation_requested IN (0,1)),
         launch_attempted INTEGER NOT NULL DEFAULT 0 CHECK (launch_attempted IN (0,1)),
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
-        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription')),
+        runtime_kind TEXT NOT NULL CHECK(runtime_kind='codex_subscription'),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)

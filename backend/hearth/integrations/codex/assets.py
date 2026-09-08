@@ -11,7 +11,7 @@ from pathlib import Path
 from hearth.integrations.codex import events as codex_events
 from hearth.integrations.codex import pricing as codex_pricing
 from hearth.integrations.codex import usage as codex_usage
-from hearth.integrations.mock.container import container_lock
+from hearth.integrations.codex.container import container_lock
 from hearth.residents.models import Refused
 
 ARCHIVE_SHA512 = (

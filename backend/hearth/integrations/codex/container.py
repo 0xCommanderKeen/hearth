@@ -1,19 +1,58 @@
 """Durable ownership for the isolated offline Codex CLI and collector containers."""
 
+import fcntl
 import hashlib
 import json
 import os
 import re
+import stat
+import subprocess
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.integrations.codex.events import MAX_STREAM
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
 from hearth.integrations.codex.usage import UsageBinding, publish, read
-from hearth.integrations.mock.container import IMAGE, LocalDocker, container_lock
 from hearth.residents.models import Refused
 from hearth.storage.artifacts import sync_directory
 
+IMAGE = "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6"
 LABEL = "org.hearth.codex-container"
+
+
+@contextmanager
+def container_lock(path: Path):
+    """Exclusive ownership of one durable runtime folder, following no link."""
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise Refused("container_lock_invalid")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+class LocalDocker:
+    """Only the selected local Mac socket. Never pull or forward host credentials."""
+
+    def __call__(self, *args: str) -> str:
+        result = subprocess.run(
+            ["docker", "--host", "unix://" + str(Path.home() / ".docker/run/docker.sock"), *args],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode:
+            raise OSError(f"Docker {args[0]} failed")
+        if len(result.stdout.encode()) > MAX_STREAM:
+            raise OSError("Oversized Docker evidence")
+        return result.stdout.strip()
 
 
 def digest(value: dict) -> str:

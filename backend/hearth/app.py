@@ -1,8 +1,9 @@
-"""Authenticated local mock API and the browser assets served from the same origin."""
+"""Authenticated local operator API and the browser assets served from the same origin."""
 
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -32,8 +33,8 @@ from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
-from hearth.integrations.mock.inline import MockRuntime
-from hearth.integrations.mock.process import ProcessMockRuntime
+from hearth.integrations.codex.subscription import CodexLiveRuntime
+from hearth.integrations.interface import Runtime
 from hearth.management.api import mount_management
 from hearth.observation.notifications import MockInbox, Notifications
 from hearth.observation.snapshot import snapshot
@@ -53,38 +54,31 @@ def create_app(
     data: Path,
     token: str,
     *,
-    scenario: str = "success",
     supervise: bool = True,
-    runtime_kind: str | None = None,
-    process_boundary: str | None = None,
-    codex_archive: Path | None = None,
+    runtime: Callable[[Path], Runtime] | None = None,
     codex_binary: Path | None = None,
     codex_auth_home: Path | None = None,
 ) -> FastAPI:
+    """`runtime` builds the runtime over the data directory Hearth just opened.
+
+    Only tests and the installed-wheel smoke pass it, to stand in for a Codex
+    subscription no continuous integration host has. Hearth itself runs the one
+    runtime it ships.
+    """
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
-    database.initialize(runtime_kind=runtime_kind, process_boundary=process_boundary)
+    database.initialize()
     if database.restored():
         supervise = False
     hearth = Hearth(database)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
-    runtime = (
-        ProcessMockRuntime(
-            data / "process-mock", scenario=scenario, boundary=database.process_boundary()
-        )
-        if database.runtime_kind() == "process_mock"
-        else MockRuntime(data / "mock-runtime", scenario=scenario)
+    executor = Executor(
+        execution,
+        runtime(data)
+        if runtime is not None
+        else CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home),
     )
-    if database.runtime_kind() == "codex_subscription":
-        from hearth.integrations.codex.subscription import CodexLiveRuntime
-
-        runtime = CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home)
-    if database.runtime_kind() == "codex_mock":
-        from hearth.integrations.codex.runtime import CodexMockRuntime
-
-        runtime = CodexMockRuntime(data, archive=codex_archive, scenario=scenario)
-    executor = Executor(execution, runtime)
     authority = Authority(hearth, execution.artifacts)
     broker = Broker(authority, MockNoticeboard(data / "mock-noticeboard"))
     routines = Routines(hearth)
@@ -104,7 +98,7 @@ def create_app(
                 await asyncio.to_thread(supervisor.stop)
 
     app = FastAPI(
-        title="Hearth mock interface",
+        title="Hearth operator interface",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -392,16 +386,10 @@ def from_env() -> FastAPI:
     return create_app(
         Path(os.environ.get("HEARTH_DATA", ".hearth/local")),
         os.environ.get("HEARTH_OPERATOR_TOKEN", ""),
-        scenario=os.environ.get("HEARTH_MOCK_SCENARIO", "success"),
-        runtime_kind=os.environ.get("HEARTH_RUNTIME") or os.environ.get("HEARTH_MOCK_RUNTIME"),
         codex_binary=Path(os.environ["HEARTH_CODEX_BINARY"])
         if os.environ.get("HEARTH_CODEX_BINARY")
         else None,
         codex_auth_home=Path(os.environ["HEARTH_CODEX_AUTH_HOME"])
         if os.environ.get("HEARTH_CODEX_AUTH_HOME")
-        else None,
-        process_boundary=os.environ.get("HEARTH_PROCESS_BOUNDARY"),
-        codex_archive=Path(os.environ["HEARTH_CODEX_ARCHIVE"])
-        if os.environ.get("HEARTH_CODEX_ARCHIVE")
         else None,
     )
