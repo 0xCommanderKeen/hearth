@@ -16,8 +16,9 @@ fixture has no database access and consumes the same pinned reader context as th
 subscription adapter. No real CLI, login or provider is used by these tests. The
 subscription runtime kind deliberately exercises that adapter's receipt and backup
 paths; its synthetic counters and passed assertions are not evidence of model quality
-or real-host isolation. The fixture's names and output say plainly that they come
-from a scripted CLI.
+or real-host isolation. The fixture names its skill and its resident "Simulated
+orchard reports" and "Simulated orchard reporter", and its text says the orchard is
+fictional, so nothing it saves can be mistaken for a real report.
 
 The journey records five runs: two manager turns — Karen authors and requests, then
 deploys once the evidence is in — two serial validation cases on Karen's own slot, and

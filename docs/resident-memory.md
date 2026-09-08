@@ -54,8 +54,9 @@ superseded-declaration runs, and `context_ended` refuses a run whose context cre
 expired or was revoked, both as `run_context_unavailable`. Reading and writing share
 that one credential cutoff, so a run that can no longer read its pinned context cannot
 write either; reissuing the credential restores both. A run that was issued no
-credential is not cut off by that rule — the in-process runtime and the management
-bridge never hold one — and `live_run` remains its cutoff. Restored copies refuse
+credential is not cut off by that rule — the executor hands the canonical context to the
+runtime directly, and the management bridge holds no credential either — and `live_run`
+remains its cutoff. Restored copies refuse
 every write.
 
 Writes are idempotent on `operation_id` like management operations. The first call

@@ -1,9 +1,9 @@
 # Operator workflow
 
 Hamlet and Townhall are views in one application, using one same-origin client and
-the same complete snapshot. A static SVG home represents Reader; it glows only when
-the connected server reports a running resident. A disconnected client explicitly
-labels its state stale. This view supports the selected new Reader workflow.
+the same complete snapshot. Hamlet draws one home per unarchived resident in a
+three.js village, each linking to that resident's profile; it shows no run state of
+its own. A disconnected client explicitly labels its state stale.
 
 All `/api/` requests authenticate with an operator bearer credential before body
 parsing. Request bodies are capped at 64 KiB. The browser keeps the credential in

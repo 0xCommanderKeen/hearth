@@ -2,7 +2,7 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
-- Docs describe one runtime and no mocks. The nine mock documents and ADR 0004 are
+- Docs describe one runtime and no mocks. The last seven mock documents and ADR 0004 are
   deleted, `implementation.md`'s mock and container-rehearsal checkpoints collapse into
   one record of what the epic shipped, and the remaining incidental mentions of mock
   runtimes, `simulated`, approvals, the noticeboard and the Skill evaluator are corrected

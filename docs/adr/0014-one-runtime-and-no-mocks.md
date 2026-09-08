@@ -66,9 +66,12 @@ with, work a retired runtime left in flight ends as cancelled with usage unknown
 quarantined copy is never rewritten. The price is that backup cannot verify a historical
 run's cost against a provider — its receipts left with its runtime — so such a run is
 verified only as finished history. Every other cross-check still applies. For the same
-reason `integrations/codex/assets.py` still raises `codex_mock_*` refusal codes and the
-snapshot still labels historical runs `api_equivalent_mock` / `mock_runtime`: those names
-describe runs that really did happen on a retired runtime.
+reason `observation/snapshot.py` still labels historical runs `api_equivalent_mock` /
+`mock_runtime`: the name describes a run that really did happen on a retired runtime.
+`integrations/codex/assets.py` keeps its `codex_mock_*` refusal codes for a different
+reason — that module installs the offline CLI fixture for
+`scripts/probe-codex-subscription.py`, which is still called a mock and still is one;
+it is not part of the runtime and never runs in the application.
 
 **Every removal shipped a migration** (ADR 0013), which grew four capabilities to carry
 them: `DROPS` for a removed column, `REWRITES` for a value the new layout refuses,

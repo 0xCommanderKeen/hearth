@@ -67,7 +67,7 @@ preserves unknown usage and ambiguous final messages, and requires observed proc
 exit before completed interpretation. It returns no runtime evidence or dollar cost.
 Real CLI event compatibility, final-file ownership, pricing and Mac isolation remain
 pending; no Codex task was launched. Full `make check` passes 273 backend and
-35 browser tests, including 47 synthetic parser checks and both installed-wheel
+35 browser tests, including 47 synthetic parser checks and the installed-wheel
 journeys.
 
 ## Remaining acceptance
@@ -98,7 +98,7 @@ concurrency, digest and size limits, unsafe paths and sync failures before/after
 publication. Fifty repeated concurrent staging checks pass after switching lock
 creation to exclusive create followed by existing-file open on contention; the
 original combined create/open intermittently failed with ENOENT on this Mac.
-Full `make check` passes 289 backend and 35 browser tests plus both installed-wheel
+Full `make check` passes 289 backend and 35 browser tests plus the installed-wheel
 journeys. Actual worker wiring and Mac filesystem/network isolation remain pending;
 read-only file permissions are not evidence of confinement. No Codex call was made.
 
@@ -116,7 +116,7 @@ The daemon default is unconfined; explicit built-in seccomp and an in-container
 Seccomp=2 assertion avoid relying on it. Dormant tunnel interfaces are present;
 the probe checks no active non-loopback interfaces/routes and connection denial.
 Three offline cleanup checks cover daemon loss and foreign-ownership refusal.
-Full `make check` passes 292 backend/35 browser plus both installed-wheel journeys.
+Full `make check` passes 292 backend/35 browser plus the installed-wheel journeys.
 This is host evidence for the synthetic image, not a Codex integration or a real
 summary. [Reproduction and remaining gates](mac-isolation.md) cover actual staged
 mount permissions, durable worker identity, model transport/credential separation,
@@ -278,7 +278,7 @@ subscription lost-launch recovery behavior. Hearth retains transactional account
 and dispatch authority; no schema, receipt format, routes or configuration changed.
 
 Verified 2026-09-06: `make check` passes 489 backend and 40 frontend tests,
-format/lint/types/build and both installed-wheel journeys,
+format/lint/types/build and the installed-wheel journeys,
 including auth, results, restart and held restore. Two interface checks reject
 changed cancellation run/input/runtime pins. A collector regression checks the
 previously pinned bundle hashes, unchanged manifest and isolated imports. All three
@@ -431,7 +431,7 @@ Each resident's own pinned notes produce its own result. See
 [the API and data boundary](synthetic-inputs.md).
 
 Verification passed 543 backend and 59 browser tests, lint/format/types, frontend
-and wheel builds, and both installed-wheel journeys. New checks cover exact
+and wheel builds, and the installed-wheel journeys. New checks cover exact
 retry/conflicts, three distinct/empty contexts and summaries, concurrent content
 edit/admission, future selection, source/pin corruption with healthy progress,
 scoped and revoked run access, inert malicious source text, serialized size limits
@@ -459,7 +459,7 @@ application writer. Created residents inherit no management grant. Reader retain
 its read-only exec route. See [the permission contract](management.md).
 
 Final `make check` passed 620 backend and 61 browser tests, lint/format/types and release
-builds, including both isolated HTTP/restart/held-restore journeys with cached
+builds, including the isolated HTTP/restart/held-restore journeys with cached
 dependencies. Thirty-five management checks cover scoped
 creation/reuse/start, concurrency, revocation, stale ownership, changed pins,
 unknown usage holds, current-data backup and transactional failure. A fresh rendered
@@ -508,7 +508,7 @@ grant revocation, and preserve uncertain-usage holds. See [management](managemen
 for the pins, expiry, repair and evidence boundaries.
 
 `make check` passed 632 backend tests and 65 browser tests, lint/format/types, frontend
-and wheel builds, and both isolated installed-wheel journeys. New regressions
+and wheel builds, and the isolated installed-wheel journeys. New regressions
 exercise exact lost-save/validation/publication replies, concurrent human/agent edits,
 unauthorized revisions and assignments, failed structural/output checks, unknown
 usage, revoked grants during bounded waits, prompt escalation, a repaired declaration
@@ -1049,8 +1049,10 @@ What shipped:
   allowance and its one run slot, so the requesting turn ends before the examples start.
   The upgrade learned version-scoped `COLUMN_RENAMES` and archives any existing evaluator
   with an audit fact. See [management](management.md) and [the Karen journey](karen-journey.md).
-- **Docs (#157).** The nine mock documents and ADR 0004 are deleted; this section replaces
-  the mock and container-rehearsal checkpoints that described them.
+- **Docs (#157).** The last seven mock documents and ADR 0004 are deleted — #155 had
+  already taken `mock-approvals.md` and `mock-notifications.md`, making nine for the epic —
+  and this section replaces the mock and container-rehearsal checkpoints that described
+  them.
 
 Nothing here completes a gate in *Remaining acceptance*: removal changed no real-host
 evidence, and the recorded real journeys are unaffected and were not repeated.
