@@ -230,6 +230,8 @@ def send_letter(
         task_id,
         now,
         {
+            # Who wrote it, in one field a reader can trust for either hand.
+            "sender": sender,
             "sender_resident_id": sender,
             "sender_run_id": sender_run,
             "recipient_resident_id": to,
