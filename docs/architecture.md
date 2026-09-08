@@ -33,9 +33,11 @@
   Only provider-proven cancellation before launch bypasses launch-intent checks.
 - `integrations/codex/` owns the one runtime — the Codex subscription — with its
   launch assets, process observation/termination, JSON events, request usage, pricing,
-  receipt interpretation and the native management transport. Its offline CLI fixture
-  and container ownership are used only by `scripts/probe-codex-subscription.py`, never
-  by the application. Detached workers call Hearth's dispatch guard; they do not acquire
+  receipt interpretation and the native management transport. `container.py` also holds
+  the durable folder lock the runtime takes around launch; its Docker ownership, the
+  pinned asset installer and the offline CLI fixture beside it serve only
+  `scripts/probe-codex-subscription.py` and never the application. Detached workers call
+  Hearth's dispatch guard; they do not acquire
   budget authority. There is no plugin registry, runtime selector or model folder. The
   fake runtime the suite and the installed-wheel smoke inject lives in
   `tests/fake_runtime.py` and is never packaged.
