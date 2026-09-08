@@ -416,9 +416,14 @@ def test_the_daily_cap_bounds_what_one_resident_may_be_handed_in_its_own_day(hou
     error = refused(hearth, run, reporter, operation_id="letter-3")
     assert error.code == "letter_daily_limit_reached"
     assert error.details == {"received_today": 2, "letter_daily_limit": 2}
-    # The operator writes with its own hand and still cannot outspend the neighbour's day.
+    # The operator writes with its own hand and still cannot outspend the neighbour's day,
+    # and its refused letter leaves no command behind to replay.
+    before = written(hearth)
     with pytest.raises(Refused, match="letter_daily_limit_reached"):
         hearth.send_operator_letter("operator-letter-1", reporter, "One more", "Please answer.")
+    assert written(hearth) == before
+    with hearth.database.transaction() as db:
+        assert not db.execute("SELECT 1 FROM commands WHERE id='operator-letter-1'").fetchone()
     # The cap counts what one resident was handed, not what the household wrote.
     other = resident(hearth, "other", accepts=True)
     assert send(hearth, run, other, operation_id="letter-4")["status"] == "queued"
