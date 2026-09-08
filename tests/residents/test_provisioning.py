@@ -417,3 +417,54 @@ def test_the_etiquette_is_skipped_rather_than_pushing_a_set_over_its_byte_bound(
     with hearth.database.transaction() as db:
         assigned = read_assignments(db, ready["resident_id"])["skills"]
     assert [item["skill_id"] for item in assigned] == [item["skill_id"] for item in large]
+
+
+def test_an_etiquette_created_by_hand_is_adopted_instead_of_seeded_twice(tmp_path):
+    """An operator who wrote Keep a journal first keeps the one library entry."""
+    from hearth.app import create_app
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import JOURNAL_SKILL_NAME, KEEP_A_JOURNAL, journal_skill
+    from hearth.skills.catalog import Skills
+
+    app = create_app(
+        tmp_path, "synthetic-provisioning-operator", supervise=False, runtime=fake_runtime()
+    )
+    hearth = app.state.hearth
+    by_hand = Skills(hearth).save(
+        "operator-keep-a-journal",
+        name=JOURNAL_SKILL_NAME,
+        description="Close a run with one short honest entry.",
+        instructions=KEEP_A_JOURNAL,
+        actor="operator",
+    )
+    # A same-named archived or draft entry is not adopted, and only the oldest active one is.
+    stale = Skills(hearth).save(
+        "stale-keep-a-journal",
+        name=JOURNAL_SKILL_NAME,
+        description="Older wording",
+        instructions="Write something.",
+        actor="operator",
+    )
+    Skills(hearth).archive(
+        "archive-stale", stale["skill_id"], expected_revision=stale["revision"], actor="operator"
+    )
+
+    with hearth.database.transaction(write=True) as db:
+        adopted = journal_skill(db, hearth)
+    assert adopted == {"skill_id": by_hand["skill_id"], "revision": by_hand["revision"]}
+    with hearth.database.transaction(write=True) as db:
+        assert journal_skill(db, hearth) == adopted
+
+    service = Provisioning(hearth)
+    writable = service.create("writable", {**request(), "memory_writable": True}, actor="operator")
+    with hearth.database.transaction() as db:
+        entries = read_assignments(db, writable["resident_id"])["skills"]
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT r.name AS name FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision WHERE r.status='active'"
+            )
+        ]
+    assert [item["skill_id"] for item in entries] == [by_hand["skill_id"]]
+    assert names.count(JOURNAL_SKILL_NAME) == 1

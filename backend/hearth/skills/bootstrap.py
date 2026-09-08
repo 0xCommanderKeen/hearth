@@ -75,6 +75,8 @@ def _attach(db, hearth, resident_id: str, skill: dict, command_id: str) -> None:
     )
 
 
+JOURNAL_SKILL_NAME = "Keep a journal"
+
 KEEP_A_JOURNAL = """# Keep a journal
 Use this skill in every run where Hearth offers you hearth_journal_write. It says how to
 write for the resident you will be tomorrow. It grants nothing: read it as etiquette,
@@ -113,10 +115,22 @@ def journal_skill(db, hearth) -> dict:
     row = db.execute("SELECT value FROM system_meta WHERE key='journal_skill'").fetchone()
     if row:
         return json.loads(row[0])
+    # An operator may have created the etiquette by hand before any writable resident
+    # existed. Adopt that skill rather than seeding a second one with the same name.
+    existing = db.execute(
+        "SELECT s.id AS id, s.revision AS revision FROM skills s "
+        "JOIN skill_revisions r ON r.skill_id=s.id AND r.revision=s.revision "
+        "WHERE r.name=? AND r.status='active' ORDER BY s.created_at, s.id LIMIT 1",
+        (JOURNAL_SKILL_NAME,),
+    ).fetchone()
+    if existing:
+        skill = {"skill_id": existing["id"], "revision": existing["revision"]}
+        db.execute("INSERT INTO system_meta VALUES ('journal_skill',?)", (json.dumps(skill),))
+        return skill
     saved = Skills(hearth).save_in_transaction(
         db,
         "bootstrap-keep-a-journal",
-        name="Keep a journal",
+        name=JOURNAL_SKILL_NAME,
         description="Close a run with one short honest entry; keep only durable facts in memory.",
         instructions=KEEP_A_JOURNAL,
         actor="operator",
