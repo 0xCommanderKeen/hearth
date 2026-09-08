@@ -530,8 +530,12 @@ def test_karen_setup_seeds_both_letter_etiquettes_and_carries_the_sender_s_one(t
         ASK_SKILL_NAME,
     )
 
-    hearth = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime()).state.hearth
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
+    hearth = app.state.hearth
     karen = bootstrap(hearth)
+    # Both are in the catalog Townhall's Skills page reads.
+    catalog = TestClient(app).get("/api/skills", headers=AUTH).json()
+    assert {ASK_SKILL_NAME, ANSWER_SKILL_NAME} <= {item["name"] for item in catalog}
     with hearth.database.transaction() as db:
         library = {
             row["name"]: dict(row)
