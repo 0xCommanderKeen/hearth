@@ -539,11 +539,12 @@ def test_the_version_4_store_retires_the_evaluator_and_the_work_it_owned(tmp_pat
     row = db.execute("SELECT * FROM skill_validations").fetchone()
     assert (row["status"], row["reason"]) == ("failed", "skill_evaluator_removed")
     assert row["resident_id"] == "evaluator"
-    detail = db.execute("SELECT detail FROM audit WHERE kind='resident.archived'").fetchone()[0]
-    assert json.loads(detail) == {
-        "reason": "skill_evaluator_removed",
-        "failed_validations": 1,
-    }
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='resident.archived'").fetchone()[0]
+    ) == {"reason": "skill_evaluator_removed"}
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='skill.validations_failed'").fetchone()[0]
+    ) == {"reason": "skill_evaluator_removed", "count": 1}
 
 
 def test_an_unlisted_dropped_table_refuses_the_upgrade(tmp_path):

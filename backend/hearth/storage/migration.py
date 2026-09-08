@@ -187,10 +187,10 @@ def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
         "UPDATE skill_validations SET status='failed', reason='skill_evaluator_removed' "
         "WHERE status='pending'"
     ).rowcount
+    if pending:
+        _fact(connection, "skill.validations_failed", "skill_evaluator_removed", now, pending)
     row = connection.execute("SELECT value FROM system_meta WHERE key='skill_evaluator'").fetchone()
     if row is None:
-        if pending:
-            _fact(connection, "skill.validations_failed", "skill_evaluator_removed", now, pending)
         return
     evaluator = row[0]
     connection.execute("DELETE FROM system_meta WHERE key='skill_evaluator'")
@@ -224,28 +224,24 @@ def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
             ),
         )
         connection.execute(
-            "UPDATE resident_lifecycle SET revision=? WHERE resident_id=?",
-            (lifecycle["revision"], evaluator),
+            "INSERT INTO resident_lifecycle VALUES (?,?) ON CONFLICT(resident_id) "
+            "DO UPDATE SET revision=excluded.revision",
+            (evaluator, lifecycle["revision"]),
         )
         connection.execute(
             "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
             ("resident.lifecycle_saved", evaluator, now, json.dumps(lifecycle, sort_keys=True)),
         )
-    _fact(connection, "resident.archived", evaluator, now, pending)
+    _fact(connection, "resident.archived", evaluator, now)
 
 
-def _fact(connection: sqlite3.Connection, kind: str, resource: str, now: int, pending: int) -> None:
+def _fact(
+    connection: sqlite3.Connection, kind: str, resource: str, now: int, count: int = 0
+) -> None:
+    detail = {"reason": "skill_evaluator_removed"} | ({"count": count} if count else {})
     connection.execute(
         "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
-        (
-            kind,
-            resource,
-            now,
-            json.dumps(
-                {"reason": "skill_evaluator_removed", "failed_validations": pending},
-                sort_keys=True,
-            ),
-        ),
+        (kind, resource, now, json.dumps(detail, sort_keys=True)),
     )
 
 
