@@ -854,7 +854,7 @@ def version_7_store(path):
         "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
         "reserved, budget_day, created_at, usage_known, launch_attempted, "
         "runtime_kind, runtime_version, input_digest) VALUES "
-        "('r', 't', 'karen', 1, 'token', 'starting', 2000, '2026-09-08', 1, 0, 1, "
+        "('r', 't', 'karen', 1, 'token', 'starting', 2000, '2026-09-08', 1, 0, 0, "
         "'codex_subscription', 1, ?)",
         ("a" * 64,),
     )
@@ -883,3 +883,12 @@ def test_the_version_7_store_gains_the_daily_cap_and_keeps_its_waiting_letter(tm
     # delivers it; the tick that owns delivery does that on the store it is given.
     assert db.execute("SELECT status FROM tasks WHERE id='l'").fetchone()[0] == "queued"
     validate_letters(db)
+    # This release renders a letter into the run context, so a run admitted against the
+    # older shape can no longer be launched with the bytes it reserved against, and is
+    # asked to end through the ordinary executor path instead.
+    run = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r'").fetchone()
+    assert (run["status"], run["cancellation_requested"]) == ("stopping", 1)
+    assert db.execute("SELECT status FROM tasks WHERE id='t'").fetchone()[0] == "stopping"
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='run.cancel_requested'").fetchone()[0]
+    ) == {"task_id": "t", "reason": "context_format_changed"}
