@@ -203,6 +203,8 @@ def receipt_requests(raw: str) -> list:
         spec = RUNTIMES.get(value["kind"])
         if spec is not None and spec.receipts is not None:
             return importlib.import_module(spec.receipts).receipt_requests(value)
-    # A receipt naming no kind of its own is the Codex app-server protocol's journal,
-    # which keeps each request's usage under `requests`.
-    return value["requests"]
+    # A receipt naming no kind of its own is a usage journal, which keeps each
+    # request under `requests`. Anything else reports nothing rather than raising:
+    # a receipt Hearth cannot read is already refused where it is settled.
+    requests = value.get("requests") if isinstance(value, dict) else None
+    return requests if isinstance(requests, list) else []

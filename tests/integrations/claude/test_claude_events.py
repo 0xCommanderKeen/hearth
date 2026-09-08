@@ -123,6 +123,30 @@ def test_a_model_reported_without_its_cache_write_tier_is_not_priced():
     assert transcript.usage is None and transcript.reason == "cache_write_tier_unknown"
 
 
+def test_an_unreadable_assistant_message_costs_the_price_and_not_the_answer():
+    """The answer is in the result event; only the cache-write split needs the messages."""
+
+    def damage(event):
+        if event.get("type") == "assistant":
+            del event["message"]["usage"]["cache_creation"]
+        return event
+
+    transcript = read(rewritten("success", damage))
+    assert transcript.status == "completed" and transcript.output == "pong"
+    assert transcript.usage is None and transcript.reason == "cache_write_tier_unknown"
+
+
+def test_a_model_that_answered_but_billed_nothing_leaves_the_session_unpriced():
+    def invent(event):
+        if event.get("type") == "assistant":
+            event["message"]["model"] = "claude-sonnet-5"
+            del event["message"]["usage"]["cache_creation"]
+        return event
+
+    transcript = read(rewritten("success", invent))
+    assert transcript.usage is None and transcript.reason == "model_usage_invalid"
+
+
 def test_per_request_rows_that_do_not_add_up_to_the_model_s_total_price_nothing():
     def inflate(event):
         if event.get("type") == "result":

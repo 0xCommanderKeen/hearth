@@ -142,6 +142,11 @@ class ClaudeEvents:
         # Per model: how many cache-write tokens each tier holds, summed over the
         # session's assistant messages. The only place that split is reported.
         self.tiers: dict[str, list[int]] = {}
+        # Assistant messages whose model or cache-write split could not be read. They
+        # cost the session its price, never its answer: the models named here are
+        # checked against `modelUsage`, and a session holding any of them prices no
+        # cache write, because the tokens behind one could belong to any model.
+        self.unsplit: set[str | None] = set()
         self.messages = 0
         self.error: str | None = None
         self.sealed = False
@@ -220,33 +225,29 @@ class ClaudeEvents:
             self.error = "invalid_session"
 
     def _assistant(self, message: object) -> None:
-        """Record the model and the cache-write split; the counts themselves are not."""
+        """Record the model and the cache-write split; the counts themselves are not.
+
+        A message this cannot read is remembered rather than fatal. The session's
+        answer is in the `result` event and does not depend on reading every message;
+        its price does, so an unreadable one is carried into `_usage` as doubt.
+        """
         self.messages += 1
         if self.messages > MAX_MESSAGES:
             self.error = "too_many_events"
             return
         if not isinstance(message, dict):
-            self.error = "invalid_message"
-            return
-        usage = message.get("usage")
-        if not isinstance(usage, dict):
-            self.error = "invalid_message"
-            return
-        creation = counts(usage, ("cache_creation_input_tokens",))
-        split = write_tiers(usage.get("cache_creation"))
-        if creation is None or split is None or sum(split) != creation[0]:
-            self.error = "invalid_message"
+            self.unsplit.add(None)
             return
         if message.get("is_api_error_message") is True:
-            # The CLI writes its own failures as assistant messages with a synthetic
-            # model. They are not API responses, so they name no model and may carry
-            # no usage at all.
-            if creation[0] or counts(usage, ("input_tokens", "output_tokens")) != (0, 0):
-                self.error = "invalid_message"
+            # The CLI writes its own failures as assistant messages under a synthetic
+            # model. They are not API responses and bill nothing, so they are skipped.
             return
+        usage = message.get("usage")
         model = canonical(message.get("model"))
-        if model is None:
-            self.error = "invalid_message"
+        creation = counts(usage, ("cache_creation_input_tokens",))
+        split = write_tiers(usage.get("cache_creation") if isinstance(usage, dict) else None)
+        if model is None or creation is None or split is None or sum(split) != creation[0]:
+            self.unsplit.add(model)
             return
         tiers = self.tiers.setdefault(model, [0, 0])
         tiers[0] += split[0]
@@ -315,8 +316,13 @@ class ClaudeEvents:
             totals[model] = counted
         if self.model is None or self.model not in totals:
             return None, "pinned_model_absent"
-        if set(self.tiers) - set(totals):
+        # Every model that answered has to be one the session actually billed.
+        if (set(self.tiers) | (self.unsplit - {None})) - set(totals):
             return None, "model_usage_invalid"
+        if self.unsplit and any(row[3] for row in totals.values()):
+            # A message that could not be read might have carried cache writes of its
+            # own, so no model's write tier is settled evidence any more.
+            return None, "cache_write_tier_unknown"
         rows: list[TokenUsage] = []
         # The pinned model first, then the rest by name: the order of the CLI's own
         # `modelUsage` object is not something Hearth's evidence should depend on.
