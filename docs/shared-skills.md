@@ -26,8 +26,14 @@ because her grant carries `send_letters`. "Answer a letter" says to answer what 
 and nothing else, in the reply itself, once, and to say plainly when you cannot; who
 receives letters follows the declared `letters.accept` door rather than a grant, so it
 waits in the library for the operator that opens a door to assign it, like any other
-skill. An operator who wrote a skill of either name by hand keeps that one entry: setup
-adopts the oldest active skill with that name instead of seeding a duplicate.
+skill. An operator who wrote a skill of either name by hand keeps that one entry: the
+seed adopts the oldest active skill with that name instead of seeding a duplicate.
+
+A household set up before letters existed never runs setup again — it returns its first
+receipt — so the two letter etiquettes are also seeded on start, into any store that has
+already been set up. Starting adds them once and afterwards reuses them by identity: no
+second entry, nothing assigned to anybody, nothing granted. A household that has not set
+Karen up still receives them when it does.
 
 Names are bounded to 120 characters, descriptions to 2,000 and instructions to
 32,000. All three require non-whitespace text. Exact text is stored without

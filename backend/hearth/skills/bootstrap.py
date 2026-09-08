@@ -181,6 +181,24 @@ def attach_letter_skills(db, hearth, resident_id: str) -> dict:
     return {name: skill["skill_id"] for name, skill in skills.items()}
 
 
+def seed_letter_skills(hearth) -> None:
+    """On start, seed the letter etiquettes into a library Karen's setup can no longer fill.
+
+    Setup seeds them, but it runs once and returns its first receipt forever, so a
+    household set up before letters existed would never see either — while the docs tell
+    its operator that both wait in the library to be assigned. Start seeds what setup
+    missed, and only there: a household that has not set Karen up still receives them
+    when it does, as ADR 0011 says. The seeding is `letter_skills` itself, so it happens
+    once by identity, adopts an entry the operator wrote by hand under either name,
+    attaches the wording to nobody and grants nothing.
+    """
+    with hearth.database.transaction() as db:
+        if db.execute("SELECT 1 FROM system_meta WHERE key='karen_setup'").fetchone() is None:
+            return
+    with hearth.database.transaction(write=True) as db:
+        letter_skills(db, hearth)
+
+
 def journal_skill(db, hearth) -> dict:
     """The shared Keep a journal entry, created once and then reused by its identity."""
     return _library_skill(

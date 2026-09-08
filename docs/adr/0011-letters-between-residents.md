@@ -94,8 +94,11 @@ write.
   each run is still counted once, at the amount its own row records.
 - Who answers letters follows the declared door, which the operator opens on a resident
   that already exists, so nothing attaches **Answer a letter** automatically; it is seeded
-  into the library and assigned from there. And a household that never sets Karen up has
-  neither letter skill seeded, exactly as it has no "Keep a journal".
+  into the library and assigned from there. Setup runs once, so a household already set
+  up before letters existed is seeded on start instead — the same seed, by identity,
+  adopting an operator's own entry of either name and assigning neither. A household that
+  never sets Karen up has neither letter skill seeded, exactly as it has no "Keep a
+  journal".
 - The loop was walked once on the real subscription runtime before any UI was built on it
   ([the letters journey](../letters-journey.md), three runs, 157,062 microdollars), and
   the deterministic twin runs in CI. Neither completes a delivery gate.

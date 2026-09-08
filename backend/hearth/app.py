@@ -41,6 +41,7 @@ from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
 from hearth.residents.provisioning import Provisioning, ProvisionRequest
 from hearth.skills.api import mount_skills
+from hearth.skills.bootstrap import seed_letter_skills
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.routines import Routines
@@ -66,9 +67,15 @@ def create_app(
         raise ValueError("Set an operator token of at least 16 characters")
     database = Database(data / "hearth.db")
     database.initialize()
-    if database.restored():
+    restored = database.restored()
+    if restored:
         supervise = False
     hearth = Hearth(database)
+    if not restored:
+        # A quarantined copy is opened to be read, never written. Every other store that
+        # has been set up gets the letter etiquettes here, because a household set up
+        # before letters existed will never run Karen's setup again.
+        seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     executor = Executor(
         execution,

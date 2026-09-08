@@ -187,8 +187,9 @@ The real journey found both, and an operator setting letters up hits both first:
 ## Etiquette is skill text
 
 What makes a letter worth sending, and what makes a good answer, is not in Hearth's prompt
-prose. Two ordinary shared skills carry it, seeded with Karen's setup, editable and
-archivable in Townhall like any other library entry, and granting nothing:
+prose. Two ordinary shared skills carry it, seeded with Karen's setup and, for a household
+already set up before letters existed, on start, editable and archivable in Townhall like
+any other library entry, and granting nothing:
 
 - **Ask a colleague** — a letter costs a colleague a run and the household real money, so
   send one only for something you cannot read or work out; one question per letter; title
@@ -203,7 +204,8 @@ Karen carries **Ask a colleague** because her grant carries `send_letters`. **An
 letter** waits in the library for the operator that opens a door to assign it, like any
 other skill — who answers letters follows the declared door, not a grant, and Hearth does
 not guess at whom to hand the wording to. An operator who wrote a skill of either name by
-hand keeps that one entry: setup adopts it rather than seeding a duplicate.
+hand keeps that one entry: the seed adopts it rather than seeding a duplicate, whether it
+runs at setup or on start, and starting again reuses what is already there.
 
 ## A naming wart
 
