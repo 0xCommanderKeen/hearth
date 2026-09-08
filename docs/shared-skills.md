@@ -8,8 +8,9 @@ and run pinning are delivered separately in #87; this catalog grants no executio
 or management authority.
 
 Setting Karen up also seeds the etiquette skills every household starts with:
-**Create residents**, **Create good skills** and **Keep a journal**. They are ordinary
-library entries with ordinary revisions, so an operator can read, edit or archive them.
+**Create residents**, **Create good skills**, **Keep a journal**, **Ask a colleague** and
+**Answer a letter**. They are ordinary library entries with ordinary revisions, so an
+operator can read, edit or archive them.
 "Keep a journal" is the wording a resident that may write its own memory and journal
 follows — one short dated entry per run, only durable facts in memory, never an invented
 entry — and it is attached to a resident provisioned with writable memory at its current
@@ -17,6 +18,16 @@ revision, when that revision is active and the requested set leaves room inside 
 assignment bounds. An operator revising the wording with examples leaves a draft current
 until publication; provisioning skips the etiquette while that lasts rather than refusing.
 Like every skill, it grants nothing.
+
+The two [letters](letters.md) etiquettes are the same kind of thing. "Ask a colleague"
+says when a letter is worth its cost, what a good title and detail look like, that no
+answer arrives in this run, and to read the answer before asking again; Karen carries it,
+because her grant carries `send_letters`. "Answer a letter" says to answer what was asked
+and nothing else, in the reply itself, once, and to say plainly when you cannot; who
+receives letters follows the declared `letters.accept` door rather than a grant, so it
+waits in the library for the operator that opens a door to assign it, like any other
+skill. An operator who wrote a skill of either name by hand keeps that one entry: setup
+adopts the oldest active skill with that name instead of seeding a duplicate.
 
 Names are bounded to 120 characters, descriptions to 2,000 and instructions to
 32,000. All three require non-whitespace text. Exact text is stored without

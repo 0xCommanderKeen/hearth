@@ -2,6 +2,25 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Letters are written down. `docs/letters.md` is the contract — the grant and the door
+  that both have to be open, what Hearth arbitrates and the refusal each guard leaves,
+  delivery by ordinary admission, the four states a letter ends in, cost by origin, the
+  operator surfaces, and what is deliberately not built (no chat, no auto-wake, no
+  broadcast, no delivery daemon). ADR 0011 records why a letter is a task rather than a
+  message bus, why delivery is pull-based and asynchronous, why the depth cap defaults to
+  two, why there is no free-form chat between residents, and the departure from the
+  rebuild plan's "no delegation" line, which now points at the ADR and at the permission
+  contract. The etiquette is library text rather than prompt prose: **Ask a colleague**
+  and **Answer a letter** are seeded with Karen's setup as ordinary editable skills that
+  grant nothing, adopting an operator-written entry of the same name rather than seeding a
+  second — Karen carries the asking one because her grant carries `send_letters`, and the
+  answering one waits in the library for the operator that opens a door to assign it. The
+  real journey now has a deterministic twin in CI walking the same three runs, and the doc
+  carries #111's run ids and its 157,062 microdollars, the two prerequisites that journey
+  found — a door closed by default, and a receiver's daily limit that has to cover a whole
+  answering run — and the wart that the send receipt carries the task id, which is the
+  letter id.
+
 - People can see letters now. A resident's page carries a **Letters** section: everything
   that reached it and everything it wrote, each in one named state — answered, open,
   worked and never answered, failed, gone stale — on the Ledger's own colour-as-state,
