@@ -188,9 +188,7 @@ def test_fifo_payload_is_refused_without_blocking(system, tmp_path):
     assert not (tmp_path / "backup").exists()
 
 
-def test_uncertain_action_and_receipt_survive_restore_without_consumption(
-    system, tmp_path, monkeypatch
-):
+def test_uncertain_action_survives_restore_without_consumption(system, tmp_path, monkeypatch):
     from hearth.authority.broker import Broker, MockNoticeboard
     from hearth.authority.permissions import Authority
 
@@ -217,8 +215,10 @@ def test_uncertain_action_and_receipt_survive_restore_without_consumption(
     copy_effect = MockNoticeboard(restored / "mock-noticeboard")
     copy_broker = Broker(Authority(copy, Artifacts(restored / "artifacts")), copy_effect)
     assert copy_broker.inspect(proposal.id)["status"] == "unknown"
-    receipt = copy_effect.inspect(proposal.id)
-    assert receipt is not None and receipt.digest == proposal.digest
+    # The durable uncertainty is copied; the local noticeboard is scaffolding beside
+    # the data directory, so the copy has no evidence of its own to reconcile against.
+    assert copy_effect.inspect(proposal.id) is None
+    assert effect.inspect(proposal.id).digest == proposal.digest
     with pytest.raises(Refused, match="restored_copy_read_only"):
         copy_broker.execute(proposal.id)
     assert copy_broker.inspect(proposal.id)["status"] == "unknown"
@@ -239,3 +239,33 @@ def test_incompatible_database_cannot_be_published_as_a_current_backup(system, t
         capture(root, tmp_path / "invalid-backup")
     assert not (tmp_path / "invalid-backup").exists()
     assert hearth.database.path.read_bytes() == before
+
+
+def test_backup_covers_the_database_artifacts_and_memory_and_nothing_else(system, tmp_path):
+    """Local development scaffolding beside the data is not part of the household."""
+    _, executor, run, root = system
+    executor.step()
+    for scaffolding in ("mock-inbox", "mock-noticeboard"):
+        (root / scaffolding).mkdir()
+        (root / scaffolding / "synthetic.md").write_text("local scaffolding")
+    backup = tmp_path / "backup"
+    manifest = capture(root, backup)
+    assert set(manifest["files"]) == {"hearth.db", "artifacts/" + run.id + ".md"}
+    assert {child.name for child in backup.iterdir()} == {
+        "hearth.db",
+        "manifest.json",
+        "artifacts",
+    }
+    restore(backup, tmp_path / "restored")
+    assert not (tmp_path / "restored" / "mock-inbox").exists()
+    assert not (tmp_path / "restored" / "mock-noticeboard").exists()
+
+
+def test_a_backup_carrying_a_retired_store_is_refused(system, tmp_path):
+    _, executor, _, root = system
+    executor.step()
+    backup = tmp_path / "backup"
+    capture(root, backup)
+    (backup / "mock-inbox").mkdir()
+    with pytest.raises(Refused, match="backup_path_invalid"):
+        verify(backup)
