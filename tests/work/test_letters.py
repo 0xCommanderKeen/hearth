@@ -372,6 +372,31 @@ def test_the_door_is_operator_authority_and_a_reconfiguration_carries_it_forward
         assert kept.json()["declaration"]["letters_accept"] is True
 
 
+def test_the_operator_s_own_letter_starts_a_chain_the_receiver_can_walk_on(household):
+    """An operator's letter has no resident and no run behind it, and is still a hop."""
+    from hearth.work.letters import validate_letters
+
+    hearth, _ = household
+    reporter = resident(hearth, "reporter", accepts=True, sends=True)
+    archivist = resident(hearth, "archivist", accepts=True)
+    first = hearth.send_operator_letter("post-1", reporter, "One question", "Name one fact.")
+    assert first["sender"] == "operator" and first["parent_task_id"] is None
+    assert first["depth"] == 1 and first["root_task_id"] == first["task_id"]
+    hop = hearth.admit(first["task_id"], reserve=100_000)
+    second = send(hearth, hop, archivist, operation_id="letter-2")
+    # Cost attributes to the question the operator asked, one hop further along.
+    assert second["depth"] == 2 and second["root_task_id"] == first["task_id"]
+    assert second["parent_task_id"] == first["task_id"]
+    with hearth.database.transaction() as db:
+        validate_letters(db)
+        assert tuple(
+            db.execute(
+                "SELECT sender_resident_id,sender_run_id FROM letters WHERE task_id=?",
+                (first["task_id"],),
+            ).fetchone()
+        ) == (None, None)
+
+
 def test_a_finished_run_and_unreadable_text_send_nothing(household):
     hearth, _ = household
     karen = resident(hearth, "karen", sends=True)
