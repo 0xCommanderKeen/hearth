@@ -12,13 +12,28 @@ class TaskPost(BaseModel):
     expires_at: int
 
 
+# What a resident declares itself to be, as opposed to the capabilities standing beside it.
+DECLARATION_FIELDS = frozenset({"name", "purpose", "daily_limit", "budget_timezone", "skill_text"})
+
+
 class DeclarationPost(BaseModel):
+    """A whole declaration, or only the capabilities beside it.
+
+    The five declaration fields travel together, so a save meaning to change what a
+    resident is always says all of it and half a declaration is refused rather than
+    merged. The capabilities are separable on purpose: a form that never learned about a
+    door cannot close it, and a control that only opens a door does not have to restate
+    the resident to do it.
+    """
+
     model_config = ConfigDict(extra="forbid", strict=True)
-    name: str
-    purpose: str
-    daily_limit: int
-    budget_timezone: str
-    skill_text: str
+    # Omitting all five keeps the resident exactly what it declares now; omitting only
+    # some of them is refused as `declaration_fields_invalid`.
+    name: str | None = None
+    purpose: str | None = None
+    daily_limit: int | None = None
+    budget_timezone: str | None = None
+    skill_text: str | None = None
     # Omitted keeps the resident's current memory.writable capability.
     memory_writable: bool | None = None
     # Omitted keeps the resident's current letters.accept door.
