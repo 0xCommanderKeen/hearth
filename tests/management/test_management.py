@@ -23,6 +23,12 @@ def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
         skill = client.get("/api/skills/" + skill_id, headers=AUTH).json()
         assert skill["name"] == "Create residents"
         assert "reuse" in skill["instructions"].lower()
+        # The seeded wording proposes one dollar a day and names it a proposal, not a floor.
+        wording = " ".join(skill["instructions"].split())
+        assert "Propose $1.00 a day (1,000,000 microdollars) for a new resident" in wording
+        assert "the reported max_daily_limit is lower — then propose that limit" in wording
+        assert "Never propose less than one run of its work costs" in wording
+        assert "a starting proposal, not a floor" in wording
         assignment = client.get(f"/api/residents/{resident_id}/skills", headers=AUTH).json()
         assert assignment["skills"][0]["skill_id"] == skill_id
         path = f"/api/residents/{resident_id}/management"

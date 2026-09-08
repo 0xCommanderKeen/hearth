@@ -8,6 +8,19 @@ assignment. The result opens a profile with the configured input/profile and
 provenance. Its queued first task has the ordinary **Start task** control. Creating
 or accepting a task does not claim it has run.
 
+The form opens with the resident allowance at **$1.00 a day** (1,000,000 microdollars).
+It starts there because the allowance has to cover a day, and admission refuses
+`budget_exhausted` once the day's spend, the runs still outstanding and the new
+reservation would together pass it. The four real runs recorded in
+[the journey evidence](karen-journey.md) cost 168,444 microdollars together, about 42,000
+each: the previous $0.10 default covered barely two of them, and Karen's own default
+reservation for work she assigns is 100,000, which spends such a day in one admission.
+A dollar covers a day of that work. The number is a proposal and not a floor: the
+operator edits the field before creating, and nothing refuses a smaller allowance.
+`daily_limit` remains required on the API — the default lives in the form, not in the
+backend — and the household allowance and the creating grant's `max_daily_limit` are what
+actually bound it.
+
 The authenticated operator contract is:
 
 - `GET /api/resident-options`: configured execution profile, supported named

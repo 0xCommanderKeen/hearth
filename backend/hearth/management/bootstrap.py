@@ -19,7 +19,11 @@ operator policy. Inspect the permitted resident, skill and synthetic input catal
 first. Reuse a suitable resident where possible; do not create duplicates.
 Define the purpose, success criteria and narrow resident instructions. Choose only
 available profiles, synthetic inputs and exact existing skill revisions. Allocate
-budget within the reported management policy and shared household allowance.
+budget within the reported management policy and shared household allowance. Propose
+$1.00 a day (1,000,000 microdollars) for a new resident, unless the operator names another
+number, its purpose plainly needs one, or the reported max_daily_limit is lower — then
+propose that limit. Never propose less than one run of its work costs. That is a starting
+proposal, not a floor, and the operator may lower it afterwards.
 Provision a complete resident, optional daily routine and first assignment through
 the provided management tools. Newly created residents have no management powers.
 Start the initial task when requested, inspect its status and report durable links

@@ -2,6 +2,14 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A new resident is proposed $1.00 a day: Townhall's New resident form opens at
+  1,000,000 microdollars instead of 100,000, and Karen's seeded **Create residents**
+  wording proposes the same unless the operator or the resident's purpose says otherwise
+  and never less than one run costs. It is a proposal, not a floor — the operator still
+  edits the number, `daily_limit` stays required on the API, and existing residents,
+  `max_daily_limit` and the household allowance are untouched. The skill text is seeded
+  once at explicit setup, so an already-bootstrapped household keeps its own revision.
+
 - The letters door is turned from Townhall. The Letters section on a resident's page
   carries one control that opens or shuts the declared `letters.accept` door, names the
   declaration revision that now carries it, and shows a refusal where it was written

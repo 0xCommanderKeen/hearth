@@ -18,7 +18,7 @@ const empty: ProvisionRequest = {
   skills: [],
   execution_profile: "",
   input_sets: [],
-  daily_limit: 100000,
+  daily_limit: 1_000_000,
   budget_timezone: "Europe/Ljubljana",
   creation_reason: "",
   manager: "operator",

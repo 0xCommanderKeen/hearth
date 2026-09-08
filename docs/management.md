@@ -15,6 +15,17 @@ configuration; later operator changes remain authoritative. Only authenticated
 operator HTTP actions can change grants or household limits. Skill instructions
 and model output cannot do so.
 
+The seeded **Create residents** wording tells Karen to propose **$1.00 a day**
+(1,000,000 microdollars) for a new resident unless the operator names another number, the
+resident's purpose plainly needs one, or her own reported `max_daily_limit` is lower — a
+grant tightened below a dollar is the number she follows, because the wording never
+overrides the policy she is given — and never to propose less than a single run of that
+resident's work costs. It is a proposal she makes in her own request, not a floor Hearth
+enforces: the grant's `max_daily_limit`, the household allowance and the operator's own
+edits are the actual bounds, and the operator may set a resident lower afterwards.
+The wording is seeded once, at explicit setup; a household already bootstrapped keeps the
+revision its operator has, and editing it is an ordinary skill edit.
+
 `GET /api/management` provides the operator catalog and the latest 30 durable
 operation receipts. `POST /api/management/bootstrap` performs explicit setup.
 `GET/PUT /api/residents/{id}/management` reads or replaces a grant; PUT requires
