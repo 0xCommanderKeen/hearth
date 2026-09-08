@@ -2,9 +2,12 @@
 
 Hearth never imports foreign data, but its own stores upgrade forward. An upgrade
 copies every row of every current table from the old file into a freshly created
-current-schema file, fills the columns the old layout lacked from `FILLS`, verifies
-references and layout, and only then replaces the original. The original is kept
-next to it as `hearth.db.before-v{N}` so nothing is lost if the new file is wrong.
+current-schema file, fills the columns the old layout lacked from `FILLS`, rewrites
+values the current layout no longer admits through `REWRITES`, verifies references and
+layout, and only then replaces the original. A column the old layout had and the new
+one does not is lost data unless the release listed it in `DROPS`; any other drop
+refuses. The original is kept next to it as `hearth.db.before-v{N}` so nothing is lost
+if the new file is wrong.
 """
 
 import fcntl
@@ -20,6 +23,24 @@ from hearth.storage.schema import SCHEMA
 FILLS: dict[tuple[str, str], str] = {
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",
+}
+
+# (table, column) a release deliberately removed. An upgrade refuses any drop that is
+# not listed here, so a column cannot be lost by an accidental edit to SCHEMA.
+DROPS: frozenset[tuple[str, str]] = frozenset(
+    {
+        # One runtime ships; every artifact is a real one, so the flag said nothing.
+        ("artifacts", "simulated"),
+    }
+)
+
+# (table, column) -> SQL expression replacing the old column value on the way in, for a
+# value the current layout no longer admits.
+REWRITES: dict[tuple[str, str], str] = {
+    # The only source a reconciliation ever had, under its name without the mock.
+    ("usage_reconciliations", "source"): (
+        "REPLACE(\"source\", 'operator_reported_mock', 'operator_reported')"
+    ),
 }
 
 
@@ -82,7 +103,7 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 for column in _columns(new, table):
                     name = column["name"]
                     if name in old_columns:
-                        select.append(f'"{name}"')
+                        select.append(REWRITES.get((table, name), f'"{name}"'))
                     elif (table, name) in FILLS:
                         select.append(FILLS[(table, name)])
                     elif column["notnull"] and column["dflt_value"] is None and not column["pk"]:
@@ -90,7 +111,11 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                     else:
                         continue
                     insert.append(f'"{name}"')
-                dropped = old_columns - {row["name"] for row in _columns(new, table)}
+                dropped = {
+                    name
+                    for name in old_columns - {row["name"] for row in _columns(new, table)}
+                    if (table, name) not in DROPS
+                }
                 if dropped:
                     raise UpgradeError(f"Upgrade would drop {table} columns {sorted(dropped)}")
                 rows = old.execute(f'SELECT {", ".join(select)} FROM "{table}"').fetchall()

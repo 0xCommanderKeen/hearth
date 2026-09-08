@@ -31,7 +31,7 @@ const resident: Resident = {
 const configuration: Configuration = {
   resident_id: "reader",
   lifecycle: resident.lifecycle!,
-  execution_profile: "inline_mock",
+  execution_profile: "codex_subscription",
   declaration: {
     expected_revision: 1,
     name: "Reader",
@@ -159,7 +159,7 @@ it("exports the resident definition through the client", async () => {
       memory: "",
       daily_limit: 100000,
       budget_timezone: "UTC",
-      execution_profile: "inline_mock",
+      execution_profile: "codex_subscription",
       creation_reason: "Explicit resident setup",
     },
     skills: [],

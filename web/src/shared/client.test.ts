@@ -4,11 +4,11 @@ import { Client, decodeSnapshot, RequestError } from "./client";
 afterEach(() => vi.restoreAllMocks());
 
 describe("same-origin operator interface", () => {
-  it("rejects incompatible or non-simulated state before display", () => {
+  it("rejects an incompatible state format before display", () => {
     expect(() => decodeSnapshot({ schema_version: 2 })).toThrow("state format");
-    expect(() =>
-      decodeSnapshot({ schema_version: 1, simulated: false }),
-    ).toThrow("state format");
+    expect(() => decodeSnapshot({ schema_version: 1, epoch: 1 })).toThrow(
+      "state format",
+    );
   });
   it("never forwards credentials to external paths", async () => {
     const fetcher = vi.spyOn(globalThis, "fetch");
@@ -122,7 +122,6 @@ it("keeps restored-state reads available but refuses mutations before fetch", as
       new Response(
         JSON.stringify({
           schema_version: 1,
-          simulated: true,
           epoch: "restored",
           cursor: 1,
           restore_hold: true,

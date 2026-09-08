@@ -133,7 +133,6 @@ def check_application():
                 raise RuntimeError("Installed task did not complete")
             time.sleep(0.05)
         artifact = request(base, f"/api/artifacts/{result['artifact_id']}")
-        assert not artifact["artifact"]["simulated"]
         assert "Daily summary" in artifact["content"]
         assert result["runtime_kind"] == "codex_subscription" and result["runtime_version"] == 1
         assert len(result["input_digest"]) == 64

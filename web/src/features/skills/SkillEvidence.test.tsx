@@ -33,7 +33,7 @@ const skill = {
       evaluator_id: "evaluator",
       status: "failed",
       reason: "skill_example_failed",
-      assessment: "deterministic_assertions_on_simulated_runs",
+      assessment: "deterministic_assertions_on_model_runs",
       cases: [
         {
           kind: "normal",
@@ -49,7 +49,6 @@ const skill = {
             artifact_id: "artifact",
             artifact_sha256: "output-hash",
             actual_cost: 2000,
-            simulated: true,
             checks: [
               { assertion: "contains", expected: "12 pears", passed: false },
             ],
@@ -60,7 +59,7 @@ const skill = {
   },
 } as CatalogSkill;
 
-it("shows saved example failures and simulated evidence without permitting publication", () => {
+it("shows saved example failures and evidence without permitting publication", () => {
   render(
     <SkillEvidence
       client={new Client("token")}
@@ -71,7 +70,7 @@ it("shows saved example failures and simulated evidence without permitting publi
     />,
   );
   expect(screen.getByText("Output failed contains")).toBeTruthy();
-  expect(screen.getByText(/Simulated runs/)).toBeTruthy();
+  expect(screen.getByText(/Model runs/)).toBeTruthy();
   expect(
     screen.getByRole("link", { name: /Inspect run/ }).getAttribute("href"),
   ).toBe("#run-run");

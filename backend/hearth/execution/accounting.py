@@ -40,8 +40,7 @@ class Accounting:
                 raise Refused("usage_already_recorded")
             now = int(self.hearth.clock())
             db.execute(
-                "INSERT INTO usage_reconciliations VALUES "
-                "(?, ?, ?, ?, ?, ?, 'operator_reported_mock')",
+                "INSERT INTO usage_reconciliations VALUES (?, ?, ?, ?, ?, ?, 'operator_reported')",
                 (run_id, command_id, digest, amount, evidence, now),
             )
             db.execute("UPDATE runs SET actual_cost=?, usage_known=1 WHERE id=?", (amount, run_id))
@@ -87,7 +86,7 @@ class Accounting:
                 now,
                 {
                     "amount": amount,
-                    "source": "operator_reported_mock",
+                    "source": "operator_reported",
                     "command_id": command_id,
                     "budget_day": run["budget_day"],
                 },

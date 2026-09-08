@@ -24,7 +24,6 @@ def enqueue(
             "kind": kind,
             "resource_id": resource_id,
             "link": f"/#{target}-{resource_id}",
-            "simulated": True,
         },
         sort_keys=True,
     )

@@ -189,11 +189,9 @@ class Execution:
             artifact = None
             if evidence.status == "succeeded":
                 assert evidence.output is not None
-                artifact = self.artifacts.publish(
-                    run_id, evidence.output, simulated=interface.simulated(row["runtime_kind"])
-                )
+                artifact = self.artifacts.publish(run_id, evidence.output)
                 db.execute(
-                    "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?)",
                     tuple(asdict(artifact).values()),
                 )
             db.execute(
@@ -234,7 +232,6 @@ class Execution:
                     "actual_cost": evidence.cost,
                     "usage_known": evidence.cost is not None,
                     "artifact_id": artifact.id if artifact else None,
-                    "simulated": interface.simulated(row["runtime_kind"]),
                 }
                 | ({"accounting": pricing | {"receipt_sha256": receipt_digest}} if pricing else {}),
             )
@@ -246,9 +243,7 @@ class Execution:
             row = db.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
             if row is None:
                 raise Refused("artifact_not_found")
-            values = dict(row)
-            values["simulated"] = bool(row["simulated"])
-            artifact = Artifact(**values)
+            artifact = Artifact(**dict(row))
         return artifact, self.artifacts.read(artifact)
 
 

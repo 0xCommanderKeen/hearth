@@ -7,6 +7,7 @@ import uuid
 import pytest
 from hearth.storage.database import RUNTIME_KIND as KIND
 from hearth.storage.database import SCHEMA_VERSION, Database, schema_matches
+from hearth.storage.migration import UpgradeError
 
 from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
 
@@ -150,3 +151,68 @@ def test_a_quarantined_copy_of_a_simulated_store_is_read_not_rewritten(tmp_path)
     # A held copy exists to be read; adopting the one runtime would rewrite it.
     assert path.read_bytes() == before
     assert Database(path).runtime_kind() == "inline_mock"
+
+
+def settled_store(path):
+    """A version-1 store carrying a published artifact and a reconciled run."""
+    pre_memory_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Read the notes', 'succeeded', 1)")
+    db.execute(
+        "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+        "reserved, budget_day, created_at, actual_cost, usage_known, finished_at, artifact_id, "
+        "runtime_kind, runtime_version, input_digest) VALUES "
+        "('r', 't', 'karen', 1, 'token', 'succeeded', 0, '2026-09-08', 1, 2000, 1, 2, 'a', "
+        "'codex_subscription', 1, ?)",
+        ("a" * 64,),
+    )
+    db.execute("INSERT INTO artifacts VALUES ('a', 'r', 'r.md', ?, 12, 1)", ("b" * 64,))
+    db.execute(
+        "INSERT INTO usage_reconciliations VALUES "
+        "('r', 'c', ?, 2000, 'operator note', 3, 'operator_reported_mock')",
+        ("c" * 64,),
+    )
+    db.commit()
+    db.close()
+
+
+def test_the_artifact_simulated_column_is_dropped_and_its_rows_kept(tmp_path):
+    path = tmp_path / "hearth.db"
+    settled_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    assert schema_matches(db)
+    assert "simulated" not in {row[1] for row in db.execute("PRAGMA table_info(artifacts)")}
+    # The flag went; the artifact it hung on is still the run's published output.
+    assert db.execute("SELECT id, run_id, relative_path, size FROM artifacts").fetchone() == (
+        "a",
+        "r",
+        "r.md",
+        12,
+    )
+    assert db.execute("SELECT artifact_id FROM runs").fetchone() == ("a",)
+
+
+def test_a_reconciled_run_keeps_its_evidence_under_the_renamed_source(tmp_path):
+    path = tmp_path / "hearth.db"
+    settled_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT source, amount, evidence FROM usage_reconciliations").fetchone() == (
+        "operator_reported",
+        2000,
+        "operator note",
+    )
+
+
+def test_an_unlisted_dropped_column_refuses_the_upgrade(tmp_path):
+    path = tmp_path / "hearth.db"
+    pre_memory_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("ALTER TABLE residents ADD COLUMN nickname TEXT")
+    db.close()
+    before = path.read_bytes()
+    with pytest.raises(UpgradeError, match="would drop residents columns"):
+        Database(path).initialize()
+    assert path.read_bytes() == before

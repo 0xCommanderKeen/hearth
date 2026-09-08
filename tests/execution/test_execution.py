@@ -55,7 +55,6 @@ def test_summary_is_durable_and_checksummed_against_its_run(system):
     assert completed.usage_known
     assert hearth.task(run.task_id).status == "succeeded"
     artifact, content = execution.artifact(completed.artifact_id)
-    assert not artifact.simulated
     assert "Daily summary" in content
     reopened = Execution(Hearth(Database(root / "hearth.db")), Artifacts(root / "artifacts"))
     assert reopened.artifact(completed.artifact_id) == (artifact, content)

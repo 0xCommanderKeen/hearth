@@ -16,7 +16,6 @@ afterEach(() => {
 });
 const state: Snapshot = {
   schema_version: 1,
-  simulated: true,
   epoch: "test",
   cursor: 0,
   residents: [

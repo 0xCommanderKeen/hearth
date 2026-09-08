@@ -121,7 +121,7 @@ def create_app(
 
     @app.get("/health")
     def healthcheck():
-        return {"service": "hearth", "simulated": database.runtime_kind() != "codex_subscription"}
+        return {"service": "hearth"}
 
     @app.get("/api/state")
     def state(cursor: int | None = None, epoch: str | None = None):
@@ -132,7 +132,7 @@ def create_app(
 
     @app.get("/api/health")
     def operator_health():
-        return {"simulated": database.runtime_kind() != "codex_subscription", **supervisor.health()}
+        return supervisor.health()
 
     @app.get("/api/events")
     async def events(request: Request, cursor: int = -1, epoch: str = ""):
@@ -261,7 +261,6 @@ def create_app(
             "run_id": run.id,
             "task_id": run.task_id,
             "status": run.status,
-            "simulated": database.runtime_kind() != "codex_subscription",
         }
 
     @app.get("/api/runs/{run_id}")
@@ -295,7 +294,6 @@ def create_app(
         return {
             "run_id": run.id,
             "status": run.status,
-            "simulated": database.runtime_kind() != "codex_subscription",
         }
 
     @app.get("/api/artifacts/{artifact_id}")
@@ -311,7 +309,6 @@ def create_app(
         return {
             "revision": revision,
             "enabled": body.enabled,
-            "simulated": database.runtime_kind() != "codex_subscription",
         }
 
     @app.post("/api/approvals", status_code=201)

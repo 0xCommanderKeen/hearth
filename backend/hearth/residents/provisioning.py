@@ -162,15 +162,7 @@ class Provisioning:
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
             ).fetchone()[0]
             return {
-                "execution_profiles": [
-                    {
-                        "id": runtime,
-                        "name": "Configured Codex subscription"
-                        if runtime == "codex_subscription"
-                        else "Configured synthetic simulation",
-                        "simulated": runtime != "codex_subscription",
-                    }
-                ],
+                "execution_profiles": [{"id": runtime, "name": "Configured Codex subscription"}],
                 "input_sets": list_inputs(db),
                 "managers": [{"id": "operator", "name": "Operator"}]
                 + [

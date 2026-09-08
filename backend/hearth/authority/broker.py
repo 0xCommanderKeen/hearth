@@ -17,7 +17,6 @@ from hearth.work.service import _audit
 class EffectReceipt:
     action_id: str
     digest: str
-    simulated: bool = True
     content_sha256: str | None = None
 
 
@@ -50,7 +49,6 @@ class MockNoticeboard:
             len(encoded) > 512 * 1024
             or not isinstance(record, dict)
             or record.get("action_id") != action_id
-            or record.get("simulated") is not True
             or not isinstance(record.get("content"), str)
         ):
             raise Refused("mock_receipt_corrupt")
@@ -187,7 +185,6 @@ class Broker:
                 if (
                     receipt.action_id != approval_id
                     or receipt.digest != approval.digest
-                    or receipt.simulated is not True
                     or receipt.content_sha256 != approval.payload["sha256"]
                 ):
                     return self._record(approval_id, None, "receipt_mismatch")

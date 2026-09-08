@@ -471,9 +471,6 @@ dd {
 .chip.live::before {
   background: var(--ok);
 }
-.chip.sim::before {
-  background: var(--warn);
-}
 .chip.off::before {
   background: var(--bad);
 }

@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- The `simulated` flag is gone from artifacts (schema 3), run context, snapshot, API
+  responses, the backup manifest and the UI; the reconciliation source is now
+  `operator_reported`, and an upgrade may drop a column only if the release lists it.
 - The Codex subscription is the only runtime: mock runtimes, their stores and the
   runtime/process-boundary selectors are gone, tests drive a fake under `tests/`,
   and a store recorded against a removed runtime adopts the one runtime on start

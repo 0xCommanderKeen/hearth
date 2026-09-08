@@ -15,7 +15,7 @@ afterEach(() => {
 });
 const options = {
   execution_profiles: [
-    { id: "inline_mock", name: "Simulation", simulated: true },
+    { id: "codex_subscription", name: "Configured Codex subscription" },
   ],
   input_sets: [
     {
@@ -87,7 +87,7 @@ it("displays a failed saved setup with its original configuration and retry", as
     instructions: "",
     initial_memory: "remember",
     skills: [],
-    execution_profile: "inline_mock",
+    execution_profile: "codex_subscription",
     input_sets: [],
     daily_limit: 10000,
     budget_timezone: "UTC",

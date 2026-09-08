@@ -184,7 +184,7 @@ SCHEMA = (
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
-        size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated IN (0,1))
+        size INTEGER NOT NULL CHECK (size >= 0)
     )""",
     """CREATE TABLE audit (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -344,7 +344,7 @@ SCHEMA = (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), command_id TEXT NOT NULL UNIQUE,
         digest TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount >= 0),
         evidence TEXT NOT NULL, recorded_at INTEGER NOT NULL,
-        source TEXT NOT NULL CHECK (source='operator_reported_mock')
+        source TEXT NOT NULL CHECK (source='operator_reported')
     )""",
     """CREATE UNIQUE INDEX active_resident ON runs(resident_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",

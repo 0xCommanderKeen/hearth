@@ -36,7 +36,7 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
     assert client.get("/api/state").status_code == 401
     assert client.post("/api/tasks", content="broken json").status_code == 401
     assert client.get("/api/state", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.get("/health").json() == {"service": "hearth", "simulated": False}
+    assert client.get("/health").json() == {"service": "hearth"}
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
 
@@ -56,7 +56,7 @@ def test_snapshot_has_no_owner_token(client):
     state = client.get("/api/state", headers=AUTH)
     assert state.headers["cache-control"] == "no-store"
     body = state.json()
-    assert body["simulated"] is False and body["schema_version"] == 1
+    assert body["schema_version"] == 1
     assert body["residents"][0]["presence"] == "starting"
     assert "owner_token" not in state.text and TOKEN not in state.text
     # The cursor is the audit sequence, and the runtime records its own configuration.
@@ -94,7 +94,6 @@ def test_start_retry_has_stable_identity_and_result_can_be_read(client):
     assert client.post(path, headers=AUTH).json()["run_id"] == first["run_id"]
     output = client.get("/api/artifacts/" + run["artifact_id"], headers=AUTH)
     assert output.status_code == 200
-    assert output.json()["artifact"]["simulated"] is False
     assert "Synthetic note: drafted the Hearth foundation." in output.json()["content"]
     assert client.get("/api/artifacts/" + run["artifact_id"]).status_code == 401
 
@@ -305,8 +304,7 @@ def test_notification_payload_and_delivery_are_authenticated_observation(client)
     state = client.get("/api/state", headers=AUTH).json()
     delivery = state["notifications"][0]
     assert delivery["status"] == "pending"
-    assert delivery["payload"]["simulated"] is True
-    assert set(delivery["payload"]) == {"kind", "resource_id", "link", "simulated"}
+    assert set(delivery["payload"]) == {"kind", "resource_id", "link"}
     assert delivery["payload"]["link"].startswith("/#run-")
     assert client.get("/api/state").status_code == 401
 
@@ -346,11 +344,11 @@ def test_operator_reports_usage_and_snapshot_labels_source(tmp_path):
         headers = {**AUTH, "Idempotency-Key": "report"}
         response = client.post(route, headers=headers, json=body)
         assert response.status_code == 200
-        assert response.json()["source"] == "operator_reported_mock"
+        assert response.json()["source"] == "operator_reported"
         assert "evidence" not in response.json()
         assert client.post(route, headers=headers, json=body).json() == response.json()
         state = client.get("/api/state", headers=AUTH).json()
-        assert state["runs"][0]["usage_source"] == "operator_reported_mock"
+        assert state["runs"][0]["usage_source"] == "operator_reported"
         assert state["residents"][0]["pause_reason"] is None
 
 
