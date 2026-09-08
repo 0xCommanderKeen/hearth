@@ -25,8 +25,9 @@ The capabilities beside it travel separately, so a control that changes one capa
 never restates a resident to do it. That is how Townhall's Letters section opens and
 shuts a resident's `letters.accept` door: the request carries the door and the revision
 the page read, the answer names the declaration revision that now carries it, and a save
-that raced a change to the declaration is refused and shown where it was written. The
-API and CLI paths stay exactly as they were (`docs/letters.md`).
+that raced a change to the declaration is refused and shown where it was written. A save
+carrying the whole declaration, and `python -m hearth save-resident`, behave exactly as
+they did (`docs/letters.md`).
 
 State and audit cursor are read in one SQLite transaction. Database epoch plus
 cursor identify the snapshot; reconnect fetches a complete snapshot, and SSE sends
