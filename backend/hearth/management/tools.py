@@ -201,12 +201,13 @@ def tool_specs(
     management: bool = True,
     send_letters: bool = False,
     reply_letter: bool = False,
+    read_post: bool = False,
 ) -> list[dict]:
     """The exact declared tool set of one run; its digest joins the admission pins.
 
     A resident is never shown a tool it may not use: writing a letter appears only under
     a grant that carries `send_letters`, answering one only in the run working that
-    letter, and the post is read only by a run that has one end of it.
+    letter, and the post is read only by a resident that has an end of one.
     """
     result = []
     for name, (model, description) in TOOL_MODELS.items():
@@ -216,7 +217,7 @@ def tool_specs(
             continue
         if name == "hearth_letters_reply" and not reply_letter:
             continue
-        if name == "hearth_letters_read" and not (send_letters or reply_letter):
+        if name == "hearth_letters_read" and not read_post:
             continue
         if name not in MEMORY_TOOLS and name not in LETTER_TOOLS and not management:
             continue
@@ -502,14 +503,16 @@ def dispatch(db, hearth, authority, tool: str, arguments: dict) -> dict:
     if tool not in TOOL_MODELS:
         raise Refused("management_tool_not_permitted")
     if tool in LETTER_TOOLS:
-        # The post is the run's own. Writing answers for itself, under the grant the run
-        # was admitted with, and refuses with the reason the sender needs to act on it.
-        # The other two exist only for a run holding an end of a letter; a run holding
-        # neither is refused them as it would be a tool it was never offered.
+        # The post is the run's own. Writing is deliberately let through to the send
+        # itself, which checks the grant this run was admitted with and names why it may
+        # not write, rather than answering a permitted question with "no such tool".
+        # Answering belongs to the run working that letter and reading to a resident with
+        # an end of one; a run with neither is refused as it would be a tool it was never
+        # offered.
         scope = run_letter_scope(db, authority["run_id"], int(hearth.clock()))
         permitted = {
             "hearth_letters_send": True,
-            "hearth_letters_read": scope["send"] or scope["reply"],
+            "hearth_letters_read": scope["post"],
             "hearth_letters_reply": scope["reply"],
         }
         if not permitted[tool]:

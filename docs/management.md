@@ -42,11 +42,13 @@ provisioned or reconfigured resident. A run admitted on a writable declaration a
 pinned this surface with no grant behind it, is offered those three tools and nothing
 more, and is reported as holding no management authority. A run working a letter is
 pinned the same way and for the same reason: answering the question one was handed is not
-management, so it is offered the reply and post-reading tools whatever it is granted, and
-keeps them when a grant it did hold is revoked mid-run. Writing to a colleague is
-management — it spends the household's money on a resident the sender does not own — and
-the send tool appears only under a grant carrying `send_letters`. The offered set is what
-the admission pins: `tools_sha256` covers exactly the schemas that run may call.
+management, so it is offered the reply tool whatever it is granted, and keeps it when a
+grant it did hold is revoked mid-run. Reading one's own post follows having an end of a
+letter rather than any capability, so narrowing a grant stops the next letter and never
+hides the answer to the last one. Writing to a colleague is management — it spends the
+household's money on a resident the sender does not own — and the send tool appears only
+under a grant carrying `send_letters`. The offered set is what the admission pins:
+`tools_sha256` covers exactly the schemas that run may call.
 
 The initial tools inspect bounded catalog summaries, exact skill revisions and
 owned resident status; provision through the ordinary resident operation; and

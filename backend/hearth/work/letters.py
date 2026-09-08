@@ -125,17 +125,26 @@ def _check_recipient(db, to: str) -> None:
 def run_letter_scope(db, run_id: str, now: int) -> dict:
     """Which letter tools one run is offered, and the letter a reply would answer.
 
-    Sending is the grant this run was admitted with; replying is the letter it is
-    actually working. A run that is neither is offered no letter tool at all, so a
-    resident never sees a tool it may not use.
+    Sending is the grant this run was admitted with; replying is the letter this run is
+    actually working; reading is having an end of any letter at all. A resident never
+    sees a tool it may not use, and never loses sight of an answer to a question it
+    already asked: an operator who narrows the grant stops the next letter, not the
+    reply to the last one.
     """
     run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     if run is None:
-        return {"send": False, "reply": False, "letter_id": None}
+        return {"send": False, "reply": False, "post": False, "letter_id": None}
     letter = db.execute("SELECT task_id FROM letters WHERE task_id=?", (run["task_id"],)).fetchone()
+    send = _sending_grant(db, run, now) is not None
+    post = db.execute(
+        "SELECT 1 FROM letters l JOIN tasks t ON t.id=l.task_id "
+        "WHERE t.resident_id=? OR l.sender_resident_id=? LIMIT 1",
+        (run["resident_id"], run["resident_id"]),
+    ).fetchone()
     return {
-        "send": _sending_grant(db, run, now) is not None,
+        "send": send,
         "reply": letter is not None,
+        "post": send or letter is not None or post is not None,
         "letter_id": letter["task_id"] if letter is not None else None,
     }
 
@@ -318,6 +327,9 @@ def send_operator_letter(
         "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?)",
         (task_id, None, None, None, task_id, 1, title, now, deadline),
     )
+    # The command's recorded deadline is the letter's own shelf life: for a submitted
+    # task that field is the deadline the caller retains for the effect it asked for,
+    # and for a letter that is exactly when it stops being worth answering.
     db.execute(
         "INSERT INTO commands VALUES (?,?,?,?,?)", (command_id, payload, task_id, now, deadline)
     )

@@ -138,14 +138,15 @@ def test_each_run_is_offered_exactly_the_letter_tools_it_may_use(household, tmp_
     opens_the_door(hearth)
     # The declared set is a function of the two ends, never of the resident alone.
     assert LETTER_TOOLS & {spec["name"] for spec in tool_specs()} == set()
-    assert {spec["name"] for spec in tool_specs(send_letters=True)} >= {
-        "hearth_letters_send",
-        "hearth_letters_read",
-    }
-    assert "hearth_letters_reply" not in {spec["name"] for spec in tool_specs(send_letters=True)}
-    assert {spec["name"] for spec in tool_specs(management=False, reply_letter=True)} == {
-        "hearth_letters_reply",
-        "hearth_letters_read",
+    granted = {spec["name"] for spec in tool_specs(send_letters=True, read_post=True)}
+    assert granted >= {"hearth_letters_send", "hearth_letters_read"}
+    assert "hearth_letters_reply" not in granted
+    assert {
+        spec["name"] for spec in tool_specs(management=False, reply_letter=True, read_post=True)
+    } == {"hearth_letters_reply", "hearth_letters_read"}
+    # Reading one's own post needs neither a grant nor a letter in hand right now.
+    assert {spec["name"] for spec in tool_specs(management=False, read_post=True)} == {
+        "hearth_letters_read"
     }
 
     writer, call = working_run(app, karen, "writes")
@@ -292,6 +293,43 @@ def test_the_letter_is_answered_once_and_the_sender_reads_the_reply(household):
     assert post["replies"][0]["resident_id"] == "reporter"
     # Nothing newer than the reply is anything at all.
     assert read("since", "hearth_letters_read", {"since": NOW + 1})[1]["replies"] == []
+    settle(hearth, later)
+
+
+def test_narrowing_the_grant_stops_the_next_letter_and_not_the_answer_to_the_last(
+    household, tmp_path, monkeypatch
+):
+    """An operator who takes `send_letters` away must not hide an answer already asked for."""
+    from hearth.management.authority import GrantPolicy, Management
+
+    app, hearth, karen = household
+    opens_the_door(hearth)
+    writer, write = working_run(app, karen, "asks")
+    receipt = send(write)[1]
+    settle(hearth, writer)
+    reader, answer = letter_run(app, receipt["task_id"], "answers")
+    answer(
+        "reply",
+        "hearth_letters_reply",
+        {"operation_id": "answer-1", "letter_id": receipt["task_id"], "text": "412 pear trees."},
+    )
+    settle(hearth, reader)
+
+    Management(hearth).save(
+        karen,
+        {
+            **GrantPolicy().model_dump(),
+            "expected_revision": 1,
+            "enabled": True,
+            "profiles": ["codex_subscription"],
+            "capabilities": ["assign_work"],
+        },
+    )
+    later, read = working_run(app, karen, "reads")
+    tools = offered(hearth, later, tmp_path, monkeypatch)
+    assert "hearth_letters_send" not in tools and "hearth_letters_read" in tools
+    ok, post = read("post", "hearth_letters_read", {})
+    assert ok and [item["text"] for item in post["replies"]] == ["412 pear trees."]
     settle(hearth, later)
 
 

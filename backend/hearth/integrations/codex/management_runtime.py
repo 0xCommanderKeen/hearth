@@ -126,6 +126,7 @@ def pin_configuration(hearth, bound, binary):
             management=management,
             send_letters=letters["send"],
             reply_letter=letters["reply"],
+            read_post=letters["post"],
         ),
     )
     with hearth.database.transaction(write=True) as db:
@@ -219,6 +220,7 @@ def worker(folder, request, execution):
                 management=authority["grant"]["enabled"],
                 send_letters=letters["send"],
                 reply_letter=letters["reply"],
+                read_post=letters["post"],
             ),
             on_thread=bridge.bind_thread,
             on_turn=bridge.bind_turn,
