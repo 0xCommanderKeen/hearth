@@ -8,9 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.execution.lifecycle import Execution, Executor
+from hearth.execution.usage import binding as usage_binding
 from hearth.integrations.codex.events import TokenUsage
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
-from hearth.integrations.codex.usage import UsageBinding, UsageJournal
+from hearth.integrations.codex.subscription import KIND, encode
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
@@ -18,11 +19,12 @@ from hearth.storage.backup import capture, restore, verify
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
-from tests.fake_runtime import FakeRuntime, fake_runtime
+from tests.fake_runtime import BINARY, FakeRuntime, fake_runtime, transcript
 
 NOW = 1_788_640_000
 TOKEN = "synthetic-accounting-token-for-tests"
 USAGE = TokenUsage(30, 10, 8, 3, 5)
+SUMMARY = "Synthetic summary"
 
 
 @pytest.fixture
@@ -30,6 +32,8 @@ def system(tmp_path):
     data = tmp_path / "data"
     db = Database(data / "hearth.db")
     db.initialize()
+    # The fake stands in for the subscription and pins the binary its receipts claim.
+    FakeRuntime(data)
     hearth = Hearth(db, clock=lambda: NOW)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
@@ -37,91 +41,93 @@ def system(tmp_path):
     return hearth, Execution(hearth, Artifacts(data / "artifacts")), tmp_path
 
 
-def admit(system, *, mode="standard", key="task", reserve=1000):
+def admit(system, *, mode="standard", key="task", reserve=1000, launch=True):
     hearth, execution, _ = system
     task = hearth.submit(key, "reader", "Summarize synthetic notes", expires_at=NOW + 100)
     run = hearth.admit(task.task_id, reserve=reserve, pricing_mode=mode)
-    assert execution.prepare_start(run.id, run.owner_token)
+    if launch:
+        assert execution.prepare_start(run.id, run.owner_token)
     return hearth.run(run.id)
 
 
-def journal_for(system, run, *, usage=USAGE, mode="standard", digest=None):
-    root = system[2] / run.id
-    journal = UsageJournal.create(
-        root, UsageBinding(run.id, digest or run.input_digest, MODEL, mode)
+def bound_for(system, run):
+    with system[0].database.transaction() as db:
+        return usage_binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+
+
+def counters(usage) -> dict:
+    """A Codex turn reports the counters it observed; the rest are absent, not null."""
+    values = usage if isinstance(usage, dict) else asdict(usage)
+    return {name: value for name, value in values.items() if value is not None}
+
+
+def receipt_for(system, run, *, usage=USAGE, binding=None, text=SUMMARY):
+    """The provider receipt the subscription leaves behind for one completed turn."""
+    return {
+        "kind": KIND,
+        "binding": asdict(binding if binding is not None else bound_for(system, run)),
+        "binary": BINARY,
+        "stdout": transcript(text, failed=False, usage=counters(usage)),
+        "final": text,
+        "exit_code": 0,
+        "cancelled": False,
+        "launched": True,
+    }
+
+
+def settle(system, run, receipt=None):
+    receipt = receipt_for(system, run) if receipt is None else receipt
+    bound = bound_for(system, run)
+    return system[1].finish(
+        run.id, run.owner_token, encode(receipt, bound)[2], _usage_receipt=receipt
     )
-    journal.complete(journal.begin(), usage)
-    events = [
-        {"type": "thread.started", "thread_id": "thread"},
-        {"type": "turn.started"},
-        {
-            "type": "item.completed",
-            "item": {"id": "message", "type": "agent_message", "text": "Synthetic summary"},
-        },
-        {"type": "turn.completed", "usage": asdict(USAGE)},
-    ]
-    journal.seal(
-        "\n".join(json.dumps(event) for event in events), exit_code=0, final="Synthetic summary"
-    )
-    return journal
 
 
 def test_settlement_pins_and_commits_cost_receipt_artifact_and_audit(system):
     hearth, execution, _ = system
     run = admit(system)
-    journal = journal_for(system, run)
-    completed = execution.finish_from_usage(run.id, run.owner_token, journal)
+    receipt = receipt_for(system, run)
+    completed = settle(system, run, receipt)
     assert completed.actual_cost == 623 and completed.usage_known
-    assert "no model was called" in execution.artifact(completed.artifact_id)[1]
+    artifact, content = execution.artifact(completed.artifact_id)
+    assert content == SUMMARY and artifact.simulated is False
     with hearth.database.transaction() as db:
         pin = dict(db.execute("SELECT * FROM run_pricing WHERE run_id=?", (run.id,)).fetchone())
-        receipt = dict(db.execute("SELECT * FROM run_usage WHERE run_id=?", (run.id,)).fetchone())
+        stored = dict(db.execute("SELECT * FROM run_usage WHERE run_id=?", (run.id,)).fetchone())
     assert pin == {"run_id": run.id, "model": MODEL, "mode": "standard", "schedule": PRICE_SCHEDULE}
-    assert hashlib.sha256(receipt["receipt"].encode()).hexdigest() == receipt["sha256"]
+    assert hashlib.sha256(stored["receipt"].encode()).hexdigest() == stored["sha256"]
     facts = [fact for fact in hearth.audit() if fact["resource_id"] == run.id]
     assert facts[0]["detail"]["accounting"]["schedule"] == PRICE_SCHEDULE
-    assert facts[-1]["detail"]["accounting"]["receipt_sha256"] == receipt["sha256"]
+    assert facts[-1]["detail"]["accounting"]["receipt_sha256"] == stored["sha256"]
     task = hearth.submit("next", "reader", "Next summary", expires_at=NOW + 100)
     with pytest.raises(Refused, match="budget_exhausted"):
         hearth.admit(task.task_id, reserve=9_999_500, pricing_mode="standard")
     with pytest.raises(Refused, match="run_already_finished"):
-        execution.finish_from_usage(run.id, run.owner_token, journal)
+        settle(system, run, receipt)
 
 
-def test_scalar_mock_cost_cannot_settle_a_priced_run(system):
+def test_an_invented_scalar_cost_cannot_settle_a_priced_run(system):
     run = admit(system)
     with pytest.raises(Refused, match="run_usage_required"):
         system[1].finish(run.id, run.owner_token, Evidence("succeeded", "invented", 0))
     assert system[0].run(run.id).finished_at is None
 
 
-def test_mock_executor_does_not_dispatch_priced_runs(system):
-    run = admit(system)
-    runtime = FakeRuntime(system[2])
-    hearth = system[0]
-    hearth.save_resident(
-        "other", Declaration("Other", "Synthetic notes", 10_000_000), expected_revision=0
-    )
-    task = hearth.submit("other-task", "other", "Summarize", expires_at=NOW + 100)
-    other = hearth.admit(task.task_id, reserve=1000)
-    Executor(system[1], runtime).step()
-    assert runtime.inspect(run.id).status == "absent"
-    assert hearth.run(run.id).status == "interrupted"
-    assert hearth.run(other.id).status == "succeeded"
-
-
 @pytest.mark.parametrize("wrong", ["owner", "input", "mode"])
 def test_wrong_owner_or_binding_refuses_without_settlement(system, wrong):
     run = admit(system)
-    journal = journal_for(
-        system,
-        run,
-        mode="fast" if wrong == "mode" else "standard",
-        digest="b" * 64 if wrong == "input" else None,
-    )
+    bound = bound_for(system, run)
+    if wrong == "input":
+        bound = replace(bound, input_digest="b" * 64)
+    if wrong == "mode":
+        bound = replace(bound, mode="fast")
+    receipt = receipt_for(system, run, binding=bound)
     with pytest.raises(Refused):
-        system[1].finish_from_usage(
-            run.id, "wrong" if wrong == "owner" else run.owner_token, journal
+        system[1].finish(
+            run.id,
+            "wrong" if wrong == "owner" else run.owner_token,
+            Evidence("succeeded", SUMMARY, 623),
+            _usage_receipt=receipt,
         )
     assert system[0].run(run.id).finished_at is None
 
@@ -129,13 +135,14 @@ def test_wrong_owner_or_binding_refuses_without_settlement(system, wrong):
 def test_unknown_usage_preserves_hold_and_known_cli_output(system):
     hearth, execution, _ = system
     run = admit(system)
-    journal = journal_for(system, run, usage=replace(USAGE, cache_write_input_tokens=None))
-    completed = execution.finish_from_usage(run.id, run.owner_token, journal)
+    receipt = receipt_for(system, run, usage=replace(USAGE, cache_write_input_tokens=None))
+    completed = settle(system, run, receipt)
     assert (
         completed.status == "succeeded"
         and completed.actual_cost is None
         and not completed.usage_known
     )
+    assert execution.artifact(completed.artifact_id)[1] == SUMMARY
     task = hearth.submit("next", "reader", "Next", expires_at=NOW + 100)
     with pytest.raises(Refused, match="resident_paused"):
         hearth.admit(task.task_id, reserve=1000, pricing_mode="standard")
@@ -144,7 +151,7 @@ def test_unknown_usage_preserves_hold_and_known_cli_output(system):
 def test_failed_audit_rolls_back_usage_and_run_together_then_retry_succeeds(system):
     hearth, execution, _ = system
     run = admit(system)
-    journal = journal_for(system, run)
+    receipt = receipt_for(system, run)
     with hearth.database.transaction(write=True) as db:
         db.execute(
             "CREATE TRIGGER fail_settlement BEFORE INSERT ON audit "
@@ -152,32 +159,37 @@ def test_failed_audit_rolls_back_usage_and_run_together_then_retry_succeeds(syst
             "SELECT RAISE(ABORT,'audit unavailable'); END"
         )
     with pytest.raises(sqlite3.IntegrityError, match="audit unavailable"):
-        execution.finish_from_usage(run.id, run.owner_token, journal)
+        settle(system, run, receipt)
     with hearth.database.transaction(write=True) as db:
         assert db.execute("SELECT count(*) FROM run_usage").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM artifacts").fetchone()[0] == 0
         db.execute("DROP TRIGGER fail_settlement")
     assert hearth.run(run.id).finished_at is None
-    assert execution.finish_from_usage(run.id, run.owner_token, journal).actual_cost == 623
+    assert settle(system, run, receipt).actual_cost == 623
 
 
-def test_backup_and_held_restore_verify_sqlite_receipt_without_worker_journal(system):
+def test_backup_and_held_restore_verify_sqlite_receipt_without_the_runtime_evidence(system):
     hearth, execution, root = system
-    run = admit(system)
-    journal = journal_for(system, run)
-    execution.finish_from_usage(run.id, run.owner_token, journal)
-    shutil.rmtree(journal.root)
+    data = hearth.database.path.parent
+    run = admit(system, launch=False)
+    settled = Executor(execution, FakeRuntime(data)).step()[0]
+    assert settled.actual_cost == 2000 and settled.usage_known
+    # Everything below rests on the immutable SQLite receipt, not the runtime's files.
+    shutil.rmtree(data / "fake-runtime")
     backup = root / "backup"
     held = root / "held"
-    capture(hearth.database.path.parent, backup)
+    capture(data, backup)
     verify(backup)
     restore(backup, held)
     app = create_app(held, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     response = client.get("/api/runs/" + run.id, headers={"Authorization": "Bearer " + TOKEN})
     assert response.status_code == 200
-    assert response.json()["accounting"]["requests"][0]["cache_write_input_tokens"] == 5
+    with hearth.database.transaction() as db:
+        digest = db.execute("SELECT sha256 FROM run_usage WHERE run_id=?", (run.id,)).fetchone()[0]
+    assert response.json()["accounting"]["receipt_sha256"] == digest
     assert response.json()["accounting"]["schedule"] == PRICE_SCHEDULE
+    assert Hearth(Database(held / "hearth.db")).run(run.id).actual_cost == 2000
     with pytest.raises(Refused, match="restored_copy_read_only"):
         app.state.executor.step()
 
@@ -190,9 +202,9 @@ def test_unsettled_priced_backup_refuses(system):
 
 
 def test_rehashed_database_cannot_lie_about_settled_cost(system):
-    hearth, execution, root = system
+    hearth, _, root = system
     run = admit(system)
-    execution.finish_from_usage(run.id, run.owner_token, journal_for(system, run))
+    settle(system, run)
     backup = root / "backup"
     capture(hearth.database.path.parent, backup)
     with sqlite3.connect(backup / "hearth.db") as db:
@@ -204,21 +216,25 @@ def test_rehashed_database_cannot_lie_about_settled_cost(system):
         verify(backup)
 
 
-def test_fast_mode_is_pinned_before_usage_and_uses_the_same_budget(system):
+def test_a_fast_mode_request_cannot_change_the_schedule_pinned_before_usage(system):
+    """The one runtime prices on the standard schedule; admission cannot ask for another."""
+    hearth, _, _ = system
     run = admit(system, mode="fast")
-    completed = system[1].finish_from_usage(
-        run.id, run.owner_token, journal_for(system, run, mode="fast")
-    )
-    assert completed.actual_cost == 1245
+    with hearth.database.transaction() as db:
+        pin = dict(db.execute("SELECT * FROM run_pricing WHERE run_id=?", (run.id,)).fetchone())
+    assert pin == {"run_id": run.id, "model": MODEL, "mode": "standard", "schedule": PRICE_SCHEDULE}
+    # The same counters would have cost 1245 had the fast schedule been pinned.
+    assert settle(system, run).actual_cost == 623
 
 
 def test_operator_reconciliation_retains_unknown_receipt_through_backup(system):
     from hearth.execution.accounting import Accounting
 
-    hearth, execution, root = system
+    hearth, _, root = system
     run = admit(system)
-    journal = journal_for(system, run, usage=replace(USAGE, cache_write_input_tokens=None))
-    execution.finish_from_usage(run.id, run.owner_token, journal)
+    settle(
+        system, run, receipt_for(system, run, usage=replace(USAGE, cache_write_input_tokens=None))
+    )
     Accounting(hearth).reconcile(
         "reconcile", run.id, amount=700, evidence="Synthetic operator report"
     )
@@ -228,33 +244,34 @@ def test_operator_reconciliation_retains_unknown_receipt_through_backup(system):
 
 
 def test_api_snapshot_labels_estimated_usage(system):
-    hearth, execution, _ = system
+    hearth, _, _ = system
     run = admit(system)
-    execution.finish_from_usage(run.id, run.owner_token, journal_for(system, run))
+    settle(system, run)
     client = TestClient(
         create_app(hearth.database.path.parent, TOKEN, supervise=False, runtime=fake_runtime())
     )
     response = client.get("/api/state", headers={"Authorization": "Bearer " + TOKEN})
     assert response.status_code == 200
     observed = next(item for item in response.json()["runs"] if item["id"] == run.id)
-    assert observed["usage_source"] == "api_equivalent_mock"
+    assert observed["usage_source"] == "api_equivalent_subscription"
 
 
-@pytest.mark.parametrize("usage", [TokenUsage(31, 10, 8, 3, None), TokenUsage(30, 31, 8, 3, None)])
-def test_missing_usage_cannot_hide_known_contradictions(system, usage):
-    hearth, execution, _ = system
+# Complete counters that would otherwise price at 623, each contradicting itself once.
+@pytest.mark.parametrize(
+    "usage", [replace(USAGE, cached_input_tokens=26), replace(USAGE, reasoning_output_tokens=9)]
+)
+def test_counters_that_contradict_themselves_are_never_priced(system, usage):
+    """One turn total is the only usage evidence now, so a contradiction stays unpriced."""
+    hearth, _, _ = system
     run = admit(system)
-    # Sealing persists the terminal evidence before rejecting its interpretation.
-    try:
-        journal_for(system, run, usage=usage)
-    except ValueError:
-        pass
-    journal = UsageJournal(
-        system[2] / run.id, UsageBinding(run.id, run.input_digest, MODEL, "standard")
-    )
-    with pytest.raises(Refused, match="run_usage_invalid"):
-        execution.finish_from_usage(run.id, run.owner_token, journal)
-    assert hearth.run(run.id).finished_at is None
+    receipt = receipt_for(system, run, usage=usage)
+    completed = settle(system, run, receipt)
+    assert completed.status == "succeeded"
+    assert completed.actual_cost is None and not completed.usage_known
+    # The contradictory evidence is committed verbatim; it just never becomes a number.
     with hearth.database.transaction() as db:
-        assert db.execute("SELECT COUNT(*) FROM run_usage").fetchone()[0] == 0
-        assert db.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 0
+        stored = db.execute("SELECT receipt FROM run_usage WHERE run_id=?", (run.id,)).fetchone()
+    assert json.loads(stored["receipt"])["stdout"] == receipt["stdout"]
+    task = hearth.submit("next", "reader", "Next", expires_at=NOW + 100)
+    with pytest.raises(Refused, match="resident_paused"):
+        hearth.admit(task.task_id, reserve=1000, pricing_mode="standard")

@@ -163,7 +163,7 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                         "hearth.db",
                         now if now is not None else int(time.time()),
                         json.dumps(
-                            {"runs": sorted(retired), "kept": keep.name, "rows_removed": pruned},
+                            {"runs": sorted(retired), "kept": keep.name, "dependent_rows": pruned},
                             sort_keys=True,
                         ),
                     ),

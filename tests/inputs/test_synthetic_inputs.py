@@ -110,7 +110,7 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
         result = worker.step()[0]
         assert result.status == "succeeded"
         output = worker.runtime.inspect(run.id).output
-        assert (expected[0] in output) if expected else "No synthetic inputs" in output
+        assert (expected[0] in output) if expected else "No notes were supplied" in output
         assert "drafted the Hearth foundation" not in output
 
 
@@ -176,16 +176,17 @@ def test_damaged_inputs_refuse_launch_without_stalling_healthy_work(tmp_path, da
             connection.execute(
                 "UPDATE run_input_sets SET resident_id='healthy' WHERE run_id=?", (runs[0].id,)
             )
-    worker = Executor(
-        Execution(hearth, Artifacts(db.path.parent / "artifacts")),
-        FakeRuntime(db.path.parent),
-    )
+    execution = Execution(hearth, Artifacts(db.path.parent / "artifacts"))
+    worker = Executor(execution, FakeRuntime(db.path.parent))
     worker.step()
     assert hearth.run(runs[0].id).status == "interrupted"
     assert worker.runtime.inspect(runs[0].id).status == "absent"
     assert hearth.run(runs[1].id).status == "succeeded"
     state = snapshot(hearth)
     assert next(run for run in state["runs"] if run["id"] == runs[0].id)["inputs_error"]
+    # A run that never launched settles at zero, which leaves the damage as the only fault.
+    execution.cancel(runs[0].id)
+    assert worker.step()[0].status == "cancelled"
     with pytest.raises(Refused, match="input_"):
         capture(db.path.parent, tmp_path / "backup")
 

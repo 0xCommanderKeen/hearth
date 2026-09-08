@@ -105,7 +105,6 @@ def settle_karen(app, bridge):
 
     from hearth.execution.usage import binding
     from hearth.integrations.codex.app_server import PROTOCOL
-    from hearth.integrations.codex.management_runtime import pin_configuration
     from hearth.integrations.codex.pricing import MODEL
     from hearth.integrations.codex.subscription import KIND
     from hearth.integrations.interface import encode_receipt
@@ -114,8 +113,13 @@ def settle_karen(app, bridge):
 
     hearth = app.state.hearth
     run = hearth.run(bridge.bound.run_id)
-    pins = pin_configuration(hearth, bridge.bound, BINARY)
-    with hearth.database.transaction() as db:
+    # Stands in for the digests a real launch pins from the binary's own catalog.
+    catalog, tools = "b" * 64, "c" * 64
+    with hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=?,tools_sha256=? WHERE run_id=?",
+            (catalog, tools, run.id),
+        )
         bound = binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
     receipt = {
         "kind": KIND,
@@ -128,14 +132,17 @@ def settle_karen(app, bridge):
             "cancelled": True,
             "error": None,
             "exit_code": -15,
-            "catalog_sha256": pins["catalog_sha256"],
-            "tools_sha256": pins["tools_sha256"],
+            "catalog_sha256": catalog,
+            "tools_sha256": tools,
             "events": [
                 {
                     "method": "thread/started",
                     "params": {"thread": {"id": "thread", "model": MODEL}},
                 },
-                {"method": "turn/started", "params": {"threadId": "thread", "turn": {"id": "turn"}}},
+                {
+                    "method": "turn/started",
+                    "params": {"threadId": "thread", "turn": {"id": "turn"}},
+                },
             ],
         },
     }

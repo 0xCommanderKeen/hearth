@@ -208,13 +208,17 @@ def test_corrupt_pins_refuse_dispatch_and_keep_operator_cause_visible(tmp_path):
     with sqlite3.connect(db.path) as damaged:
         damaged.execute("DELETE FROM run_skills WHERE run_id=?", (run.id,))
     runtime = FakeRuntime(data)
-    worker = Executor(Execution(hearth, Artifacts(data / "artifacts")), runtime)
+    execution = Execution(hearth, Artifacts(data / "artifacts"))
+    worker = Executor(execution, runtime)
     assert worker.step()[0].status == "interrupted"
     assert runtime.inspect(run.id).status == "absent"
     state = snapshot(hearth)
     assert state["runs"][0]["skills_error"] == "skill_set_changed"
     assert state["household"]["daily_limit"] == before["daily_limit"]
     assert hearth.resident("reader").declaration.daily_limit == 100_000
+    # A run that never launched settles at zero, which leaves the damage as the only fault.
+    execution.cancel(run.id)
+    assert worker.step()[0].status == "cancelled"
     with pytest.raises(Refused, match="skill_set_changed"):
         capture(data, tmp_path / "backup")
 
@@ -330,10 +334,10 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
         damaged.execute("DELETE FROM resident_skill_sets WHERE resident_id='broken'")
     with pytest.raises(Refused, match="skill_set_missing"):
         hearth.admit(queued, reserve=10_000)
-    with pytest.raises(Refused, match="backup_references_invalid"):
-        capture(db.path.parent, tmp_path / "backup")
     worker = Supervisor(
-        Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)),
+        Executor(
+            Execution(hearth, Artifacts(db.path.parent / "artifacts")), FakeRuntime(db.path.parent)
+        ),
         routines,
         Notifications(hearth, MockInbox(tmp_path / "inbox")),
     )
@@ -350,6 +354,9 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
         assert worker.health()["executor_error"] is None
     finally:
         worker.stop()
+    # The orphaned header is still a broken reference once the healthy work has settled.
+    with pytest.raises(Refused, match="backup_references_invalid"):
+        capture(db.path.parent, tmp_path / "backup")
 
 
 @pytest.mark.parametrize("damage", ["content", "order", "pin_hash", "header"])

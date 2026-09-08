@@ -120,7 +120,7 @@ def test_upgrade_retires_runs_recorded_against_a_runtime_that_no_longer_exists(t
         db.execute("SELECT detail FROM audit WHERE kind='runtime_runs_retired'").fetchone()[0]
     )
     assert retired["runs"] == ["simulated"] and retired["kept"] == "hearth.db.before-v1"
-    assert retired["rows_removed"] == 2
+    assert retired["dependent_rows"] == 2
     kept = sqlite3.connect(tmp_path / "hearth.db.before-v1")
     assert kept.execute("SELECT count(*) FROM runs").fetchone() == (2,)
 
