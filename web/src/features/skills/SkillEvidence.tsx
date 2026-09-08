@@ -177,11 +177,9 @@ export function SkillEvidence({
         <div>
           <h4>Two bounded examples</h4>
           <p>
-            {validation?.assessment.includes("simulated")
-              ? "Simulated runs · deterministic output checks. No model assessment was performed."
-              : validation
-                ? "Model runs · deterministic output checks over saved artifacts. No model grading or general quality guarantee."
-                : "A visible read-only evaluator runs normal and edge examples serially. Both runs use the household allowance."}
+            {validation
+              ? "Model runs · deterministic output checks over saved artifacts. No model grading or general quality guarantee."
+              : "A visible read-only evaluator runs normal and edge examples serially. Both runs use the household allowance."}
           </p>
           {validation?.evaluator_id && (
             <a href={`#residents/${validation.evaluator_id}`}>
@@ -224,9 +222,7 @@ export function SkillEvidence({
               {entry.result && (
                 <p className="muted">
                   Accounted ${(entry.result.actual_cost / 1000000).toFixed(6)}
-                  {entry.result.simulated
-                    ? " · simulation"
-                    : " · API-equivalent estimate"}
+                  {" · API-equivalent estimate"}
                 </p>
               )}
               {!!entry.result?.checks.length && (

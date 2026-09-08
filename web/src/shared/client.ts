@@ -127,7 +127,7 @@ export type ResidentProfile = {
   setup_status: string;
 };
 export type ResidentOptions = {
-  execution_profiles: { id: string; name: string; simulated: boolean }[];
+  execution_profiles: { id: string; name: string }[];
   input_sets: { input_set_id: string; name: string; synthetic: boolean }[];
   managers: { id: string; name: string }[];
 };
@@ -193,7 +193,6 @@ export type SkillValidation = {
       artifact_id: string | null;
       artifact_sha256: string | null;
       actual_cost: number;
-      simulated: boolean;
       memory_revision?: number;
       resident_revision?: number;
       input_digest?: string;
@@ -445,7 +444,6 @@ export type Snapshot = {
   household?: HouseholdPolicy;
   restore_hold?: boolean;
   schema_version: 1;
-  simulated: boolean;
   epoch: string;
   cursor: number;
   residents: Resident[];
@@ -459,7 +457,7 @@ export type Snapshot = {
     attempts: number;
     next_at: number;
     reason: string | null;
-    payload: { simulated: boolean; link: string };
+    payload: { link: string };
   }[];
   routines?: Routine[];
   occurrences?: {
@@ -503,7 +501,6 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if (
     !s ||
     s.schema_version !== 1 ||
-    typeof s.simulated !== "boolean" ||
     typeof s.epoch !== "string" ||
     !Number.isSafeInteger(s.cursor) ||
     !Array.isArray(s.residents) ||

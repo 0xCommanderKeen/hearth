@@ -105,7 +105,6 @@ class Authority:
             ).fetchone()
             payload = {
                 "action": "mock.publish",
-                "simulated": True,
                 "artifact_id": artifact.id,
                 "sha256": artifact.sha256,
                 "resident_id": run["resident_id"],

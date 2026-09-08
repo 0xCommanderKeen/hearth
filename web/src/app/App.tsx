@@ -76,11 +76,9 @@ function Emblem() {
 
 function SummaryOutput({
   content,
-  simulated,
   onClose,
 }: {
   content: string;
-  simulated: boolean;
   onClose: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
@@ -96,9 +94,7 @@ function SummaryOutput({
       aria-label="Summary output"
     >
       <div className="section-title">
-        <span className="eyebrow">
-          {simulated ? "SIMULATED ARTIFACT" : "CODEX RESULT"}
-        </span>
+        <span className="eyebrow">CODEX RESULT</span>
         <button className="quiet" onClick={onClose}>
           Close ×
         </button>
@@ -527,22 +523,14 @@ export function App() {
         </nav>
         <div className="rail-foot">
           {snapshot && (
-            <span
-              className={`chip ${connected ? (snapshot.simulated ? "sim" : "live") : "off"}`}
-            >
+            <span className={`chip ${connected ? "live" : "off"}`}>
               {connected
-                ? snapshot.simulated
-                  ? "Connected to the simulation"
-                  : "Connected to Codex"
+                ? "Connected to Codex"
                 : "Reconnecting · state may be stale"}
             </span>
           )}
           <span>
-            {snapshot
-              ? snapshot.simulated
-                ? "Simulation · nothing is spent"
-                : "Codex subscription"
-              : "Local operator console"}
+            {snapshot ? "Codex subscription" : "Local operator console"}
           </span>
           {client && (
             <button className="quiet" onClick={lock}>
@@ -853,9 +841,7 @@ export function App() {
                   <section className="work-panel">
                     <h2>Assign work</h2>
                     <p>
-                      {snapshot.simulated
-                        ? "A read-only assignment using the selected notes."
-                        : "A read-only assignment. Results appear beside this panel."}
+                      A read-only assignment. Results appear beside this panel.
                     </p>
                     <form onSubmit={submit}>
                       {pending.current &&
@@ -893,15 +879,12 @@ export function App() {
                       >
                         {pending.current
                           ? "Retry pending submission"
-                          : snapshot.simulated
-                            ? "Run a mock summary"
-                            : "Run summary"}{" "}
+                          : "Run summary"}{" "}
                         <span>↗</span>
                       </button>
                       <small>
-                        {snapshot.simulated
-                          ? "Mock usage only. No money is spent."
-                          : "Uses your Codex subscription. Dollar amounts are API-equivalent estimates."}
+                        Uses your Codex subscription. Dollar amounts are
+                        API-equivalent estimates.
                       </small>
                     </form>
                     <small>
@@ -1040,7 +1023,7 @@ export function App() {
                               {run && (
                                 <small>
                                   {run.usage_known
-                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${snapshot.simulated ? "simulated " : ""}${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
+                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported" ? " · operator reported" : ""}`
                                     : "Usage not yet known"}
                                 </small>
                               )}
@@ -1088,7 +1071,6 @@ export function App() {
                 <SummaryOutput
                   key={output.content}
                   content={output.content}
-                  simulated={snapshot.simulated}
                   onClose={() => setOutput(null)}
                 />
               )}

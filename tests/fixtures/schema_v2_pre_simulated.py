@@ -1,11 +1,6 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 2, before the simulated flag went; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -184,7 +179,7 @@ SCHEMA = (
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
-        size INTEGER NOT NULL CHECK (size >= 0)
+        size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated IN (0,1))
     )""",
     """CREATE TABLE audit (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -344,7 +339,7 @@ SCHEMA = (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), command_id TEXT NOT NULL UNIQUE,
         digest TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount >= 0),
         evidence TEXT NOT NULL, recorded_at INTEGER NOT NULL,
-        source TEXT NOT NULL CHECK (source='operator_reported')
+        source TEXT NOT NULL CHECK (source='operator_reported_mock')
     )""",
     """CREATE UNIQUE INDEX active_resident ON runs(resident_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",

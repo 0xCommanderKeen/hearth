@@ -212,7 +212,6 @@ def result_for_case(db, validation, case, artifacts: Artifacts):
             checker="output-assertions-v1",
             run_id=run["id"],
             actual_cost=run["actual_cost"],
-            simulated=run["runtime_kind"] != "codex_subscription",
             passed=False,
             artifact_id=None,
             artifact_sha256=None,

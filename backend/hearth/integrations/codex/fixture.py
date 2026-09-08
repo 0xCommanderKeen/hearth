@@ -106,11 +106,11 @@ try:
 except ValueError:
     context = None
 text = (
-    "# Daily summary — Codex CLI simulation\n\n"
+    "# Daily summary — Codex CLI fixture\n\n"
     + "\n".join("- " + note for note in context["notes"])
     + "\n\nThis response came from the local fixture; no model was called."
-    if isinstance(context, dict) and context.get("simulated") is True
-    else "Synthetic summary: the Reader mock is ready. No model was called."
+    if isinstance(context, dict) and isinstance(context.get("notes"), list)
+    else "Synthetic summary: the offline fixture is ready. No model was called."
 )
 item = {
     "id": "msg_synthetic",

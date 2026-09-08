@@ -18,7 +18,6 @@ class Artifact:
     relative_path: str
     sha256: str
     size: int
-    simulated: bool = True
 
 
 def sync_directory(path: Path) -> None:
@@ -34,7 +33,7 @@ class Artifacts:
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
 
-    def publish(self, run_id: str, content: str, *, simulated: bool = True) -> Artifact:
+    def publish(self, run_id: str, content: str) -> Artifact:
         identifier(run_id)
         data = content.encode("utf-8")
         if not data or len(data) > MAX_ARTIFACT:
@@ -55,9 +54,7 @@ class Artifacts:
             sync_directory(self.root)
         finally:
             Path(temporary).unlink(missing_ok=True)
-        return Artifact(
-            run_id, run_id, name, hashlib.sha256(data).hexdigest(), len(data), simulated
-        )
+        return Artifact(run_id, run_id, name, hashlib.sha256(data).hexdigest(), len(data))
 
     def read(self, artifact: Artifact) -> str:
         if artifact.relative_path != artifact.run_id + ".md":

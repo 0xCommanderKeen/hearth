@@ -74,10 +74,6 @@ def runtime_receipt(runtime: Runtime, run_id: str) -> dict:
     return cast(ReceiptedRuntime, runtime).receipt(run_id)
 
 
-def simulated(kind: str) -> bool:
-    return kind != "codex_subscription"
-
-
 def supports_dispatch(kind: str, version: int) -> bool:
     return version == 1 and kind == "codex_subscription"
 

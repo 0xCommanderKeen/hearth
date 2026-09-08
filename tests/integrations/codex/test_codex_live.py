@@ -138,11 +138,10 @@ def test_live_result_and_usage_survive_backup_without_auth_files(tmp_path, monke
         run.id, run.owner_token, encode(value, bound)[2], _usage_receipt=value
     )
     metadata, content = execution.artifact(result.artifact_id)
-    assert metadata.simulated is False and content == "A real-model summary."
+    assert content == "A real-model summary."
     assert result.actual_cost == 43482
     capture(data, tmp_path / "backup")
     manifest = verify(tmp_path / "backup")
-    assert manifest["simulated"] is False
     assert not any("auth" in name for name in manifest["files"])
     restore(tmp_path / "backup", tmp_path / "held")
     held = Database(tmp_path / "held/hearth.db")

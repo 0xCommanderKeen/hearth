@@ -13,7 +13,7 @@ const grant = {
   resident_id: "karen",
   revision: 1,
   enabled: true,
-  profiles: ["inline_mock"],
+  profiles: ["codex_subscription"],
   input_set_ids: [],
   capabilities: ["create_residents", "assign_work"] as (
     "create_residents" | "assign_work" | "routines"
@@ -27,7 +27,7 @@ function fixture() {
   const client = new Client("synthetic-management");
   vi.spyOn(client, "managementCatalog").mockResolvedValue({
     residents: [{ id: "karen", name: "Karen", grant }],
-    profiles: ["inline_mock"],
+    profiles: ["codex_subscription"],
     input_sets: [],
     operations: [],
   });

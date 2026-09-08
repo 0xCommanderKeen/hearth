@@ -83,7 +83,7 @@ def test_admission_pins_absence_and_then_exact_revision_despite_later_edits(syst
     monkeypatch.setattr(app.state.executor.runtime, "start", capture_input)
     app.state.executor.step()
     assert inputs[0]["memory"] == pinned
-    assert inputs[0]["context_version"] == 6
+    assert inputs[0]["context_version"] == 7
 
 
 def test_concurrent_writers_have_one_winner(system):

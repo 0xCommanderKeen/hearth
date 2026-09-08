@@ -41,7 +41,6 @@ def test_default_denial_and_exact_review_binding(system):
     with pytest.raises(Refused, match="publication_not_granted"):
         authority.request("review", artifact, expires_at=now[0] + 300)
     proposal = propose(system)
-    assert proposal.payload["simulated"] is True
     assert proposal.payload["destination"] == "mock-noticeboard"
     assert proposal.payload["resident_revision"] == 1
     assert proposal.payload["policy_revision"] == 1

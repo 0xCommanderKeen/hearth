@@ -46,7 +46,7 @@ def test_runtime_reads_own_synthetic_context_without_authority_secrets(system):
     context = response.json()
     assert context["run_id"] == run.id and context["resident_id"] == "reader"
     assert context["instruction"] == "Summarize synthetic notes"
-    assert context["simulated"] is False and all("Synthetic" in note for note in context["notes"])
+    assert all("Synthetic" in note for note in context["notes"])
     assert run.owner_token not in response.text and credential.token not in response.text
     assert credential.token not in repr(credential)
     assert credential.token not in json.dumps(app.state.hearth.audit())

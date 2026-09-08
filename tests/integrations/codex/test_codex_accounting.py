@@ -90,7 +90,7 @@ def test_settlement_pins_and_commits_cost_receipt_artifact_and_audit(system):
     completed = settle(system, run, receipt)
     assert completed.actual_cost == 623 and completed.usage_known
     artifact, content = execution.artifact(completed.artifact_id)
-    assert content == SUMMARY and artifact.simulated is False
+    assert content == SUMMARY
     with hearth.database.transaction() as db:
         pin = dict(db.execute("SELECT * FROM run_pricing WHERE run_id=?", (run.id,)).fetchone())
         stored = dict(db.execute("SELECT * FROM run_usage WHERE run_id=?", (run.id,)).fetchone())

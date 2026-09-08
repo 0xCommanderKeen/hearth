@@ -15,7 +15,9 @@ for the current acceptance gate.
 - Read `docs/rebuild-plan.md` before changing persistence, runtime authority or
   project scope. Record material departures in an ADR.
 - Hearth's own stores upgrade forward. A schema change bumps `SCHEMA_VERSION` and
-  adds fills for new required columns in `storage/migration.py`; an older store is
+  adds fills for new required columns in `storage/migration.py`; a removed column is
+  named in `DROPS` and a value the new layout refuses is rewritten through `REWRITES`,
+  or the upgrade fails. An older store is
   rebuilt in place on start with the original kept beside it. Never require a fresh
   data directory for a Hearth version change (`docs/adr/0013-forward-schema-upgrades.md`).
   Do not import from other systems; definition-only resident bundles

@@ -37,7 +37,7 @@ def test_report_is_immutable_and_charges_original_budget_day(system):
     result = accounting.reconcile(
         "report", run.id, amount=900_000, evidence="Synthetic meter report"
     )
-    assert result["source"] == "operator_reported_mock"
+    assert result["source"] == "operator_reported"
     assert (
         accounting.reconcile("report", run.id, amount=900_000, evidence="Synthetic meter report")
         == result

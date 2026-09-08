@@ -33,16 +33,10 @@ def read_validation(db, validation_id):
     for case in cases:
         case["kind"] = "normal" if case["position"] == 0 else "edge"
         case["result"] = json.loads(case["result"]) if case["result"] is not None else None
-    simulated = (
-        db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
-        != "codex_subscription"
-    )
     return validation | {
         "validation_id": validation_id,
         "cases": cases,
-        "assessment": "deterministic_assertions_on_simulated_runs"
-        if simulated
-        else "deterministic_assertions_on_model_runs",
+        "assessment": "deterministic_assertions_on_model_runs",
         "link": "/#skills/" + validation["skill_id"],
         "checker": "output-assertions-v1",
     }
