@@ -794,7 +794,7 @@ it("walks only the letters the snapshot reported, both ends named", async () => 
   ];
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
-  const walks = await screen.findByLabelText("Letters walked in the village");
+  const walks = await screen.findByLabelText("Recent post");
   const steps = walks.querySelectorAll("li");
   expect(steps.length).toBe(2);
   // The operator has no home; the letter it wrote leaves from Townhall.
@@ -809,5 +809,5 @@ it("leaves the village still when no letter has been written", async () => {
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
   await screen.findByRole("img", { name: /Reader's home/ });
-  expect(screen.queryByLabelText("Letters walked in the village")).toBeNull();
+  expect(screen.queryByLabelText("Recent post")).toBeNull();
 });

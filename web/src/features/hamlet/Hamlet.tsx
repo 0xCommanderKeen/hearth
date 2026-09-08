@@ -19,15 +19,15 @@ export function Hamlet({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const letters = snapshot.letters ?? [];
   // The post as the server reported it, read by the animation loop rather than by the
   // scene's own effect: new letters must not rebuild the village.
-  const post = useRef<LetterEvent[]>([]);
-  post.current = snapshot.letters ?? [];
+  const post = useRef<LetterEvent[]>(letters);
+  post.current = letters;
   // Every event is walked once. A snapshot repeats what it already reported, and the
   // scene is rebuilt whenever a resident arrives, so without this a single letter would
   // be walked again on every refresh — activity nobody performed.
   const walked = useRef<Set<string>>(new Set());
-  const letters = snapshot.letters ?? [];
   // The operator stands at Townhall and has no resident row; everyone else is named.
   const name = (id: string | null) =>
     id === null
@@ -257,8 +257,11 @@ export function Hamlet({
           below.
         </p>
       )}
+      {/* The same events the walk is drawn from, in words. A letter whose two ends are
+          not both homes in this village is listed here and not drawn, because there is
+          no door to walk to; it is never dropped from the record. */}
       {!!letters.length && (
-        <ol className="scene-post" aria-label="Letters walked in the village">
+        <ol className="scene-post" aria-label="Recent post">
           {letters.map((event) => (
             <li key={`${event.kind}:${event.task_id}`}>
               <strong>{name(event.from_resident_id)}</strong>

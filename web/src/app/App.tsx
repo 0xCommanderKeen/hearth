@@ -926,14 +926,19 @@ export function App() {
                                   Letters refused · nothing was written
                                 </small>
                                 <ul>
-                                  {run.letters_refused.map((refusal) => (
-                                    <li key={`${refusal.at}:${refusal.reason}`}>
+                                  {/* Two letters can be refused in the same second for
+                                      the same reason, so the position in the run's own
+                                      evidence is what tells them apart. */}
+                                  {run.letters_refused.map((refusal, place) => (
+                                    <li key={place}>
                                       {refusal.reason.replaceAll("_", " ")}
                                       {Object.entries(refusal.details).map(
                                         ([key, value]) => (
                                           <small key={key}>
                                             {key.replaceAll("_", " ")}:{" "}
-                                            {String(value)}
+                                            {typeof value === "object"
+                                              ? JSON.stringify(value)
+                                              : String(value)}
                                           </small>
                                         ),
                                       )}
