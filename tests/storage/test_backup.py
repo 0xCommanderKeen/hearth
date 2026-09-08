@@ -287,12 +287,22 @@ def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(system, tmp_path):
     assert copy.resident("orchard").declaration.letters_accept is True
 
 
-def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(system, tmp_path):
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "UPDATE letters SET depth=4",
+        "UPDATE letters SET root_task_id=task_id",
+        "UPDATE letters SET sender_resident_id='orchard'",
+        # A parent that is its own child would walk forever if the reader trusted it.
+        "UPDATE letters SET parent_task_id=task_id",
+    ],
+)
+def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(system, tmp_path, tamper):
     import sqlite3
 
     hearth, _, _, _ = system
     receipt, root = posted(system)
     with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
-        db.execute("UPDATE letters SET depth=4 WHERE task_id=?", (receipt["task_id"],))
+        db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
     with pytest.raises(Refused, match="backup_letters_invalid"):
         capture(root, tmp_path / "refused")

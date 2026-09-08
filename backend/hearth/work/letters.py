@@ -23,11 +23,15 @@ def _chain(db, task_id: str) -> list[str]:
     """The residents a chain has already visited, oldest first, ending at this task's own.
 
     Read from the stored lineage, never from a caller's claim. A task that is not a
-    letter is the start of a chain and names one resident: whoever is working it.
+    letter is the start of a chain and names one resident: whoever is working it. The
+    walk stops at a task it has already seen, so lineage edited in a copied file cannot
+    hold the reader in a loop; the caller's own checks then refuse the row.
     """
     visited: list[str] = []
+    seen: set[str] = set()
     current: str | None = task_id
-    while current is not None:
+    while current is not None and current not in seen:
+        seen.add(current)
         task = db.execute("SELECT resident_id FROM tasks WHERE id=?", (current,)).fetchone()
         if task is None:
             raise Refused("task_not_found")
