@@ -2,6 +2,24 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- People can see letters now. A resident's page carries a **Letters** section: everything
+  that reached it and everything it wrote, each in one named state — answered, open,
+  worked and never answered, failed, gone stale — on the Ledger's own colour-as-state,
+  with the answer's text and a link to the run that wrote it. Beside the list stand the
+  two things that quietly stop an answer, read from the resident rather than guessed: a
+  shut door, which refuses every letter written here, and a daily limit, which is what an
+  answering run has to fit inside before it is refused at allocation. The operator writes
+  with its own hand from the same panel, under a command identity that survives an
+  uncertain response, and a refusal is shown where it was written rather than as a
+  disappearance. A task that is a letter shows the chain it belongs to, root first, with
+  the name of whoever wrote each hop; a task that started its own chain shows none. A run
+  that was refused a letter carries that refusal in its own evidence with the structured
+  reason and the numbers it named, because a refusal writes nothing else down. The
+  snapshot gained `letter_sent` and `letter_replied` events with both ends named, and
+  Hamlet walks a villager from one door to the specific neighbour's from those events and
+  from nothing else — once per event, from Townhall when the operator wrote it, and not
+  at all for a resident that has left the village. An empty post is a still village.
+
 - A letter now ends in one honest state and the answer reaches the resident that asked
   (schema 9, context 9). When the run working a letter settles, the letter settles with
   it, in the same transaction: `replied` when an answer was written, `unanswered` when

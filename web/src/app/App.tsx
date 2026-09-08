@@ -22,6 +22,8 @@ import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { ImportResident } from "../features/residents/ImportResident";
+import { Letters } from "../features/letters/Letters";
+import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
 
 const SESSION_KEY = "hearth.operator-token";
@@ -887,6 +889,7 @@ export function App() {
                               <time>{clock(task.created_at)}</time>
                             </div>
                             <h3>{task.instruction}</h3>
+                            {task.lineage && <Lineage hops={task.lineage} />}
                             {run?.memory_revision !== undefined && (
                               <small>
                                 {run.memory_revision === 0
@@ -916,6 +919,28 @@ export function App() {
                                 {run.management.grant_revision} ·{" "}
                                 {run.management.calls} recorded tool calls
                               </p>
+                            )}
+                            {!!run?.letters_refused?.length && (
+                              <div aria-label="Letters this run was refused">
+                                <small>
+                                  Letters refused · nothing was written
+                                </small>
+                                <ul>
+                                  {run.letters_refused.map((refusal) => (
+                                    <li key={`${refusal.at}:${refusal.reason}`}>
+                                      {refusal.reason.replaceAll("_", " ")}
+                                      {Object.entries(refusal.details).map(
+                                        ([key, value]) => (
+                                          <small key={key}>
+                                            {key.replaceAll("_", " ")}:{" "}
+                                            {String(value)}
+                                          </small>
+                                        ),
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                             {run?.skills_error && (
                               <p className="notice error">
@@ -1054,6 +1079,16 @@ export function App() {
                   client={client}
                   resident={current}
                   busy={busy}
+                  act={act}
+                  openable={openableRun}
+                />
+                <Letters
+                  key={`letters:${snapshot.epoch}:${current.id}`}
+                  client={client}
+                  resident={current}
+                  residents={residents}
+                  busy={busy}
+                  readOnly={snapshot.restore_hold === true}
                   act={act}
                   openable={openableRun}
                 />

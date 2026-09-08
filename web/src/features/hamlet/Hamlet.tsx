@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createArtKit } from "./village/art.js";
-import type { Snapshot } from "../../shared/client";
+import type { LetterEvent, Snapshot } from "../../shared/client";
+
+// How long one villager takes to walk from a door to a neighbour's, and how many walks
+// the village shows at once. The rest wait their turn rather than being invented away.
+const WALK_MS = 4200;
+const WALKS_AT_ONCE = 3;
 
 // Original Warren miniature models, shared here without its operational layer.
 export function Hamlet({
@@ -14,6 +19,20 @@ export function Hamlet({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
+  // The post as the server reported it, read by the animation loop rather than by the
+  // scene's own effect: new letters must not rebuild the village.
+  const post = useRef<LetterEvent[]>([]);
+  post.current = snapshot.letters ?? [];
+  // Every event is walked once. A snapshot repeats what it already reported, and the
+  // scene is rebuilt whenever a resident arrives, so without this a single letter would
+  // be walked again on every refresh — activity nobody performed.
+  const walked = useRef<Set<string>>(new Set());
+  const letters = snapshot.letters ?? [];
+  // The operator stands at Townhall and has no resident row; everyone else is named.
+  const name = (id: string | null) =>
+    id === null
+      ? "Townhall"
+      : (snapshot.residents.find((r) => r.id === id)?.name ?? id);
   const villageResidents = snapshot.residents.filter(
     (r) => r.lifecycle?.state !== "archived",
   );
@@ -92,7 +111,11 @@ export function Hamlet({
       targets.push(object);
       scene.add(object);
     }
+    // Where a letter is handed over. The operator has no home in the village, so a
+    // letter it wrote leaves from Townhall — the one door it actually stands at.
+    const doors = new Map<string, THREE.Vector3>();
     building("townhall", "lodge", 7.5, -2, "#townhall");
+    doors.set("operator", new THREE.Vector3(7.5, 0, -2 + 2.2));
     const square = kit.building({
       id: "square",
       kind: "square",
@@ -112,6 +135,7 @@ export function Hamlet({
       person.userData.href = `#residents/${encodeURIComponent(r.id)}`;
       targets.push(person);
       scene.add(person);
+      doors.set(r.id, new THREE.Vector3(x, 0, z + 2.2));
     });
     [
       [-11, -6],
@@ -154,12 +178,54 @@ export function Hamlet({
       renderer.setSize(element.clientWidth, element.clientHeight);
     });
     resize.observe(element);
+    // One walk per letter event that has two doors in this village. Nothing here is
+    // scheduled, looped or embellished: the village walks what the snapshot reported and
+    // then stands still, so an empty post is an empty village rather than a busy one.
+    const walks: {
+      person: THREE.Group;
+      from: THREE.Vector3;
+      to: THREE.Vector3;
+      started: number;
+    }[] = [];
+    function open(at: number) {
+      // Oldest first, so a chain is walked in the order it happened.
+      for (let index = post.current.length - 1; index >= 0; index -= 1) {
+        if (walks.length >= WALKS_AT_ONCE) return;
+        const event = post.current[index];
+        const key = `${event.kind}:${event.task_id}`;
+        if (walked.current.has(key)) continue;
+        const from = doors.get(event.from_resident_id ?? "operator");
+        const to = doors.get(event.to_resident_id ?? "operator");
+        walked.current.add(key);
+        // A resident that has left the village has no door to walk to. The letter still
+        // happened and is still listed below; it is simply not drawn.
+        if (!from || !to || from === to) continue;
+        const person = kit.agent({ id: key });
+        person.position.copy(from);
+        scene.add(person);
+        walks.push({ person, from, to, started: at });
+      }
+    }
     renderer.setAnimationLoop(() => {
+      const at = performance.now();
+      open(at);
+      for (let index = walks.length - 1; index >= 0; index -= 1) {
+        const walk = walks[index];
+        const travelled = (at - walk.started) / WALK_MS;
+        if (travelled >= 1) {
+          scene.remove(walk.person);
+          walks.splice(index, 1);
+          continue;
+        }
+        walk.person.position.lerpVectors(walk.from, walk.to, travelled);
+        walk.person.lookAt(walk.to.x, walk.person.position.y, walk.to.z);
+      }
       controls.update();
       renderer.render(scene, camera);
     });
     return () => {
       renderer.setAnimationLoop(null);
+      walks.forEach((walk) => scene.remove(walk.person));
       resize.disconnect();
       controls.dispose();
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
@@ -190,6 +256,23 @@ export function Hamlet({
           3D is unavailable in this browser. Resident profiles remain available
           below.
         </p>
+      )}
+      {!!letters.length && (
+        <ol className="scene-post" aria-label="Letters walked in the village">
+          {letters.map((event) => (
+            <li key={`${event.kind}:${event.task_id}`}>
+              <strong>{name(event.from_resident_id)}</strong>
+              <span aria-hidden="true">→</span>
+              <strong>{name(event.to_resident_id)}</strong>
+              <span>
+                {event.kind === "letter_sent"
+                  ? "carried a letter"
+                  : "carried the answer"}{" "}
+                · {event.title}
+              </span>
+            </li>
+          ))}
+        </ol>
       )}
       {archivedUnresolved.map((r) => (
         <p className="notice" key={r.id}>

@@ -685,3 +685,129 @@ it("says plainly when a run opened with no journal and wrote memory", async () =
   expect(wrote).toContain("Wrote memory revision 2");
   expect(wrote).toContain("wrote no journal entry");
 });
+
+it("reads a letter task's chain root first and leaves an ordinary task without one", async () => {
+  window.location.hash = "#tasks";
+  addReader();
+  state.residents.push({
+    id: "gardener",
+    name: "Gardener",
+    purpose: "Tends the orchard",
+    revision: 1,
+    daily_limit: 1_000_000,
+    presence: "ready",
+    pause_reason: null,
+    letters_accept: 1,
+  });
+  state.tasks = [
+    {
+      id: "letter-task",
+      resident_id: "gardener",
+      instruction: "Name one fact about the orchard.",
+      status: "queued",
+      created_at: 2,
+      lineage: [
+        {
+          task_id: "reader-task",
+          resident_id: "reader",
+          resident_name: "Reader",
+          title: "Answer the orchard question",
+          state: null,
+          depth: null,
+          sender: null,
+          sender_name: null,
+        },
+        {
+          task_id: "letter-task",
+          resident_id: "gardener",
+          resident_name: "Gardener",
+          title: "One question",
+          state: "pending",
+          depth: 1,
+          sender: "reader",
+          sender_name: "Reader",
+        },
+      ],
+    },
+    {
+      id: "reader-task",
+      resident_id: "reader",
+      instruction: "Answer the orchard question",
+      status: "succeeded",
+      created_at: 1,
+      lineage: [],
+    },
+  ];
+  await login(false);
+  const chain = screen.getByLabelText("Lineage · Reader → Gardener");
+  expect(chain.textContent).toContain("Answer the orchard question");
+  expect(chain.textContent).toContain("written by Reader");
+  expect(chain.textContent).toContain("Open");
+  // The task the chain started from is nobody's letter and shows no breadcrumb.
+  expect(screen.getAllByLabelText(/^Lineage/).length).toBe(1);
+});
+
+it("shows a refused letter in the run's own evidence, with the reason and nothing written", async () => {
+  window.location.hash = "#tasks";
+  addReader();
+  addRun({
+    letters_refused: [
+      {
+        at: 1_788_640_000,
+        reason: "letter_daily_limit_reached",
+        details: { received_today: 5, letter_daily_limit: 5 },
+      },
+    ],
+  });
+  await login(false);
+  const evidence = screen.getByLabelText("Letters this run was refused");
+  expect(evidence.textContent).toContain("letter daily limit reached");
+  expect(evidence.textContent).toContain("received today: 5");
+  expect(evidence.textContent).toContain("nothing was written");
+});
+
+it("walks only the letters the snapshot reported, both ends named", async () => {
+  addReader();
+  state.letters = [
+    {
+      kind: "letter_replied",
+      task_id: "letter-task",
+      at: 3,
+      from_resident_id: "reader",
+      to_resident_id: null,
+      title: "One question",
+      state: "replied",
+      root_task_id: "letter-task",
+      depth: 1,
+    },
+    {
+      kind: "letter_sent",
+      task_id: "letter-task",
+      at: 2,
+      from_resident_id: null,
+      to_resident_id: "reader",
+      title: "One question",
+      state: "replied",
+      root_task_id: "letter-task",
+      depth: 1,
+    },
+  ];
+  await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
+  const walks = await screen.findByLabelText("Letters walked in the village");
+  const steps = walks.querySelectorAll("li");
+  expect(steps.length).toBe(2);
+  // The operator has no home; the letter it wrote leaves from Townhall.
+  expect(steps[0].textContent).toContain("Reader");
+  expect(steps[0].textContent).toContain("Townhall");
+  expect(steps[0].textContent).toContain("carried the answer");
+  expect(steps[1].textContent).toContain("carried a letter");
+});
+
+it("leaves the village still when no letter has been written", async () => {
+  addReader();
+  await login(false);
+  fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
+  await screen.findByRole("img", { name: /Reader's home/ });
+  expect(screen.queryByLabelText("Letters walked in the village")).toBeNull();
+});
