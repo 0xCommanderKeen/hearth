@@ -90,7 +90,7 @@ class Authority:
             artifact = Artifact(**dict(row))
             self.artifacts.read(artifact)
             run = db.execute("SELECT * FROM runs WHERE id = ?", (artifact.run_id,)).fetchone()
-            if run["status"] != "succeeded" or not artifact.simulated:
+            if run["status"] != "succeeded":
                 raise Refused("ineligible_artifact")
             resident = db.execute(
                 "SELECT revision FROM residents WHERE id = ?", (run["resident_id"],)
