@@ -24,7 +24,6 @@ from hearth.work.service import Hearth
 from tests.fake_runtime import FakeRuntime
 
 NOW = 1_800_000_000
-DAY = 86_400
 
 
 @pytest.fixture
@@ -105,7 +104,7 @@ def context_of(hearth, run_id):
 
 
 def test_the_tick_admits_a_letter_and_the_receiver_reads_a_request_not_an_order(household):
-    hearth, _, root = household
+    hearth, _, _ = household
     karen = resident(hearth, "karen", sends=True)
     reporter = resident(hearth, "reporter", accepts=True)
     receipt = post(hearth, karen, reporter)
