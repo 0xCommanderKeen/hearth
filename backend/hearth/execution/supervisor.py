@@ -7,6 +7,7 @@ from typing import IO
 from hearth.execution.lifecycle import Executor
 from hearth.residents.models import Refused
 from hearth.skills.validation import Validation
+from hearth.work.letters import expire_letters
 from hearth.work.routines import Routines
 
 
@@ -81,6 +82,11 @@ class Supervisor:
         try:
             while not self._stop.is_set():
                 try:
+                    # A stale letter is closed before anything can admit it, so no
+                    # money is spent answering a question that already went cold.
+                    expire_letters(self.executor.execution.hearth)
+                    if self._stop.is_set():
+                        break
                     self.routines.tick()
                     if self._stop.is_set():
                         break

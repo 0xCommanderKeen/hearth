@@ -27,6 +27,9 @@ from hearth.storage.schema import SCHEMA
 FILLS: dict[tuple[str, str], str] = {
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",
+    # A household that never had letters keeps the shipped defaults: two hops, one day.
+    ("household_policy", "max_letter_depth"): "2",
+    ("household_policy", "letter_ttl_seconds"): "86400",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is
@@ -132,6 +135,12 @@ APPROVALS_REMOVED_AT = 4
 # example runs. Skill examples now run as the resident that asked for them.
 EVALUATOR_REMOVED_AT = 5
 
+# Upgrading from a version below this adds the letter scope to the management grant.
+# A stored grant is a digested document, so the new field has to be written into every
+# recorded revision and into the admissions that pinned one, or the grant reads as
+# tampered with and every granted run loses its authority.
+LETTERS_ADDED_AT = 6
+
 # The pinned request fields of a `skill_validations` row before and at version 5, frozen
 # here: the rename moves what the stored digest covers, so the old digest is verified and
 # a new one written, and a later edit to the live `REQUEST_FIELDS` must not silently
@@ -174,6 +183,13 @@ VALIDATION_REQUEST_FIELDS_V5 = (
 
 def _digest(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _policy_digest(value: dict) -> str:
+    """`management.authority.digest`, repeated here so an upgrade imports no service."""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 class UpgradeError(RuntimeError):
@@ -273,6 +289,52 @@ def _retire_skill_evaluator(connection: sqlite3.Connection, now: int) -> None:
             ("resident.lifecycle_saved", evaluator, now, json.dumps(lifecycle, sort_keys=True)),
         )
     _fact(connection, "resident.archived", evaluator, now)
+
+
+def _open_grants_to_letters(connection: sqlite3.Connection, now: int) -> None:
+    """Write the letter scope into every stored grant, empty, and into what pinned one.
+
+    A grant is a digested document, so a new field changes what every recorded revision
+    hashes to. The old digest is verified before the new one is written — a revision an
+    operator had edited in the file stays refused rather than being blessed by the
+    rebuild — and each admission that pinned that revision moves to the new digest, so a
+    run already in flight keeps exactly the authority it was admitted with. The scope
+    arrives empty: an upgrade opens no doors, and no grant gains `send_letters` here.
+    """
+    changed = 0
+    for row in connection.execute("SELECT * FROM management_grant_revisions").fetchall():
+        try:
+            policy = json.loads(row["policy"])
+            if not isinstance(policy, dict):
+                raise ValueError
+        except ValueError:
+            raise UpgradeError(f"Management grant {row['resident_id']} is unreadable") from None
+        if _policy_digest(policy) != row["sha256"]:
+            raise UpgradeError(
+                f"Stored management grant {row['resident_id']} was changed in the file"
+            )
+        policy["letter_recipient_ids"] = []
+        sha256 = _policy_digest(policy)
+        connection.execute(
+            "UPDATE management_grant_revisions SET policy=?,sha256=? "
+            "WHERE resident_id=? AND revision=?",
+            (json.dumps(policy, sort_keys=True), sha256, row["resident_id"], row["revision"]),
+        )
+        connection.execute(
+            "UPDATE run_management SET grant_sha256=? WHERE resident_id=? AND grant_revision=?",
+            (sha256, row["resident_id"], row["revision"]),
+        )
+        changed += 1
+    if changed:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "management.grants_rescoped",
+                "management",
+                now,
+                json.dumps({"count": changed, "reason": "letters_added"}, sort_keys=True),
+            ),
+        )
 
 
 def _fact(
@@ -428,6 +490,8 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 _drop_approval_notifications(new, at)
             if from_version < EVALUATOR_REMOVED_AT:
                 _retire_skill_evaluator(new, at)
+            if from_version < LETTERS_ADDED_AT:
+                _open_grants_to_letters(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

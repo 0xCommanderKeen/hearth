@@ -19,6 +19,8 @@ class DeclarationPost(BaseModel):
     skill_text: str
     # Omitted keeps the resident's current memory.writable capability.
     memory_writable: bool | None = None
+    # Omitted keeps the resident's current letters.accept door.
+    letters_accept: bool | None = None
     expected_revision: int = Field(ge=0)
 
 
@@ -64,3 +66,7 @@ class HouseholdPost(BaseModel):
     expected_revision: int = Field(ge=0)
     # Omitted by clients that do not govern the journal bound; the stored value stays.
     journal_limit: int | None = Field(default=None, ge=1, le=1000)
+    # Letters: how far a chain may reach (0 disables them) and how long one stays worth
+    # answering. Omitted by a client that does not govern them; the stored values stay.
+    max_letter_depth: int | None = Field(default=None, ge=0, le=5)
+    letter_ttl_seconds: int | None = Field(default=None, ge=60, le=604_800)

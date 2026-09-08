@@ -1,11 +1,6 @@
-# ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
+"""Exact schema of Hearth stores at version 5, before letters; test fixture only."""
 
-`runs.runtime_kind` still admits the three simulated kinds Hearth used to ship. It
-writes only `codex_subscription`; the rest are history a forward-upgraded store may
-still carry, and a run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-"""
+# ruff: noqa: E501
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -172,9 +167,7 @@ SCHEMA = (
         daily_limit INTEGER NOT NULL CHECK(daily_limit>=0), timezone TEXT NOT NULL,
         resident_limit INTEGER NOT NULL CHECK(resident_limit BETWEEN 1 AND 1000),
         concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100),
-        journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000),
-        max_letter_depth INTEGER NOT NULL CHECK(max_letter_depth BETWEEN 0 AND 5),
-        letter_ttl_seconds INTEGER NOT NULL CHECK(letter_ttl_seconds BETWEEN 60 AND 604800)
+        journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000)
     )""",
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
@@ -205,22 +198,7 @@ SCHEMA = (
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
         skill_text TEXT NOT NULL DEFAULT '',
         memory_writable INTEGER NOT NULL DEFAULT 0 CHECK (memory_writable IN (0,1)),
-        letters_accept INTEGER NOT NULL DEFAULT 0 CHECK (letters_accept IN (0,1)),
         PRIMARY KEY (resident_id, revision)
-    )""",
-    # A letter is an ordinary task with an address: who sent it, from which run and task,
-    # the root the chain rolls up to, how many hops in it is, and when it goes stale.
-    # The receiver is the task's own resident; there is no second copy of that fact.
-    """CREATE TABLE letters (
-        task_id TEXT PRIMARY KEY REFERENCES tasks(id),
-        sender_resident_id TEXT NOT NULL REFERENCES residents(id),
-        sender_run_id TEXT NOT NULL REFERENCES runs(id),
-        parent_task_id TEXT REFERENCES tasks(id),
-        root_task_id TEXT NOT NULL REFERENCES tasks(id),
-        depth INTEGER NOT NULL CHECK (depth > 0),
-        title TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL
     )""",
     """CREATE TABLE notifications (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, resource_id TEXT NOT NULL,

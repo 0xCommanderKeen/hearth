@@ -241,3 +241,58 @@ def test_a_backup_carrying_an_unknown_store_is_refused(system, tmp_path):
     (backup / "scratch").mkdir()
     with pytest.raises(Refused, match="backup_path_invalid"):
         verify(backup)
+
+
+def posted(system):
+    """The Reader writes one letter to a neighbour that accepts them, then settles."""
+    from hearth.management.authority import GrantPolicy, Management
+
+    hearth, executor, run, root = system
+    hearth.save_resident(
+        "orchard",
+        Declaration("Orchard", "Synthetic", 1_000_000, letters_accept=True),
+        expected_revision=0,
+    )
+    Management(hearth).save(
+        "reader",
+        {
+            **GrantPolicy().model_dump(),
+            "expected_revision": 0,
+            "enabled": True,
+            "capabilities": ["send_letters"],
+        },
+    )
+    with hearth.database.transaction(write=True) as db:
+        receipt = hearth.send_letter_in_transaction(
+            db, run.id, "orchard", "One question", "Name one fact.", "letter-1"
+        )
+    executor.step()
+    return receipt, root
+
+
+def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(system, tmp_path):
+    hearth, _, run, _ = system
+    receipt, root = posted(system)
+    capture(root, tmp_path / "backup")
+    restore(tmp_path / "backup", tmp_path / "restored")
+    copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
+    with copy.database.transaction() as db:
+        letter = dict(
+            db.execute("SELECT * FROM letters WHERE task_id=?", (receipt["task_id"],)).fetchone()
+        )
+    assert letter["sender_resident_id"] == "reader" and letter["sender_run_id"] == run.id
+    assert letter["root_task_id"] == run.task_id and letter["depth"] == 1
+    assert letter["expires_at"] == receipt["expires_at"]
+    assert copy.task(receipt["task_id"]).resident_id == "orchard"
+    assert copy.resident("orchard").declaration.letters_accept is True
+
+
+def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(system, tmp_path):
+    import sqlite3
+
+    hearth, _, _, _ = system
+    receipt, root = posted(system)
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute("UPDATE letters SET depth=4 WHERE task_id=?", (receipt["task_id"],))
+    with pytest.raises(Refused, match="backup_letters_invalid"):
+        capture(root, tmp_path / "refused")

@@ -107,14 +107,19 @@ def main() -> None:
                 if (
                     not isinstance(values, dict)
                     or not required <= set(values)
-                    or set(values) - required - {"memory_writable"}
+                    or set(values) - required - {"memory_writable", "letters_accept"}
                 ):
                     raise Refused("declaration_fields_invalid")
-                if "memory_writable" not in values:
-                    # An omitted memory.writable keeps the capability the operator granted.
+                if "memory_writable" not in values or "letters_accept" not in values:
+                    # An omitted capability or door keeps what the operator set before.
                     with hearth.database.transaction() as db:
-                        values["memory_writable"] = hearth.declared_memory_writable(
-                            db, args.resident
+                        values.setdefault(
+                            "memory_writable",
+                            hearth.declared_memory_writable(db, args.resident),
+                        )
+                        values.setdefault(
+                            "letters_accept",
+                            hearth.declared_letters_accept(db, args.resident),
                         )
                 declaration = Declaration(**values)
                 resident = hearth.save_resident(

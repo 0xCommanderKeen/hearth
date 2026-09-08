@@ -26,8 +26,12 @@ class GrantPolicy(BaseModel):
             "manage_lifecycle",
             "assign_skills",
             "writable_memory",
+            "send_letters",
         ]
-    ] = Field(default_factory=list, max_length=8)
+    ] = Field(default_factory=list, max_length=9)
+    # Whom this resident may write to. Empty means every resident that opens its own
+    # letters door; a listed set narrows that and never widens anything else.
+    letter_recipient_ids: list[str] = Field(default_factory=list, max_length=20)
     max_residents: int = Field(default=5, ge=0, le=20)
     max_daily_limit: int = Field(default=1_000_000, ge=0, le=10_000_000)
     max_reserve: int = Field(default=500_000, ge=1, le=2_000_000)
@@ -92,7 +96,17 @@ class Management:
             raise Refused("management_profile_unavailable")
         for item in body.input_set_ids:
             read_input(db, item)
-        for values in (body.profiles, body.input_set_ids, body.capabilities):
+        # A named recipient is checked for shape, not existence: an operator may write
+        # the allowlist before the resident exists, and the send itself refuses a
+        # recipient that is missing, archived or does not accept letters.
+        for item in body.letter_recipient_ids:
+            identifier(item)
+        for values in (
+            body.profiles,
+            body.input_set_ids,
+            body.capabilities,
+            body.letter_recipient_ids,
+        ):
             if len(values) != len(set(values)):
                 raise Refused("management_duplicate_scope")
         policy = body.model_dump(exclude={"expected_revision"})
