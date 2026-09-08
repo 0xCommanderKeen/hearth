@@ -66,7 +66,5 @@ transcript = parser.finish(exit_code=0)  # Must be an independently observed exi
 
 Fixture tests cover byte-wise Unicode, completed/failed/incomplete streams,
 contradictory events, opaque updates, final-message ambiguity and matching,
-partial/invalid usage, adversarial framing and all resource limits. The installed
-application remains limited to inline/process mocks. Real wiring still needs a
-production event/final-file ownership, credential isolation, verified subscription
-usage and explicit selection of a real test.
+partial/invalid usage, adversarial framing and all resource limits. This parser is
+the one the shipped Codex subscription runtime reads its streams with.

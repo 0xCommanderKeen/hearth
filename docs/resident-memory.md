@@ -25,7 +25,7 @@ operator storage; content hashes are integrity checks, not authentication.
 
 Admission records a reference to the current memory revision in the same transaction
 as the run, reservation and audit. No reference means the run admitted without
-memory, even if memory is added later. Context version 6 contains that exact memory
+memory, even if memory is added later. Context version 7 contains that exact memory
 revision and text. Later saves affect future admissions and do not change or revoke
 an existing run's pinned memory. Cancellation, credential revocation and declaration
 revision checks still apply. Authorized bytes already delivered cannot be retracted.
@@ -33,9 +33,7 @@ revision checks still apply. Authorized bytes already delivered cannot be retrac
 Missing/corrupt pinned memory prevents a new launch and leaves the run interrupted;
 unrelated residents can progress. Existing runtime evidence is still reconciled
 without rereading launch input. Cancellation can settle never-launched work at zero
-usage; uncertain launch intent retains the existing recovery rules. MockRuntime
-stores only the input digest and emits a fixed fixture, so the demo does not prove
-model learning or useful memory-driven reasoning.
+usage; uncertain launch intent retains the existing recovery rules.
 
 ## Run-authored revisions
 
@@ -89,9 +87,7 @@ holds a management grant (see *Remembering is not managing* below). Capabilities
 a grant does *not* have to hold either, so writing memory is a manager's privilege in
 neither direction. The pinned context reports `memory_writable` only when the declaration
 allows it *and* this admission pinned that surface; the flag is the run's actual authority
-to write, never an unkeepable promise. Mock runtimes have no native tool surface at all,
-so a writable resident there is still told it may write when nothing is offered — the one
-place the flag can still overpromise, and known remaining work.
+to write, never an unkeepable promise.
 
 A run with the surface is offered three native tools, beside whatever management tools a
 grant permits when it also holds one:

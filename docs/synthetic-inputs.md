@@ -17,8 +17,7 @@ warning, separately from purpose, resident instructions and reusable skills.
 The existing `notes` field is a deterministic flattening of those exact pins.
 There is no global fallback. Reader setup explicitly creates and selects the named
 example once; repeated setup preserves later content edits and selection changes.
-The deterministic mock formats supplied notes and labels empty inputs explicitly.
-Its output demonstrates data routing, not model summary quality.
+Empty inputs are labelled explicitly rather than silently omitted.
 
 The operator API provides GET/POST `/api/input-sets`, GET/PUT
 `/api/input-sets/{id}` (GET accepts `revision`), and GET/PUT

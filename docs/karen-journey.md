@@ -16,7 +16,8 @@ fixture has no database access and consumes the same pinned reader context as th
 subscription adapter. No real CLI, login or provider is used by these tests. The
 subscription runtime kind deliberately exercises that adapter's receipt and backup
 paths; its synthetic counters and passed assertions are not evidence of model quality
-or real-host isolation. Fixture names and output explicitly say they are simulated.
+or real-host isolation. The fixture's names and output say plainly that they come
+from a scripted CLI.
 
 The journey records five runs: two manager turns — Karen authors and requests, then
 deploys once the evidence is in — two serial validation cases on Karen's own slot, and

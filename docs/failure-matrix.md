@@ -14,10 +14,10 @@ Verify operational guarantees through the owning interfaces. Tests marked pendin
 | Process restart | Committed command/task/run survive | Foundation tests |
 | Crash during fresh database initialization | No partial version/schema | Foundation tests |
 | Newer unsupported schema | Refuse to operate or downgrade it | Foundation tests |
-| Spawn before acknowledgement crash | Discover existing runtime, avoid duplicate | `test_execution.py`: launch acknowledgement loss and stale-owner tests (mock) |
-| Stale completion after replacement | Refuse former ownership token | `test_execution.py`: launch acknowledgement loss and stale-owner tests (mock) |
-| Cancellation while runtime unreachable | Visible stopping/unknown; block replacement | `test_execution.py`: cancellation and lost-evidence tests (mock) |
-| Zero exit without valid output | Runtime completion is not task success | `test_execution.py`: successful output required (mock; semantic quality remains pending) |
+| Spawn before acknowledgement crash | Discover existing runtime, avoid duplicate | `test_execution.py`: launch acknowledgement loss and stale-owner tests (fake runtime) |
+| Stale completion after replacement | Refuse former ownership token | `test_execution.py`: launch acknowledgement loss and stale-owner tests (fake runtime) |
+| Cancellation while runtime unreachable | Visible stopping/unknown; block replacement | `test_execution.py`: cancellation and lost-evidence tests (fake runtime) |
+| Zero exit without valid output | Runtime completion is not task success | `test_execution.py`: successful output required (fake runtime; semantic quality remains pending) |
 | Missing usage | Unknown, not zero; pause capped execution | `test_execution.py`: unknown usage pauses admission; operator resume cannot clear it (`test_pause.py`) |
 | Midnight with unresolved reservation | Carry unresolved exposure into new admission | Foundation tests |
 | Notification raised but the store fails | The work does not finish either | `test_notifications.py`: an injected inbox failure rolls back the run's terminal state and artifact |
@@ -30,6 +30,7 @@ Verify operational guarantees through the owning interfaces. Tests marked pendin
 
 Manual operator pause/resume is covered by `test_pause.py`, authenticated API tests,
 and a browser control test. It gates new admission, does not claim existing runs
-stopped, and cannot clear accounting holds. All execution/effect evidence above is
-mock evidence. The matrix does not establish host isolation, real provider behavior,
-production recovery or sustained daily usefulness.
+stopped, and cannot clear accounting holds. The execution evidence above comes from
+`tests/fake_runtime.py`, which publishes provider-shaped receipts the real interpreter
+reads; it is not a real provider run. The matrix does not establish host isolation,
+real provider behavior, production recovery or sustained daily usefulness.
