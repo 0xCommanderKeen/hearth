@@ -125,7 +125,11 @@ def by_origin(db, *, limit: int = 30, offset: int = 0) -> dict:
         "COALESCE(SUM(CASE WHEN r.finished_at IS NULL THEN r.reserved ELSE 0 END),0) AS reserved,"
         "MIN(r.created_at) AS started_at,MAX(r.created_at) AS last_at "
         "FROM runs r LEFT JOIN letters l ON l.task_id=r.task_id "
-        "GROUP BY root_task_id ORDER BY last_at DESC,root_task_id DESC LIMIT ? OFFSET ?",
+        # Grouped by the expression, never by the name it is given: `root_task_id` is
+        # also a column of `letters`, and grouping by that name would gather every
+        # ordinary task into one nameless origin.
+        "GROUP BY COALESCE(l.root_task_id,r.task_id) "
+        "ORDER BY last_at DESC,COALESCE(l.root_task_id,r.task_id) DESC LIMIT ? OFFSET ?",
         (limit + 1, offset),
     ).fetchall()
     origins = []
