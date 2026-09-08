@@ -241,7 +241,7 @@ def test_incompatible_database_cannot_be_published_as_a_current_backup(system, t
     assert hearth.database.path.read_bytes() == before
 
 
-def test_backup_covers_the_database_artifacts_and_memory_and_nothing_else(system, tmp_path):
+def test_backup_carries_the_household_and_nothing_beside_it(system, tmp_path):
     """Local development scaffolding beside the data is not part of the household."""
     _, executor, run, root = system
     executor.step()

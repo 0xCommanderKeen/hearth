@@ -51,7 +51,7 @@ Production restore requires an ownership reconciliation plan and actual host che
 before activation.
 
 Verification includes completed/active/uncertain-action restores, matching artifacts
-and receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
+and command receipts, cancellation exclusion, API/client read-only behavior, corrupt/missing
 artifacts, extra files, symlinks, FIFOs, traversal, busy workers and overwrite refusal.
 An actual CLI demo → backup → restore rehearsal ran on synthetic data on 2026-09-06
 under `/private/tmp/hearth-restore-rehearsal-{source,backup,copy}`. The copy has a new
@@ -69,8 +69,9 @@ entry, a changed, renamed or missing archived file, an archived document that di
 with its row, and either half naming a run that belongs to another resident.
 All restored copies remain held. There is no historical upgrade path or data importer.
 
-Every run on the runtime this release ships is verified against its stored provider
-receipt. A run pinned to a runtime Hearth no longer ships is finished history: its
-evidence left with that runtime, so verification requires only that the run finished
-and names a kind Hearth actually shipped. A held restore preserves the store's
-recorded runtime; it does not reactivate it.
+Every run carries a runtime version and a well-formed input digest, and a run on the
+runtime this release ships is verified against its stored provider receipt as well. A
+run pinned to a runtime Hearth no longer ships is finished history: its evidence left
+with that runtime, so beyond those two it is only required to have finished and to name
+a kind Hearth actually shipped. A held restore preserves the store's recorded runtime;
+it does not reactivate it.
