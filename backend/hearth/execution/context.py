@@ -93,6 +93,14 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     # The memory and journal tools ride on the native tool surface this admission pinned.
     # A declaration alone cannot promise them, so the context states what this run can do.
     native = db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run_id,)).fetchone()
+    # A skill example is a rehearsal on exactly what its request named — the memory
+    # revision it pinned, the input set it chose — so that the same candidate can be
+    # judged twice and compared. A colleague's answer to an unrelated question is not
+    # part of that request and would make one example differ from the next for reasons
+    # nobody asked about, so an example opens with none.
+    example = db.execute(
+        "SELECT 1 FROM skill_validation_cases WHERE run_id=?", (run_id,)
+    ).fetchone()
     return {
         "context_version": CONTEXT_VERSION,
         "skills": run_skills(db, run_id),
@@ -119,7 +127,7 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
         "letter": render_letter(db, row["task_id"], row["instruction"]),
         # The answers to this resident's own letters that arrived since it last ran. A
         # reply never wakes its sender; this is where the sender finds it.
-        "replies": run_replies(db, run_id),
+        "replies": [] if example else run_replies(db, run_id),
         "replies_usage": REPLIES_USAGE,
         "input_state": "configured" if inputs else "empty",
         "input_usage": (
