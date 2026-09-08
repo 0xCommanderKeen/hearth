@@ -33,6 +33,10 @@ FILLS: dict[tuple[str, str], str] = {
     # A household that never had the cap keeps the shipped one: five letters a day is
     # already more than a resident can work while doing anything else.
     ("household_policy", "letter_daily_limit"): "5",
+    # Every letter arrives open; what became of the ones that already ended is read from
+    # the store's own rows afterwards, by `_settle_stored_letters`, where every table it
+    # has to consult exists.
+    ("letters", "state"): "'pending'",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is
@@ -128,8 +132,9 @@ REWRITES: dict[tuple[str, str], str] = {
 # instruction an admitted run would now be launched with no longer matches the digest it
 # reserved against. Such a run cannot start, and on the next pass it would settle as
 # interrupted while holding its resident's slot and reservation. The context gained the
-# rendered letter at version 8, so every store below it is rebuilt this way.
-CONTEXT_REWRITTEN_AT = 8
+# rendered letter at version 8 and the replies a sender opens with at version 9, so
+# every store below that is rebuilt this way.
+CONTEXT_REWRITTEN_AT = 9
 
 # Upgrading from a version below this removes approvals, so a notification announcing
 # one names a review the store no longer holds and can no longer open.
@@ -144,6 +149,11 @@ EVALUATOR_REMOVED_AT = 5
 # recorded revision and into the admissions that pinned one, or the grant reads as
 # tampered with and every granted run loses its authority.
 LETTERS_ADDED_AT = 6
+
+# Upgrading from a version below this gives every letter the one word for what became of
+# it. A store that already worked letters knows the answer from its own rows, so the
+# state is read back from them rather than invented or left saying nothing.
+LETTER_STATES_ADDED_AT = 9
 
 # The pinned request fields of a `skill_validations` row before and at version 5, frozen
 # here: the rename moves what the stored digest covers, so the old digest is verified and
@@ -341,6 +351,61 @@ def _open_grants_to_letters(connection: sqlite3.Connection, now: int) -> None:
         )
 
 
+def _settle_stored_letters(connection: sqlite3.Connection, now: int) -> None:
+    """Give every letter that already ended the word for what it came to.
+
+    The store knows this without being told: a letter with an answer was `replied` to,
+    one whose run succeeded without writing one went `unanswered`, one whose task failed
+    with no run at all `expired` before anybody started it, and any other closed letter
+    `failed` — with the run that was working it, or with the cancel that ended it before
+    one ever did. A letter still open keeps saying so.
+
+    Cancelling is not going stale, so an unworked cancelled letter is `failed` rather
+    than `expired`: the sender's question ended, but its shelf life never ran out, and a
+    store that said otherwise would contradict its own rows on the next validation.
+
+    When it ended is the run's own finish, or the shelf life for one nothing ever
+    started; an upgrade never invents a time later than the fact it records, so a shelf
+    life still ahead of this upgrade settles at the upgrade instead.
+    """
+    settled = 0
+    for row in connection.execute(
+        "SELECT l.task_id,l.expires_at,t.status,"
+        "EXISTS(SELECT 1 FROM letter_replies p WHERE p.task_id=l.task_id) AS answered,"
+        "(SELECT MAX(finished_at) FROM runs r WHERE r.task_id=l.task_id) AS finished,"
+        "EXISTS(SELECT 1 FROM runs r WHERE r.task_id=l.task_id) AS worked "
+        "FROM letters l JOIN tasks t ON t.id=l.task_id "
+        "WHERE t.status IN ('succeeded','failed','cancelled')"
+    ).fetchall():
+        if row["answered"]:
+            state = "replied"
+        elif row["status"] == "succeeded":
+            state = "unanswered"
+        elif not row["worked"] and row["status"] == "failed":
+            state = "expired"
+        else:
+            state = "failed"
+        connection.execute(
+            "UPDATE letters SET state=?,settled_at=? WHERE task_id=?",
+            (
+                state,
+                row["finished"] if row["finished"] is not None else min(row["expires_at"], now),
+                row["task_id"],
+            ),
+        )
+        settled += 1
+    if settled:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "letters_settled",
+                "letters",
+                now,
+                json.dumps({"count": settled, "reason": "letter_states_added"}, sort_keys=True),
+            ),
+        )
+
+
 def _fact(
     connection: sqlite3.Connection, kind: str, resource: str, now: int, count: int = 0
 ) -> None:
@@ -496,6 +561,8 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 _retire_skill_evaluator(new, at)
             if from_version < LETTERS_ADDED_AT:
                 _open_grants_to_letters(new, at)
+            if from_version < LETTER_STATES_ADDED_AT:
+                _settle_stored_letters(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

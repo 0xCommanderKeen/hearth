@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import time
 import uuid
 
 import pytest
@@ -17,6 +18,7 @@ from tests.fixtures.schema_v4_pre_examples import SCHEMA as SCHEMA_V4
 from tests.fixtures.schema_v5_pre_letters import SCHEMA as SCHEMA_V5
 from tests.fixtures.schema_v6_pre_replies import SCHEMA as SCHEMA_V6
 from tests.fixtures.schema_v7_pre_letter_cap import SCHEMA as SCHEMA_V7
+from tests.fixtures.schema_v8_pre_letter_states import SCHEMA as SCHEMA_V8
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -892,3 +894,107 @@ def test_the_version_7_store_gains_the_daily_cap_and_keeps_its_waiting_letter(tm
     assert json.loads(
         db.execute("SELECT detail FROM audit WHERE kind='run.cancel_requested'").fetchone()[0]
     ) == {"task_id": "t", "reason": "context_format_changed"}
+
+
+def version_8_store(path):
+    """A version-8 store whose letters already ended in every way a letter can end."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V8:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    for resident, name in (("karen", "Karen"), ("orchard", "Orchard")):
+        db.execute("INSERT INTO residents VALUES (?, 1)", (resident,))
+        db.execute(
+            "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+            " created_at, letters_accept) VALUES (?, 1, ?, 'Synthetic', 1000000, 1, ?)",
+            (resident, name, resident == "orchard"),
+        )
+        _lifecycle(db, resident, 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES "
+        "(1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, ?, 5)",
+        (86400,),
+    )
+
+    def run(run_id, task_id, resident, status, *, finished, launched=1):
+        db.execute(
+            "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+            "reserved, budget_day, created_at, usage_known, finished_at, launch_attempted, "
+            "runtime_kind, runtime_version, input_digest) VALUES "
+            "(?, ?, ?, 1, ?, ?, 2000, '2026-09-08', 1, 1, ?, ?, 'codex_subscription', 1, ?)",
+            (run_id, task_id, resident, "token-" + run_id, status, finished, launched, "a" * 64),
+        )
+
+    # Karen asked from one settled run of her own, and is starting another.
+    db.execute("INSERT INTO tasks VALUES ('t', 'karen', 'Ask the orchard', 'succeeded', 1)")
+    run("r", "t", "karen", "succeeded", finished=10)
+    db.execute("INSERT INTO tasks VALUES ('t2', 'karen', 'Ask again', 'starting', 20)")
+    run("r2", "t2", "karen", "starting", finished=None, launched=0)
+    for task_id, status, run_id, finished, expires_at in (
+        ("answered", "succeeded", "worked-answered", 30, 86402),
+        ("silent", "succeeded", "worked-silent", 40, 86402),
+        ("broken", "failed", "worked-broken", 50, 86402),
+        ("stale", "failed", None, None, 86402),
+        # Cancelled before anybody worked it, with its shelf life already spent, and
+        # cancelled with one still years ahead: neither of them went stale.
+        ("cut", "cancelled", None, None, 86402),
+        ("cut_early", "cancelled", None, None, 4_000_000_000),
+        ("waiting", "queued", None, None, 86402),
+    ):
+        db.execute(
+            "INSERT INTO tasks VALUES (?, 'orchard', 'One question', ?, 2)", (task_id, status)
+        )
+        db.execute(
+            "INSERT INTO letters VALUES (?,'karen','r','t','t',1,'One',2,?)", (task_id, expires_at)
+        )
+        if run_id is not None:
+            run(run_id, task_id, "orchard", status, finished=finished)
+    db.execute(
+        "INSERT INTO letter_replies VALUES ('answered','worked-answered','orchard','Twelve.',31)"
+    )
+    db.execute("PRAGMA user_version = 8")
+    db.commit()
+    db.close()
+
+
+def test_the_version_8_store_says_what_each_of_its_letters_came_to(tmp_path):
+    from hearth.work.letters import validate_letters
+
+    path = tmp_path / "hearth.db"
+    version_8_store(path)
+    before = int(time.time())
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    letters = {
+        row["task_id"]: (row["state"], row["settled_at"])
+        for row in db.execute("SELECT * FROM letters")
+    }
+    early = letters.pop("cut_early")
+    # The store already knew what became of each letter; the upgrade only says it.
+    assert letters == {
+        "answered": ("replied", 30),
+        "silent": ("unanswered", 40),
+        "broken": ("failed", 50),
+        # Nothing ever worked this one, so its shelf life is when it ended.
+        "stale": ("expired", 86402),
+        # Cancelled is not stale: the question ended, the shelf life did not run out.
+        "cut": ("failed", 86402),
+        "waiting": ("pending", None),
+    }
+    # A shelf life still years ahead is not when this letter ended, so the upgrade
+    # records itself rather than inventing a time later than the fact it holds.
+    assert early[0] == "failed" and before <= early[1] <= int(time.time())
+    assert json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='letters_settled'").fetchone()[0]
+    ) == {"count": 6, "reason": "letter_states_added"}
+    validate_letters(db)
+    # The context gained the replies a sender opens with, so a run admitted against the
+    # older shape is asked to end rather than launched with bytes it never reserved.
+    run = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r2'").fetchone()
+    assert (run["status"], run["cancellation_requested"]) == ("stopping", 1)

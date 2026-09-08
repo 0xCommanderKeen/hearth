@@ -176,7 +176,7 @@ def test_a_run_saves_memory_and_a_journal_entry_and_the_next_run_opens_with_both
 
     second, next_call = working_run(app, karen, "second")
     context = pinned_context(hearth, second.id)
-    assert context["context_version"] == 8 and context["memory_writable"] is True
+    assert context["context_version"] == 9 and context["memory_writable"] is True
     assert context["memory"]["revision"] == 3 and context["memory"]["text"] == operator
     assert "orchard reporter" in context["memory"]["text"]
     assert context["journal"] == [

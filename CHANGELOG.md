@@ -2,6 +2,38 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A letter now ends in one honest state and the answer reaches the resident that asked
+  (schema 9, context 9). When the run working a letter settles, the letter settles with
+  it, in the same transaction: `replied` when an answer was written, `unanswered` when
+  the run succeeded and never called the reply tool, `failed` when the run did not
+  finish, and `expired` when it went stale before anybody started it — each audited under
+  its own name and linked to the letter, its root task and the run. A cancelled run is a
+  run that did not finish, so its letter says `failed` too: cancelling is not going stale,
+  and the one place a letter task ends outside its own run's settlement — a store adopting
+  the one runtime over work no surviving runtime can observe — closes the letter in the
+  same transaction, with the reason recorded on the letter's own fact. An answer written by
+  a run that then fails still counts as an answer, because the sender has it; the run's
+  own status is recorded beside the state rather than hidden by it. Nothing wakes the
+  sender: its next run opens with a bounded, neutralized "replies since your last run"
+  section built from the answers to its own letters, read at the same immutable edges as
+  the rest of its pinned context — a skill example opens with none of it, being a
+  rehearsal on exactly what its request named — and `hearth_letters_read` now also
+  returns the letters a resident wrote with what became of each. That tool's `since` is exclusive now, so a
+  cursor taken from a page no longer hands the same page back for ever. The operator can
+  ask what one question cost rather than what one run cost: `GET /api/usage/origins`
+  gathers every run under the task its chain rolls up to, counting each run once at the
+  amount its own row records — a reconciled run is not counted twice, and a run whose
+  usage is still unknown is named as unknown and keeps the hold it placed — and Townhall
+  reads it as "Cost by origin" beside the task list. An upgraded store reads each of its
+  letters' states back from its own rows rather than being told or left silent. The loop
+  was then walked once on the real subscription runtime before anything was built on it:
+  one resident asked a colleague for a fact it had no other way to learn, the colleague
+  answered without being started, and the asker quoted the answer one run later, for
+  157,062 microdollars across three runs (`docs/letters-journey.md`). A run is pinned the
+  native surface on exactly the scope the letter tools are offered on, so a resident that
+  has only ever received letters — no grant, no writable memory — reads its own post on an
+  ordinary run instead of only inside a letter run.
+
 - A letter is now delivered by being worked (schema 8, context 8). No watcher, poller or
   inbox drain: the supervision tick that admits routine occurrences admits queued letter
   tasks the same way, so a letter is bounded by the receiver's allocation, the shared

@@ -17,6 +17,7 @@ from hearth.residents.memory import Memory
 from hearth.residents.models import Refused, Run, microdollars
 from hearth.skills.assignments import run_skills
 from hearth.storage.artifacts import Artifact, Artifacts
+from hearth.work.letters import settle_letter
 from hearth.work.service import ACTIVE_RUNS, Hearth, _audit
 
 
@@ -208,6 +209,17 @@ class Execution:
             )
             db.execute(
                 "UPDATE tasks SET status = ? WHERE id = ?", (evidence.status, row["task_id"])
+            )
+            # If this run was working a letter, the letter ends here too, in this same
+            # transaction: answered, worked and left unanswered, or failed with the run.
+            settle_letter(
+                db,
+                row["task_id"],
+                run_id=run_id,
+                resident_id=row["resident_id"],
+                status=evidence.status,
+                artifact_id=artifact.id if artifact else None,
+                now=now,
             )
             if evidence.cost is None:
                 changed = db.execute(

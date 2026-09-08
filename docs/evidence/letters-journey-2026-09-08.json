@@ -1,0 +1,140 @@
+{
+  "journey": "epic-115-letter-replies-origin",
+  "issue": 111,
+  "synthetic_inputs": true,
+  "real_model_called": true,
+  "runtime_kind": "codex_subscription",
+  "model": "gpt-6-astra",
+  "pricing_schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+  "usage_source": "api_equivalent_subscription",
+  "usage_basis": "api_equivalent_estimate",
+  "schema_version": 9,
+  "context_version": 9,
+  "data_directory": "a copy of an existing household, outside the repository, on a port of its own; the original was left running untouched and the copy was kept out of the repository",
+  "residents": {
+    "sender": {
+      "name": "Karen",
+      "capabilities_added_by_operator": ["send_letters"],
+      "letter_recipient_ids_pinned": true,
+      "input_sets": [],
+      "memory_revision": 1
+    },
+    "receiver": {
+      "name": "Fictional orchard reporter",
+      "letters_accept": true,
+      "letters_accept_opened_by": "operator",
+      "input_set": "Fictional orchard (revision 2, synthetic)",
+      "notes": [
+        "Harvested 12 pears Monday",
+        "Planted 3 trees Tuesday",
+        "Monday's pear harvest was logged in the orchard ledger under reference OR-C9IX-BBTI"
+      ]
+    }
+  },
+  "letter": {
+    "letter_id": "7be66a2b-7d2a-4040-ba42-c5be0788d5e1",
+    "title": "Ledger reference for Monday pear harvest",
+    "sender_run_id": "42ad0c1f-da7f-4a7a-b0ea-6f30b86feaa1",
+    "root_task_id": "c6814bde-5524-4d48-b48c-b9af43b5d2be",
+    "depth": 1,
+    "created_at": 1788880024,
+    "expires_at": 1788966424,
+    "state": "replied",
+    "settled_at": 1788880043,
+    "reply_run_id": "24315e4d-b8aa-4807-aebf-65d04548d74e",
+    "reply_written_at": 1788880031,
+    "reply_text": "Fictional orchard report\n- Monday's pear harvest was logged under reference \"OR-C9IX-BBTI\".",
+    "audit": [
+      {"kind": "letter.sent", "at": 1788880024},
+      {"kind": "letter.answered", "at": 1788880031},
+      {"kind": "letter.replied", "at": 1788880043, "run_status": "succeeded"}
+    ]
+  },
+  "runs": [
+    {
+      "step": 1,
+      "role": "the sender asks",
+      "resident": "Karen",
+      "run_id": "42ad0c1f-da7f-4a7a-b0ea-6f30b86feaa1",
+      "task_id": "c6814bde-5524-4d48-b48c-b9af43b5d2be",
+      "status": "succeeded",
+      "started_by": "operator",
+      "created_at": 1788879995,
+      "actual_cost_microdollars": 52400,
+      "tool_called": "hearth_letters_send",
+      "result": "Sent one letter; status: queued. The receipt provided no separate letter ID. Its task ID is `7be66a2b-7d2a-4040-ba42-c5be0788d5e1`."
+    },
+    {
+      "step": 2,
+      "role": "the receiver answers",
+      "resident": "Fictional orchard reporter",
+      "run_id": "24315e4d-b8aa-4807-aebf-65d04548d74e",
+      "task_id": "7be66a2b-7d2a-4040-ba42-c5be0788d5e1",
+      "status": "succeeded",
+      "started_by": "supervision tick (no operator start, no poller)",
+      "created_at": 1788880024,
+      "actual_cost_microdollars": 68102,
+      "tool_called": "hearth_letters_reply",
+      "context_letter_block": {
+        "sender_name": "Karen",
+        "title": "Ledger reference for Monday pear harvest",
+        "pinned_letter_id": "7be66a2b-7d2a-4040-ba42-c5be0788d5e1",
+        "usage_line_present": true
+      },
+      "result": "Fictional orchard report\n- Monday’s ledger reference: \"OR-C9IX-BBTI\". Sent via hearth_letters_reply; confirmed answered."
+    },
+    {
+      "step": 3,
+      "role": "the sender reads the answer",
+      "resident": "Karen",
+      "run_id": "1d2b8244-328f-4715-a240-11cc0096c541",
+      "task_id": "36f4d23b-a747-40ba-8499-1aeb2eea7aa1",
+      "status": "succeeded",
+      "started_by": "operator",
+      "created_at": 1788880086,
+      "actual_cost_microdollars": 36560,
+      "replies_in_pinned_context": 1,
+      "replies_usage_line_present": true,
+      "result": "The Fictional orchard reporter answered that Monday’s pear harvest was logged under reference “OR-C9IX-BBTI”."
+    }
+  ],
+  "claim": {
+    "name": "the answer reached the resident that asked",
+    "load_bearing_text": "OR-C9IX-BBTI",
+    "why_it_is_load_bearing": "The reference was written into the receiver's synthetic notes by the operator before the journey and appears nowhere the sender could otherwise read it: Karen has no input sets, her memory holds one unrelated line at revision 1, and neither of her two task instructions names it. Her third run's pinned context carried exactly one reply, and the reference is quoted in her result.",
+    "verified_by": [
+      "read_context(run 1d2b8244) returns one replies entry carrying the text, with its neutralizing replies_usage line",
+      "the letters row reads state 'replied' with settled_at 1788880043",
+      "audit letter.sent then letter.answered then letter.replied, each linked to the letter and root task c6814bde",
+      "Karen's memory revision 1 and her empty input selection contain no occurrence of the reference"
+    ]
+  },
+  "usage_by_origin": {
+    "the_question": {
+      "root_task_id": "c6814bde-5524-4d48-b48c-b9af43b5d2be",
+      "runs": 2,
+      "letters": 1,
+      "residents_involved": 2,
+      "known_cost_microdollars": 120502,
+      "unknown_runs": 0,
+      "reserved": 0
+    },
+    "the_reading": {
+      "root_task_id": "36f4d23b-a747-40ba-8499-1aeb2eea7aa1",
+      "runs": 1,
+      "letters": 0,
+      "residents_involved": 1,
+      "known_cost_microdollars": 36560,
+      "unknown_runs": 0,
+      "reserved": 0
+    }
+  },
+  "total_cost_microdollars": 157062,
+  "household_daily_limit_microdollars": 10000000,
+  "observations": [
+    "hearth_letters_send returns the letter's task id and no separate letter id; the sender reported the task id, which is what the letter is keyed by everywhere else.",
+    "Nothing had to be started for the receiver: the letter was sent at 1788880024 and answered at 1788880031, inside the sender's own run, by the ordinary supervision tick.",
+    "The receiver was handed the request and answered it without being told by the operator to; the pinned letter block's usage line was not needed to refuse anything here."
+  ],
+  "scope": "This establishes that one letter can be asked, worked, answered and read back by the resident that asked, on the real subscription runtime, and that the cost of the question is gathered under one origin. It is not evidence of model quality, of many letters at once, or of daily adoption."
+}

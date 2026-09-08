@@ -141,9 +141,11 @@ LETTER_TOOLS = {
     ),
     "hearth_letters_read": (
         ReadLetters,
-        "Read the letters this resident was sent and the replies its own letters received, "
-        "newest first. Pass since to see only what is newer than a time you already read. A "
-        "truncated flag means there is an older page: ask again with offset raised by limit.",
+        "Read the letters this resident was sent, the letters it wrote with what became of "
+        "each — replied, unanswered, failed or expired — and the replies its own letters "
+        "received, newest first. Pass since to see only what is newer than a time you already "
+        "read. A truncated flag means there is an older page: ask again with offset raised by "
+        "limit.",
     ),
     "hearth_letters_reply": (
         ReplyLetter,

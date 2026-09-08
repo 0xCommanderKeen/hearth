@@ -362,10 +362,16 @@ def test_a_backup_round_trip_keeps_the_answer_the_sender_will_read(tmp_path):
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
+    # The time the answer carries is the time it was written, read back from the store
+    # rather than from the clock now: this household runs on the real one, and a second
+    # boundary between the answer and this assertion says nothing about the copy.
+    with hearth.database.transaction() as db:
+        written_at = db.execute("SELECT written_at FROM letter_replies").fetchone()[0]
+    assert 0 <= int(hearth.clock()) - written_at <= 5
     assert copy.letters("orchard")["inbox"][0]["reply"] == {
         "resident_id": "orchard",
         "run_id": answering.id,
-        "written_at": int(hearth.clock()),
+        "written_at": written_at,
         "text": "The orchard has 412 pear trees.",
     }
 
@@ -381,5 +387,27 @@ def test_a_copy_whose_answer_no_longer_belongs_to_its_run_is_refused(tmp_path, c
         db.execute(
             f"UPDATE letter_replies SET {column}=? WHERE task_id=?", (moved, receipt["task_id"])
         )
+    with pytest.raises(Refused, match="backup_letters_invalid"):
+        capture(root, tmp_path / "refused")
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        # An answer exists, so a copy cannot claim the question went unanswered.
+        "UPDATE letters SET state='unanswered'",
+        # Nor that it was never worked at all: this one had a run of its own.
+        "UPDATE letters SET state='expired'",
+        # Nor that it is still open while its task has already ended.
+        "UPDATE letters SET state='pending',settled_at=NULL",
+    ],
+)
+def test_a_copy_that_renames_what_became_of_a_letter_is_refused(tmp_path, tamper):
+    """The state is what the sender reads; a copy cannot say a kinder word than the rows."""
+    import sqlite3
+
+    hearth, receipt, _, _, root = answered(tmp_path)
+    with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
+        db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
     with pytest.raises(Refused, match="backup_letters_invalid"):
         capture(root, tmp_path / "refused")

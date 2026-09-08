@@ -45,7 +45,10 @@ pinned the same way and for the same reason: answering the question one was hand
 management, so it is offered the reply tool whatever it is granted, and keeps it when a
 grant it did hold is revoked mid-run. Reading one's own post follows having an end of a
 letter rather than any capability, so narrowing a grant stops the next letter and never
-hides the answer to the last one. Writing to a colleague is management — it spends the
+hides the answer to the last one. A resident that has only ever been written to is
+pinned this surface for that reading alone, with no grant and no writable declaration
+behind it: a run pinned nothing is launched with no native surface and would be offered
+no tool at all, whatever the scope says it may read. Writing to a colleague is management — it spends the
 household's money on a resident the sender does not own — and the send tool appears only
 under a grant carrying `send_letters`. The offered set is what the admission pins:
 `tools_sha256` covers exactly the schemas that run may call.
