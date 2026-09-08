@@ -41,6 +41,9 @@ REWRITES: dict[tuple[str, str], str] = {
     ("usage_reconciliations", "source"): (
         "REPLACE(\"source\", 'operator_reported_mock', 'operator_reported')"
     ),
+    # A stored case result is compared against a fresh evaluation of the same run;
+    # a key the evaluator no longer produces would read as tampering.
+    ("skill_validation_cases", "result"): "json_remove(\"result\", '$.simulated')",
 }
 
 

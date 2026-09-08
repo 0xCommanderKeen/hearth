@@ -173,6 +173,27 @@ def settled_store(path):
         "('r', 'c', ?, 2000, 'operator note', 3, 'operator_reported_mock')",
         ("c" * 64,),
     )
+    db.execute("INSERT INTO skills VALUES ('reports', 1, 'operator', 1)")
+    db.execute(
+        "INSERT INTO skill_revisions VALUES "
+        "('reports', 1, 'Reports', 'Writes reports', 'Write one', 'draft', 'operator', 1, ?)",
+        ("d" * 64,),
+    )
+    db.execute("INSERT INTO input_sets VALUES ('notes', 1, 'operator', 1)")
+    db.execute(
+        "INSERT INTO input_revisions VALUES "
+        "('notes', 1, 'Notes', 'A synthetic note', ?, 'operator', 1)",
+        ("e" * 64,),
+    )
+    db.execute(
+        "INSERT INTO skill_validations VALUES "
+        "('v', 'reports', 1, ?, ?, 'karen', 1, 'operator', NULL, NULL, 0, 1, 9, ?, 'passed', NULL)",
+        ("d" * 64, "f" * 64, "0" * 64),
+    )
+    db.execute(
+        "INSERT INTO skill_validation_cases VALUES ('v', 0, 't', 'r', 'notes', 1, ?, ?)",
+        ("e" * 64, json.dumps({"passed": True, "simulated": False, "actual_cost": 2000})),
+    )
     db.commit()
     db.close()
 
@@ -204,6 +225,17 @@ def test_a_reconciled_run_keeps_its_evidence_under_the_renamed_source(tmp_path):
         2000,
         "operator note",
     )
+
+
+def test_a_stored_case_result_loses_the_key_the_evaluator_no_longer_produces(tmp_path):
+    path = tmp_path / "hearth.db"
+    settled_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    result = json.loads(db.execute("SELECT result FROM skill_validation_cases").fetchone()[0])
+    # A fresh evaluation of the same run is compared against this; an extra key reads
+    # as tampering.
+    assert result == {"passed": True, "actual_cost": 2000}
 
 
 def test_an_unlisted_dropped_column_refuses_the_upgrade(tmp_path):
