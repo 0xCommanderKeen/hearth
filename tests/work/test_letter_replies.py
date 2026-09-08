@@ -285,8 +285,13 @@ def test_an_answer_is_read_by_the_next_run_and_not_by_the_one_after_it(household
     assert context_of(hearth, second.id)["replies"] == []
 
 
-def test_an_answer_written_while_the_next_run_starts_waits_for_the_run_after_it(household):
-    """A pinned context is immutable: somebody else's write cannot move it mid-launch."""
+def test_an_answer_written_in_the_second_a_run_starts_waits_for_the_run_after_it(household):
+    """A pinned context is immutable: somebody else's write cannot move it mid-launch.
+
+    Hearth keeps time in whole seconds, so this is the narrowest the race gets: the
+    answer is written in the very second Karen's next run was admitted. That run keeps
+    the context it reserved against, and the run after it opens with the answer.
+    """
     app, hearth, now = household
     asked, karen = working_run(app, "karen", "asks")
     receipt = sends(karen)
@@ -296,7 +301,6 @@ def test_an_answer_written_while_the_next_run_starts_waits_for_the_run_after_it(
     now[0] = NOW + 60
     reading, _ = working_run(app, "karen", "reads", "Write today's report.")
     assert context_of(hearth, reading.id)["replies"] == []
-    now[0] = NOW + 90
     answers(reporter, receipt["task_id"])
     settle(app, answering)
     # The digest Karen's run reserved against still rebuilds from the store.

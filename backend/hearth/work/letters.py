@@ -660,11 +660,13 @@ def run_replies(db, run_id: str) -> list[dict]:
     """The answers this run opens with: replies to its resident's own letters, newest first.
 
     A sender is never woken by an answer — it reads one on its next run, and this is
-    that reading. The window is the gap since the resident's previous run began, and it
-    includes that instant rather than excluding it: Hearth keeps time in whole seconds,
-    and an answer written in the same second a run was admitted may have arrived just
-    after that run's context was built. Showing such an answer to two consecutive runs
-    is a repetition; skipping it would lose the answer to a question this resident asked.
+    that reading. The window runs from the instant the resident's previous run began,
+    included, up to the instant this one was admitted, excluded. Hearth keeps time in
+    whole seconds, and half-open the same way at both ends is what makes those seconds
+    add up: an answer written in the same second a run was admitted may have arrived
+    just after that run's context was built, so it belongs to the run after it, which
+    takes that same instant as its own lower edge. No answer is read twice and none is
+    lost between two runs.
 
     Both edges are read from stored facts and neither moves afterwards. The far edge is
     this run's own admission, for the same reason the offered tool set is bounded there:
@@ -696,7 +698,7 @@ def run_replies(db, run_id: str) -> list[dict]:
             "JOIN letters l ON l.task_id=p.task_id JOIN runs r ON r.id=p.run_id "
             "LEFT JOIN declarations d ON d.resident_id=r.resident_id "
             "AND d.revision=r.resident_revision "
-            "WHERE l.sender_resident_id=? AND p.written_at>=? AND p.written_at<=? "
+            "WHERE l.sender_resident_id=? AND p.written_at>=? AND p.written_at<? "
             "ORDER BY p.written_at DESC,p.task_id DESC LIMIT ?",
             (
                 run["resident_id"],
