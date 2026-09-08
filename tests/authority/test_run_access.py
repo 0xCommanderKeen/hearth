@@ -9,12 +9,14 @@ from hearth.authority.run_access import RunAccess
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.backup import capture, restore
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-operator-token"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False, scenario="hold")
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime("hold"))
     hearth = app.state.hearth
     now = [1_788_640_000]
     hearth.clock = lambda: now[0]
@@ -143,7 +145,7 @@ def test_backup_contains_no_bearer_and_restore_cannot_use_original_access(system
     assert credential.token.encode() not in (backup / "hearth.db").read_bytes()
     copy = tmp_path / "copy"
     restore(backup, copy)
-    restored_app = create_app(copy, TOKEN, supervise=True)
+    restored_app = create_app(copy, TOKEN, supervise=True, runtime=fake_runtime())
     with TestClient(restored_app) as client:
         assert client.get(route(run), headers=auth(credential)).status_code == 401
     with pytest.raises(Refused, match="restored_copy_read_only"):

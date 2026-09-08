@@ -7,12 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.backup import capture, restore, verify
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime, fake_runtime
 
 
 @pytest.fixture
@@ -26,9 +27,7 @@ def system(tmp_path):
     )
     receipt = hearth.submit("summary", "reader", "Synthetic", expires_at=1_788_640_600)
     run = hearth.admit(receipt.task_id, reserve=10_000)
-    executor = Executor(
-        Execution(hearth, Artifacts(root / "artifacts")), MockRuntime(root / "mock-runtime")
-    )
+    executor = Executor(Execution(hearth, Artifacts(root / "artifacts")), FakeRuntime(root))
     return hearth, executor, run, root
 
 
@@ -50,7 +49,7 @@ def test_complete_backup_restores_results_receipts_and_quarantines_mutations(sys
     with pytest.raises(Refused, match="restored_copy_read_only"):
         copy.submit("another", "reader", "Synthetic", expires_at=1_788_640_600)
     with pytest.raises(Refused, match="restored_copy_read_only"):
-        Executor(execution, MockRuntime(restored / "mock-runtime")).step()
+        Executor(execution, FakeRuntime(restored)).step()
     assert not hearth.database.restored()
 
 
@@ -62,7 +61,7 @@ def test_active_cancellation_cannot_touch_restored_runtime(system, tmp_path):
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"))
-    runtime = MockRuntime(tmp_path / "restored/mock-runtime")
+    runtime = FakeRuntime(tmp_path / "restored")
     assert runtime.inspect(run.id).status == "running"
     with pytest.raises(Refused, match="restored_copy_read_only"):
         Executor(Execution(copy, Artifacts(tmp_path / "restored/artifacts")), runtime).step()
@@ -76,7 +75,9 @@ def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_p
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     token = "synthetic-operator-token"
-    with TestClient(create_app(tmp_path / "restored", token, supervise=True)) as client:
+    with TestClient(
+        create_app(tmp_path / "restored", token, supervise=True, runtime=fake_runtime())
+    ) as client:
         headers = {"Authorization": "Bearer " + token}
         state = client.get("/api/state", headers=headers).json()
         assert state["restore_hold"] is True

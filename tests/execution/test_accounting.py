@@ -5,11 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def system(tmp_path):
     run = hearth.admit(task.task_id, reserve=10_000)
     executor = Executor(
         Execution(hearth, Artifacts(tmp_path / "artifacts")),
-        MockRuntime(tmp_path / "runtime", scenario="unknown_usage"),
+        FakeRuntime(tmp_path, scenario="unknown_usage"),
     )
     executor.step()
     return hearth, run, Accounting(hearth), now
@@ -138,7 +139,7 @@ def test_remaining_unknown_usage_retains_and_repoints_the_hold(system, tmp_path)
     second = hearth.admit(task.task_id, reserve=10_000)
     Executor(
         Execution(hearth, Artifacts(tmp_path / "artifacts")),
-        MockRuntime(tmp_path / "runtime", scenario="unknown_usage"),
+        FakeRuntime(tmp_path, scenario="unknown_usage"),
     ).step()
     with hearth.database.transaction(write=True) as db:
         db.execute("UPDATE pauses SET run_id=?", (first.id,))

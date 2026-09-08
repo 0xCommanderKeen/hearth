@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.management.bridge import BoundRun, Bridge
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-skill-authoring-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 INSTRUCTIONS = """# When to use
@@ -50,7 +52,7 @@ def authoring():
 
 
 def manager(tmp_path, *, capabilities=None):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     karen = client.post("/api/management/bootstrap", headers=AUTH).json()
     if capabilities is not None:
@@ -438,7 +440,7 @@ def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path)
     app.state.executor.step()
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False))
+    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime()))
     assert (
         held.get("/api/skill-validations/" + pending["validation_id"], headers=AUTH).json()
         == result

@@ -4,12 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-management-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
 
 def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         assert client.post("/api/management/bootstrap").status_code == 401
         first = client.post("/api/management/bootstrap", headers=AUTH)
         assert first.status_code == 200
@@ -57,7 +59,7 @@ def test_private_tool_call_provisions_once_and_starts_initial_work(tmp_path):
     from hearth.management.bridge import BoundRun, Bridge
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     karen = bootstrap(hearth)
     task = hearth.submit(
@@ -123,7 +125,7 @@ def test_catalog_reuse_is_scoped_and_unrelated_work_is_refused(tmp_path):
     from hearth.observation.snapshot import snapshot
     from hearth.residents.models import Declaration
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     allowed = Inputs(hearth).save(
         "orchard", name="Orchard", notes=["Synthetic permitted pears"], actor="operator"
@@ -184,7 +186,7 @@ def manager_runtime(tmp_path, *, max_residents=5, max_reserve=500000):
     from hearth.management.bridge import BoundRun, Bridge
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     karen = bootstrap(hearth)

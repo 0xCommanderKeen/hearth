@@ -8,6 +8,7 @@ from hearth.app import create_app
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Declaration
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 TOKEN = "synthetic-operator-token-for-tests"
@@ -16,7 +17,7 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         yield client
 
 
@@ -99,7 +100,7 @@ def test_start_retry_has_stable_identity_and_result_can_be_read(client):
 
 
 def test_cancellation_roundtrip_keeps_intent_separate_from_termination(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="hold", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("hold"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -126,7 +127,7 @@ def test_cursor_matches_transaction_and_epoch_requires_resync(client):
 
 
 def test_unknown_usage_is_visible_and_cannot_start_more_work(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="unknown_usage", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("unknown_usage"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -159,7 +160,7 @@ def test_api_refuses_invalid_payload_without_creating_task(client):
 
 def test_demo_requires_explicit_nontrivial_operator_token(tmp_path):
     with pytest.raises(ValueError, match="operator token"):
-        create_app(tmp_path, "")
+        create_app(tmp_path, "", runtime=fake_runtime())
 
 
 def test_active_work_remains_visible_when_recent_history_is_full(client):
@@ -263,7 +264,7 @@ def test_mock_api_strict_policy_and_decision_payload(client):
 
 
 def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
-    app = create_app(tmp_path, TOKEN)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime())
     now = [1_788_652_800]
     app.state.hearth.clock = lambda: now[0]
     with TestClient(app) as client:
@@ -331,7 +332,7 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
 
 
 def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False, scenario="unknown_usage")
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()

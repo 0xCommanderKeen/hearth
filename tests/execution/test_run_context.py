@@ -6,11 +6,12 @@ import json
 import pytest
 from hearth.authority.run_access import RunAccess
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 NOW = 1_788_640_000
 
@@ -27,9 +28,7 @@ def system(tmp_path):
         "first", "reader", "Summarize the synthetic notes", expires_at=NOW + 600
     )
     run = hearth.admit(receipt.task_id, reserve=3000)
-    worker = Executor(
-        Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-    )
+    worker = Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path))
     return hearth, worker, run, tmp_path
 
 
@@ -64,7 +63,7 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
     assert expected["purpose"] == "Original synthetic purpose"
     assert expected["resident_revision"] == 1 and expected["context_version"] == 6
     assert expected["instruction"] == "Summarize the synthetic notes"
-    assert expected["notes"] == [] and expected["simulated"] is True
+    assert expected["notes"] == [] and expected["simulated"] is False
     # Reader is unchanged: it opens with no journal and cannot write its memory.
     assert expected["journal"] == [] and expected["memory_writable"] is False
     assert set(expected) == {
@@ -88,8 +87,9 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
         "input_usage",
     }
     assert run.owner_token not in sent and credential.token not in sent
-    evidence = (root / "runtime" / (run.id + ".json")).read_text()
-    assert json.loads(evidence)["instruction_digest"] == hashlib.sha256(sent.encode()).hexdigest()
+    evidence = (root / "fake-runtime" / run.id / "request.json").read_text()
+    digest = json.loads(evidence)["binding"]["input_digest"]
+    assert digest == hashlib.sha256(sent.encode()).hexdigest()
     assert expected["purpose"] not in evidence and expected["instruction"] not in evidence
     assert expected["purpose"] not in json.dumps(hearth.audit())
 
@@ -133,7 +133,7 @@ def test_configuration_change_after_launch_authorization_cannot_replace_pinned_i
     assert hearth.run(run.id).resident_revision == 1
 
 
-def test_restart_before_runtime_start_preserves_exact_input(system, monkeypatch):
+def test_restart_after_a_lost_launch_never_sends_the_input_again(system, monkeypatch):
     hearth, worker, run, root = system
     attempted = []
 
@@ -147,11 +147,13 @@ def test_restart_before_runtime_start_preserves_exact_input(system, monkeypatch)
     assert hearth.run(run.id).launch_attempted
     reopened = Executor(
         Execution(Hearth(Database(root / "hearth.db")), Artifacts(root / "artifacts")),
-        MockRuntime(root / "runtime"),
+        FakeRuntime(root),
     )
     inputs = capture_launch(reopened, monkeypatch)
-    assert reopened.step()[0].status == "succeeded"
-    assert inputs == [(run.id, attempted[0])]
+    # The lost call may have reached the provider, so the restart never repeats it.
+    assert reopened.step()[0].status == "interrupted"
+    assert inputs == [] and attempted[0]
+    assert hearth.run(run.id).finished_at is None
 
 
 def test_existing_runtime_evidence_is_recovered_after_configuration_change(system, monkeypatch):
@@ -166,7 +168,7 @@ def test_existing_runtime_evidence_is_recovered_after_configuration_change(syste
     with pytest.raises(RuntimeError, match="lost acknowledgement"):
         worker.step()
     changed_declaration(hearth)
-    reopened = Executor(worker.execution, MockRuntime(root / "runtime"))
+    reopened = Executor(worker.execution, FakeRuntime(root))
     inputs = capture_launch(reopened, monkeypatch)
     assert reopened.step()[0].status == "succeeded"
     assert inputs == []

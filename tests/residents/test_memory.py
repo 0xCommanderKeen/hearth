@@ -18,13 +18,15 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-memory-operator-token"
 TEXT = "# Synthetic memory\r\n\r\nRemember ž and `code`.\n"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1000
     for resident in ("reader", "other"):
@@ -264,7 +266,9 @@ def test_operator_memory_routes_read_only_runtime_and_large_bounded_text(system)
         )
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
-    with TestClient(create_app(root / "restored", TOKEN, supervise=False)) as client:
+    with TestClient(
+        create_app(root / "restored", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as client:
         assert client.get("/api/residents/reader/memory", headers=auth).status_code == 200
         assert (
             client.put(

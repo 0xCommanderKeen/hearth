@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 TOKEN = "synthetic-input-operator-token"
@@ -13,7 +14,7 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 
 def test_named_input_creation_edit_and_exact_retry(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         body = {"name": "Orchard notes", "notes": ["Fictional orchard: picked 12 pears."]}
         headers = {**AUTH, "Idempotency-Key": "orchard"}
         response = client.post("/api/input-sets", json=body, headers=headers)
@@ -47,11 +48,12 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
     from hearth.authority.run_access import RunAccess
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.inputs.catalog import Inputs
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.residents.provisioning import Provisioning
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
     from hearth.work.service import Hearth
+
+    from tests.fake_runtime import FakeRuntime
 
     db = Database(tmp_path / "hearth.db")
     db.initialize()
@@ -63,9 +65,7 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
     harbor = inputs.save(
         "harbor", name="Harbor", notes=["Fictional harbor: 3 boats arrived."], actor="operator"
     )
-    worker = Executor(
-        Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-    )
+    worker = Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path))
     for name, selection, expected in [
         ("Orchard reader", [orchard], ["Fictional harvest: 12 pears."]),
         ("Harbor reader", [harbor], ["Fictional harbor: 3 boats arrived."]),
@@ -115,7 +115,7 @@ def test_distinct_residents_pin_inputs_and_empty_is_explicit(tmp_path):
 
 
 def test_reader_explicit_seed_and_selection_survive_repeat_setup(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         assert seed_reader_via(client)
         initial = client.get("/api/residents/reader/inputs", headers=AUTH)
         assert initial.status_code == 200
@@ -136,13 +136,14 @@ def test_damaged_inputs_refuse_launch_without_stalling_healthy_work(tmp_path, da
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.inputs.catalog import Inputs
     from hearth.inputs.selection import InputSelection
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.observation.snapshot import snapshot
     from hearth.residents.models import Declaration, Refused
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture
     from hearth.storage.database import Database
     from hearth.work.service import Hearth
+
+    from tests.fake_runtime import FakeRuntime
 
     db = Database(tmp_path / "data/hearth.db")
     db.initialize()
@@ -177,7 +178,7 @@ def test_damaged_inputs_refuse_launch_without_stalling_healthy_work(tmp_path, da
             )
     worker = Executor(
         Execution(hearth, Artifacts(db.path.parent / "artifacts")),
-        MockRuntime(db.path.parent / "mock-runtime"),
+        FakeRuntime(db.path.parent),
     )
     worker.step()
     assert hearth.run(runs[0].id).status == "interrupted"
@@ -195,7 +196,7 @@ def test_runtime_access_is_bound_to_selected_run_and_backup_keeps_old_inputs(tmp
     from hearth.residents.models import Declaration
     from hearth.storage.backup import capture, restore
 
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     inputs = Inputs(hearth)
     selection = InputSelection(hearth)
@@ -262,7 +263,9 @@ def test_runtime_access_is_bound_to_selected_run_and_backup_keeps_old_inputs(tmp
         assert first_history["input_sets"][0]["revision"] == 1
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    with TestClient(create_app(tmp_path / "held", TOKEN, supervise=False)) as held:
+    with TestClient(
+        create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as held:
         assert (
             held.get(
                 "/api/input-sets/" + source["input_set_id"] + "?revision=1", headers=AUTH
@@ -295,7 +298,7 @@ def test_runtime_access_is_bound_to_selected_run_and_backup_keeps_old_inputs(tmp
     ],
 )
 def test_input_validation_rejects_invalid_source_without_committing(tmp_path, invalid):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         result = client.post(
             "/api/input-sets",
             headers={**AUTH, "Idempotency-Key": "invalid"},
@@ -341,19 +344,20 @@ def test_edit_and_admission_serialize_then_future_selection_takes_effect(tmp_pat
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.inputs.catalog import Inputs
     from hearth.inputs.selection import InputSelection
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.residents.memory import MemoryFiles
     from hearth.residents.models import Declaration
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
     from hearth.work.service import Hearth
 
+    from tests.fake_runtime import FakeRuntime
+
     db = Database(tmp_path / "hearth.db")
     db.initialize()
     hearth = Hearth(db)
     memory = MemoryFiles(tmp_path / "memory")
     execution = Execution(hearth, Artifacts(tmp_path / "artifacts"))
-    worker = Executor(execution, MockRuntime(tmp_path / "runtime"))
+    worker = Executor(execution, FakeRuntime(tmp_path))
     inputs = Inputs(hearth)
     source = inputs.save("create", name="Orchard", notes=["Before"], actor="operator")
     hearth.save_resident("reader", Declaration("Reader", "Read", 100000), expected_revision=0)

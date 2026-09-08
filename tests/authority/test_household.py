@@ -6,6 +6,8 @@ from hearth.residents.models import Declaration, Refused
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 
 def test_concurrent_residents_share_one_allowance(tmp_path):
     database = Database(tmp_path / "hearth.db")
@@ -55,7 +57,9 @@ def test_api_policy_is_operator_only_and_conflict_aware(tmp_path):
     from fastapi.testclient import TestClient
     from hearth.app import create_app
 
-    with TestClient(create_app(tmp_path, "synthetic-operator-token", supervise=False)) as client:
+    with TestClient(
+        create_app(tmp_path, "synthetic-operator-token", supervise=False, runtime=fake_runtime())
+    ) as client:
         body = dict(
             daily_limit=8_000_000,
             timezone="Europe/Ljubljana",
@@ -76,8 +80,9 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
     from datetime import datetime
 
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.storage.artifacts import Artifacts
+
+    from tests.fake_runtime import FakeRuntime
 
     now = [int(datetime.fromisoformat("2026-09-06T00:30:00+02:00").timestamp())]
     db = Database(tmp_path / "hearth.db")
@@ -86,9 +91,7 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
     hearth.save_resident("one", Declaration("One", "Synthetic", 10_000_000), expected_revision=0)
     task = hearth.submit("one", "one", "Summarize", expires_at=now[0] + 600)
     hearth.admit(task.task_id, reserve=10_000)
-    Executor(
-        Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-    ).step()
+    Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)).step()
     assert Household(hearth).read()["spent"] > 0
     now[0] += 3 * 3600  # UTC crosses midnight; the original Ljubljana day is still current.
     amount = Household(hearth).read()["spent"]
@@ -106,9 +109,10 @@ def test_timezone_edit_does_not_reset_original_day_spend(tmp_path):
 def test_unknown_and_cancellation_hold_survive_restart_and_restore(tmp_path, scenario):
     from hearth.execution.accounting import Accounting
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture, restore
+
+    from tests.fake_runtime import FakeRuntime
 
     root = tmp_path / "original"
     db = Database(root / "hearth.db")
@@ -127,7 +131,7 @@ def test_unknown_and_cancellation_hold_survive_restart_and_restore(tmp_path, sce
     run = hearth.admit(task.task_id, reserve=40_000)
     executor = Executor(
         Execution(hearth, Artifacts(root / "artifacts")),
-        MockRuntime(root / "runtime", scenario=scenario),
+        FakeRuntime(root, scenario=scenario),
     )
     executor.step()
     if scenario == "hold":

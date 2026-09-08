@@ -17,12 +17,14 @@ from hearth.residents.journal import Journal
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-memory-tools-operator"
 MEMORY_TOOL_NAMES = {"hearth_memory_read", "hearth_memory_save", "hearth_journal_write"}
 
 
 def manager(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     return app, hearth, bootstrap(hearth)["resident_id"]
@@ -476,7 +478,7 @@ def test_a_pinned_entry_that_retention_archives_is_still_read_back(tmp_path):
 
 
 def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_memory(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.save_resident(
         "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0
@@ -490,7 +492,7 @@ def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_
 
 def test_a_resident_that_only_remembers_reaches_its_tools_without_management(tmp_path):
     """Writable memory admits a run to the native tools; it grants no management at all."""
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     hearth.save_resident(
@@ -524,7 +526,7 @@ def test_a_resident_that_only_remembers_reaches_its_tools_without_management(tmp
 
 
 def test_a_resident_that_neither_manages_nor_remembers_is_pinned_no_tools(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.save_resident(
         "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0

@@ -16,12 +16,14 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-journal-operator-token"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1000
     for resident in ("reader", "other"):

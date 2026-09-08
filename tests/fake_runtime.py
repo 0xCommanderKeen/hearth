@@ -188,9 +188,13 @@ class FakeRuntime:
         folder = self.folder(run_id)
         if not folder.exists() or (folder / "receipt.json").exists():
             return
+        try:
+            request = read(folder / "request.json")
+        except OSError, ValueError:
+            return  # Without its launch record there is nothing to stop or to settle.
         self._publish(
             folder,
-            UsageBinding(**read(folder / "request.json")["binding"]),
+            UsageBinding(**request["binding"]),
             stdout="",
             final=None,
             exit_code=None,

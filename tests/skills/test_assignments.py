@@ -7,6 +7,7 @@ from hearth.skills.catalog import Skills
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 
@@ -79,7 +80,7 @@ def test_api_conflicts_order_archive_and_held_restore(tmp_path):
     token = "synthetic-assignment-operator"
     auth = {"Authorization": "Bearer " + token}
     data = tmp_path / "data"
-    with TestClient(create_app(data, token, supervise=False)) as client:
+    with TestClient(create_app(data, token, supervise=False, runtime=fake_runtime())) as client:
         seed_reader_via(client)
         ids = []
         for name in ("Summary", "Tone"):
@@ -159,7 +160,9 @@ def test_api_conflicts_order_archive_and_held_restore(tmp_path):
         )
     capture(data, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    with TestClient(create_app(tmp_path / "held", token, supervise=False)) as client:
+    with TestClient(
+        create_app(tmp_path / "held", token, supervise=False, runtime=fake_runtime())
+    ) as client:
         assert client.get(path, headers=auth).json() == assigned
         assert client.put(
             path,
@@ -172,12 +175,13 @@ def test_corrupt_pins_refuse_dispatch_and_keep_operator_cause_visible(tmp_path):
     import sqlite3
 
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.observation.snapshot import snapshot
     from hearth.residents.models import Refused
     from hearth.skills.assignments import Assignments
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture
+
+    from tests.fake_runtime import FakeRuntime
 
     data = tmp_path / "data"
     db = Database(data / "hearth.db")
@@ -203,7 +207,7 @@ def test_corrupt_pins_refuse_dispatch_and_keep_operator_cause_visible(tmp_path):
     run = hearth.admit(task.task_id, reserve=10_000)
     with sqlite3.connect(db.path) as damaged:
         damaged.execute("DELETE FROM run_skills WHERE run_id=?", (run.id,))
-    runtime = MockRuntime(data / "runtime")
+    runtime = FakeRuntime(data)
     worker = Executor(Execution(hearth, Artifacts(data / "artifacts")), runtime)
     assert worker.step()[0].status == "interrupted"
     assert runtime.inspect(run.id).status == "absent"
@@ -220,11 +224,12 @@ def test_ordered_runtime_input_and_pin_history_survive_assignment_change_and_res
 
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.execution.staging import stage_run
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.observation.snapshot import snapshot
     from hearth.skills.assignments import Assignments
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture, restore
+
+    from tests.fake_runtime import FakeRuntime
 
     data = tmp_path / "data"
     db = Database(data / "hearth.db")
@@ -250,9 +255,7 @@ def test_ordered_runtime_input_and_pin_history_survive_assignment_change_and_res
         "reader", entries[::-1], expected_revision=1, command_id="reorder", actor="operator"
     )
     assert stage_run(db, run.id, tmp_path / "inputs").read_text() == staged
-    worker = Executor(
-        Execution(hearth, Artifacts(data / "artifacts")), MockRuntime(data / "mock-runtime")
-    )
+    worker = Executor(Execution(hearth, Artifacts(data / "artifacts")), FakeRuntime(data))
     assert worker.step()[0].status == "succeeded"
     used = snapshot(hearth)["runs"][0]["skills"]
     assert [entry["name"] for entry in used] == ["First", "Second"]
@@ -274,13 +277,14 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
 
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.execution.supervisor import Supervisor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.observation.notifications import MockInbox, Notifications
     from hearth.residents.models import Refused
     from hearth.skills.assignments import Assignments
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture
     from hearth.work.routines import Routines
+
+    from tests.fake_runtime import FakeRuntime
 
     db = Database(tmp_path / "data/hearth.db")
     db.initialize()
@@ -329,9 +333,7 @@ def test_orphan_assignment_header_refuses_admission_and_does_not_stall_other_wor
     with pytest.raises(Refused, match="backup_references_invalid"):
         capture(db.path.parent, tmp_path / "backup")
     worker = Supervisor(
-        Executor(
-            Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-        ),
+        Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)),
         routines,
         Notifications(hearth, MockInbox(tmp_path / "inbox")),
     )
@@ -355,9 +357,10 @@ def test_corrupted_skill_input_is_rejected_before_first_launch(tmp_path, damage)
     import sqlite3
 
     from hearth.execution.lifecycle import Execution, Executor
-    from hearth.integrations.mock.inline import MockRuntime
     from hearth.skills.assignments import Assignments
     from hearth.storage.artifacts import Artifacts
+
+    from tests.fake_runtime import FakeRuntime
 
     db = Database(tmp_path / "hearth.db")
     db.initialize()
@@ -385,7 +388,7 @@ def test_corrupted_skill_input_is_rejected_before_first_launch(tmp_path, damage)
     }
     with sqlite3.connect(db.path) as damaged:
         damaged.execute(statements[damage])
-    runtime = MockRuntime(tmp_path / "runtime")
+    runtime = FakeRuntime(tmp_path)
     executor = Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), runtime)
     assert executor.step()[0].status == "interrupted"
     assert runtime.inspect(run.id).status == "absent"

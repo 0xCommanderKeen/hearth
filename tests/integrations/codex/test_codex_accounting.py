@@ -12,12 +12,13 @@ from hearth.integrations.codex.events import TokenUsage
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
 from hearth.integrations.codex.usage import UsageBinding, UsageJournal
 from hearth.integrations.interface import Evidence
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.backup import capture, restore, verify
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime, fake_runtime
 
 NOW = 1_788_640_000
 TOKEN = "synthetic-accounting-token-for-tests"
@@ -96,7 +97,7 @@ def test_scalar_mock_cost_cannot_settle_a_priced_run(system):
 
 def test_mock_executor_does_not_dispatch_priced_runs(system):
     run = admit(system)
-    runtime = MockRuntime(system[2] / "mock-runtime")
+    runtime = FakeRuntime(system[2])
     hearth = system[0]
     hearth.save_resident(
         "other", Declaration("Other", "Synthetic notes", 10_000_000), expected_revision=0
@@ -171,7 +172,7 @@ def test_backup_and_held_restore_verify_sqlite_receipt_without_worker_journal(sy
     capture(hearth.database.path.parent, backup)
     verify(backup)
     restore(backup, held)
-    app = create_app(held, TOKEN, supervise=False)
+    app = create_app(held, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     response = client.get("/api/runs/" + run.id, headers={"Authorization": "Bearer " + TOKEN})
     assert response.status_code == 200
@@ -230,7 +231,9 @@ def test_api_snapshot_labels_estimated_usage(system):
     hearth, execution, _ = system
     run = admit(system)
     execution.finish_from_usage(run.id, run.owner_token, journal_for(system, run))
-    client = TestClient(create_app(hearth.database.path.parent, TOKEN, supervise=False))
+    client = TestClient(
+        create_app(hearth.database.path.parent, TOKEN, supervise=False, runtime=fake_runtime())
+    )
     response = client.get("/api/state", headers={"Authorization": "Bearer " + TOKEN})
     assert response.status_code == 200
     observed = next(item for item in response.json()["runs"] if item["id"] == run.id)
