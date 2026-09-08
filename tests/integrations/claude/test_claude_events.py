@@ -1,8 +1,10 @@
 """Reading the CLI's own stream, against transcripts it really produced.
 
-`fixtures/` holds three real sessions recorded from the pinned CLI on 2026-09-09 and
-scrubbed of session ids, event ids, paths and timestamps. Nothing else about them was
-edited: the token counts, costs, model names and result text are the CLI's own.
+`fixtures/` holds three real sessions recorded from the pinned CLI on 2026-09-09,
+scrubbed of everything that describes the account or the machine rather than the
+protocol: session ids, event and message ids, paths, timestamps, and the rate-limit
+event's utilization figures. Nothing that this parser or the price schedule reads was
+edited -- the token counts, costs, model names and result text are the CLI's own.
 """
 
 import json
