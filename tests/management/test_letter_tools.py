@@ -295,6 +295,49 @@ def test_the_letter_is_answered_once_and_the_sender_reads_the_reply(household):
     settle(hearth, later)
 
 
+def test_a_grant_revoked_mid_run_takes_the_management_tools_and_not_the_answer(household):
+    """A resident asked a question must still be able to answer it."""
+    from hearth.management.authority import GrantPolicy, Management
+
+    app, hearth, karen = household
+    opens_the_door(hearth)
+    Management(hearth).save(
+        "reporter",
+        {
+            **GrantPolicy().model_dump(),
+            "expected_revision": 0,
+            "enabled": True,
+            "profiles": ["codex_subscription"],
+            "capabilities": ["assign_work"],
+        },
+    )
+    writer, write = working_run(app, karen, "asks")
+    receipt = send(write)[1]
+    settle(hearth, writer)
+
+    reader, answer = letter_run(app, receipt["task_id"], "answers")
+    Management(hearth).save(
+        "reporter", {**GrantPolicy().model_dump(), "expected_revision": 1, "enabled": False}
+    )
+    ok, refusal = answer("catalog", "hearth_catalog", {"query": ""})
+    assert not ok and refusal["error"] == "management_grant_changed_or_revoked"
+    ok, reply = answer(
+        "reply",
+        "hearth_letters_reply",
+        {
+            "operation_id": "answer-1",
+            "letter_id": receipt["task_id"],
+            "text": "The orchard has 412 pear trees.",
+        },
+    )
+    assert ok and reply["status"] == "answered"
+    # Writing to a colleague was the part that needed the grant, and it is gone.
+    assert answer("post", "hearth_letters_read", {})[0]
+    ok, refusal = send(answer, karen, operation_id="letter-back")
+    assert not ok and refusal["error"] == "management_grant_changed_or_revoked"
+    settle(hearth, reader)
+
+
 def test_a_run_answers_the_letter_it_works_and_no_other(household):
     app, hearth, karen = household
     opens_the_door(hearth)
