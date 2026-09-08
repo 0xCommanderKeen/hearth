@@ -37,9 +37,10 @@ nothing else from it either.
 | `auth status --json` with the machine's own configuration directory | `loggedIn: true`, `authMethod: "claude.ai"`; the rest of the answer names the account and was not recorded |
 | `-p` with the full bounded flag set under `CLAUDE_CONFIG_DIR=$CFG` | exit 1, `is_error: true`, `terminal_reason: "api_error"`, `result: "Not logged in · Please run /login"`, `total_cost_usd: 0`, `modelUsage: {}` |
 
-**A private configuration directory is a private login.** The Keychain login of the
-default directory is not visible from `$CFG`: the CLI reports no login and refuses to
-run. So the Codex adapter's shape carries over — a private login directory the operator
+**A private configuration directory is a private login.** The machine's own login is a
+Keychain item — the default configuration directory holds no `.credentials.json` — and
+it is not visible from `$CFG`: the CLI reports no login there and refuses to run. So the
+Codex adapter's shape carries over — a private login directory the operator
 seeds once — and Hearth's own check is `auth status --json` reporting `loggedIn: true`
 in exactly the directory the run will use.
 
