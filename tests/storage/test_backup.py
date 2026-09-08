@@ -1,4 +1,4 @@
-"""Consistent mock state, checksummed files, and a restore that cannot execute."""
+"""Consistent state, checksummed files, and a restore that cannot execute."""
 
 import fcntl
 import json
@@ -53,20 +53,23 @@ def test_complete_backup_restores_results_receipts_and_quarantines_mutations(sys
     assert not hearth.database.restored()
 
 
-def test_active_cancellation_cannot_touch_restored_runtime(system, tmp_path):
+def test_unsettled_cancellation_is_never_copied_and_the_copy_cannot_execute(system, tmp_path):
     hearth, executor, run, root = system
     executor.runtime.scenario = "hold"
     executor.step()
     executor.execution.cancel(run.id)
+    # Priced work still in flight has no settled provider evidence to copy.
+    with pytest.raises(Refused, match="backup_priced_run_unsettled"):
+        capture(root, tmp_path / "refused")
+    assert executor.step()[0].status == "cancelled"
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"))
     runtime = FakeRuntime(tmp_path / "restored")
-    assert runtime.inspect(run.id).status == "running"
     with pytest.raises(Refused, match="restored_copy_read_only"):
         Executor(Execution(copy, Artifacts(tmp_path / "restored/artifacts")), runtime).step()
-    assert runtime.inspect(run.id).status == "running"
-    assert hearth.run(run.id).status == "stopping"
+    assert copy.run(run.id).status == "cancelled"
+    assert hearth.run(run.id).status == "cancelled"
 
 
 def test_restored_api_is_read_only_even_with_supervision_requested(system, tmp_path):
@@ -206,8 +209,10 @@ def test_uncertain_action_and_receipt_survive_restore_without_consumption(
 
 @pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=12"])
 def test_incompatible_database_cannot_be_published_as_a_current_backup(system, tmp_path, change):
-    hearth, _, _, root = system
+    hearth, executor, _, root = system
     import sqlite3
+
+    executor.step()
 
     with sqlite3.connect(hearth.database.path) as db:
         db.execute(change)

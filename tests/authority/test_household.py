@@ -137,8 +137,9 @@ def test_unknown_and_cancellation_hold_survive_restart_and_restore(tmp_path, sce
     if scenario == "hold":
         executor.execution.cancel(run.id)
         assert Household(hearth).read()["reserved"] == 40_000
-    else:
-        assert Household(hearth).read()["unknown"] == 40_000
+        # A stopped provider proves no turn, so the cancellation settles unknown too.
+        assert executor.step()[0].status == "cancelled"
+    assert Household(hearth).read()["unknown"] == 40_000
     now[0] += 86400
     restarted = Hearth(Database(db.path), clock=hearth.clock)
     assert Household(restarted).read()["remaining"] == 10_000
@@ -193,15 +194,22 @@ def test_concurrent_creation_cannot_exceed_household_limit(tmp_path):
 
 
 def test_missing_accounting_pin_refuses_admission_and_backup(tmp_path):
+    from hearth.execution.lifecycle import Execution, Executor
+    from hearth.storage.artifacts import Artifacts
     from hearth.storage.backup import capture
 
-    db = Database(tmp_path / "data/hearth.db")
+    from tests.fake_runtime import FakeRuntime
+
+    data = tmp_path / "data"
+    db = Database(data / "hearth.db")
     db.initialize()
     hearth = Hearth(db)
     for name in ("one", "two"):
         hearth.save_resident(name, Declaration(name, "Synthetic", 10000), expected_revision=0)
     task = hearth.submit("one", "one", "Summarize", expires_at=int(hearth.clock()) + 600)
     hearth.admit(task.task_id, reserve=1)
+    # Settle the run so the backup reaches the accounting check it is about.
+    Executor(Execution(hearth, Artifacts(data / "artifacts")), FakeRuntime(data)).step()
     with db.transaction(write=True) as connection:
         connection.execute("DELETE FROM run_household_windows")
     task = hearth.submit("two", "two", "Summarize", expires_at=int(hearth.clock()) + 600)

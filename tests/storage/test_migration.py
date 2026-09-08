@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 
 import pytest
-from hearth.residents.models import Refused
+from hearth.storage.database import RUNTIME_KIND as KIND
 from hearth.storage.database import SCHEMA_VERSION, Database, schema_matches
 
 from tests.fixtures.schema_v1_pre_memory import SCHEMA as SCHEMA_V1
@@ -82,30 +82,53 @@ def test_newer_store_and_foreign_layout_are_refused(tmp_path):
     assert not (tmp_path / "other.db.upgrading").exists()
 
 
-def test_quiet_store_changes_runtime_but_active_run_refuses(tmp_path):
-    from hearth.residents.models import Declaration
-    from hearth.work.service import Hearth
+def retired_runtime_store(path):
+    """A version-1 store carrying one simulated run and one subscription run."""
+    pre_memory_store(path)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute("BEGIN")
+    for run, kind, status in (("simulated", "inline_mock", "succeeded"), ("real", KIND, "failed")):
+        db.execute(
+            "INSERT INTO tasks VALUES (?, 'karen', 'Read the notes', ?, 1)", (run + "-task", status)
+        )
+        db.execute(
+            "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+            "reserved, budget_day, created_at, finished_at, runtime_kind, runtime_version, "
+            "input_digest) VALUES (?, ?, 'karen', 1, ?, ?, 0, '2026-09-08', 1, 2, ?, 1, ?)",
+            (run, run + "-task", run + "-token", status, kind, "a" * 64),
+        )
+    db.execute(
+        "INSERT INTO artifacts VALUES ('simulated-artifact', 'simulated', 'simulated.md', ?, 3, 1)",
+        ("b" * 64,),
+    )
+    db.execute("UPDATE runs SET artifact_id='simulated-artifact' WHERE id='simulated'")
+    db.commit()
+    db.close()
 
+
+def test_upgrade_retires_runs_recorded_against_a_runtime_that_no_longer_exists(tmp_path):
     path = tmp_path / "hearth.db"
-    database = Database(path)
-    database.initialize(runtime_kind="codex_subscription")
-    database.initialize(runtime_kind="process_mock")
-    assert database.runtime_kind() == "process_mock"
-    assert Database(path).runtime_kind() == "process_mock"
+    retired_runtime_store(path)
+    Database(path).initialize()
     db = sqlite3.connect(path)
-    kind, detail = db.execute(
-        "SELECT kind, detail FROM audit ORDER BY sequence DESC LIMIT 1"
-    ).fetchone()
-    assert (kind, json.loads(detail)) == (
-        "runtime_kind_changed",
-        {"from": "codex_subscription", "to": "process_mock"},
+    # Relabelling the run would claim work happened where it did not, so it goes,
+    # and everything that referenced it goes with it.
+    assert [row[0] for row in db.execute("SELECT id FROM runs")] == ["real"]
+    assert db.execute("SELECT count(*) FROM artifacts").fetchone() == (0,)
+    assert [row[0] for row in db.execute("SELECT id FROM tasks")] == ["real-task"]
+    retired = json.loads(
+        db.execute("SELECT detail FROM audit WHERE kind='runtime_runs_retired'").fetchone()[0]
     )
-    hearth = Hearth(database, clock=lambda: 1_788_640_000)
-    hearth.save_resident(
-        "reader", Declaration("Reader", "Synthetic", 1_000_000), expected_revision=0
-    )
-    receipt = hearth.submit("summary", "reader", "Synthetic", expires_at=1_788_640_600)
-    hearth.admit(receipt.task_id, reserve=10_000)
-    with pytest.raises(Refused, match="runtime_store_busy"):
-        database.initialize(runtime_kind="codex_subscription")
-    assert database.runtime_kind() == "process_mock"
+    assert retired["runs"] == ["simulated"] and retired["kept"] == "hearth.db.before-v1"
+    assert retired["rows_removed"] == 2
+    kept = sqlite3.connect(tmp_path / "hearth.db.before-v1")
+    assert kept.execute("SELECT count(*) FROM runs").fetchone() == (2,)
+
+
+def test_upgrade_drops_the_process_boundary_and_pins_the_one_runtime(tmp_path):
+    path = tmp_path / "hearth.db"
+    pre_memory_store(path, runtime_kind="inline_mock")
+    Database(path).initialize()
+    assert Database(path).runtime_kind() == KIND
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT 1 FROM system_meta WHERE key='process_boundary'").fetchone() is None

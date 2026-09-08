@@ -130,6 +130,7 @@ def test_operator_routes_preserve_other_fields_exclude_ambient_text_and_reject_r
         runtime = {"Authorization": "Bearer " + credential.token}
         assert client.put("/api/residents/reader", headers=runtime, json=body).status_code == 401
         assert client.get("/api/residents/reader", headers=runtime).status_code == 401
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
     with TestClient(

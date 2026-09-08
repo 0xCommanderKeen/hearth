@@ -22,6 +22,12 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+# The release ships one runtime and no Codex subscription exists here, so the smoke
+# run injects the same fake the test suite uses. It is imported from the checkout,
+# never from the wheel: `tests/` is not packaged, and this proves it need not be.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.fake_runtime import fake_runtime  # noqa: E402
+
 TOKEN = "synthetic-installed-release-token"
 
 
@@ -59,8 +65,8 @@ def seed_reader(hearth_service) -> None:
 
 
 @contextmanager
-def serve(data, runtime_kind=None):
-    app = create_app(data, TOKEN, runtime_kind=runtime_kind)
+def serve(data):
+    app = create_app(data, TOKEN, runtime=fake_runtime())
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
@@ -92,11 +98,11 @@ def request(base, path, *, body=None, authenticated=True, key=None):
         return json.loads(content) if path.startswith("/api/") else content
 
 
-def check_application(runtime_kind):
+def check_application():
     assert hearth.__file__ is not None
     assert Path(hearth.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
-    data = Path.cwd() / ("http-data-" + runtime_kind)
-    with serve(data, runtime_kind=runtime_kind) as base:
+    data = Path.cwd() / "http-data"
+    with serve(data) as base:
         html = request(base, "/", authenticated=False).decode()
         assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
         assert assets and all(request(base, asset, authenticated=False) for asset in assets)
@@ -124,19 +130,20 @@ def check_application(runtime_kind):
             if result["status"] == "succeeded":
                 break
             if time.monotonic() >= deadline:
-                raise RuntimeError("Installed mock task did not complete")
+                raise RuntimeError("Installed task did not complete")
             time.sleep(0.05)
         artifact = request(base, f"/api/artifacts/{result['artifact_id']}")
-        assert artifact["artifact"]["simulated"] and "simulation" in artifact["content"]
-        assert result["runtime_kind"] == runtime_kind and result["runtime_version"] == 1
+        assert not artifact["artifact"]["simulated"]
+        assert "Daily summary" in artifact["content"]
+        assert result["runtime_kind"] == "codex_subscription" and result["runtime_version"] == 1
         assert len(result["input_digest"]) == 64
     with serve(data) as base:
         assert request(base, f"/api/commands/{receipt['command_id']}") == receipt
         assert request(base, f"/api/runs/{run['run_id']}") == result
         assert request(base, "/api/residents/reader/memory") == saved
-    capture(data, Path.cwd() / ("backup-" + runtime_kind))
-    restore(Path.cwd() / ("backup-" + runtime_kind), Path.cwd() / ("restored-" + runtime_kind))
-    with serve(Path.cwd() / ("restored-" + runtime_kind)) as base:
+    capture(data, Path.cwd() / "backup")
+    restore(Path.cwd() / "backup", Path.cwd() / "restored")
+    with serve(Path.cwd() / "restored") as base:
         assert request(base, "/api/state")["restore_hold"] is True
         assert request(base, f"/api/artifacts/{result['artifact_id']}") == artifact
         try:
@@ -149,5 +156,4 @@ def check_application(runtime_kind):
 
 
 if __name__ == "__main__":
-    for kind in ("inline_mock", "process_mock"):
-        check_application(kind)
+    check_application()

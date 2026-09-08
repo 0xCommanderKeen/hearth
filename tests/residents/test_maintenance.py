@@ -64,7 +64,7 @@ def test_archive_blocks_queued_admission_schedules_and_trusted_dispatch(tmp_path
     from hearth.work.service import Hearth
 
     database = Database(tmp_path / "hearth.db")
-    database.initialize(runtime_kind="process_mock")
+    database.initialize()
     hearth = Hearth(database, clock=lambda: 1_788_640_000)
     hearth.save_resident("reader", Declaration("Reader", "Read", 100000), expected_revision=0)
     routine = Routines(hearth).save(
@@ -352,6 +352,11 @@ def test_archive_keeps_running_reservation_and_held_backup_refuses_damaged_lifec
     assert hearth.run(run.id).status == "running" and hearth.run(run.id).reserved == 10000
     assert not hearth.run(run.id).cancellation_requested
     assert snapshot(hearth)["residents"][0]["presence"] == "running"
+    # Every run is priced, so a backup waits for the run to settle. A launched run
+    # cancelled mid-flight settles with unknown usage, so it stays unresolved.
+    app.state.execution.cancel(run.id)
+    app.state.executor.step()
+    assert hearth.run(run.id).status == "cancelled" and not hearth.run(run.id).usage_known
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
     with TestClient(
@@ -458,6 +463,8 @@ def test_competing_manager_and_operator_configuration_has_one_winner(tmp_path):
 
 
 def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_path):
+    import shutil
+
     from hearth.observation.snapshot import snapshot
 
     from tests.support import seed_reader
@@ -470,7 +477,7 @@ def test_unknown_launched_execution_keeps_hold_after_archive_and_restart(tmp_pat
     run = hearth.admit(task.task_id, reserve=10000)
     app.state.executor.step()
     # Lost external runtime evidence is not proof of termination.
-    (tmp_path / "mock-runtime" / (run.id + ".json")).unlink()
+    shutil.rmtree(tmp_path / "fake-runtime" / run.id)
     app.state.executor.step()
     assert hearth.run(run.id).status == "interrupted"
     Maintenance(hearth).change_lifecycle(

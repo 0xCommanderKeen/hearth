@@ -1,4 +1,4 @@
-"""A mock runtime client crosses the HTTP credential seam without operator authority."""
+"""A runtime client crosses the HTTP credential seam without operator authority."""
 
 import json
 
@@ -46,7 +46,7 @@ def test_runtime_reads_own_synthetic_context_without_authority_secrets(system):
     context = response.json()
     assert context["run_id"] == run.id and context["resident_id"] == "reader"
     assert context["instruction"] == "Summarize synthetic notes"
-    assert context["simulated"] is True and all("Synthetic" in note for note in context["notes"])
+    assert context["simulated"] is False and all("Synthetic" in note for note in context["notes"])
     assert run.owner_token not in response.text and credential.token not in response.text
     assert credential.token not in repr(credential)
     assert credential.token not in json.dumps(app.state.hearth.audit())
@@ -140,6 +140,11 @@ def test_issuance_requires_current_owner_and_audit_is_atomic(system):
 
 def test_backup_contains_no_bearer_and_restore_cannot_use_original_access(system, tmp_path):
     app, _, run, credential, _ = system
+    # A server restart keeps a still-current credential valid for its original run.
+    assert RunAccess(app.state.hearth).context(credential.token, run.id)["run_id"] == run.id
+    # A backup copies only settled work, so the held run finishes before capture.
+    app.state.executor.runtime.scenario = "success"
+    app.state.executor.step()
     backup = tmp_path / "backup"
     capture(tmp_path / "data", backup)
     assert credential.token.encode() not in (backup / "hearth.db").read_bytes()
@@ -150,8 +155,9 @@ def test_backup_contains_no_bearer_and_restore_cannot_use_original_access(system
         assert client.get(route(run), headers=auth(credential)).status_code == 401
     with pytest.raises(Refused, match="restored_copy_read_only"):
         restored_app.state.run_access.issue(run.id, run.owner_token)
-    # A server restart keeps a still-current credential valid for its original run.
-    assert RunAccess(app.state.hearth).context(credential.token, run.id)["simulated"] is True
+    # The credential ends with its own run, not with the quarantined copy.
+    with pytest.raises(Refused, match="runtime_unauthorized"):
+        RunAccess(app.state.hearth).context(credential.token, run.id)
 
 
 def test_token_for_one_resident_cannot_read_another_existing_run(system):
