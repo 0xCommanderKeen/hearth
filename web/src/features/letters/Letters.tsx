@@ -134,18 +134,24 @@ export function Letters({
     accepts: boolean;
   } | null>(null);
   const [doorRefusal, setDoorRefusal] = useState("");
-  const accepts =
+  // The declaration this panel knows about — what it shows, and what the next turn writes
+  // against. Hearth's own answer stands in only until the snapshot has caught up to the
+  // revision it named. That matters twice: a save that succeeded never reads as unchanged,
+  // and the next turn names the revision the last one produced rather than the snapshot's,
+  // which may not have advanced at all if the refresh after the save failed.
+  const known =
     door && door.revision >= resident.revision
-      ? door.accepts
-      : !!resident.letters_accept;
+      ? door
+      : { revision: resident.revision, accepts: !!resident.letters_accept };
+  const accepts = known.accepts;
   const read = () =>
     act(async () => setLoaded(await client.letters(resident.id, PAGE, 0)));
   /** Open or shut the declared door, which is one declaration revision and nothing else.
-   *  The request carries the door and the revision this page saw, so a purpose or a skill
-   *  text this panel never read cannot be overwritten by turning a door, and a save that
-   *  raced a change to the declaration is refused rather than applied to something else.
-   *  A refusal is shown here, where it was written, not as a door that quietly did not
-   *  move. */
+   *  The request carries the door and the newest revision this panel knows of, so a
+   *  purpose or a skill text it never read cannot be overwritten by turning a door, and a
+   *  save that raced a change to the declaration is refused rather than applied to
+   *  something else. A refusal is shown here, where it was written, not as a door that
+   *  quietly did not move. */
   async function turn(open: boolean) {
     setDoorRefusal("");
     await act(async () => {
@@ -153,7 +159,7 @@ export function Letters({
         const saved = await client.setLettersDoor(
           resident.id,
           open,
-          resident.revision,
+          known.revision,
         );
         setDoor({
           revision: saved.revision,

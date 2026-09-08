@@ -234,9 +234,19 @@ def create_app(
         with hearth.database.transaction(write=True) as db:
             values = body.model_dump(exclude={"expected_revision"})
             declared = {field for field in DECLARATION_FIELDS if values[field] is not None}
+            capabilities = {
+                field
+                for field in ("memory_writable", "letters_accept")
+                if values[field] is not None
+            }
             # What a resident is changes whole or not at all: a body that says some of the
             # declaration and not the rest is refused rather than quietly merged.
             if declared and declared != DECLARATION_FIELDS:
+                raise Refused("declaration_fields_invalid")
+            # A body that says nothing at all is refused too. A save is a change, and a
+            # revision nobody asked for still spends the expected revision every other
+            # client is holding.
+            if not declared and not capabilities:
                 raise Refused("declaration_fields_invalid")
             current = hearth.declared_declaration(db, resident_id)
             if not declared:

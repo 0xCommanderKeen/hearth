@@ -156,8 +156,10 @@ covered by the run's `tools_sha256`.
   control that never read a purpose or a skill text cannot overwrite one. What a resident
   *is* still changes whole or not at all — a body saying some of `name`, `purpose`,
   `daily_limit`, `budget_timezone` and `skill_text` and not the rest is refused as
-  `declaration_fields_invalid` rather than merged into what stands. The `expected_revision`
-  refuses a save that raced a change to any of it either way.
+  `declaration_fields_invalid` rather than merged into what stands, and so is a body that
+  says nothing at all, because a revision nobody asked for still spends the
+  `expected_revision` every other client is holding. The `expected_revision` refuses a
+  save that raced a change to any of it either way.
 - `GET/PUT /api/household` carries `max_letter_depth` (default **2**, `0` shuts the post
   household-wide, maximum 5), `letter_ttl_seconds` (default one day, 60 s to 7 days) and
   `letter_daily_limit` (default 5, `0` shuts the post, maximum 100 — counted in the

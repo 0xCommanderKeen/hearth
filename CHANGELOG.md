@@ -10,8 +10,10 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   `letters_accept` and `expected_revision`, so a control that never read a purpose or a
   skill text cannot overwrite one. What a resident *is* still changes whole or not at all
   — a body saying some of the five declaration fields and not the rest is refused as
-  `declaration_fields_invalid` instead of merged into what stands. A save carrying the
-  whole declaration, and `python -m hearth save-resident`, behave exactly as they did.
+  `declaration_fields_invalid` instead of merged into what stands, and so is a body that
+  says nothing at all, because a revision nobody asked for spends the expected revision
+  every other client is holding. A save carrying the whole declaration, and `python -m
+  hearth save-resident`, behave exactly as they did.
 
 - Letters are written down. `docs/letters.md` is the contract — the grant and the door
   that both have to be open, what Hearth arbitrates and the refusal each guard leaves,

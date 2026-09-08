@@ -202,6 +202,39 @@ it("opens a shut door and says which declaration revision now carries it", async
   expect(screen.getByText("Shut the door")).toBeTruthy();
 });
 
+it("turns the door again against the revision the last turn produced", async () => {
+  const client = new Client("synthetic-test");
+  vi.spyOn(client, "letters").mockResolvedValue(post);
+  const turn = vi
+    .spyOn(client, "setLettersDoor")
+    .mockImplementation(async (id, accept, revision) => ({
+      id,
+      revision: revision + 1,
+      declaration: {
+        name: "Karen",
+        purpose: "Runs the household",
+        daily_limit: 5_000_000,
+        budget_timezone: "UTC",
+        skill_text: "# Karen",
+        letters_accept: accept,
+      },
+    }));
+  // The snapshot never advances here: this is the case where the state refresh after a
+  // save failed, so the resident prop still carries the revision the door started at.
+  mount(karen, client);
+  fireEvent.click(screen.getByText("Open the door"));
+  await screen.findByText(/declaration revision 2/);
+
+  fireEvent.click(screen.getByText("Shut the door"));
+  await screen.findByText(/declaration revision 3/);
+  // The second turn names revision 2, not the stale 1 the snapshot still reports —
+  // otherwise it is refused as a conflict while the door is in fact open.
+  expect(turn.mock.calls[1]).toEqual(["karen", false, 2]);
+  expect(
+    screen.getByLabelText("Whether Karen can be written to").textContent,
+  ).toContain("Karen accepts no letters");
+});
+
 it("shows a refused door where it was written rather than as a door that did not move", async () => {
   const client = new Client("synthetic-test");
   vi.spyOn(client, "letters").mockResolvedValue(post);

@@ -430,6 +430,19 @@ def test_the_door_can_be_written_alone_and_half_a_declaration_cannot(tmp_path):
             client.get("/api/residents/reader", headers=auth).json()["declaration"]
             == latest["declaration"]
         )
+        # A body that says nothing at all is refused rather than writing a revision that
+        # changes nothing and spends the expected revision every other client holds.
+        empty = client.put(
+            "/api/residents/reader",
+            headers=auth,
+            json={"expected_revision": latest["revision"]},
+        )
+        assert empty.status_code == 409
+        assert empty.json()["error"] == "declaration_fields_invalid"
+        assert (
+            client.get("/api/residents/reader", headers=auth).json()["revision"]
+            == latest["revision"]
+        )
         # A door written at a resident that does not exist writes nothing.
         assert (
             client.put(
