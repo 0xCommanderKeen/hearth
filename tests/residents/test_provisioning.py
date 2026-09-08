@@ -367,7 +367,7 @@ def test_an_edited_etiquette_draft_is_skipped_instead_of_failing_the_provision(t
                     "notes": [],
                     "assertions": {
                         "max_characters": 1000,
-                        "contains": ["No synthetic inputs"],
+                        "contains": ["No notes were supplied"],
                         "excludes": [],
                     },
                 },

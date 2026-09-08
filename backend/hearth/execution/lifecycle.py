@@ -149,23 +149,6 @@ class Execution:
             check_not_archived(db, row["resident_id"])
             yield db
 
-    def finish_from_usage(self, run_id: str, owner_token: str, journal) -> Run:
-        with self.hearth.database.transaction() as db:
-            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-            if row is None or row["owner_token"] != owner_token:
-                raise Refused("run_ownership_lost")
-            expected = usage_accounting.binding(db, row)
-        if journal.binding != expected:
-            raise Refused("run_usage_binding_mismatch")
-        try:
-            with journal.snapshot() as receipt:
-                _, _, evidence = usage_accounting.encode_receipt(receipt, expected)
-                return self.finish(run_id, owner_token, evidence, _usage_receipt=receipt)
-        except Refused:
-            raise
-        except ValueError, OSError, TypeError, KeyError:
-            raise Refused("run_usage_invalid") from None
-
     def finish(
         self, run_id: str, owner_token: str, evidence: Evidence, *, _usage_receipt=None
     ) -> Run:
