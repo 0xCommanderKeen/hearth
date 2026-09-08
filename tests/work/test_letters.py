@@ -372,6 +372,88 @@ def test_the_door_is_operator_authority_and_a_reconfiguration_carries_it_forward
         assert kept.json()["declaration"]["letters_accept"] is True
 
 
+def test_the_door_can_be_written_alone_and_half_a_declaration_cannot(tmp_path):
+    """A control that only opens a door does not have to restate what the resident is.
+
+    Townhall's door control sends the door and the revision it saw, and nothing else, so
+    it cannot overwrite a purpose or a skill text it never read. A body that says some of
+    the declaration and not the rest is refused rather than merged into what stands.
+    """
+    from fastapi.testclient import TestClient
+    from hearth.app import create_app
+
+    from tests.fake_runtime import fake_runtime
+    from tests.support import seed_reader_via
+
+    token = "synthetic-letters-operator"
+    auth = {"Authorization": "Bearer " + token}
+    app = create_app(tmp_path, token, supervise=False, runtime=fake_runtime())
+    with TestClient(app) as client:
+        seed_reader_via(client)
+        saved = client.get("/api/residents/reader", headers=auth).json()
+        assert saved["declaration"]["letters_accept"] is False
+        opened = client.put(
+            "/api/residents/reader",
+            headers=auth,
+            json={"letters_accept": True, "expected_revision": saved["revision"]},
+        )
+        assert opened.status_code == 200
+        assert opened.json()["revision"] == saved["revision"] + 1
+        # Everything the body never mentioned is exactly what it was.
+        assert opened.json()["declaration"] == saved["declaration"] | {"letters_accept": True}
+        # The same body shuts it again, and the revision it names has moved on.
+        assert (
+            client.put(
+                "/api/residents/reader",
+                headers=auth,
+                json={"letters_accept": False, "expected_revision": saved["revision"]},
+            ).json()["error"]
+            == "revision_conflict"
+        )
+        shut = client.put(
+            "/api/residents/reader",
+            headers=auth,
+            json={"letters_accept": False, "expected_revision": opened.json()["revision"]},
+        )
+        assert shut.status_code == 200
+        assert shut.json()["declaration"]["letters_accept"] is False
+        # Half a declaration is refused: a body that renames a resident says all of it.
+        latest = client.get("/api/residents/reader", headers=auth).json()
+        half = client.put(
+            "/api/residents/reader",
+            headers=auth,
+            json={"name": "Renamed", "expected_revision": latest["revision"]},
+        )
+        assert half.status_code == 409
+        assert half.json()["error"] == "declaration_fields_invalid"
+        assert (
+            client.get("/api/residents/reader", headers=auth).json()["declaration"]
+            == latest["declaration"]
+        )
+        # A body that says nothing at all is refused rather than writing a revision that
+        # changes nothing and spends the expected revision every other client holds.
+        empty = client.put(
+            "/api/residents/reader",
+            headers=auth,
+            json={"expected_revision": latest["revision"]},
+        )
+        assert empty.status_code == 409
+        assert empty.json()["error"] == "declaration_fields_invalid"
+        assert (
+            client.get("/api/residents/reader", headers=auth).json()["revision"]
+            == latest["revision"]
+        )
+        # A door written at a resident that does not exist writes nothing.
+        assert (
+            client.put(
+                "/api/residents/nobody",
+                headers=auth,
+                json={"letters_accept": True, "expected_revision": 1},
+            ).json()["error"]
+            == "revision_conflict"
+        )
+
+
 def test_the_operator_s_own_letter_starts_a_chain_the_receiver_can_walk_on(household):
     """An operator's letter has no resident and no run behind it, and is still a hop."""
     from hearth.work.letters import validate_letters

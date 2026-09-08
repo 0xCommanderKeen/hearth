@@ -1279,6 +1279,17 @@ form label + button {
 }
 
 /* ---------- letters ---------- */
+.letters-door {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.letters-door small {
+  flex: 1 1 20rem;
+  color: var(--muted);
+}
 .lineage ol {
   list-style: none;
   display: flex;

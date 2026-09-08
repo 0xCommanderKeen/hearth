@@ -32,8 +32,13 @@ run a daily routine; pause or cancel work; read what Hearth has told them; and
 recover Hearth's own data from backup. Memory is no longer operator-only: a
 resident's own live run may add a revision and writes its own journal, within the
 bounds recorded in [ADR 0012](adr/0012-run-authored-memory-and-journal.md).
-Reader receives read access only. It does
-not need broad tools, delegation, a marketplace or an imported resident fleet.
+Residents can also ask each other: a letter is an asynchronous, budgeted, audited
+question worked by the receiver as an ordinary task and answered on the sender's next
+run, under the grant, door and depth bounds recorded in
+[ADR 0011](adr/0011-letters-between-residents.md) and contracted in
+[letters](letters.md); the capability sits beside the other grant powers in
+[the permission contract](management.md). Reader receives read access only. It does
+not need broad tools, a marketplace or an imported resident fleet.
 
 Do not build import from other systems, cross-system ownership registries or source
 migration adapters. Definition-only resident bundles are the single cross-system

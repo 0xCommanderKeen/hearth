@@ -241,8 +241,8 @@ def evidence(app, karen, tasks, runs):
         for table, count in {
             # Karen and the reporter she created; no service resident of any kind.
             "residents": 2,
-            # Three bootstrap skills plus the reporting skill Karen authored.
-            "skills": 4,
+            # Five bootstrap skills plus the reporting skill Karen authored.
+            "skills": 6,
             "tasks": 5,
             "runs": 5,
             "run_usage": 5,

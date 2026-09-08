@@ -80,6 +80,29 @@ class Hearth:
         self.database = database
         self.clock = clock
 
+    def declared_declaration(self, db, resident_id: str) -> Declaration | None:
+        """The declaration standing now, read inside the caller's own transaction.
+
+        A save that omits a field keeps what this returns, so the read and the write that
+        depends on it see the same revision. `None` when there is no such resident.
+        """
+        row = db.execute(
+            "SELECT d.* FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return Declaration(
+            row["name"],
+            row["purpose"],
+            row["daily_limit"],
+            row["budget_timezone"],
+            row["skill_text"],
+            bool(row["memory_writable"]),
+            bool(row["letters_accept"]),
+        )
+
     def declared_memory_writable(self, db, resident_id: str) -> bool:
         """The current declared memory.writable, so an omitted flag keeps what is granted."""
         row = db.execute(

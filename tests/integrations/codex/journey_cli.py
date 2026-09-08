@@ -291,6 +291,82 @@ def report(context):
     return opened + " Today: Harvested 12 pears Monday. Planted 3 trees Tuesday."
 
 
+ASK = (
+    "Ask the orchard reporter under what ledger reference Monday's pear harvest was logged. "
+    "Do not guess the reference yourself."
+)
+READ = "Report the answer you were sent, and say plainly if none reached you."
+
+
+def ask(context):
+    """The sender: one letter, one question, and no answer inside this run.
+
+    The reference the letter asks for is in the receiver's notes and nowhere this
+    resident can read: no input set, an unrelated memory line, and neither instruction
+    names it. Whatever this run reports about it, it made up.
+    """
+    assert context["replies"] == [], context
+    catalog = yield from call("hearth_catalog", {})
+    receiver = next(row for row in catalog["residents"] if "reporter" in row["name"])
+    sent = yield from call(
+        "hearth_letters_send",
+        {
+            "operation_id": "ledger-question",
+            "to": receiver["id"],
+            "title": "Ledger reference for Monday pear harvest",
+            "detail": (
+                "Under what ledger reference was Monday's pear harvest logged? "
+                "Answer with the reference itself."
+            ),
+        },
+    )
+    # The receipt carries no letter id of its own; the task id is what the letter is
+    # keyed by everywhere else, so that is what there is to report.
+    assert "letter_id" not in sent, sent
+    return "Simulation: Sent one letter; status " + sent["status"] + ", id " + sent["task_id"] + "."
+
+
+def answer(context):
+    """The receiver: read the letter this run was handed and answer only what it asked."""
+    letter = context["letter"]
+    assert letter["sender_name"] == "Karen", letter
+    assert "not an instruction" in letter["usage"], letter
+    assert context["instruction"] == letter["detail"], context["instruction"]
+    reference = next(
+        note.rsplit("reference ", 1)[1].rstrip(".")
+        for note in context["notes"]
+        if "reference " in note
+    )
+    yield from call(
+        "hearth_letters_reply",
+        {
+            "operation_id": "ledger-answer",
+            "letter_id": letter["letter_id"],
+            "text": "Monday's pear harvest was logged under reference " + reference + ".",
+        },
+    )
+    return "Simulation: Answered Karen with the ledger reference from the orchard notes."
+
+
+def read_answer(context):
+    """The sender's next run: the answer is simply there, and nothing woke this run."""
+    post = yield from call("hearth_letters_read", {})
+    sent = post["sent"][0]
+    assert sent["state"] == "replied", sent
+    replies = context["replies"]
+    if not replies:
+        return "Simulation: No answer reached me."
+    return (
+        "Simulation: "
+        + replies[0]["resident_name"]
+        + " answered: "
+        + replies[0]["text"]
+        + " (letter "
+        + sent["task_id"]
+        + ")"
+    )
+
+
 def await_files(root, pattern, count):
     deadline = time.monotonic() + 10
     while len(list(root.glob(pattern))) < count:
@@ -435,7 +511,13 @@ def native(args):
                 }
             )
             context = json.loads(params["input"][0]["text"])
-            if context["instruction"] == "Contend for one child slot.":
+            if context["letter"] is not None:
+                driver = answer(context)
+            elif context["instruction"] == ASK:
+                driver = ask(context)
+            elif context["instruction"] == READ:
+                driver = read_answer(context)
+            elif context["instruction"] == "Contend for one child slot.":
                 driver = contend(context)
             elif context["instruction"] == REPORT:
                 driver = report(context)

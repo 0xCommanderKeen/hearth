@@ -10,6 +10,41 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   `max_daily_limit` and the household allowance are untouched. The skill text is seeded
   once at explicit setup, so an already-bootstrapped household keeps its own revision.
 
+- The letters door is turned from Townhall. The Letters section on a resident's page
+  carries one control that opens or shuts the declared `letters.accept` door, names the
+  declaration revision that now carries it, and shows a refusal where it was written
+  rather than as a door that quietly did not move; a restored copy cannot turn one. The
+  door travels alone: `PUT /api/residents/{id}` now takes a body carrying only
+  `letters_accept` and `expected_revision`, so a control that never read a purpose or a
+  skill text cannot overwrite one. What a resident *is* still changes whole or not at all
+  — a body saying some of the five declaration fields and not the rest is refused as
+  `declaration_fields_invalid` instead of merged into what stands, and so is a body that
+  says nothing at all, because a revision nobody asked for spends the expected revision
+  every other client is holding. A save carrying the whole declaration, and `python -m
+  hearth save-resident`, behave exactly as they did.
+
+- Letters are written down. `docs/letters.md` is the contract — the grant and the door
+  that both have to be open, what Hearth arbitrates and the refusal each guard leaves,
+  delivery by ordinary admission, the four states a letter ends in, cost by origin, the
+  operator surfaces, and what is deliberately not built (no chat, no auto-wake, no
+  broadcast, no delivery daemon). ADR 0011 records why a letter is a task rather than a
+  message bus, why delivery is pull-based and asynchronous, why the depth cap defaults to
+  two, why there is no free-form chat between residents, and the departure from the
+  rebuild plan's "no delegation" line, which now points at the ADR and at the permission
+  contract. The etiquette is library text rather than prompt prose: **Ask a colleague**
+  and **Answer a letter** are seeded as ordinary editable skills that grant nothing,
+  adopting an operator-written entry of the same name rather than seeding a second — Karen
+  carries the asking one because her grant carries `send_letters`, and the answering one
+  waits in the library for the operator that opens a door to assign it. Karen's setup
+  seeds them, and because setup runs once, a household already set up before letters
+  existed is seeded on start instead, so both wait in a library the operator can actually
+  read rather than in one only a fresh data directory would ever get. The
+  real journey now has a deterministic twin in CI walking the same three runs, and the doc
+  carries #111's run ids and its 157,062 microdollars, the two prerequisites that journey
+  found — a door closed by default, and a receiver's daily limit that has to cover a whole
+  answering run — and the wart that the send receipt carries the task id, which is the
+  letter id.
+
 - People can see letters now. A resident's page carries a **Letters** section: everything
   that reached it and everything it wrote, each in one named state — answered, open,
   worked and never answered, failed, gone stale — on the Ledger's own colour-as-state,

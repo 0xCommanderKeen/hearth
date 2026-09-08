@@ -116,6 +116,32 @@ it("allows a fresh command when an expired submission was never accepted", async
   ).rejects.toMatchObject({ status: 410 });
 });
 
+it("writes the letters door and no other declaration field", async () => {
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "reader", revision: 4, declaration: {} }),
+        { status: 200 },
+      ),
+    );
+  const saved = await new Client("synthetic-test-token").setLettersDoor(
+    "reader",
+    true,
+    3,
+  );
+  const [path, options] = fetch.mock.calls[0];
+  expect(path).toBe("/api/residents/reader");
+  expect(options?.method).toBe("PUT");
+  // Only the door and the revision it was read at: a purpose or a skill text this
+  // caller never loaded cannot be restated, and so cannot be overwritten.
+  expect(JSON.parse(options?.body as string)).toEqual({
+    letters_accept: true,
+    expected_revision: 3,
+  });
+  expect(saved.revision).toBe(4);
+});
+
 it("keeps restored-state reads available but refuses mutations before fetch", async () => {
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
     async () =>

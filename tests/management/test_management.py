@@ -522,3 +522,98 @@ def test_maximum_unicode_skill_is_read_completely_and_catalog_stays_bounded(tmp_
     )
     assert catalog["success"] and _tool_response(catalog) == catalog
     assert len(json.loads(catalog["contentItems"][0]["text"])["skills"]) == 25
+
+
+def test_karen_setup_seeds_both_letter_etiquettes_and_carries_the_sender_s_one(tmp_path):
+    """Both are ordinary library entries; only the one for a grant Karen holds is attached."""
+    from hearth.management.authority import read_grant
+    from hearth.management.bootstrap import bootstrap
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import (
+        ANSWER_A_LETTER,
+        ANSWER_SKILL_NAME,
+        ASK_A_COLLEAGUE,
+        ASK_SKILL_NAME,
+    )
+
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
+    hearth = app.state.hearth
+    karen = bootstrap(hearth)
+    # Both are in the catalog Townhall's Skills page reads.
+    catalog = TestClient(app).get("/api/skills", headers=AUTH).json()
+    assert {ASK_SKILL_NAME, ANSWER_SKILL_NAME} <= {item["name"] for item in catalog}
+    with hearth.database.transaction() as db:
+        library = {
+            row["name"]: dict(row)
+            for row in db.execute(
+                "SELECT r.name AS name,r.instructions AS instructions,r.status AS status,"
+                "s.id AS skill_id FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision"
+            )
+        }
+        assigned = read_assignments(db, karen["resident_id"])["skills"]
+        # Instructions grant nothing: carrying the etiquette is not what permits sending.
+        assert "send_letters" in read_grant(db, karen["resident_id"])["capabilities"]
+    assert library[ASK_SKILL_NAME]["instructions"] == ASK_A_COLLEAGUE
+    assert library[ANSWER_SKILL_NAME]["instructions"] == ANSWER_A_LETTER
+    assert library[ASK_SKILL_NAME]["status"] == library[ANSWER_SKILL_NAME]["status"] == "active"
+    assert karen["ask_skill_id"] == library[ASK_SKILL_NAME]["skill_id"]
+    assert karen["answer_skill_id"] == library[ANSWER_SKILL_NAME]["skill_id"]
+    # Karen's grant carries send_letters, so she carries the asking etiquette. Her own
+    # door is shut, so the answering one waits in the library for whoever's is opened.
+    assert [item["name"] for item in assigned] == [
+        "Create residents",
+        "Create good skills",
+        "Keep a journal",
+        ASK_SKILL_NAME,
+    ]
+
+    # Repeating setup returns the original receipt and seeds no second copy of either.
+    assert bootstrap(hearth) == karen
+    with hearth.database.transaction() as db:
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT r.name AS name FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision"
+            )
+        ]
+    assert names.count(ASK_SKILL_NAME) == names.count(ANSWER_SKILL_NAME) == 1
+
+
+def test_a_letter_etiquette_written_by_hand_is_adopted_instead_of_seeded_twice(tmp_path):
+    """An operator who wrote the wording first keeps the one library entry."""
+    from hearth.management.bootstrap import bootstrap
+    from hearth.skills.bootstrap import ANSWER_SKILL_NAME, ASK_SKILL_NAME
+    from hearth.skills.catalog import Skills
+
+    hearth = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime()).state.hearth
+    by_hand = {
+        name: Skills(hearth).save(
+            "operator-etiquette-" + str(index),
+            name=name,
+            description="The operator's own wording",
+            instructions="Ask or answer plainly.",
+            actor="operator",
+        )
+        for index, name in enumerate((ASK_SKILL_NAME, ANSWER_SKILL_NAME))
+    }
+    # A same-named archived entry is not adopted; the oldest active one is.
+    stale = Skills(hearth).save(
+        "stale-ask", name=ASK_SKILL_NAME, description="Older", instructions="x", actor="operator"
+    )
+    Skills(hearth).archive(
+        "archive-stale", stale["skill_id"], expected_revision=stale["revision"], actor="operator"
+    )
+    karen = bootstrap(hearth)
+    assert karen["ask_skill_id"] == by_hand[ASK_SKILL_NAME]["skill_id"]
+    assert karen["answer_skill_id"] == by_hand[ANSWER_SKILL_NAME]["skill_id"]
+    with hearth.database.transaction() as db:
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT r.name AS name FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision WHERE r.status='active'"
+            )
+        ]
+    assert names.count(ASK_SKILL_NAME) == names.count(ANSWER_SKILL_NAME) == 1
