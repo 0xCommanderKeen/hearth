@@ -12,11 +12,10 @@ The form opens with the resident allowance at **$1.00 a day** (1,000,000 microdo
 It starts there because an allowance below one run's cost buys nothing: the four recorded
 real runs in [the journey evidence](karen-journey.md) cost 168,444 microdollars together,
 about 42,000 each, and a resident whose day cannot pay for a single admission is refused
-its own first task. The number is
-a proposal, not a floor. The operator edits the field before creating, and nothing
-refuses a smaller allowance. `daily_limit` remains required on the API — the default
-lives in the form, not in the backend — and the household allowance and the creating
-grant's `max_daily_limit` are what actually bound it.
+its own first task. The number is a proposal and not a floor: the operator edits the
+field before creating, and nothing refuses a smaller allowance. `daily_limit` remains
+required on the API — the default lives in the form, not in the backend — and the
+household allowance and the creating grant's `max_daily_limit` are what actually bound it.
 
 The authenticated operator contract is:
 
