@@ -13,10 +13,13 @@ revisit a resident or attribute cost to the wrong origin.
 
 from hearth.authority.household import _day_window, read_letter_policy
 from hearth.residents.models import Refused, bounded_text, identifier
-from hearth.work.service import _audit, _queue_task
+from hearth.work.service import ADMISSION_WAITS, _audit, _queue_task
 
 MAX_TITLE = 200
 MAX_DETAIL = 8_000
+# What one letter may reserve, matching the scheduler's own occurrence reservation: a
+# letter is an ordinary task and buys no more of the household's day than one does.
+LETTER_RESERVATION = 10_000
 # A reply is an answer, not a second run report: the sender reads this, and the full
 # artifact of the run that wrote it stays linked for the operator.
 MAX_REPLY = 4_000
@@ -241,10 +244,14 @@ def send_letter(
     _check_daily_cap(db, to, now, policy)
 
     deadline = _deadline(now, policy, expires_at)
+    # The task instruction is the letter's own text and nothing else. Who wrote it and
+    # what it is called are structured facts on the letter row, read back by the context
+    # builder, so a sender cannot write a heading into its detail and have the receiver
+    # read it as Hearth's own.
     task_id = _queue_task(
         db,
         to,
-        f"Letter from {sender}: {title}\n\n{detail}",
+        detail,
         now,
         {"letter_operation": operation_id, "originating_run_id": sender_run},
     )
@@ -346,13 +353,7 @@ def send_operator_letter(
         )
     _check_daily_cap(db, to, now, policy)
     deadline = _deadline(now, policy, expires_at)
-    task_id = _queue_task(
-        db,
-        to,
-        f"Letter from the operator: {title}\n\n{detail}",
-        now,
-        {"letter_command": command_id, "sender": OPERATOR},
-    )
+    task_id = _queue_task(db, to, detail, now, {"letter_command": command_id, "sender": OPERATOR})
     db.execute(
         "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?)",
         (task_id, None, None, None, task_id, 1, title, now, deadline),
@@ -647,6 +648,46 @@ def expire_letters(hearth) -> list[str]:
             )
             expired.append(row["task_id"])
     return expired
+
+
+def deliver_letters(hearth) -> list[str]:
+    """Admit the letters waiting on a resident that can work one now, oldest first.
+
+    A letter is delivered by being worked, and this is the whole of the delivery: no
+    watcher, no poller, no inbox to drain. The supervision tick that admits routine
+    occurrences admits letter tasks the same way and through the same operation, so a
+    letter is bounded by the receiver's allocation, the shared household allowance and
+    the receiver's own pause and archive state — never by anything its sender holds.
+
+    A receiver that is paused, busy, archived or out of allowance keeps its letter
+    queued for a later pass, exactly as a routine occurrence waits; the letter's own
+    shelf life is what eventually closes it. Any other refusal is a real fault and is
+    raised once the bounded pass is done, so one broken resident cannot starve the rest.
+    """
+    with hearth.database.transaction() as db:
+        waiting = [
+            row[0]
+            for row in db.execute(
+                "SELECT l.task_id FROM letters l JOIN tasks t ON t.id=l.task_id "
+                "WHERE t.status='queued' AND l.expires_at>? "
+                "ORDER BY l.created_at,l.task_id LIMIT 100",
+                (int(hearth.clock()),),
+            )
+        ]
+    delivered: list[str] = []
+    first_refusal = None
+    for task_id in waiting:
+        try:
+            hearth.admit(task_id, reserve=LETTER_RESERVATION)
+            delivered.append(task_id)
+        except Refused as error:
+            # A letter that went stale between the read and the write is left to the
+            # sweep that owns closing it, like any other letter nobody started in time.
+            if error.code not in ADMISSION_WAITS | {"letter_expired"} and first_refusal is None:
+                first_refusal = error
+    if first_refusal is not None:
+        raise first_refusal
+    return delivered
 
 
 def validate_letters(db) -> None:

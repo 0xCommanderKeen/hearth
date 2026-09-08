@@ -127,8 +127,9 @@ REWRITES: dict[tuple[str, str], str] = {
 # Upgrading from a version below this changes the run context Hearth builds, so the
 # instruction an admitted run would now be launched with no longer matches the digest it
 # reserved against. Such a run cannot start, and on the next pass it would settle as
-# interrupted while holding its resident's slot and reservation.
-CONTEXT_REWRITTEN_AT = 3
+# interrupted while holding its resident's slot and reservation. The context gained the
+# rendered letter at version 8, so every store below it is rebuilt this way.
+CONTEXT_REWRITTEN_AT = 8
 
 # Upgrading from a version below this removes approvals, so a notification announcing
 # one names a review the store no longer holds and can no longer open.
