@@ -227,7 +227,9 @@ it("displays run output and clears it when the operator locks the session", asyn
   await login();
   fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
   const summaryPanel = await screen.findByLabelText("Summary output");
-  expect(document.activeElement).toBe(summaryPanel);
+  // The panel takes focus in an effect, which lands after it is first findable; on a
+  // loaded machine that gap is real, so wait for the focus rather than for the element.
+  await waitFor(() => expect(document.activeElement).toBe(summaryPanel));
   expect(screen.getByText(/No model was called/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
