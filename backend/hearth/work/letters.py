@@ -28,6 +28,10 @@ LETTER_WAITS = ADMISSION_WAITS | {"letter_expired"}
 MAX_REPLY = 4_000
 # What one call may carry back, so a busy inbox cannot outgrow the native response.
 MAX_PAGE = 25
+# How many answers one run opens with. A sender reads what its colleagues wrote since
+# its last run, bounded like every other injected input: the rest wait for the next run
+# or for the tool, which pages.
+MAX_RUN_REPLIES = 5
 # Hearth's own hand. An operator's letter has no resident and no run behind it.
 OPERATOR = "operator"
 
@@ -266,7 +270,7 @@ def send_letter(
         {"letter_operation": operation_id, "originating_run_id": sender_run},
     )
     db.execute(
-        "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?,'pending',NULL)",
         (
             task_id,
             sender,
@@ -365,7 +369,7 @@ def send_operator_letter(
     deadline = _deadline(now, policy, expires_at)
     task_id = _queue_task(db, to, detail, now, {"letter_command": command_id, "sender": OPERATOR})
     db.execute(
-        "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?,'pending',NULL)",
         (task_id, None, None, None, task_id, 1, title, now, deadline),
     )
     # The command's recorded deadline is the letter's own shelf life: for a submitted
@@ -456,9 +460,12 @@ def reply_to_letter(
         "INSERT INTO letter_replies VALUES (?,?,?,?,?)",
         (letter_id, run_id, run["resident_id"], text, now),
     )
+    # The answer being written is one fact; what the letter finally came to is another,
+    # recorded when its run ends. A reply written by a run that then fails still leaves
+    # the sender an answer, so the two are never the same event.
     _audit(
         db,
-        "letter.replied",
+        "letter.answered",
         letter_id,
         now,
         {
@@ -487,6 +494,60 @@ def reply_to_letter(
     )
 
 
+def settle_letter(
+    db,
+    task_id: str,
+    *,
+    run_id: str,
+    resident_id: str,
+    status: str,
+    artifact_id: str | None,
+    now: int,
+) -> str | None:
+    """Say what became of the letter this run was working, or nothing if it was not one.
+
+    A letter ends in exactly one state and says so out loud, because a question that
+    goes quiet is worse than a question that is refused. The run answered it (`replied`),
+    or it worked and never called the reply tool (`unanswered`), or it did not finish
+    (`failed`). An answer already written survives its run failing afterwards: the sender
+    has the answer, and the run's own status is recorded beside the state rather than
+    hidden by it.
+
+    Called inside the transaction that settles the run, so the state, the run's terminal
+    status and the audit fact are one write. A letter already settled — by the expiry
+    sweep, or by a retry of this settlement — keeps the state it has.
+    """
+    letter = db.execute("SELECT * FROM letters WHERE task_id=?", (task_id,)).fetchone()
+    if letter is None or letter["state"] != "pending":
+        return None
+    reply = db.execute(
+        "SELECT run_id,written_at FROM letter_replies WHERE task_id=?", (task_id,)
+    ).fetchone()
+    state = "replied" if reply else ("unanswered" if status == "succeeded" else "failed")
+    db.execute(
+        "UPDATE letters SET state=?,settled_at=? WHERE task_id=?", (state, now, task_id)
+    )
+    _audit(
+        db,
+        "letter." + state,
+        task_id,
+        now,
+        {
+            "state": state,
+            "run_id": run_id,
+            "run_status": status,
+            "artifact_id": artifact_id,
+            "sender_resident_id": letter["sender_resident_id"],
+            "sender": letter["sender_resident_id"] or OPERATOR,
+            "recipient_resident_id": resident_id,
+            "root_task_id": letter["root_task_id"],
+            "depth": letter["depth"],
+            "reply_run_id": reply["run_id"] if reply else None,
+        },
+    )
+    return state
+
+
 def _view(row, *, excerpt: int = 500) -> dict:
     """One letter as a reader of a list of them sees it, with its answer if it has one."""
     instruction = row["instruction"]
@@ -503,6 +564,8 @@ def _view(row, *, excerpt: int = 500) -> dict:
         "created_at": row["created_at"],
         "expires_at": row["expires_at"],
         "status": row["status"],
+        "state": row["state"],
+        "settled_at": row["settled_at"],
         "instruction": instruction[:excerpt],
         "instruction_truncated": len(instruction) > excerpt,
         "reply": None
@@ -531,12 +594,14 @@ _ANSWERED = _LETTERS.replace("LEFT JOIN letter_replies", "JOIN letter_replies")
 def read_letters(
     db, resident_id: str, *, since: int = 0, limit: int = MAX_PAGE, offset: int = 0
 ) -> dict:
-    """What one resident has been sent, and what its own letters were answered with.
+    """What one resident has been sent, what its own letters came to, and their answers.
 
-    Bounded on both sides, newest first, filtered by time: a resident reads what is newer
+    Bounded on every side, newest first, filtered by time: a resident reads what is newer
     than the last time it looked, and a truncated page is reached by asking again one
-    page further back. A reply belongs to the resident that asked the question, never to
-    the run that wrote it — that run already has an artifact of its own.
+    page further back. `since` is exclusive, so the row a cursor was taken from is not
+    handed back on the next call and reading twice converges. A reply belongs to the
+    resident that asked the question, never to the run that wrote it — that run already
+    has an artifact of its own.
     """
     identifier(resident_id)
     if (
@@ -549,13 +614,22 @@ def read_letters(
     ):
         raise Refused("invalid_letter_page")
     received = db.execute(
-        _LETTERS + "WHERE t.resident_id=? AND l.created_at>=? "
+        _LETTERS + "WHERE t.resident_id=? AND l.created_at>? "
         "ORDER BY l.created_at DESC,l.task_id DESC LIMIT ? OFFSET ?",
         (resident_id, since, limit + 1, offset),
     ).fetchall()
     replies = db.execute(
-        _ANSWERED + "WHERE l.sender_resident_id=? AND p.written_at>=? "
+        _ANSWERED + "WHERE l.sender_resident_id=? AND p.written_at>? "
         "ORDER BY p.written_at DESC,l.task_id DESC LIMIT ? OFFSET ?",
+        (resident_id, since, limit + 1, offset),
+    ).fetchall()
+    # A sender's own letters, newest movement first. A letter is new to this reader when
+    # it is written and again when it ends, so `since` is measured against whichever of
+    # those happened last: a letter that went unanswered or failed surfaces once more,
+    # carrying the state, rather than leaving the resident that asked to guess.
+    sent = db.execute(
+        _LETTERS + "WHERE l.sender_resident_id=? AND COALESCE(l.settled_at,l.created_at)>? "
+        "ORDER BY COALESCE(l.settled_at,l.created_at) DESC,l.task_id DESC LIMIT ? OFFSET ?",
         (resident_id, since, limit + 1, offset),
     ).fetchall()
     return {
@@ -565,6 +639,8 @@ def read_letters(
         "offset": offset,
         "received": [_view(row) for row in received[:limit]],
         "received_truncated": len(received) > limit,
+        "sent": [_view(row) for row in sent[:limit]],
+        "sent_truncated": len(sent) > limit,
         "replies": [
             {
                 "letter_id": row["task_id"],
@@ -580,6 +656,55 @@ def read_letters(
         ],
         "replies_truncated": len(replies) > limit,
     }
+
+
+def run_replies(db, run_id: str) -> list[dict]:
+    """The answers this run opens with: replies to its resident's own letters, newest first.
+
+    A sender is never woken by an answer — it reads one on its next run, and this is
+    that reading. The window is exactly the gap since the resident's previous run, so an
+    answer is offered once and a run that already opened with it does not see it again.
+
+    Both edges are read from stored facts and neither moves afterwards. The far edge is
+    this run's own admission, for the same reason the offered tool set is bounded there:
+    a colleague answering while this run is starting is somebody else's write, and
+    without the bound it would change a context that was already pinned and digested.
+    The answering resident's name is read through the revision its replying run was
+    admitted with, so renaming anybody cannot move a digest either.
+    """
+    run = db.execute("SELECT resident_id,created_at FROM runs WHERE id=?", (run_id,)).fetchone()
+    if run is None:
+        return []
+    previous = db.execute(
+        "SELECT created_at FROM runs WHERE resident_id=? AND (created_at,id)<(?,?) "
+        "ORDER BY created_at DESC,id DESC LIMIT 1",
+        (run["resident_id"], run["created_at"], run_id),
+    ).fetchone()
+    return [
+        {
+            "letter_id": row["task_id"],
+            "title": row["title"][:MAX_TITLE],
+            "resident_id": row["resident_id"],
+            "resident_name": row["name"] or row["resident_id"],
+            "root_task_id": row["root_task_id"],
+            "written_at": row["written_at"],
+            "text": row["text"][:MAX_REPLY],
+        }
+        for row in db.execute(
+            "SELECT p.*,l.title,l.root_task_id,d.name FROM letter_replies p "
+            "JOIN letters l ON l.task_id=p.task_id JOIN runs r ON r.id=p.run_id "
+            "LEFT JOIN declarations d ON d.resident_id=r.resident_id "
+            "AND d.revision=r.resident_revision "
+            "WHERE l.sender_resident_id=? AND p.written_at>? AND p.written_at<=? "
+            "ORDER BY p.written_at DESC,p.task_id DESC LIMIT ?",
+            (
+                run["resident_id"],
+                previous["created_at"] if previous is not None else -1,
+                run["created_at"],
+                MAX_RUN_REPLIES,
+            ),
+        )
+    ]
 
 
 def operator_letters(db, resident_id: str, *, limit: int = 30, offset: int = 0) -> dict:
@@ -641,12 +766,17 @@ def expire_letters(hearth) -> list[str]:
             (*pending, now),
         ).fetchall():
             db.execute("UPDATE tasks SET status='failed' WHERE id=?", (row["task_id"],))
+            db.execute(
+                "UPDATE letters SET state='expired',settled_at=? WHERE task_id=?",
+                (now, row["task_id"]),
+            )
             _audit(
                 db,
                 "letter.expired",
                 row["task_id"],
                 now,
                 {
+                    "state": "expired",
                     "reason": "letter_expired",
                     "sender_resident_id": row["sender_resident_id"],
                     "sender_run_id": row["sender_run_id"],
@@ -707,8 +837,26 @@ def validate_letters(db) -> None:
     checked the same way: it belongs to the run that worked the letter it answers.
     """
     for row in db.execute(
-        "SELECT l.*,t.resident_id AS recipient FROM letters l JOIN tasks t ON t.id=l.task_id"
+        "SELECT l.*,t.resident_id AS recipient,t.status,"
+        "EXISTS(SELECT 1 FROM letter_replies p WHERE p.task_id=l.task_id) AS answered,"
+        "EXISTS(SELECT 1 FROM runs r WHERE r.task_id=l.task_id) AS worked "
+        "FROM letters l JOIN tasks t ON t.id=l.task_id"
     ):
+        # What a letter came to is the one word its sender reads, so a copy cannot carry
+        # a state its own rows contradict: an answer nobody wrote, an unanswered letter
+        # whose run never succeeded, or one closed for going stale after being worked.
+        state, terminal = row["state"], row["status"] in {"succeeded", "failed", "cancelled"}
+        if state == "pending":
+            if terminal:
+                raise Refused("backup_letters_invalid")
+        elif not terminal:
+            raise Refused("backup_letters_invalid")
+        if state != "pending" and (state == "replied") != bool(row["answered"]):
+            raise Refused("backup_letters_invalid")
+        if state == "unanswered" and row["status"] != "succeeded":
+            raise Refused("backup_letters_invalid")
+        if state == "expired" and (row["worked"] or row["status"] != "failed"):
+            raise Refused("backup_letters_invalid")
         if row["sender_run_id"] is None:
             # The operator's own hand: no resident, no run, and the start of its chain.
             if (

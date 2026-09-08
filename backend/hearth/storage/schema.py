@@ -214,6 +214,10 @@ SCHEMA = (
     # The receiver is the task's own resident; there is no second copy of that fact.
     # An operator writing on Hearth's own behalf has no resident and no run behind it,
     # so both sender columns are empty together or not at all.
+    # What became of it is one word, written when the letter reaches its end: answered
+    # (`replied`), worked and left unanswered, `failed` with the run that worked it, or
+    # `expired` before anyone started it. A letter still open is `pending`, and a letter
+    # that ended says when, so the sender can read what is new since it last looked.
     """CREATE TABLE letters (
         task_id TEXT PRIMARY KEY REFERENCES tasks(id),
         sender_resident_id TEXT REFERENCES residents(id),
@@ -224,7 +228,11 @@ SCHEMA = (
         title TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
-        CHECK ((sender_resident_id IS NULL) = (sender_run_id IS NULL))
+        state TEXT NOT NULL DEFAULT 'pending'
+            CHECK (state IN ('pending','replied','unanswered','failed','expired')),
+        settled_at INTEGER,
+        CHECK ((sender_resident_id IS NULL) = (sender_run_id IS NULL)),
+        CHECK ((state = 'pending') = (settled_at IS NULL))
     )""",
     # The answer the sender reads. One per letter, written by the run that worked it;
     # the full run artifact stays linked for the operator.

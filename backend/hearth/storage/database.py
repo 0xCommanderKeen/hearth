@@ -14,7 +14,7 @@ from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # Hearth ships one runtime, and every new store and run records that one kind.
 RUNTIME_KIND = "codex_subscription"
 # Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on

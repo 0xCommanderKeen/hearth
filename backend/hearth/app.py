@@ -282,6 +282,16 @@ def create_app(
             "status": run.status,
         }
 
+    # What one question cost, gathered under the task its whole chain rolls up to. A
+    # letter is worked by its receiver, on that resident's allowance, so this is the only
+    # place the operator can see the price of an answer rather than of a run.
+    @app.get("/api/usage/origins")
+    def usage_origins(limit: int = 30, offset: int = 0):
+        from hearth.execution.usage import by_origin
+
+        with database.transaction() as db:
+            return by_origin(db, limit=limit, offset=offset)
+
     @app.get("/api/runs/{run_id}")
     def inspect_run(run_id: str):
         run = hearth.run(run_id)
