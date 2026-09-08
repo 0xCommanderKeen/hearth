@@ -8,13 +8,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 class Refused(ValueError):
     """A domain precondition failed without applying an operational change.
 
-    `detail` carries the bounded facts a caller needs to act on the refusal — the
+    `details` carries the bounded facts a caller needs to act on the refusal — the
     residents a letter chain already visited, say — never instruction or output text.
+    A refusal that reaches a runtime carries them beside its code.
     """
 
-    def __init__(self, code: str, detail: dict | None = None):
+    def __init__(self, code: str, details: dict | None = None):
         self.code = code
-        self.detail = detail or {}
+        self.details = details or {}
         super().__init__(code)
 
 

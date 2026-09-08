@@ -100,8 +100,25 @@ def send_letter(
     if previous:
         return previous
 
+    # Authority is the grant this run was admitted with, not whatever the operator has
+    # granted since: a run admitted without `send_letters` never gains it mid-flight, and
+    # one whose grant was edited or revoked loses it. Every way of not holding it now is
+    # the same refusal, because the sender is told what it may do, not who changed it.
+    pin = db.execute(
+        "SELECT grant_revision,grant_sha256,expires_at FROM run_management WHERE run_id=?",
+        (sender_run,),
+    ).fetchone()
     grant = read_grant(db, sender)
-    if not grant["enabled"] or "send_letters" not in grant["capabilities"]:
+    policy = {key: value for key, value in grant.items() if key not in {"resident_id", "revision"}}
+    if (
+        pin is None
+        or pin["grant_revision"] is None
+        or now >= pin["expires_at"]
+        or not grant["enabled"]
+        or grant["revision"] != pin["grant_revision"]
+        or digest(policy) != pin["grant_sha256"]
+        or "send_letters" not in grant["capabilities"]
+    ):
         raise Refused("letters_not_permitted")
     if grant["letter_recipient_ids"] and to not in grant["letter_recipient_ids"]:
         raise Refused("recipient_not_allowed")
@@ -193,23 +210,31 @@ def expire_letters(hearth) -> list[str]:
 
     An expired letter is a failed task with a reason, not silence: the sender asked a
     question nobody answered in time, and the household spends nothing answering it now.
+
+    The sweep runs on every supervisor pass and almost always finds nothing, so it looks
+    first in a read transaction and takes the writer only for the letters it found. The
+    write pass re-checks each one: a letter admitted in between is no longer queued and
+    is left to the run that started it.
     """
     with hearth.database.transaction() as db:
-        now = int(hearth.clock())
-        pending = db.execute(
-            "SELECT l.task_id FROM letters l JOIN tasks t ON t.id=l.task_id "
-            "WHERE t.status='queued' AND l.expires_at<=? LIMIT 100",
-            (now,),
-        ).fetchall()
+        pending = [
+            row[0]
+            for row in db.execute(
+                "SELECT l.task_id FROM letters l JOIN tasks t ON t.id=l.task_id "
+                "WHERE t.status='queued' AND l.expires_at<=? LIMIT 100",
+                (int(hearth.clock()),),
+            )
+        ]
     if not pending:
         return []
     expired = []
     with hearth.database.transaction(write=True) as db:
         now = int(hearth.clock())
+        names = ",".join("?" * len(pending))
         for row in db.execute(
             "SELECT l.*,t.resident_id FROM letters l JOIN tasks t ON t.id=l.task_id "
-            "WHERE t.status='queued' AND l.expires_at<=? LIMIT 100",
-            (now,),
+            f"WHERE l.task_id IN ({names}) AND t.status='queued' AND l.expires_at<=?",
+            (*pending, now),
         ).fetchall():
             db.execute("UPDATE tasks SET status='failed' WHERE id=?", (row["task_id"],))
             _audit(
@@ -242,7 +267,7 @@ def validate_letters(db) -> None:
         "SELECT l.*,t.resident_id AS recipient FROM letters l JOIN tasks t ON t.id=l.task_id"
     ):
         sender = db.execute(
-            "SELECT resident_id FROM runs WHERE id=?", (row["sender_run_id"],)
+            "SELECT resident_id,task_id FROM runs WHERE id=?", (row["sender_run_id"],)
         ).fetchone()
         if sender is None or sender["resident_id"] != row["sender_resident_id"]:
             raise Refused("backup_letters_invalid")
@@ -252,6 +277,11 @@ def validate_letters(db) -> None:
             if row["depth"] != 1 or row["root_task_id"] != row["task_id"]:
                 raise Refused("backup_letters_invalid")
             continue
+        # The parent is the work the sender was actually doing. Without this, a copy
+        # could repoint a letter at any task of the same depth and root, and the
+        # restored household would attribute the chain to a hop that never happened.
+        if row["parent_task_id"] != sender["task_id"]:
+            raise Refused("backup_letters_invalid")
         root, depth = _lineage(db, row["parent_task_id"])
         if row["root_task_id"] != root or row["depth"] != depth:
             raise Refused("backup_letters_invalid")

@@ -243,36 +243,34 @@ def test_a_backup_carrying_an_unknown_store_is_refused(system, tmp_path):
         verify(backup)
 
 
-def posted(system):
-    """The Reader writes one letter to a neighbour that accepts them, then settles."""
-    from hearth.management.authority import GrantPolicy, Management
+def posted(tmp_path):
+    """Karen writes one letter to a neighbour that accepts them, then her run settles.
 
-    hearth, executor, run, root = system
+    The sender is a granted, admitted management run — a letter's authority is the grant
+    that admission pinned — so it settles through the native receipt like any other.
+    """
+    from hearth.integrations.interface import encode_receipt
+
+    from tests.management.test_runtime import manager_run
+
+    hearth, run, execution, bound, receipt = manager_run(tmp_path)
     hearth.save_resident(
         "orchard",
         Declaration("Orchard", "Synthetic", 1_000_000, letters_accept=True),
         expected_revision=0,
     )
-    Management(hearth).save(
-        "reader",
-        {
-            **GrantPolicy().model_dump(),
-            "expected_revision": 0,
-            "enabled": True,
-            "capabilities": ["send_letters"],
-        },
-    )
     with hearth.database.transaction(write=True) as db:
-        receipt = hearth.send_letter_in_transaction(
+        letter = hearth.send_letter_in_transaction(
             db, run.id, "orchard", "One question", "Name one fact.", "letter-1"
         )
-    executor.step()
-    return receipt, root
+    execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
+    return hearth, letter, run, tmp_path / "data"
 
 
-def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(system, tmp_path):
-    hearth, _, run, _ = system
-    receipt, root = posted(system)
+def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(tmp_path):
+    hearth, receipt, sender, root = posted(tmp_path)
     capture(root, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
     copy = Hearth(Database(tmp_path / "restored/hearth.db"), clock=hearth.clock)
@@ -280,8 +278,9 @@ def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(system, tmp_path):
         letter = dict(
             db.execute("SELECT * FROM letters WHERE task_id=?", (receipt["task_id"],)).fetchone()
         )
-    assert letter["sender_resident_id"] == "reader" and letter["sender_run_id"] == run.id
-    assert letter["root_task_id"] == run.task_id and letter["depth"] == 1
+    assert letter["sender_resident_id"] == sender.resident_id
+    assert letter["sender_run_id"] == sender.id
+    assert letter["root_task_id"] == sender.task_id and letter["depth"] == 1
     assert letter["expires_at"] == receipt["expires_at"]
     assert copy.task(receipt["task_id"]).resident_id == "orchard"
     assert copy.resident("orchard").declaration.letters_accept is True
@@ -295,13 +294,14 @@ def test_a_backup_round_trip_keeps_the_letter_and_its_lineage(system, tmp_path):
         "UPDATE letters SET sender_resident_id='orchard'",
         # A parent that is its own child would walk forever if the reader trusted it.
         "UPDATE letters SET parent_task_id=task_id",
+        # A parent that is not the work the sender was doing invents a hop.
+        "UPDATE letters SET parent_task_id=NULL",
     ],
 )
-def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(system, tmp_path, tamper):
+def test_a_copy_whose_lineage_no_longer_adds_up_is_refused(tmp_path, tamper):
     import sqlite3
 
-    hearth, _, _, _ = system
-    receipt, root = posted(system)
+    hearth, receipt, _, root = posted(tmp_path)
     with sqlite3.connect(hearth.database.path, isolation_level=None) as db:
         db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
     with pytest.raises(Refused, match="backup_letters_invalid"):

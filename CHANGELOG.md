@@ -2,11 +2,14 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
-- A letter is a first-class fact (schema 6): an ordinary task addressed to one resident
+- A letter is a first-class fact (schema 6), and only a fact so far: nothing a resident or
+  an operator can reach sends one yet. An ordinary task addressed to one resident
   by another, carrying its sender, that sender's run and task, the root the chain rolls
   up to, its hop depth and when it goes stale. Sending needs the grant capability
-  `send_letters` and an optional recipient allowlist; receiving needs the declared
-  `letters.accept` door, and neither side can waive the other. Hearth arbitrates in the
+  `send_letters` — which Karen's setup now carries, ahead of the tool that will use it —
+  and an optional recipient allowlist; receiving needs the declared
+  `letters.accept` door, and neither side can waive the other. Authority is the grant the
+  sending run was admitted with, not one edited since. Hearth arbitrates in the
   service: no self-letter, no archived or absent recipient, no chain past the household's
   `max_letter_depth` (default 2, `0` closes the post) and never one that revisits a
   resident — depth and lineage read from the sender's own admitted run, so a forged

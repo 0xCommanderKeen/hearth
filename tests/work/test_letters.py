@@ -61,6 +61,17 @@ def running(hearth, resident_id, instruction="Synthetic work"):
     return hearth.admit(receipt.task_id, reserve=100_000)
 
 
+def settle(hearth, run):
+    """End a run the way the executor would, so its resident is free to be admitted again."""
+    with hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE runs SET status='succeeded',finished_at=?,actual_cost=0,usage_known=1 "
+            "WHERE id=?",
+            (int(hearth.clock()), run.id),
+        )
+        db.execute("UPDATE tasks SET status='succeeded' WHERE id=?", (run.task_id,))
+
+
 def send(hearth, run, to, *, operation_id="letter-1", **kwargs):
     with hearth.database.transaction(write=True) as db:
         return hearth.send_letter_in_transaction(
@@ -165,6 +176,22 @@ def test_both_permissions_must_meet_and_neither_side_can_waive_the_other(househo
     assert refused(hearth, running(hearth, karen), shut).code == "letters_not_accepted"
 
 
+def test_authority_is_the_grant_the_run_was_admitted_with(household):
+    """A grant edited mid-run neither arrives late nor survives being taken away."""
+    hearth, _ = household
+    karen = resident(hearth, "karen")
+    reporter = resident(hearth, "reporter", accepts=True)
+    ungranted = running(hearth, karen)
+    policy = {**GrantPolicy().model_dump(), "enabled": True, "capabilities": ["send_letters"]}
+    Management(hearth).save(karen, {**policy, "expected_revision": 0})
+    # This run was admitted with nothing pinned; a later grant is not its authority.
+    assert refused(hearth, ungranted, reporter).code == "letters_not_permitted"
+    settle(hearth, ungranted)
+    granted = running(hearth, karen)
+    Management(hearth).save(karen, {**policy, "capabilities": [], "expected_revision": 1})
+    assert refused(hearth, granted, reporter).code == "letters_not_permitted"
+
+
 def test_an_allowlisted_grant_writes_only_to_the_names_it_lists(household):
     hearth, _ = household
     reporter = resident(hearth, "reporter", accepts=True)
@@ -219,7 +246,7 @@ def test_the_household_depth_cap_bounds_the_chain_and_zero_closes_the_post(house
     third = hearth.admit(second["task_id"], reserve=100_000)
     error = refused(hearth, third, gardener, operation_id="letter-3")
     assert error.code == "max_letter_depth_exceeded"
-    assert error.detail == {"depth": 3, "max_letter_depth": 2}
+    assert error.details == {"depth": 3, "max_letter_depth": 2}
     household_revision = Household(hearth).read()["revision"]
     Household(hearth).save(
         daily_limit=100_000_000,
@@ -245,7 +272,7 @@ def test_a_chain_never_revisits_a_resident_and_the_refusal_names_the_walk(househ
     hop = hearth.admit(first["task_id"], reserve=100_000)
     error = refused(hearth, hop, karen, operation_id="letter-2")
     assert error.code == "letter_cycle"
-    assert error.detail == {"chain": [karen, reporter, karen]}
+    assert error.details == {"chain": [karen, reporter, karen]}
 
 
 def test_a_letter_may_be_shortened_never_lengthened_and_never_outlives_its_shelf(household):
@@ -352,10 +379,5 @@ def test_a_finished_run_and_unreadable_text_send_nothing(household):
     run = running(hearth, karen)
     assert refused(hearth, run, reporter, title="").code == "invalid_letter_title"
     assert refused(hearth, run, reporter, detail=" ").code == "invalid_letter_detail"
-    with hearth.database.transaction(write=True) as db:
-        db.execute(
-            "UPDATE runs SET status='succeeded',finished_at=?,actual_cost=0,usage_known=1 "
-            "WHERE id=?",
-            (NOW, run.id),
-        )
+    settle(hearth, run)
     assert refused(hearth, run, reporter).code == "run_not_active"

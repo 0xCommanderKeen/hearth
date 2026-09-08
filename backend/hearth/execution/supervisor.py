@@ -24,6 +24,7 @@ class Supervisor:
             "executor_error": None,
             "scheduler_error": None,
             "validation_error": None,
+            "letters_error": None,
         }
 
     def health(self) -> dict:
@@ -50,6 +51,7 @@ class Supervisor:
                 executor_error=None,
                 scheduler_error=None,
                 validation_error=None,
+                letters_error=None,
             )
             self._thread = threading.Thread(
                 target=self._run, args=(lock,), name="hearth-supervisor"
@@ -81,12 +83,20 @@ class Supervisor:
         failed = False
         try:
             while not self._stop.is_set():
+                # A stale letter is closed before anything can admit it, so no money is
+                # spent answering a question that already went cold. It owns its own
+                # failure: a sweep that cannot run must not stall the whole schedule.
                 try:
-                    # A stale letter is closed before anything can admit it, so no
-                    # money is spent answering a question that already went cold.
                     expire_letters(self.executor.execution.hearth)
-                    if self._stop.is_set():
-                        break
+                    self._set("letters_error", None)
+                except Exception as error:
+                    self._set(
+                        "letters_error",
+                        error.code if isinstance(error, Refused) else type(error).__name__,
+                    )
+                if self._stop.is_set():
+                    break
+                try:
                     self.routines.tick()
                     if self._stop.is_set():
                         break
