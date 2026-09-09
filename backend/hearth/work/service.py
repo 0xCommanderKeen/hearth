@@ -121,6 +121,12 @@ def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
     Read from the run's own pins -- its resident's declaration at the revision it was
     admitted under, and its own budget day and timezone -- so a resident edited or
     moved between runs cannot change the fence of work already admitted.
+
+    The household's own allowance is deliberately not part of it. A fence that is too
+    small is the harmful direction -- it bills a request and then throws the work away
+    -- while a fence that is too large costs nothing, because Hearth's accounting is
+    what actually holds the household: a run that overspends settles at what it cost
+    and leaves its resident held.
     """
     declaration = db.execute(
         "SELECT daily_limit FROM declarations WHERE resident_id=? AND revision=?",
