@@ -434,3 +434,33 @@ appears, and here they accounted for the model's whole 4,080 written tokens.
 - **A bridge that fails ends the session.** `mcp_bridge_failed` is recorded in the
   receipt and the session settles as failed with whatever it spent — never as unknown
   with a relaunch.
+
+## The end-to-end journey — what it is, and what it still needs
+
+The epic's acceptance demo (#144) is one resident, declared onto
+`claude_subscription` on a **throwaway instance** — its own data directory, its own
+port, discarded afterwards, with `.hearth/live` (Karen, 8771) untouched — that
+completes a run whose receipt is the CLI's own stream, whose cost is settled from
+usage under the pinned schedule and cross-checked against `total_cost_usd`, and whose
+run writes a journal entry through `hearth_journal_write` over the bridge. A second
+run then opens with that entry, and a third is cancelled mid-session to show that a
+launched run never claims zero usage.
+
+**It has not been run, and no evidence file is committed for it.** The one thing
+missing is the private login of spike 1: `claude auth login` inside the private
+`CLAUDE_CONFIG_DIR` opens a browser and needs the account holder, and there is no
+supported path from the machine's own login into that directory. Until an operator
+runs the two commands under "Configuring Hearth for it", any instance pointed at
+Claude simply leaves that runtime out with `claude_subscription_login_required` —
+which `GET /health` says in as many words. Recording a journey from anything else
+would be recording a fiction, so nothing is recorded.
+
+The store's own default is `codex_subscription` on every fresh store, and no
+supported path changes it, so the demo instance is configured for **both** providers:
+the default opens for the household, and the journeying resident declares Claude for
+itself (ADR 0015). That is the same shape the epic asks for — Karen on Codex beside a
+resident on Claude — rather than a special case for the demo.
+
+What the runs cost is recorded beside Hearth's own settlement when the journey is
+run; the comparable measured sessions here were about $0.036 (#146) and $0.046
+(#147), so three runs sit well under a dollar.
