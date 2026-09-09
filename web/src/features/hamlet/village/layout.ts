@@ -90,3 +90,75 @@ export function createPlotAllocator(epoch: string, storage?: Storage) {
     return ids.map((id) => ({ id, ...plotPosition(slots.get(id)!) }));
   };
 }
+
+// One geometry definition for rendered streets and letter paths.
+export type Street = { x: number; z: number; width: number; depth: number };
+export type Point = { x: number; z: number };
+export function streetNetwork(plots: Plot[]) {
+  const all = [{ id: "square", x: 0, z: 0 }, ...plots];
+  const minX = Math.min(...all.map((p) => p.x)) - 5;
+  const maxX = Math.max(...all.map((p) => p.x)) + 5;
+  const minZ = Math.min(...all.map((p) => p.z)) - 5;
+  const maxZ = Math.max(...all.map((p) => p.z)) + 5;
+  const streets: Street[] = [...new Set(all.map((p) => p.z))].map((z) => ({
+    x: (minX + maxX) / 2,
+    z: z + 3,
+    width: maxX - minX - 2,
+    depth: 1.2,
+  }));
+  streets.push({
+    x: 3,
+    z: (minZ + maxZ) / 2,
+    width: 1.2,
+    depth: maxZ - minZ - 2,
+  });
+  const doors = new Map<string | null, Point>();
+  for (const p of plots) {
+    doors.set(p.id === "townhall" ? null : p.id, { x: p.x, z: p.z + 2.2 });
+    streets.push({ x: p.x, z: p.z + 2.35, width: 0.8, depth: 1.3 });
+  }
+  return {
+    streets,
+    route(from: string | null, to: string | null): Point[] | null {
+      const a = doors.get(from),
+        b = doors.get(to);
+      if (!a || !b || from === to) return null;
+      const rowA = a.z + 0.8,
+        rowB = b.z + 0.8;
+      return [
+        a,
+        { x: a.x, z: rowA },
+        ...(Math.abs(rowA - rowB) < 0.001
+          ? []
+          : [
+              { x: 3, z: rowA },
+              { x: 3, z: rowB },
+            ]),
+        { x: b.x, z: rowB },
+        b,
+      ].filter(
+        (p, i, points) =>
+          !i ||
+          Math.hypot(p.x - points[i - 1].x, p.z - points[i - 1].z) > 0.001,
+      );
+    },
+  };
+}
+export function routePosition(points: Point[], fraction: number): Point {
+  const lengths = points
+    .slice(1)
+    .map((p, i) => Math.hypot(p.x - points[i].x, p.z - points[i].z));
+  let remaining =
+    Math.max(0, Math.min(1, fraction)) * lengths.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < lengths.length; i++) {
+    if (remaining <= lengths[i]) {
+      const t = remaining / lengths[i];
+      return {
+        x: points[i].x + (points[i + 1].x - points[i].x) * t,
+        z: points[i].z + (points[i + 1].z - points[i].z) * t,
+      };
+    }
+    remaining -= lengths[i];
+  }
+  return points[points.length - 1];
+}

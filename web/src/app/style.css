@@ -1598,3 +1598,35 @@ main:has(.hamlet-scene:not([hidden])) {
     padding: 14px;
   }
 }
+
+.scene-label small {
+  display: block;
+  font-size: 10px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scene-label[data-status] {
+  border-left-width: 4px;
+}
+.scene-label[data-status="ready"] {
+  border-left-color: #527544;
+}
+.scene-label[data-status="working"] {
+  border-left-color: #426f85;
+}
+.scene-label[data-status="paused"] {
+  border-left-color: #a37828;
+}
+.scene-label[data-status="unknown"] {
+  border-left-color: #914f45;
+}
+.scene-post-history > p {
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.scene-post time {
+  font-size: 11px;
+  color: var(--muted);
+}

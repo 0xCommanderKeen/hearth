@@ -1016,8 +1016,8 @@ it("walks only the letters the snapshot reported, both ends named", async () => 
   // The operator has no home; the letter it wrote leaves from Townhall.
   expect(steps[0].textContent).toContain("Reader");
   expect(steps[0].textContent).toContain("Townhall");
-  expect(steps[0].textContent).toContain("carried the answer");
-  expect(steps[1].textContent).toContain("carried a letter");
+  expect(steps[0].textContent).toContain("answered a letter");
+  expect(steps[1].textContent).toContain("sent a letter");
 });
 
 it("leaves the village still when no letter has been written", async () => {

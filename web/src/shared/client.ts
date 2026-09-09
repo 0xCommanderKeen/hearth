@@ -481,6 +481,14 @@ export type LetterEvent = {
   root_task_id: string;
   depth: number;
 };
+// Ephemeral delivery context owned by watch, never wire data or operational state.
+// Every live snapshot carries its connection's baseline even if React batches away
+// the initial delivery. Weak keys release it with the snapshots/watch lifetime.
+export type StreamBaseline = Pick<Snapshot, "epoch" | "cursor" | "letters">;
+const streamBaselines = new WeakMap<Snapshot, StreamBaseline>();
+export function streamBaseline(snapshot: Snapshot) {
+  return streamBaselines.get(snapshot);
+}
 export type Task = {
   id: string;
   resident_id: string;
@@ -1185,6 +1193,12 @@ export class Client {
       try {
         const initial = await this.state();
         if (signal.aborted) return;
+        let baseline: StreamBaseline = {
+          epoch: initial.epoch,
+          cursor: initial.cursor,
+          letters: initial.letters,
+        };
+        streamBaselines.set(initial, baseline);
         onState(initial);
         const response = await fetch(
           `/api/events?cursor=${initial.cursor}&epoch=${encodeURIComponent(initial.epoch)}`,
@@ -1219,7 +1233,18 @@ export class Client {
               const data = frame
                 .split("\n")
                 .find((line) => line.startsWith("data: "));
-              if (data) onState(decodeSnapshot(JSON.parse(data.slice(6))));
+              if (data) {
+                const next = decodeSnapshot(JSON.parse(data.slice(6)));
+                if (frame.split("\n").some((line) => line === "event: reset")) {
+                  baseline = {
+                    epoch: next.epoch,
+                    cursor: next.cursor,
+                    letters: next.letters,
+                  };
+                }
+                streamBaselines.set(next, baseline);
+                onState(next);
+              }
             }
           }
         } finally {

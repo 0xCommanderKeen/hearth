@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
 import { ContextPanel } from "./Panels";
+import { residentStatus } from "./village/activity";
 import { Room } from "./Room";
 import type { Snapshot } from "../../shared/client";
 
@@ -91,8 +92,8 @@ export function Hamlet({
     };
   }, []);
   useEffect(() => {
-    scene.current?.update(villageResidents, letters, snapshot.epoch);
-  }, [snapshot]);
+    scene.current?.update(snapshot, connected, active && !inside);
+  }, [snapshot, connected, active, inside]);
   useEffect(() => {
     setSelected(null);
     setInside(false);
@@ -171,21 +172,36 @@ export function Hamlet({
           not both homes in this village is listed here and not drawn, because there is
           no door to walk to; it is never dropped from the record. */}
         {!!letters.length && (
-          <ol className="scene-post" aria-label="Recent post">
-            {letters.map((event) => (
-              <li key={`${event.kind}:${event.task_id}`}>
-                <strong>{name(event.from_resident_id)}</strong>
-                <span aria-hidden="true">→</span>
-                <strong>{name(event.to_resident_id)}</strong>
-                <span>
-                  {event.kind === "letter_sent"
-                    ? "carried a letter"
-                    : "carried the answer"}{" "}
-                  · {event.title}
-                </span>
-              </li>
-            ))}
-          </ol>
+          <div className="scene-post-history">
+            <p>
+              {connected
+                ? "Recent post · recorded history"
+                : "Recent post · disconnected, last known history"}
+              . Showing {letters.length} retained events
+              {snapshot.limits?.letters
+                ? ` (up to ${snapshot.limits.letters})`
+                : ""}
+              . Travel illustrates newly observed letters only.
+            </p>
+            <ol className="scene-post" aria-label="Recent post">
+              {letters.map((event) => (
+                <li key={`${event.kind}:${event.task_id}`}>
+                  <strong>{name(event.from_resident_id)}</strong>
+                  <span aria-hidden="true">→</span>
+                  <strong>{name(event.to_resident_id)}</strong>
+                  <span>
+                    {event.kind === "letter_sent"
+                      ? "sent a letter"
+                      : "answered a letter"}{" "}
+                    · {event.title}
+                  </span>
+                  <time dateTime={new Date(event.at * 1000).toISOString()}>
+                    {new Date(event.at * 1000).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
         {archivedUnresolved.map((r) => (
           <p className="notice" key={r.id}>
@@ -215,9 +231,7 @@ export function Hamlet({
               >
                 Select {r.name}
                 <small>
-                  {connected
-                    ? r.presence
-                    : `disconnected · last known: ${r.presence}`}
+                  {residentStatus(r, connected).text}
                   {r.lifecycle?.state === "archived" ? " · archived" : ""}
                 </small>
               </button>

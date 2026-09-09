@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
+  streamBaseline,
   RequestError,
   StateFormatError,
   type PendingTask,
@@ -154,7 +155,10 @@ export function App() {
 
   function publish(next: Snapshot) {
     setSnapshot((previous) =>
-      previous?.epoch === next.epoch && previous.cursor > next.cursor
+      previous?.epoch === next.epoch &&
+      previous.cursor > next.cursor &&
+      (!streamBaseline(next) ||
+        streamBaseline(next) === streamBaseline(previous))
         ? previous
         : next,
     );
