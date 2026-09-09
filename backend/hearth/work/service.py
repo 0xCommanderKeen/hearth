@@ -48,6 +48,27 @@ ADMISSION_WAITS = frozenset(
 )
 
 
+def default_runtime(db: sqlite3.Connection) -> str:
+    """The runtime a resident that declares none of its own is admitted to."""
+    return db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+
+
+def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
+    """The runtime one resident's work is admitted to: its own, or the store's default.
+
+    Read wherever a resident's brain decides something -- admission, its management
+    profile, what an operator is shown -- so those answers cannot drift apart. A
+    resident with no declaration at all is answered with the default: it has not
+    chosen, and nothing of its will run until it exists anyway.
+    """
+    row = db.execute(
+        "SELECT d.runtime FROM declarations d JOIN residents r "
+        "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+        (resident_id,),
+    ).fetchone()
+    return (row[0] if row is not None else None) or default_runtime(db)
+
+
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
     db.execute(
         "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
@@ -101,6 +122,7 @@ class Hearth:
             row["skill_text"],
             bool(row["memory_writable"]),
             bool(row["letters_accept"]),
+            row["runtime"],
         )
 
     def declared_memory_writable(self, db, resident_id: str) -> bool:
@@ -111,6 +133,19 @@ class Hearth:
             (resident_id,),
         ).fetchone()
         return bool(row[0]) if row else False
+
+    def declared_runtime(self, db, resident_id: str) -> str | None:
+        """The current declared runtime, so an omitted one keeps the brain that stands.
+
+        `None` is a resident that follows the store's default, which is what most of
+        them do; `resident_runtime` is the same question with the default resolved.
+        """
+        row = db.execute(
+            "SELECT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return row[0] if row else None
 
     def declared_letters_accept(self, db, resident_id: str) -> bool:
         """The current declared letters.accept, so an omitted door keeps what is open."""
@@ -227,7 +262,7 @@ class Hearth:
         writable = declaration.memory_writable
         accepts = declaration.letters_accept
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -239,6 +274,7 @@ class Hearth:
                 declaration.skill_text,
                 int(writable),
                 int(accepts),
+                declaration.runtime,
             ),
         )
         _audit(
@@ -246,7 +282,12 @@ class Hearth:
             "resident.saved",
             resident_id,
             now,
-            {"revision": revision, "memory_writable": writable, "letters_accept": accepts},
+            {
+                "revision": revision,
+                "memory_writable": writable,
+                "letters_accept": accepts,
+                "runtime": declaration.runtime,
+            },
         )
         return Resident(resident_id, revision, declaration)
 
@@ -295,6 +336,7 @@ class Hearth:
                     row["skill_text"],
                     bool(row["memory_writable"]),
                     bool(row["letters_accept"]),
+                    row["runtime"],
                 ),
             )
 
@@ -455,9 +497,10 @@ class Hearth:
             day,
             now,
             budget_timezone=declaration["budget_timezone"],
-            runtime_kind=db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0],
+            # Where this run happens is the resident's own declaration, and the store's
+            # default only where the declaration says nothing. The pin is written once,
+            # here, and a finished run keeps it whatever either of them becomes later.
+            runtime_kind=declaration["runtime"] or default_runtime(db),
         )
         db.execute(
             "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

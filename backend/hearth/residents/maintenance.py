@@ -207,6 +207,9 @@ class Maintenance:
                     # The letters door is operator authority alone; a reconfiguration
                     # carries it forward rather than quietly closing it.
                     letters_accept=self.hearth.declared_letters_accept(db, resident_id),
+                    # So is which runtime the resident runs on: reconfiguring what a
+                    # resident does never moves it to another brain.
+                    runtime=self.hearth.declared_runtime(db, resident_id),
                 ),
                 expected_revision=change.expected_revision,
             )

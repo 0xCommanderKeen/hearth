@@ -105,6 +105,20 @@ def live(kind: str) -> bool:
     return spec is not None and spec.live
 
 
+def build(kind: str, data, **options) -> Runtime:
+    """The adapter for one runtime kind, named by the registry rather than by hand.
+
+    Which class answers for a kind is the registry's own answer, so a store or a
+    declaration naming a live kind reaches that provider's adapter and nothing else.
+    A kind this release does not ship, or ships without an adapter, opens on no
+    provider at all rather than quietly on another one's.
+    """
+    spec = RUNTIMES.get(kind)
+    if spec is None or not spec.live or spec.module is None or spec.runtime is None:
+        raise Refused("runtime_configuration_invalid")
+    return getattr(importlib.import_module(spec.module), spec.runtime)(data, **options)
+
+
 def live_kinds() -> tuple[str, ...]:
     return tuple(kind for kind, spec in RUNTIMES.items() if spec.live)
 

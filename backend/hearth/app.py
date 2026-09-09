@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -32,10 +32,8 @@ from hearth.execution.lifecycle import Execution, Executor
 from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
-from hearth.integrations.claude.subscription import ClaudeLiveRuntime
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
-from hearth.integrations.codex.subscription import CodexLiveRuntime
-from hearth.integrations.interface import Runtime, live
+from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.management.api import mount_management
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
@@ -57,18 +55,20 @@ def create_app(
     token: str,
     *,
     supervise: bool = True,
-    runtime: Callable[[Path], Runtime] | None = None,
+    runtime: Callable[[Path], Runtime | Iterable[Runtime]] | None = None,
     codex_binary: Path | None = None,
     codex_auth_home: Path | None = None,
     claude_binary: Path | None = None,
     claude_config_dir: Path | None = None,
 ) -> FastAPI:
-    """`runtime` builds the runtime over the data directory Hearth just opened.
+    """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
     Only tests and the installed-wheel smoke pass it, to stand in for a subscription
     no continuous integration host has. Otherwise Hearth builds the adapter for the
     runtime its own store records, configured with that provider's pinned binary and
-    private login.
+    private login, and beside it every other live runtime this host was configured
+    for -- because a resident may declare one of those instead
+    (`docs/adr/0015-runtime-per-resident.md`).
     """
     if len(token) < 16:
         raise ValueError("Set an operator token of at least 16 characters")
@@ -86,18 +86,18 @@ def create_app(
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     kind = database.runtime_kind()
     if runtime is not None:
-        adapter: Runtime = runtime(data)
-    elif kind == CLAUDE_KIND:
-        adapter = ClaudeLiveRuntime(data, binary=claude_binary, config_dir=claude_config_dir)
-    elif live(kind) and kind != CODEX_KIND:
-        # A live kind nobody built an adapter for refuses here rather than quietly
-        # opening on another provider's.
-        raise Refused("runtime_configuration_invalid")
+        built = runtime(data)
+        adapters = [built] if hasattr(built, "kind") else list(built)
     else:
-        # A quarantined copy keeps the runtime it recorded, which this release may no
-        # longer ship; it is opened to be read and starts nothing either way.
-        adapter = CodexLiveRuntime(data, binary=codex_binary, auth_home=codex_auth_home)
-    executor = Executor(execution, adapter)
+        adapters = configured_runtimes(
+            data,
+            kind,
+            {
+                CODEX_KIND: {"binary": codex_binary, "auth_home": codex_auth_home},
+                CLAUDE_KIND: {"binary": claude_binary, "config_dir": claude_config_dir},
+            },
+        )
+    executor = Executor(execution, adapters)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
@@ -259,7 +259,7 @@ def create_app(
                 field
                 for field in ("memory_writable", "letters_accept")
                 if values[field] is not None
-            }
+            } | ({"runtime"} if "runtime" in body.model_fields_set else set())
             # What a resident is changes whole or not at all: a body that says some of the
             # declaration and not the rest is refused rather than quietly merged.
             if declared and declared != DECLARATION_FIELDS:
@@ -284,6 +284,11 @@ def create_app(
             # An omitted letters.accept likewise keeps the door exactly as it stands.
             if values["letters_accept"] is None:
                 values["letters_accept"] = current is not None and current.letters_accept
+            # An omitted runtime keeps the brain the resident declares now rather than
+            # moving it to the store's default; a runtime the body actually says is a
+            # move, and a null is the move back to the default.
+            if "runtime" not in body.model_fields_set:
+                values["runtime"] = current.runtime if current is not None else None
             return asdict(
                 hearth.save_resident_in_transaction(
                     db,
@@ -420,6 +425,31 @@ def create_app(
     if web.is_dir():
         app.mount("/", StaticFiles(directory=web, html=True), name="web")
     return app
+
+
+def configured_runtimes(data: Path, kind: str, configuration: dict[str, dict]) -> list[Runtime]:
+    """Every live runtime this host is configured for, the store's default included.
+
+    The default is built whether or not its provider answers, so a store whose work
+    Hearth cannot do says so by name here instead of opening on somebody else's
+    adapter. A quarantined copy keeps the runtime it recorded, which this release may
+    no longer ship; it is opened to be read and starts nothing either way, so it opens
+    on the default adapter. Every other live runtime joins the map only when its whole
+    configuration is present -- a host with no Claude login simply has no Claude
+    runtime, and a run pinned to one settles as unknown rather than launching here.
+    """
+    default = kind if live(kind) else CODEX_KIND
+    if configuration.get(default) is None:
+        # A live kind nobody built an adapter for refuses here rather than quietly
+        # opening on another provider's.
+        raise Refused("runtime_configuration_invalid")
+    adapters = [build(default, data, **configuration[default])]
+    for other in live_kinds():
+        options = configuration.get(other)
+        if other == default or options is None or any(value is None for value in options.values()):
+            continue
+        adapters.append(build(other, data, **options))
+    return adapters
 
 
 def from_env() -> FastAPI:

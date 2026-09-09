@@ -37,6 +37,10 @@ FILLS: dict[tuple[str, str], str] = {
     # the store's own rows afterwards, by `_settle_stored_letters`, where every table it
     # has to consult exists.
     ("letters", "state"): "'pending'",
+    # Every resident that predates runtime-per-resident ran on the store's own runtime,
+    # which is exactly what null says here: follow the default
+    # (`docs/adr/0015-runtime-per-resident.md`).
+    ("declarations", "runtime"): "NULL",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is

@@ -250,6 +250,69 @@ class Execution:
             record(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
 
+    def runtime_unavailable(self, run_id: str, owner_token: str) -> Run:
+        """End a run whose pinned runtime this instance is not configured for.
+
+        The run named its runtime at admission and that pin is where its work would
+        have happened; no other provider can be asked what it did, and re-launching it
+        somewhere else would be a different run. So it ends here as cancelled with its
+        usage unknown -- visible to the operator to reconcile, the resident paused,
+        never quietly settled at zero and never retried. A run that was launched before
+        the configuration changed may really have spent money, which is exactly what
+        unknown usage says.
+        """
+        with self.hearth.database.transaction(write=True) as db:
+            row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if row is None or row["owner_token"] != owner_token:
+                raise Refused("run_ownership_lost")
+            if row["finished_at"] is not None:
+                raise Refused("run_already_finished")
+            now = int(self.hearth.clock())
+            db.execute(
+                "UPDATE runs SET status='cancelled', actual_cost=NULL, usage_known=0, "
+                "finished_at=? WHERE id=?",
+                (now, run_id),
+            )
+            db.execute("UPDATE tasks SET status='cancelled' WHERE id=?", (row["task_id"],))
+            settle_letter(
+                db,
+                row["task_id"],
+                run_id=run_id,
+                resident_id=row["resident_id"],
+                status="cancelled",
+                artifact_id=None,
+                now=now,
+                reason="runtime_unavailable",
+            )
+            changed = db.execute(
+                "INSERT OR IGNORE INTO pauses VALUES (?, ?, ?, ?)",
+                (row["resident_id"], "usage_unknown", run_id, now),
+            ).rowcount
+            _audit(
+                db,
+                "run.cancelled",
+                run_id,
+                now,
+                {
+                    "task_id": row["task_id"],
+                    "actual_cost": None,
+                    "usage_known": False,
+                    "artifact_id": None,
+                    "reason": "runtime_unavailable",
+                    "runtime_kind": row["runtime_kind"],
+                },
+            )
+            if changed:
+                _audit(
+                    db,
+                    "resident.paused",
+                    row["resident_id"],
+                    now,
+                    {"reason": "usage_unknown", "run_id": run_id},
+                )
+            record(db, "run.cancelled", run_id, now)
+        return self.hearth.run(run_id)
+
     def artifact(self, artifact_id: str) -> tuple[Artifact, str]:
         with self.hearth.database.transaction() as db:
             row = db.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
@@ -264,28 +327,53 @@ class Executor:
 
     Runtime adapters must make repeated start(run_id, same instruction) idempotent.
     Only confirmed terminal evidence releases resident ownership.
+
+    One store may be configured for several runtimes at once, so the executor holds
+    them by kind and every run is worked by the one its own admission pinned
+    (`docs/adr/0015-runtime-per-resident.md`). No run is ever handed to another
+    provider's adapter, whatever the store's default becomes afterwards.
     """
 
-    def __init__(self, execution: Execution, runtime: Runtime):
+    def __init__(self, execution: Execution, runtimes):
+        """`runtimes` is one runtime, or the several this instance is configured for."""
+        adapters = [runtimes] if hasattr(runtimes, "kind") else list(runtimes)
         self.execution = execution
-        self.runtime = runtime
+        self.runtimes: dict[str, Runtime] = {adapter.kind: adapter for adapter in adapters}
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
-    def _step(self, run):
+    @property
+    def runtime(self) -> Runtime:
+        """The runtime, where this instance is configured for exactly one of them.
+
+        Most are: one household, one provider. An instance configured for several has
+        no single answer and says so rather than picking one, because every question
+        worth asking of it is about a particular run's own pinned kind.
+        """
+        (only,) = self.runtimes.values()
+        return only
+
+    def _step(self, run, runtime: Runtime | None):
         if run.cancellation_requested and not run.launch_attempted:
+            # Nothing was launched, so this settles at zero from the run's own pin,
+            # which the registry answers for whether or not that provider is
+            # configured here.
             with self.execution.hearth.database.transaction() as db:
                 row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
                 receipt = interface.cancellation_receipt(
-                    self.runtime.kind,
+                    run.runtime_kind,
                     usage_accounting.binding(db, row),
                     usage_accounting.runtime_pins(db, run.id),
                 )
             return self.execution.finish(
                 run.id, run.owner_token, Evidence("cancelled", cost=0), _usage_receipt=receipt
             )
+        if runtime is None:
+            # This instance is not configured for the runtime this run was pinned to,
+            # so nobody here can observe it, stop it or launch it.
+            return self.execution.runtime_unavailable(run.id, run.owner_token)
         if run.cancellation_requested:
-            self.runtime.stop(run.id)
-        evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
+            runtime.stop(run.id)
+        evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
         # There is no safe detached-start replay after a lost launch reply.
         if evidence.status == "absent" and not run.launch_attempted:
             if self.execution.prepare_start(run.id, run.owner_token):
@@ -297,16 +385,14 @@ class Executor:
                         raise
                     # One run's unreadable pinned context never stops the whole pass.
                     return self.execution.observe(run.id, run.owner_token, "interrupted")
-                self.runtime.start(
-                    run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
-                )
-                evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
+                runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
+                evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
         if evidence.status in {"succeeded", "failed", "cancelled"}:
             return self.execution.finish(
                 run.id,
                 run.owner_token,
                 evidence,
-                _usage_receipt=interface.runtime_receipt(self.runtime, run.id),
+                _usage_receipt=interface.runtime_receipt(runtime, run.id),
             )
         return self.execution.observe(
             run.id, run.owner_token, "running" if evidence.status == "running" else "interrupted"
@@ -321,14 +407,15 @@ class Executor:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise Refused("executor_busy") from None
-            if self.execution.hearth.database.runtime_kind() != self.runtime.kind:
+            # The store's own default has to be one of the runtimes configured here: an
+            # instance that cannot work what this store admits next would queue work
+            # nothing is ever going to start.
+            if self.execution.hearth.database.runtime_kind() not in self.runtimes:
                 raise Refused("runtime_store_mismatch")
             results = []
             for run in self.execution.active():
-                if (run.runtime_kind, run.runtime_version) != (
-                    self.runtime.kind,
-                    self.runtime.version,
-                ):
+                runtime = self.runtimes.get(run.runtime_kind)
+                if runtime is not None and run.runtime_version != runtime.version:
                     raise Refused("runtime_run_mismatch")
                 if (
                     run.status == "starting"
@@ -349,5 +436,5 @@ class Executor:
                             self.execution.observe(run.id, run.owner_token, "interrupted")
                         )
                         continue
-                results.append(self._step(run))
+                results.append(self._step(run, runtime))
             return results

@@ -104,14 +104,17 @@ def main() -> None:
                     raise Refused("declaration_file_too_large")
                 values = json.loads(content)
                 required = {"name", "purpose", "daily_limit", "budget_timezone", "skill_text"}
+                optional = {"memory_writable", "letters_accept", "runtime"}
                 if (
                     not isinstance(values, dict)
                     or not required <= set(values)
-                    or set(values) - required - {"memory_writable", "letters_accept"}
+                    or set(values) - required - optional
                 ):
                     raise Refused("declaration_fields_invalid")
-                if "memory_writable" not in values or "letters_accept" not in values:
-                    # An omitted capability or door keeps what the operator set before.
+                if not optional <= set(values):
+                    # An omitted capability, door or runtime keeps what stands. A
+                    # `runtime` of null is the operator saying "the store's default",
+                    # which is a different statement from not mentioning it at all.
                     with hearth.database.transaction() as db:
                         values.setdefault(
                             "memory_writable",
@@ -121,6 +124,7 @@ def main() -> None:
                             "letters_accept",
                             hearth.declared_letters_accept(db, args.resident),
                         )
+                        values.setdefault("runtime", hearth.declared_runtime(db, args.resident))
                 declaration = Declaration(**values)
                 resident = hearth.save_resident(
                     args.resident, declaration, expected_revision=args.expected_revision
