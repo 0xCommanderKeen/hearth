@@ -168,7 +168,9 @@ def create_app(
         # The executor's own map, so this answers with the runtimes work is really
         # handed to rather than with what configuration was attempted.
         opened = list(executor.runtimes)
-        default = kind if kind in opened else opened[0]
+        # The store's own default is always among them on any instance Hearth built
+        # itself; an injected one need not be, and liveness must answer either way.
+        default = kind if kind in opened or not opened else opened[0]
         return {
             "service": "hearth",
             "runtimes": [
