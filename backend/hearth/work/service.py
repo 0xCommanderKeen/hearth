@@ -74,6 +74,21 @@ def configured_runtime(db: sqlite3.Connection, kind: str) -> bool:
     )
 
 
+def declared_runtimes(db: sqlite3.Connection) -> set[str]:
+    """Every runtime the store's residents name for themselves, as they stand now.
+
+    The store's default is not in here: it is not a resident's choice, and it is the
+    one runtime an instance is always built for.
+    """
+    return {
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE d.runtime IS NOT NULL"
+        )
+    }
+
+
 def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
     """The runtime one resident's work is admitted to: its own, or the store's default.
 
@@ -251,6 +266,8 @@ class Hearth:
         declaration.validate()
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_revision")
+        # Read before the revision moves: the runtime this resident declares now.
+        standing = self.declared_runtime(db, resident_id)
         now = int(self.clock())
         row = db.execute("SELECT revision FROM residents WHERE id = ?", (resident_id,)).fetchone()
         current = row[0] if row else 0
@@ -280,11 +297,16 @@ class Hearth:
                 originating_run_id=None,
                 now=now,
             )
-        if declaration.runtime is not None and not configured_runtime(db, declaration.runtime):
-            # The kind is one this release ships, but this store has never had that
-            # provider configured, so work declared onto it could not be started here.
-            # Saying so now is better than admitting runs nothing can ever launch.
-            raise Refused("runtime_not_configured")
+        if declaration.runtime is not None and declaration.runtime != standing:
+            # Moving a resident to another runtime is bounded twice: the kind has to be
+            # one this release can still start work on, and one this store has really
+            # been configured for -- otherwise the move only admits runs nothing can
+            # ever launch. Keeping the runtime that already stands is always allowed,
+            # so a resident whose kind a later release retires stays editable.
+            from hearth.integrations.interface import live
+
+            if not live(declaration.runtime) or not configured_runtime(db, declaration.runtime):
+                raise Refused("runtime_not_configured")
         writable = declaration.memory_writable
         accepts = declaration.letters_accept
         db.execute(

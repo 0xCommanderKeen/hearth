@@ -71,14 +71,13 @@ class Declaration:
             raise Refused("invalid_memory_capability")
         if type(self.letters_accept) is not bool:
             raise Refused("invalid_letters_capability")
+        # Only the shape of the runtime is a value question. Whether Hearth can still
+        # start work on that kind, and whether this store was ever configured for it,
+        # are answered where the save happens -- so that a resident carrying a kind a
+        # later release retired can still be paused, renamed and reconfigured instead
+        # of becoming unsavable (`docs/adr/0015-runtime-per-resident.md`).
         if self.runtime is not None:
-            from hearth.integrations.interface import live
-
-            # A declaration may name only a runtime this release can start work on.
-            # A retired kind is history a finished run carries, never a brain to
-            # admit new work to, and an unknown one names no provider at all.
-            if not isinstance(self.runtime, str) or not live(self.runtime):
-                raise Refused("runtime_not_configured")
+            bounded_text(self.runtime, 100, "runtime_not_configured")
         bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
         try:
             ZoneInfo(self.budget_timezone)

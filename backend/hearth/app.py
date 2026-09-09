@@ -47,7 +47,7 @@ from hearth.skills.bootstrap import seed_letter_skills
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.routines import Routines
-from hearth.work.service import Hearth
+from hearth.work.service import Hearth, _audit, declared_runtimes
 
 
 def create_app(
@@ -89,7 +89,7 @@ def create_app(
         built = runtime(data)
         adapters = [built] if hasattr(built, "kind") else list(built)
     else:
-        adapters = configured_runtimes(
+        adapters, unavailable = configured_runtimes(
             data,
             kind,
             {
@@ -97,6 +97,21 @@ def create_app(
                 CLAUDE_KIND: {"binary": claude_binary, "config_dir": claude_config_dir},
             },
         )
+        # A runtime some resident declares and this instance cannot open is an
+        # operator's configuration to fix, and those residents' runs are waiting on
+        # exactly that. It is recorded once per start -- the provider's own refusal
+        # where there was one, and otherwise that nothing here is configured for it --
+        # so the reason lives in the store and not only in somebody's terminal.
+        if not restored:
+            with database.transaction(write=True) as db:
+                for missing in declared_runtimes(db) - {adapter.kind for adapter in adapters}:
+                    _audit(
+                        db,
+                        "runtime.unavailable",
+                        missing,
+                        int(hearth.clock()),
+                        {"reason": unavailable.get(missing, "runtime_not_configured")},
+                    )
     executor = Executor(execution, adapters)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
@@ -427,16 +442,22 @@ def create_app(
     return app
 
 
-def configured_runtimes(data: Path, kind: str, configuration: dict[str, dict]) -> list[Runtime]:
+def configured_runtimes(
+    data: Path, kind: str, configuration: dict[str, dict]
+) -> tuple[list[Runtime], dict[str, str]]:
     """Every live runtime this host is configured for, the store's default included.
 
-    The default is built whether or not its provider answers, so a store whose work
-    Hearth cannot do says so by name here instead of opening on somebody else's
-    adapter. A quarantined copy keeps the runtime it recorded, which this release may
-    no longer ship; it is opened to be read and starts nothing either way, so it opens
-    on the default adapter. Every other live runtime joins the map only when its whole
-    configuration is present -- a host with no Claude login simply has no Claude
-    runtime, and a run pinned to one waits rather than launching on another provider.
+    The default is built whether or not its provider answers, so a store whose own work
+    Hearth cannot do says so by name here instead of opening on somebody else's adapter.
+    A quarantined copy keeps the runtime it recorded, which this release may no longer
+    ship; it is opened to be read and starts nothing either way, so it opens on the
+    default adapter.
+
+    Every other live runtime is different: it is a second brain some residents run on,
+    and a household must not go dark because one of them is out. So a runtime whose
+    configuration is incomplete is simply absent, and one whose provider refuses -- a
+    lapsed login, a CLI that updated past its pin -- is left out with its reason,
+    which the caller records. Their runs wait; every other resident keeps working.
     """
     default = kind if live(kind) else CODEX_KIND
     if configuration.get(default) is None:
@@ -444,12 +465,16 @@ def configured_runtimes(data: Path, kind: str, configuration: dict[str, dict]) -
         # opening on another provider's.
         raise Refused("runtime_configuration_invalid")
     adapters = [build(default, data, **configuration[default])]
+    refused: dict[str, str] = {}
     for other in live_kinds():
         options = configuration.get(other)
         if other == default or options is None or any(value is None for value in options.values()):
             continue
-        adapters.append(build(other, data, **options))
-    return adapters
+        try:
+            adapters.append(build(other, data, **options))
+        except Refused as error:
+            refused[other] = error.code
+    return adapters, refused
 
 
 def from_env() -> FastAPI:

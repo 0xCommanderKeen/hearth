@@ -251,23 +251,28 @@ class Execution:
         return self.hearth.run(run_id)
 
     def runtime_unavailable(self, run_id: str, owner_token: str) -> Run:
-        """A run whose pinned runtime this instance is not configured for ends or waits.
+        """A run whose pinned runtime this instance is not configured for waits.
 
         The run named its runtime at admission and that pin is where its work happens;
         no other provider can be asked what it did, and launching it on one would be a
-        different run against the same reservation.
+        different run against the same reservation. So the run is left exactly as
+        unknown as it is -- never launched here, never retried, and never settled at a
+        number nobody can produce evidence for. A priced run settles from its own
+        provider's receipt, and there is no receipt for a session this instance cannot
+        see.
 
-        A run this instance never launched cannot start here, and asking it to stop is
-        how such a run ends everywhere else in Hearth: the executor settles it at zero
-        with a receipt from the registry, which needs the store's own pins and not the
-        provider (`storage/migration.py::_release_unlaunched_runs` ends a run whose
-        context this release cannot rebuild the same way).
+        It is a wait and not an ending because the usual cause is a configuration this
+        machine is missing rather than a provider the household has lost, and work is
+        not thrown away over an environment variable: the run is worked as soon as the
+        runtime is configured again. An operator who wants it gone cancels it, and a
+        run that was never launched then settles at zero through the ordinary path, on
+        a receipt the registry builds from the store's own pins rather than from the
+        provider.
 
-        A run that was already launched is left exactly as unknown as it is:
-        interrupted, never retried, never settled at a number nobody can produce
-        evidence for -- a priced run settles from its own provider's receipt, and there
-        is no receipt for a session this instance cannot see. It settles when the
-        runtime is configured again and the run can be observed where it really is.
+        A run that was never launched is therefore left exactly as it is -- still
+        waiting to start, which is the truth about it -- rather than moved to a state
+        it could never start from again. Why the runtime is absent is recorded once,
+        where it is discovered: `app.configured_runtimes` at start.
         """
         with self.hearth.database.transaction(write=True) as db:
             row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -275,23 +280,25 @@ class Execution:
                 raise Refused("run_ownership_lost")
             if row["finished_at"] is not None:
                 raise Refused("run_already_finished")
-            now = int(self.hearth.clock())
-            detail = {
-                "task_id": row["task_id"],
-                "reason": "runtime_unavailable",
-                "runtime_kind": row["runtime_kind"],
-            }
-            if not row["launch_attempted"] and not row["cancellation_requested"]:
-                db.execute(
-                    "UPDATE runs SET status='stopping', cancellation_requested=1 WHERE id=?",
-                    (run_id,),
+            if not row["launch_attempted"]:
+                return self.hearth.run(run_id)
+            # Cancellation intent survives a wait, exactly as it survives observation.
+            state = "stopping" if row["cancellation_requested"] else "interrupted"
+            if row["status"] != state:
+                now = int(self.hearth.clock())
+                db.execute("UPDATE runs SET status=? WHERE id=?", (state, run_id))
+                db.execute("UPDATE tasks SET status=? WHERE id=?", (state, row["task_id"]))
+                _audit(
+                    db,
+                    "run." + state,
+                    run_id,
+                    now,
+                    {
+                        "task_id": row["task_id"],
+                        "reason": "runtime_unavailable",
+                        "runtime_kind": row["runtime_kind"],
+                    },
                 )
-                db.execute("UPDATE tasks SET status='stopping' WHERE id=?", (row["task_id"],))
-                _audit(db, "run.cancel_requested", run_id, now, detail)
-            elif row["status"] != "interrupted":
-                db.execute("UPDATE runs SET status='interrupted' WHERE id=?", (run_id,))
-                db.execute("UPDATE tasks SET status='interrupted' WHERE id=?", (row["task_id"],))
-                _audit(db, "run.interrupted", run_id, now, detail)
         return self.hearth.run(run_id)
 
     def artifact(self, artifact_id: str) -> tuple[Artifact, str]:

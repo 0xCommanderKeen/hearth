@@ -6,6 +6,8 @@ the default while another declares the second live kind, both are admitted from 
 same household, and the executor hands each run to its own provider's adapter.
 """
 
+from dataclasses import replace
+
 import pytest
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
@@ -65,7 +67,7 @@ def test_two_residents_on_one_store_each_reach_their_own_runtime(tmp_path):
     assert not (tmp_path / "data/fake-claude-runtime" / karen.id).exists()
 
 
-def test_an_unlaunched_run_whose_runtime_is_gone_ends_at_zero_without_launching(tmp_path):
+def test_an_unlaunched_run_whose_runtime_is_gone_waits_rather_than_being_thrown_away(tmp_path):
     hearth, execution, adapters = household(tmp_path)
     scribe = admit(hearth, "scribe", "scribe-task")
     # The instance is reopened without the second provider, as a host that lost its
@@ -74,26 +76,40 @@ def test_an_unlaunched_run_whose_runtime_is_gone_ends_at_zero_without_launching(
     held = executor.step()[0]
 
     assert held.id == scribe.id
-    # Nothing here can start it, so it is asked to stop rather than launched anywhere.
-    assert held.status == "stopping" and not held.launch_attempted
+    # Nothing here can start it, and a missing configuration is not a reason to throw
+    # the resident's work away: it is still waiting to start, which is the truth about
+    # it, and it was launched nowhere else.
+    assert held.status == "starting" and not held.launch_attempted
+    assert held.finished_at is None
     assert not (tmp_path / "data/fake-claude-runtime" / scribe.id).exists()
     assert not (tmp_path / "data/fake-runtime" / scribe.id).exists()
+    # Waiting is not retrying, and a second pass says nothing new about it.
+    assert executor.step()[0].status == "starting"
     with hearth.database.transaction() as db:
-        details = [
-            row[0]
-            for row in db.execute(
-                "SELECT detail FROM audit WHERE kind='run.cancel_requested' AND resource_id=?",
-                (scribe.id,),
-            )
-        ]
-    assert len(details) == 1 and '"reason": "runtime_unavailable"' in details[0]
+        assert db.execute("SELECT COUNT(*) FROM pauses").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM audit WHERE resource_id=?", (scribe.id,)).fetchone()[0]
+            == 1
+        )  # its admission, and nothing repeated per pass
 
-    # The next pass settles it at zero, from a receipt proving it never launched.
+    # Configure the runtime again and the same run is worked, on its own pin.
+    assert Executor(execution, adapters.values()).step()[0].status == "succeeded"
+    assert hearth.run(scribe.id).actual_cost == CLAUDE_ANSWER_COST
+
+
+def test_the_operator_can_end_a_waiting_run_that_was_never_launched(tmp_path):
+    """Nothing ran, and the registry can prove it from the store's own pins."""
+    hearth, execution, adapters = household(tmp_path)
+    scribe = admit(hearth, "scribe", "scribe-task")
+    executor = Executor(execution, [adapters["codex"]])
+    assert executor.step()[0].status == "starting"
+
+    execution.cancel(scribe.id)
     settled = executor.step()[0]
     assert settled.status == "cancelled"
     assert settled.actual_cost == 0 and settled.usage_known
     assert not (tmp_path / "data/fake-claude-runtime" / scribe.id).exists()
-    # The resident is free to work again; nothing was spent and nothing is paused.
+    # Nothing was spent, so nothing is paused and the resident may work again.
     with hearth.database.transaction() as db:
         assert db.execute("SELECT COUNT(*) FROM pauses").fetchone()[0] == 0
 
@@ -117,9 +133,16 @@ def test_a_launched_run_whose_runtime_is_gone_stays_unknown_and_is_never_retried
             )
         ]
     assert len(details) == 1 and '"reason": "runtime_unavailable"' in details[0]
+    # A cancellation asked for while it waits is remembered rather than flattened, and
+    # it still settles nothing: this run may really have spent money.
+    execution.cancel(scribe.id)
+    assert executor.step()[0].status == "stopping"
+    assert hearth.run(scribe.id).finished_at is None
 
-    # Configure the runtime again and the same run is observed where it really is.
-    assert Executor(execution, adapters.values()).step()[0].status == "running"
+    # Configure the runtime again and the run ends where it really is.
+    settled = Executor(execution, adapters.values()).step()[0]
+    # A killed session proves no turn, so it settles cancelled with usage unknown.
+    assert settled.status == "cancelled" and not settled.usage_known
 
 
 def test_the_store_default_must_be_a_runtime_this_instance_is_configured_for(tmp_path):
@@ -128,13 +151,45 @@ def test_the_store_default_must_be_a_runtime_this_instance_is_configured_for(tmp
         Executor(execution, [adapters["claude"]]).step()
 
 
-def test_a_declaration_may_only_name_a_runtime_this_release_ships(tmp_path):
-    for kind in ("inline_mock", "codex_mock", "shell", ""):
+def test_a_declaration_may_only_move_to_a_runtime_this_release_ships(tmp_path):
+    hearth, _, _ = household(tmp_path)
+    for kind in ("inline_mock", "codex_mock", "shell", "", "x" * 101):
         with pytest.raises(Refused, match="runtime_not_configured"):
-            Declaration("Scribe", "Writes", 1000, runtime=kind).validate()
+            hearth.save_resident(
+                "karen",
+                Declaration("Karen", "Runs the household", 10_000_000, runtime=kind),
+                expected_revision=1,
+            )
     # Both live kinds are declarable, and no runtime at all is the store's default.
-    for kind in (CODEX_KIND, CLAUDE_KIND, None):
-        Declaration("Scribe", "Writes", 1000, runtime=kind).validate()
+    for revision, kind in enumerate((CODEX_KIND, CLAUDE_KIND, None), start=1):
+        hearth.save_resident(
+            "karen",
+            Declaration("Karen", "Runs the household", 10_000_000, runtime=kind),
+            expected_revision=revision,
+        )
+
+
+def test_a_resident_keeps_a_runtime_this_release_has_since_retired(tmp_path):
+    """Losing the runtime must not lose the resident: what stands may always be kept."""
+    hearth, _, _ = household(tmp_path)
+    with hearth.database.transaction(write=True) as db:
+        db.execute("UPDATE declarations SET runtime='inline_mock' WHERE resident_id='scribe'")
+    standing = hearth.resident("scribe").declaration
+    assert standing.runtime == "inline_mock"
+    # Renaming, repurposing or pausing it carries the retired kind forward untouched.
+    saved = hearth.save_resident(
+        "scribe", replace(standing, purpose="Writes rather more"), expected_revision=1
+    )
+    assert saved.declaration.runtime == "inline_mock"
+    # Only a move is refused, and moving to a live one is the way out.
+    with pytest.raises(Refused, match="runtime_not_configured"):
+        hearth.save_resident("scribe", replace(standing, runtime="codex_mock"), expected_revision=2)
+    assert (
+        hearth.save_resident(
+            "scribe", replace(standing, runtime=CLAUDE_KIND), expected_revision=2
+        ).declaration.runtime
+        == CLAUDE_KIND
+    )
 
 
 def test_a_runtime_this_store_was_never_configured_for_is_refused_at_the_declaration(tmp_path):
@@ -235,3 +290,78 @@ def test_the_operator_moves_one_resident_between_brains_and_only_when_it_says_so
             json={"runtime": "inline_mock", "expected_revision": back["revision"]},
         )
         assert refused.status_code == 409 and refused.json()["error"] == "runtime_not_configured"
+
+
+def test_a_second_provider_that_will_not_open_does_not_take_the_household_down(tmp_path):
+    """A lapsed login on one brain must not stop every resident on the other."""
+    from fastapi.testclient import TestClient
+    from hearth.app import create_app
+    from hearth.integrations.claude.config import VERSION
+
+    from tests.integrations.claude.test_configuration import synthetic_cli, synthetic_codex
+
+    data = tmp_path / "data"
+    database = Database(data / "hearth.db")
+    database.initialize()
+    codex_binary, auth = synthetic_codex(tmp_path)
+    config_dir = tmp_path / "claude-config"
+    config_dir.mkdir()
+    # The store has a resident on Claude, and this host's Claude CLI is logged out.
+    FakeClaudeRuntime(data)
+    Hearth(database).save_resident(
+        "scribe",
+        Declaration("Scribe", "Writes on the second brain", 10_000_000, runtime=CLAUDE_KIND),
+        expected_revision=0,
+    )
+    app = create_app(
+        data,
+        "synthetic-operator-token-for-tests",
+        supervise=False,
+        codex_binary=codex_binary,
+        codex_auth_home=auth,
+        claude_binary=synthetic_cli(tmp_path / "logged-out-claude", logged_in=False),
+        claude_config_dir=config_dir,
+    )
+    # The household opens on the runtime it can, and says why the other is missing.
+    assert set(app.state.executor.runtimes) == {CODEX_KIND}
+    with database.transaction() as db:
+        recorded = db.execute(
+            "SELECT resource_id, detail FROM audit WHERE kind='runtime.unavailable'"
+        ).fetchall()
+    assert [row[0] for row in recorded] == [CLAUDE_KIND]
+    assert '"reason": "claude_subscription_login_required"' in recorded[0][1]
+    with TestClient(app) as client:
+        assert client.get("/health").json() == {"service": "hearth"}
+    assert VERSION  # the pinned version is what the synthetic CLI answered with
+
+
+def test_a_runtime_nothing_here_is_configured_for_is_recorded_at_start(tmp_path):
+    """No refusal to report, because nothing was even pointed at it."""
+    from hearth.app import create_app
+
+    from tests.integrations.claude.test_configuration import synthetic_codex
+
+    data = tmp_path / "data"
+    database = Database(data / "hearth.db")
+    database.initialize()
+    FakeClaudeRuntime(data)
+    Hearth(database).save_resident(
+        "scribe",
+        Declaration("Scribe", "Writes on the second brain", 10_000_000, runtime=CLAUDE_KIND),
+        expected_revision=0,
+    )
+    codex_binary, auth = synthetic_codex(tmp_path)
+    app = create_app(
+        data,
+        "synthetic-operator-token-for-tests",
+        supervise=False,
+        codex_binary=codex_binary,
+        codex_auth_home=auth,
+    )
+    assert set(app.state.executor.runtimes) == {CODEX_KIND}
+    with database.transaction() as db:
+        detail = db.execute(
+            "SELECT detail FROM audit WHERE kind='runtime.unavailable' AND resource_id=?",
+            (CLAUDE_KIND,),
+        ).fetchone()[0]
+    assert '"reason": "runtime_not_configured"' in detail

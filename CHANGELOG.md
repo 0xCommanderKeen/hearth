@@ -9,14 +9,15 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   store runs on `claude_subscription`. One instance builds every live runtime it is
   configured for -- each through the registry's own module and class, so the two
   adapters are named in one place -- and the executor works each run with the runtime
-  its own pin names. A run pinned to a runtime this instance is not configured for is
-  never handed to another provider: one that never launched is asked to stop and
-  settles at zero, one already launched waits, interrupted, with a `runtime_unavailable`
-  audit fact, because there is no receipt for a session nobody here can see. A
-  declaration may only name a runtime this store has really been configured for
-  (`runtime_not_configured`), the execution profile an operator, Karen or a bundle names
-  is that resident's runtime, and a bundle whose runtime the importing instance lacks
-  keeps the resident on the default with the reason recorded. Recorded in
+  its own pin names. A second runtime that will not open — a lapsed login, a CLI past its
+  pin — leaves the household standing and is recorded once at start as
+  `runtime.unavailable`; a run pinned to a runtime this instance is not configured for
+  waits rather than being handed to another provider or thrown away, and is worked as
+  soon as that runtime is configured again. A declaration may only *move* to a runtime
+  this store has really been configured for (`runtime_not_configured`) while keeping the
+  one that already stands is always allowed, the execution profile an operator, Karen or
+  a bundle names is that resident's runtime, and a bundle whose runtime the importing
+  instance lacks keeps the resident on the default with the reason recorded. Recorded in
   `docs/adr/0015-runtime-per-resident.md`.
 - Hearth's own tools reach a Claude run. `--mcp-config` names a Hearth-owned stdio shim
   (`python -I -m hearth.integrations.claude.mcp_bridge`) that carries no credential, no
