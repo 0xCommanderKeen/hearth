@@ -250,7 +250,11 @@ wrote into would show the next resident what the last one left
 reaches Hearth's own tools through a shim the CLI itself launches, named by a
 `--mcp-config` document Hearth writes into the run folder beside the socket that
 document points at. Both are mounted at their own paths, so the string in the document
-is one string inside the sandbox and out and nothing has to agree with anything. What
+is one string inside the sandbox and out and nothing has to agree with anything. The two
+*files*, not the folder they sit in: a bind mount of a file creates that file and an
+empty path down to it, so the run folder inside the container holds those two and
+nothing else -- not the request document, which carries the run's owner token, and not
+the receipt. What
 does change is the interpreter named in it: inside the sandbox the shim is started by
 the image's own `python3`, which is where Hearth's package sits for `python -I` to find
 it. The socket itself is mounted by the launcher, and that is the mount a Mac cannot
