@@ -426,8 +426,17 @@ def worker(folder, inherited_fd=None):
         management = request.get("management")
         server = None
         failure = None
+        # What a bridge can raise out of Hearth's own writer. Empty for a run that has
+        # no bridge, so the clauses below match nothing at all.
+        bridge_failures: tuple[type[BaseException], ...] = ()
         if management is not None:
-            from hearth.integrations.claude.mcp_bridge import configuration_path, open_bridge
+            from hearth.integrations.claude.mcp_bridge import (
+                BRIDGE_FAILURES,
+                configuration_path,
+                open_bridge,
+            )
+
+            bridge_failures = BRIDGE_FAILURES
 
             try:
                 # The bridge is opened before the launch, so a run whose authority
@@ -436,7 +445,7 @@ def worker(folder, inherited_fd=None):
             except Refused as error:
                 publish(folder / "receipt.json", unlaunched(request, management, error.code))
                 return
-            except OSError, ValueError, KeyError, TypeError:
+            except bridge_failures:
                 # A socket that cannot be bound or a configuration that cannot be
                 # written is Hearth's own failure, and it leaves a receipt rather than
                 # a run nobody can ever settle.
@@ -519,6 +528,9 @@ def worker(folder, inherited_fd=None):
                             # can reach a tool.
                             failure = error.code
                             break
+                        except bridge_failures:
+                            failure = "mcp_bridge_failed"
+                            break
         except Refused:
             cancelled = True
         finally:
@@ -559,7 +571,9 @@ def worker(folder, inherited_fd=None):
             receipt["management"] = {
                 "catalog_sha256": management["catalog_sha256"],
                 "tools_sha256": management["tools_sha256"],
-                "error": failure,
+                # A bridge that failed on its last call, while the session went on to
+                # end by itself, is still a bridge that failed.
+                "error": failure or (server.failure if server is not None else None),
             }
         # The receipt has to fit the bound `encode` validates. Replacement characters
         # and JSON escaping can both inflate what was read, so a stream that was within

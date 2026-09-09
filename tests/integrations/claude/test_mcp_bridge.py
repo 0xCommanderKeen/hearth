@@ -538,6 +538,28 @@ def test_settlement_refuses_a_receipt_configured_differently_from_the_pin(tmp_pa
         )
 
 
+def test_a_writer_that_fails_ends_the_session_and_says_so_in_the_receipt(tmp_path, monkeypatch):
+    """Hearth's own failure is never answered as a refusal and never left silent."""
+    import sqlite3
+
+    from hearth.management.bridge import Bridge
+
+    store = Store(tmp_path)
+    store.script([{"tool": "hearth_journal_write", "arguments": {"text": "Never written."}}])
+    run = store.run()
+
+    def broken(self, params):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(Bridge, "call", broken)
+    published = store.work(run)
+    assert published["management"]["error"] == "mcp_bridge_failed"
+    assert store.rows("SELECT * FROM journal_entries") == []
+    # Launched, so not free, and never unknown-with-a-relaunch.
+    assert published["launched"] is True
+    assert store.runtime.inspect(run.id).status == "failed"
+
+
 def test_a_bridge_that_cannot_be_opened_leaves_a_receipt_rather_than_a_run(tmp_path):
     """Hearth's own failure still settles: a run with no receipt could never close."""
     store = Store(tmp_path)
