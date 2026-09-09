@@ -157,6 +157,7 @@ def worker(folder, request, execution):
     from pathlib import Path
 
     from hearth.integrations.codex.usage import UsageBinding
+    from hearth.integrations.launcher import Sandbox
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
     from hearth.work.letters import run_letter_scope
@@ -212,6 +213,10 @@ def worker(folder, request, execution):
     else:
         terminal = app_server.run(
             binary=Path(request["binary"]),
+            # The session executes where this run was admitted to execute, which the
+            # control plane published into the request; the worker's own environment
+            # is a search path and carries nothing.
+            launcher=Sandbox.of(request.get("sandbox")).open(),
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],

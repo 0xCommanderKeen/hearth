@@ -35,6 +35,7 @@ from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
 from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.integrations.interface import label as runtime_label
+from hearth.integrations.launcher import Sandbox, configure
 from hearth.management.api import mount_management
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
@@ -61,6 +62,7 @@ def create_app(
     codex_auth_home: Path | None = None,
     claude_binary: Path | None = None,
     claude_config_dir: Path | None = None,
+    sandbox: Sandbox | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
@@ -86,6 +88,9 @@ def create_app(
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     kind = database.runtime_kind()
+    # Where every run this instance starts will execute. One instance has one answer:
+    # the boundary is a property of the burrow Hearth is running on, not of a resident.
+    sandbox = Sandbox() if sandbox is None else sandbox
     unavailable: dict[str, str] = {}
     if runtime is not None:
         built = runtime(data)
@@ -98,6 +103,7 @@ def create_app(
                 CODEX_KIND: {"binary": codex_binary, "auth_home": codex_auth_home},
                 CLAUDE_KIND: {"binary": claude_binary, "config_dir": claude_config_dir},
             },
+            sandbox=sandbox,
         )
         # A runtime some resident declares and this instance cannot open is an
         # operator's configuration to fix, and those residents' runs are waiting on
@@ -119,6 +125,14 @@ def create_app(
                         int(hearth.clock()),
                         {"reason": unavailable[missing]},
                     )
+    # The sandbox is checked after the adapters, because the binary pins it compares
+    # the image's own CLIs against are what those adapters have just written. A store
+    # configured for a provider on this start is therefore checked on this start, not
+    # on the next one. A quarantined copy starts nothing and is never written to, so it
+    # pins nothing either; it still reports the launcher it was opened with.
+    sandbox_state = (
+        {"launcher": sandbox.launcher} if restored else configure(database, sandbox, hearth.clock)
+    )
     executor = Executor(execution, adapters)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
@@ -186,7 +200,17 @@ def create_app(
         missing is a configuration fact about this operator's machine and is answered
         by `/api/health`, which asks for the operator's own token first.
         """
-        return {"service": "hearth", "runtimes": opened_runtimes()}
+        return {
+            "service": "hearth",
+            "runtimes": opened_runtimes(),
+            # Where this instance's runs execute, and -- on the container launcher --
+            # the image digest they execute from. The digest names bytes, not this
+            # machine: it is the same answer for every instance built from that image,
+            # so it tells a reader which sandbox is deployed without telling a LAN
+            # peer anything about the host. The network's name and the reasons a
+            # sandbox did not open stay behind the operator's token.
+            "sandbox": sandbox_state,
+        }
 
     @app.get("/api/state")
     def state(cursor: int | None = None, epoch: str | None = None):
@@ -206,6 +230,7 @@ def create_app(
         """
         return supervisor.health() | {
             "runtimes": opened_runtimes(),
+            "sandbox": sandbox_state | ({"network": sandbox.network} if sandbox.network else {}),
             "unavailable": [
                 {"kind": missing, "reason": reason}
                 for missing, reason in sorted(unavailable.items())
@@ -489,7 +514,7 @@ def create_app(
 
 
 def configured_runtimes(
-    data: Path, kind: str, configuration: dict[str, dict]
+    data: Path, kind: str, configuration: dict[str, dict], *, sandbox: Sandbox | None = None
 ) -> tuple[list[Runtime], dict[str, str]]:
     """Every live runtime this host is configured for, the store's default included.
 
@@ -513,18 +538,19 @@ def configured_runtimes(
         # A live kind nobody built an adapter for refuses here rather than quietly
         # opening on another provider's.
         raise Refused("runtime_configuration_invalid")
-    adapters = [build(default, data, **configuration[default])]
+    options = {"sandbox": sandbox} if sandbox is not None else {}
+    adapters = [build(default, data, **configuration[default], **options)]
     refused: dict[str, str] = {}
     for other in live_kinds():
-        options = configuration.get(other)
-        if other == default or options is None:
+        settings = configuration.get(other)
+        if other == default or settings is None:
             continue
-        if any(value is None for value in options.values()):
-            if any(value is not None for value in options.values()):
+        if any(value is None for value in settings.values()):
+            if any(value is not None for value in settings.values()):
                 refused[other] = "runtime_configuration_incomplete"
             continue
         try:
-            adapters.append(build(other, data, **options))
+            adapters.append(build(other, data, **settings, **options))
         except Refused as error:
             refused[other] = error.code
     return adapters, refused
@@ -546,4 +572,5 @@ def from_env() -> FastAPI:
         claude_config_dir=Path(os.environ["HEARTH_CLAUDE_CONFIG_DIR"])
         if os.environ.get("HEARTH_CLAUDE_CONFIG_DIR")
         else None,
+        sandbox=Sandbox.from_environment(),
     )

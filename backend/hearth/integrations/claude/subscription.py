@@ -48,6 +48,7 @@ from hearth.integrations.durable import (
     unique_object,
 )
 from hearth.integrations.interface import Evidence
+from hearth.integrations.launcher import Sandbox
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
 from hearth.work.service import Hearth, _audit, spend_fence
@@ -168,10 +169,20 @@ class ClaudeLiveRuntime:
     kind = KIND
     version = 1
 
-    def __init__(self, data: Path, *, binary: Path | None = None, config_dir: Path | None = None):
+    def __init__(
+        self,
+        data: Path,
+        *,
+        binary: Path | None = None,
+        config_dir: Path | None = None,
+        sandbox: Sandbox | None = None,
+    ):
         self.data = data.resolve()
         self.database = Database(self.data / "hearth.db")
         self.root = self.data / "claude-live"
+        # Where this instance's sessions execute. It travels in the request rather
+        # than in the worker's environment, which is a search path and nothing else.
+        self.sandbox = sandbox if sandbox is not None else Sandbox()
         if self.database.restored():
             return
         if binary is None or config_dir is None:
@@ -277,6 +288,7 @@ class ClaudeLiveRuntime:
                     # Hearth's own accounting stays the authority; this only stops a
                     # session that has run away from it.
                     "budget_usd": budget(spend_fence(db, row)),
+                    "sandbox": self.sandbox.document(),
                 }
             from hearth.integrations.claude.mcp_bridge import pin_configuration
             from hearth.management.bridge import BoundRun
@@ -437,6 +449,7 @@ def worker(folder, inherited_fd=None):
         binary = Path(request["binary"])
         if binary_digest(binary) != request["sha256"]:
             return
+        launcher = Sandbox.of(request.get("sandbox")).open()
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         management = request.get("management")
@@ -475,7 +488,7 @@ def worker(folder, inherited_fd=None):
             tools=server.offered if server is not None else (),
             mcp_config=configuration_path(folder) if server is not None else None,
         )
-        child = None
+        handle = None
         output = bytearray()
         cancelled = False
         eof = False
@@ -493,20 +506,21 @@ def worker(folder, inherited_fd=None):
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
-                    child = subprocess.Popen(
+                    handle = launcher.start(
                         command,
-                        cwd=workspace,
                         env=environment(Path(request["config_dir"])),
+                        cwd=workspace,
                         stdin=prompt,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
+                        socket=server.path if server is not None else None,
                     )
-            assert child.stdout is not None
+            # What was started, named where the worker's own pid is named: a process
+            # group on the process launcher and a container id on the container one.
+            publish(folder / "handle.json", handle.document())
+            assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             scanned = 0
             with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
+                selector.register(handle.stdout, selectors.EVENT_READ)
                 if server is not None:
                     # The bridge's own socket is watched in this one loop, so a tool
                     # call is answered by the same process that owns the run and
@@ -528,9 +542,9 @@ def worker(folder, inherited_fd=None):
                     # trusted, rather than refused for an event that had been written
                     # before the call was made.
                     for key, _ in ready:
-                        if key.fileobj is not child.stdout:
+                        if key.fileobj is not handle.stdout:
                             continue
-                        chunk = os.read(child.stdout.fileno(), 8192)
+                        chunk = os.read(handle.stdout.fileno(), 8192)
                         if not chunk:
                             eof = finished = True
                             break
@@ -557,29 +571,22 @@ def worker(folder, inherited_fd=None):
                         # on the bridge is answered after that.
                         break
                     for key, _ in ready:
-                        if key.fileobj is not child.stdout:
+                        if key.fileobj is not handle.stdout:
                             assert server is not None
                             server.ready(key)
         except Refused:
             cancelled = True
         finally:
-            if child is not None and eof:
-                try:
-                    child.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    eof = False
-            if child is not None and not eof:
-                # The CLI runs a Node process tree of its own, so the signal goes to
-                # the whole group the worker put it in, never to one pid.
-                try:
-                    os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
+            if handle is not None and eof and launcher.wait(handle, 1) is None:
+                eof = False
+            if handle is not None and not eof:
+                # The CLI runs a Node process tree of its own, so the signal ends the
+                # whole session the launcher started -- the process group on the host,
+                # the container and everything in it in a sandbox -- never one pid.
+                launcher.stop(handle, signal.SIGTERM)
+                if launcher.wait(handle, 5) is None:
+                    launcher.stop(handle, signal.SIGKILL)
+                    launcher.wait(handle, None)
             if server is not None:
                 server.close()
         receipt = {
@@ -587,11 +594,11 @@ def worker(folder, inherited_fd=None):
             "binding": request["binding"],
             "binary": request["sha256"],
             "stdout": output.decode("utf-8", errors="replace"),
-            "exit_code": child.returncode if child else None,
+            "exit_code": handle.returncode if handle else None,
             # `launched` is the only thing that can make a cancellation free, so it is
             # written from whether a process object exists, never from how it ended.
             "cancelled": cancelled,
-            "launched": child is not None,
+            "launched": handle is not None,
         }
         if management is not None:
             # A bridge that failed is recorded, never hidden: the session settles as

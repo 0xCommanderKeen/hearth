@@ -420,6 +420,16 @@ class BridgeServer:
 
     # -- lifecycle ---------------------------------------------------------
 
+    @property
+    def path(self) -> Path:
+        """The socket the session's shim connects to.
+
+        A sandboxed session reaches it because the launcher mounts this very path
+        into the container as itself, so the configuration the shim was given names
+        the same string inside and out and no translation layer can disagree with it.
+        """
+        return socket_path(self.folder)
+
     def open(self) -> None:
         self.listener = listen(socket_path(self.folder))
 

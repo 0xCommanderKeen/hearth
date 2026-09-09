@@ -21,6 +21,7 @@ from hearth.integrations.codex.events import (
     unique_object,
 )
 from hearth.integrations.codex.pricing import MODEL
+from hearth.integrations.launcher import ProcessLauncher
 from hearth.residents.models import Refused
 
 PROTOCOL = "codex-app-server-0.153.4"
@@ -226,30 +227,23 @@ class _Pipe:
 
 
 @contextmanager
-def _process(binary, auth_home, workspace, settings, deadline, cancelled):
-    child = subprocess.Popen(
+def _process(binary, auth_home, workspace, settings, deadline, cancelled, launcher):
+    handle = launcher.start(
         [str(binary), "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
-        cwd=workspace,
         env={"PATH": os.defpath, "CODEX_HOME": str(auth_home)},
+        cwd=workspace,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
         bufsize=0,
-        start_new_session=True,
     )
+    child = handle.process
     try:
         yield _Pipe(child, deadline, cancelled)
     finally:
         if child.poll() is None:
-            try:
-                os.killpg(child.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                child.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait(timeout=2)
+            launcher.stop(handle, signal.SIGTERM)
+            if launcher.wait(handle, 2) is None:
+                launcher.stop(handle, signal.SIGKILL)
+                launcher.wait(handle, 2)
         if child.stdin is not None:
             child.stdin.close()
         if child.stdout is not None:
@@ -341,6 +335,7 @@ def run(
     timeout: float = 600,
     max_calls: int = 64,
     expected_pins: dict | None = None,
+    launcher=None,
 ) -> dict:
     """One private native process/turn; callbacks retain Hearth's transactional authority.
 
@@ -356,6 +351,9 @@ def run(
         "events": [],
     }
     process = None
+    # Where this session's processes are started. The default is the launcher Hearth
+    # has always used, so a caller that names none is launched exactly as before.
+    launcher = ProcessLauncher() if launcher is None else launcher
     try:
         if not 0 < timeout <= 600 or type(max_calls) is not int or not 1 <= max_calls <= 64:
             raise Refused("app_server_limits_invalid")
@@ -382,10 +380,14 @@ def run(
             settings = config.settings() | {"model_catalog_json": str(catalog_path)}
             # Discovery never starts a thread/turn; a second isolated process starts
             # with every discovered skill disabled, then verifies the effective set.
-            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as discovery:
+            with _process(
+                binary, auth_home, workspace, settings, deadline, cancelled, launcher
+            ) as discovery:
                 paths = config.skill_paths(_initialize(discovery, workspace, settings))
             settings["skills.config"] = [{"path": path, "enabled": False} for path in paths]
-            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as process:
+            with _process(
+                binary, auth_home, workspace, settings, deadline, cancelled, launcher
+            ) as process:
                 actual_paths = config.skill_paths(
                     _initialize(process, workspace, settings), disabled=True
                 )

@@ -20,6 +20,7 @@ from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
 from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
+from hearth.integrations.launcher import Sandbox
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -139,10 +140,20 @@ class CodexLiveRuntime:
     kind = KIND
     version = 1
 
-    def __init__(self, data: Path, *, binary: Path | None = None, auth_home: Path | None = None):
+    def __init__(
+        self,
+        data: Path,
+        *,
+        binary: Path | None = None,
+        auth_home: Path | None = None,
+        sandbox: Sandbox | None = None,
+    ):
         self.data = data.resolve()
         self.database = Database(self.data / "hearth.db")
         self.root = self.data / "codex-live"
+        # Where this instance's sessions execute. It travels in the request rather
+        # than in the worker's environment, which is a search path and nothing else.
+        self.sandbox = sandbox if sandbox is not None else Sandbox()
         if self.database.restored():
             return
         if binary is None or auth_home is None:
@@ -214,6 +225,7 @@ class CodexLiveRuntime:
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key='codex_live_binary'"
                     ).fetchone()[0],
+                    "sandbox": self.sandbox.document(),
                 }
             from hearth.integrations.codex.management_runtime import pin_configuration
             from hearth.management.bridge import BoundRun
@@ -322,6 +334,7 @@ def worker(folder, inherited_fd=None):
 
             management_worker(folder, request, execution)
             return
+        launcher = Sandbox.of(request.get("sandbox")).open()
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         final = workspace / "final.md"
@@ -344,7 +357,7 @@ def worker(folder, inherited_fd=None):
         for key, value in CONFIG.items():
             cmd += ["-c", key + "=" + json.dumps(value)]
         cmd.append("-")
-        child = None
+        handle = None
         output = bytearray()
         cancelled = False
         eof = False
@@ -361,26 +374,26 @@ def worker(folder, inherited_fd=None):
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
-                    child = subprocess.Popen(
+                    handle = launcher.start(
                         cmd,
-                        cwd=workspace,
                         env={"PATH": os.defpath, "CODEX_HOME": request["auth_home"]},
+                        cwd=workspace,
                         stdin=prompt,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
                     )
-            assert child.stdout is not None
+            # What was started, named where the worker's own pid is named: a process
+            # group on the process launcher and a container id on the container one.
+            publish(folder / "handle.json", handle.document())
+            assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
+                selector.register(handle.stdout, selectors.EVENT_READ)
                 while time.monotonic() < deadline:
                     if (folder / "cancel.json").exists():
                         cancelled = True
                         break
                     if not selector.select(0.05):
                         continue
-                    chunk = os.read(child.stdout.fileno(), 8192)
+                    chunk = os.read(handle.stdout.fileno(), 8192)
                     if not chunk:
                         eof = True
                         break
@@ -390,21 +403,13 @@ def worker(folder, inherited_fd=None):
         except Refused:
             cancelled = True
         finally:
-            if child is not None and eof:
-                try:
-                    child.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    eof = False
-            if child is not None and not eof:
-                try:
-                    os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
+            if handle is not None and eof and launcher.wait(handle, 1) is None:
+                eof = False
+            if handle is not None and not eof:
+                launcher.stop(handle, signal.SIGTERM)
+                if launcher.wait(handle, 5) is None:
+                    launcher.stop(handle, signal.SIGKILL)
+                    launcher.wait(handle, None)
         receipt = {
             "kind": KIND,
             "binding": request["binding"],
@@ -413,9 +418,9 @@ def worker(folder, inherited_fd=None):
             "final": final.read_text()
             if final.exists() and final.stat().st_size <= 512 * 1024
             else None,
-            "exit_code": child.returncode if child else None,
+            "exit_code": handle.returncode if handle else None,
             "cancelled": cancelled,
-            "launched": child is not None,
+            "launched": handle is not None,
         }
         encode(receipt, UsageBinding(**request["binding"]))
         publish(folder / "receipt.json", receipt)
