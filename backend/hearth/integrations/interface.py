@@ -9,6 +9,7 @@ them on its finished runs and their answers have to stay exactly what they were.
 """
 
 import importlib
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -40,8 +41,9 @@ class RuntimeSpec:
     names the module that reads that provider's original evidence; a kind without one
     settles no money, so it prices and dispatches nothing. `replayable_start` records
     that the adapter's `start` is idempotent for the same run and instruction, so a lost
-    start reply is re-observed rather than re-launched. `label` is how the kind is named
-    to an operator.
+    start reply is re-observed rather than re-launched. `management` records that the
+    adapter can carry Hearth's own tools into a session; a kind without it admits no run
+    that was pinned to reach them. `label` is how the kind is named to an operator.
     """
 
     kind: str
@@ -51,6 +53,7 @@ class RuntimeSpec:
     module: str | None = None
     runtime: str | None = None
     receipts: str | None = None
+    management: bool = False
 
     @property
     def receipted(self) -> bool:
@@ -78,9 +81,8 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         module="hearth.integrations.codex.subscription",
         runtime="CodexLiveRuntime",
         receipts="hearth.integrations.codex.receipts",
+        management=True,
     ),
-    # The second live kind. Its receipts, price schedule and worker land with the
-    # headless run (#146); until then it is configured, pinned and started by nobody.
     "claude_subscription": RuntimeSpec(
         "claude_subscription",
         live=True,
@@ -88,6 +90,11 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         label="Claude subscription",
         module="hearth.integrations.claude.subscription",
         runtime="ClaudeLiveRuntime",
+        receipts="hearth.integrations.claude.receipts",
+        # The bridge that carries Hearth's own tools into a Claude session is #147.
+        # Until it lands, a run that was pinned to reach them is refused at admission
+        # rather than launched without the authority its declaration promised.
+        management=False,
     ),
 }
 
@@ -100,6 +107,12 @@ def live(kind: str) -> bool:
 
 def live_kinds() -> tuple[str, ...]:
     return tuple(kind for kind, spec in RUNTIMES.items() if spec.live)
+
+
+def manages_tools(kind: str) -> bool:
+    """The kind can carry Hearth's own management tools into a session it runs."""
+    spec = RUNTIMES.get(kind)
+    return spec is not None and spec.management
 
 
 def label(kind: str) -> str:
@@ -116,13 +129,23 @@ def pricing_pin(kind: str, mode: str | None = None) -> dict | None:
     return importlib.import_module(spec.receipts).pricing_pin("standard")
 
 
-def validate_pricing(value: dict) -> None:
-    from hearth.integrations.codex.receipts import validate_pricing
+def validate_pricing(value: dict, kind: str) -> None:
+    """A stored price pin has to be the one the run's own runtime writes.
 
-    validate_pricing(value)
+    The pin travels with the run, so the run's kind decides which schedule reads it.
+    Asking every schedule instead would let a pin one provider wrote settle a run
+    another provider did, and a run whose price nobody can read settles no money.
+    """
+    _receipts(kind, "run_pricing_invalid").validate_pricing(value)
 
 
 def usage_binding(run_id: str, input_digest: str, pin: dict):
+    """What a receipt has to name to settle this run: its identity and its price pin.
+
+    One shape for every provider -- the binding is Hearth's own statement of what was
+    admitted, not a provider's evidence -- so both live adapters compare against it
+    unchanged. It lives beside the Codex usage journal for historical reasons only.
+    """
     from hearth.integrations.codex.usage import UsageBinding
 
     return UsageBinding(run_id, input_digest, pin["model"], pin["mode"], pin["schedule"])
@@ -177,6 +200,14 @@ def supports_dispatch(kind: str, version: int) -> bool:
 
 
 def receipt_requests(raw: str) -> list:
-    from hearth.integrations.codex.receipts import receipt_requests
-
-    return receipt_requests(raw)
+    """What the receipt says each individual request of a run spent, for the operator."""
+    value = json.loads(raw)
+    if isinstance(value, dict) and isinstance(value.get("kind"), str):
+        spec = RUNTIMES.get(value["kind"])
+        if spec is not None and spec.receipts is not None:
+            return importlib.import_module(spec.receipts).receipt_requests(value)
+    # A receipt naming no kind of its own is a usage journal, which keeps each
+    # request under `requests`. Anything else reports nothing rather than raising:
+    # a receipt Hearth cannot read is already refused where it is settled.
+    requests = value.get("requests") if isinstance(value, dict) else None
+    return requests if isinstance(requests, list) else []

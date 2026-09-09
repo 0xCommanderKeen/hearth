@@ -15,6 +15,7 @@ shaped this file and are worth repeating where they are used:
   (#147), which is why they are not in `SESSION_FLAGS` yet.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,9 +31,14 @@ BINARY_PIN = "claude_live_binary"
 # The CLI is a ~200 MB single file and starts a Node runtime; the Codex adapter's five
 # seconds is too tight for a cold start of it.
 PROBE_TIMEOUT = 30
+# How long one headless turn may run before the worker signals its process group. The
+# Codex adapter allows two minutes; a cold Node start plus an Opus turn needs more, and
+# the provider's own `--max-budget-usd` fence stops a session that is merely expensive.
+RUN_TIMEOUT = 600
 
-# The bounded session every run is launched with. The run's own arguments (prompt,
-# model, budget ceiling, tools, MCP config) are added by the worker in #146 and #147.
+# The bounded session every run is launched with. The run's own arguments -- model,
+# effort, tool list and budget fence -- are added by `session_command` below; the
+# prompt is delivered on stdin, and the MCP configuration arrives with the bridge (#147).
 SESSION_FLAGS: tuple[str, ...] = (
     "--print",
     # The stream is the receipt: every API response's usage block is kept.
@@ -50,6 +56,50 @@ SESSION_FLAGS: tuple[str, ...] = (
     "--permission-prompts",
     "none",
 )
+
+
+def session_command(binary: Path, *, budget_usd: str) -> list[str]:
+    """The whole argv of one bounded headless run. The prompt is delivered on stdin.
+
+    `--tools ""` is here rather than in `SESSION_FLAGS` because it is exactly what
+    #147 replaces with the granted `mcp__hearth__*` list; until then a run has no
+    tools at all, which was measured to report `"tools": []` in the session's own
+    `init` event.
+
+    `--max-budget-usd` is a second fence, not a ceiling: it was measured to stop the
+    session only *after* a request has already been billed past it, so Hearth's own
+    admission hold stays the authority and the receipt records that the CLI stopped
+    on the fence.
+    """
+    return [
+        str(binary),
+        *SESSION_FLAGS,
+        "--model",
+        MODEL,
+        "--effort",
+        EFFORT,
+        "--tools",
+        "",
+        "--max-budget-usd",
+        budget_usd,
+    ]
+
+
+def budget(microdollars: int) -> str:
+    """The run's reserved allowance as the dollars the CLI's own fence takes.
+
+    Microdollars are exact to six decimal places, so this conversion neither invents
+    money the run was not admitted for nor rounds any of it away.
+    """
+    if type(microdollars) is not int or microdollars < 0:
+        raise ValueError("invalid budget")
+    return f"{microdollars / 1_000_000:.6f}"
+
+
+def binary_digest(path: Path) -> str:
+    """The pinned binary's sha256, read in chunks: the CLI is around 200 MB."""
+    with path.open("rb") as binary:
+        return hashlib.file_digest(binary, "sha256").hexdigest()
 
 
 def environment(config_dir: Path) -> dict[str, str]:

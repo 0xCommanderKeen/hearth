@@ -24,7 +24,7 @@ EXPECTED = {
     "process_mock": (False, False, False, None),
     "codex_mock": (False, False, False, None),
     "codex_subscription": (True, True, True, "hearth.integrations.codex.receipts"),
-    "claude_subscription": (True, False, True, None),
+    "claude_subscription": (True, True, True, "hearth.integrations.claude.receipts"),
 }
 
 
@@ -47,8 +47,43 @@ def test_only_a_receipted_kind_is_priced():
         "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
         "basis": "api_equivalent_estimate",
     }
-    for kind in ("inline_mock", "process_mock", "codex_mock", "claude_subscription"):
+    # Each live kind is pinned to its own schedule; neither can settle at the other's.
+    assert pricing_pin("claude_subscription") == {
+        "model": "claude-opus-5",
+        "mode": "standard",
+        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
+        "basis": "api_equivalent_estimate",
+    }
+    for kind in ("inline_mock", "process_mock", "codex_mock"):
         assert pricing_pin(kind) is None
+
+
+def test_a_stored_price_pin_is_read_by_the_runtime_that_wrote_it():
+    from hearth.integrations.interface import validate_pricing
+
+    pins = {}
+    for kind in ("codex_subscription", "claude_subscription"):
+        pin = pricing_pin(kind)
+        assert pin is not None
+        pins[kind] = {key: pin[key] for key in ("model", "mode", "schedule")}
+        validate_pricing(pins[kind], kind)
+    # Neither runtime's pin settles the other's run, and a kind with no schedule at
+    # all reads no pin.
+    with pytest.raises(Refused, match="run_pricing_invalid"):
+        validate_pricing(pins["codex_subscription"], "claude_subscription")
+    with pytest.raises(Refused, match="run_pricing_invalid"):
+        validate_pricing(pins["claude_subscription"], "codex_subscription")
+    with pytest.raises(Refused, match="run_pricing_invalid"):
+        validate_pricing(pins["codex_subscription"], "codex_mock")
+
+
+def test_only_a_runtime_that_carries_hearth_s_tools_says_so():
+    from hearth.integrations.interface import manages_tools
+
+    assert manages_tools("codex_subscription") is True
+    # The Claude bridge is #147; until then the kind admits no run pinned to it.
+    assert manages_tools("claude_subscription") is False
+    assert manages_tools("nothing_hearth_ships") is False
 
 
 def test_an_unknown_kind_is_answered_as_nothing_rather_than_as_the_one_that_ships():

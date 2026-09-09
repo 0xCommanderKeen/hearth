@@ -2,6 +2,38 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A resident's work runs on Claude. A run pinned to `claude_subscription` launches the
+  pinned CLI exactly once, from a detached worker that holds its own folder's lock, with
+  the prompt on stdin and the bounded flag set; the CLI's original `stream-json` output
+  is the receipt, kept whole. Cost is Hearth's own arithmetic over the session's token
+  counts under the pinned schedule `claude-opus-5-api-equivalent-2026-09-07`, and it
+  settles only when it matches both numbers the CLI reports — each model's `costUSD` and
+  the session's `total_cost_usd` — per model and in total. A wider disagreement, a model
+  the schedule does not price, or a cache write whose tier the stream never named leaves
+  usage unknown and the resident's hold in place, while the answer is still kept. The
+  run's reserved budget is also passed to the CLI's own `--max-budget-usd` fence: it
+  bills the request that crosses it before stopping, so a budget stop settles as failed
+  with the cost known, and Hearth's admission hold stays the authority. Cancellation
+  signals the worker's own process group, and the only zero-cost ending is a launch that
+  provably never happened. `docs/claude-runtime.md` gains what #146 measured, including
+  three findings against the plan: the result event's `usage` block is truthful on a
+  success and zeroed on a budget stop, an assistant message's `output_tokens` is a
+  mid-stream snapshot, and there is no long-context tier on this schedule — confirmed
+  from the Anthropic pricing page, which is also why the second model a session really
+  spends, `claude-haiku-4-5`, is priced at its own published rates rather than ignored.
+  One thing a Claude store cannot do yet: a run pinned to reach Hearth's own management
+  tools — its resident holds a grant, declares `memory_writable`, works a letter or holds
+  post — is refused `run_management_unsupported` at admission, because the bridge that
+  carries those tools into a Claude session has not landed. It is refused where nothing
+  has been spent rather than launched into a session holding none of the authority its
+  declaration promised. A stored price pin is also now read by the runtime the run was
+  pinned to, instead of by whichever schedule happens to recognise it. A session the
+  stream proves billed nothing — no model usage, a zero total, no requests and no API
+  response — settles at zero rather than at unknown, so a subscription login that lapses
+  fails its runs without holding every resident's allowance behind a manual
+  reconciliation; and a lapsed login is now reported as `claude_subscription_login_required`,
+  because `claude auth status --json` prints its answer and exits 1 when there is none.
+
 - Hearth knows a second live runtime kind. One registry in
   `integrations/interface.py` now answers every question about a runtime kind — what is
   live, what settles from receipts, whose start is replayable, which adapter and which

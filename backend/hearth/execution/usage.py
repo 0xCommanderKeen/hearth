@@ -21,13 +21,16 @@ MAX_ORIGINS = 100
 
 
 def pricing(db, run_id: str) -> dict | None:
+    """The price pin a run was admitted under, read by its own runtime's schedule."""
     row = db.execute(
-        "SELECT model,mode,schedule FROM run_pricing WHERE run_id=?", (run_id,)
+        "SELECT p.model,p.mode,p.schedule,r.runtime_kind FROM run_pricing p "
+        "JOIN runs r ON r.id=p.run_id WHERE p.run_id=?",
+        (run_id,),
     ).fetchone()
     if row is None:
         return None
-    value = dict(row)
-    validate_pricing(value)
+    value = {key: row[key] for key in ("model", "mode", "schedule")}
+    validate_pricing(value, row["runtime_kind"])
     return value | {"basis": "api_equivalent_estimate"}
 
 
