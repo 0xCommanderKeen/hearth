@@ -328,6 +328,29 @@ def test_a_tool_the_run_was_never_offered_is_refused_and_recorded(tmp_path):
     assert store.rows("SELECT * FROM management_calls WHERE run_id=?", run.id) == []
 
 
+def test_a_granted_resident_is_offered_the_whole_management_surface(tmp_path):
+    """The Karen shape: a grant carries the management tools into a Claude session."""
+    store = Store(
+        tmp_path,
+        grant={"enabled": True, "capabilities": ["assign_work"], "profiles": [KIND]},
+    )
+    store.script([{"tool": "hearth_catalog", "arguments": {"query": ""}}])
+    run = store.run()
+    store.work(run)
+    record = store.record()
+    listed = [tool["name"] for tool in record["listed"]["result"]["tools"]]
+    # Every memory tool, and the management tools the grant carries beside them.
+    assert set(MEMORY_TOOLS) < set(listed)
+    assert {"hearth_catalog", "hearth_residents_read", "hearth_work_assign"} <= set(listed)
+    argv = record["argv"]
+    assert argv[argv.index("--tools") + 1].split(",") == [TOOL_PREFIX + name for name in listed]
+    # And the call really ran: the catalog it answered with is this store's own.
+    catalog = answer(record["calls"][0]["reply"])
+    assert catalog["isError"] is False
+    assert [resident["id"] for resident in catalog["residents"]] == ["writer"]
+    assert store.rows("SELECT * FROM management_calls WHERE run_id=?", run.id) != []
+
+
 def test_a_grant_revoked_mid_session_closes_management_but_not_memory(tmp_path):
     """ADR 0012 over the bridge: remembering is not managing, and outlives the grant."""
     store = Store(
