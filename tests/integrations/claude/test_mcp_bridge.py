@@ -19,10 +19,11 @@ import pytest
 from hearth.integrations.claude.config import KIND
 from hearth.integrations.claude.mcp_bridge import TOOL_PREFIX
 from hearth.integrations.claude.subscription import ClaudeLiveRuntime, worker
+from hearth.integrations.launcher import CONTAINER
 from hearth.residents.models import Declaration, Refused
 
-from tests import fake_docker
 from tests.integrations.claude.test_claude_live import login
+from tests.integrations.test_launcher_parity import pinned
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MEMORY_TOOLS = ["hearth_memory_read", "hearth_memory_save", "hearth_journal_write"]
@@ -46,7 +47,6 @@ class Store:
 
     def __init__(self, tmp_path: Path, *, memory_writable=True, grant=None, sandbox=None):
         from hearth.execution.lifecycle import Execution
-        from hearth.integrations.launcher import BINARIES, configure
         from hearth.storage.artifacts import Artifacts
         from hearth.storage.database import Database
         from hearth.work.service import Hearth
@@ -65,15 +65,10 @@ class Store:
         self.runtime = ClaudeLiveRuntime(
             self.data, binary=self.binary, config_dir=config_dir, sandbox=sandbox
         )
-        if sandbox is not None and sandbox.launcher == "container":
-            # The image carries the very CLI this store is pinned to -- which is what
-            # a start checks before any resident is admitted, and what the container
-            # then executes instead of anything on the host -- and the store is pinned
-            # to the image, as a start on the container launcher pins it.
-            fake_docker.carry(
-                Path(sandbox.docker), BINARIES["claude_live_binary"], self.binary.read_bytes()
-            )
-            configure(database, sandbox)
+        if sandbox is not None and sandbox.launcher == CONTAINER:
+            # The image carries the very CLI this store is pinned to, and the store is
+            # pinned to the image, as a start on the container launcher does both.
+            pinned(database, sandbox, Path(sandbox.docker), "claude", self.binary)
         self.hearth = Hearth(database)
         self.hearth.save_resident(
             "writer",
