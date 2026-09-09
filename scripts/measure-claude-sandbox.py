@@ -130,7 +130,7 @@ def daemon(docker: str) -> dict:
     return answer
 
 
-def cli(docker: str, image: str, claude: Path, workspace: Path) -> dict:
+def cli(docker: str, image: str, claude: Path) -> dict:
     """The Linux build of the pinned CLI: its bytes, and what it calls itself.
 
     Hearth pins a provider CLI by sha256, and a macOS build and a Linux build are
@@ -577,7 +577,7 @@ def main() -> int:
     }
     try:
         report["daemon"] = daemon(arguments.docker)
-        report["cli"] = cli(arguments.docker, arguments.image, arguments.claude, workspace)
+        report["cli"] = cli(arguments.docker, arguments.image, arguments.claude)
         # Everything the CLI is asked below runs as Hearth's own uid, and that uid has
         # to be a user the image knows -- which is the next measurement, and the
         # reason this image is built before the ones that need it.
