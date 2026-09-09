@@ -34,6 +34,7 @@ from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
 from hearth.integrations.interface import Runtime, build, live, live_kinds
+from hearth.integrations.interface import label as runtime_label
 from hearth.management.api import mount_management
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
@@ -85,6 +86,7 @@ def create_app(
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     kind = database.runtime_kind()
+    unavailable: dict[str, str] = {}
     if runtime is not None:
         built = runtime(data)
         adapters = [built] if hasattr(built, "kind") else list(built)
@@ -153,7 +155,35 @@ def create_app(
 
     @app.get("/health")
     def healthcheck():
-        return {"service": "hearth"}
+        """Alive, and which brains this instance can actually work a run on.
+
+        A run pinned to a runtime this instance is not configured for waits rather
+        than failing (`docs/adr/0015-runtime-per-resident.md`), which from outside
+        looks like nothing happening at all. So the answer names every live runtime
+        that opened here, the store's own default among them, and every one that was
+        pointed at this instance and refused, with the provider's own reason. Runtime
+        kinds and refusal codes are Hearth's own vocabulary; no path, binary,
+        configuration directory or credential is named.
+        """
+        # The executor's own map, so this answers with the runtimes work is really
+        # handed to rather than with what configuration was attempted.
+        opened = list(executor.runtimes)
+        default = kind if kind in opened else opened[0]
+        return {
+            "service": "hearth",
+            "runtimes": [
+                {
+                    "kind": opened_kind,
+                    "label": runtime_label(opened_kind),
+                    "default": opened_kind == default,
+                }
+                for opened_kind in opened
+            ],
+            "unavailable": [
+                {"kind": missing, "reason": reason}
+                for missing, reason in sorted(unavailable.items())
+            ],
+        }
 
     @app.get("/api/state")
     def state(cursor: int | None = None, epoch: str | None = None):

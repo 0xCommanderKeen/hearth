@@ -44,9 +44,10 @@ class RuntimeSpec:
     start reply is re-observed rather than re-launched. `management` records that the
     adapter can carry Hearth's own tools into a session; a kind without it admits no run
     that was pinned to reach them. `label` is how the kind is named to an operator.
-    `binary_pin` is the `system_meta` key holding the sha256 of the binary this store
-    was configured with, which is also the store's own record that it was ever
-    configured for that runtime at all.
+    `management_protocol` names the transport those tools travelled on, which is the
+    provider's own and differs between them. `binary_pin` is the `system_meta` key
+    holding the sha256 of the binary this store was configured with, which is also the
+    store's own record that it was ever configured for that runtime at all.
     """
 
     kind: str
@@ -57,6 +58,7 @@ class RuntimeSpec:
     runtime: str | None = None
     receipts: str | None = None
     management: bool = False
+    management_protocol: str | None = None
     binary_pin: str | None = None
 
     @property
@@ -86,6 +88,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         runtime="CodexLiveRuntime",
         receipts="hearth.integrations.codex.receipts",
         management=True,
+        management_protocol="codex_app_server",
         binary_pin="codex_live_binary",
     ),
     "claude_subscription": RuntimeSpec(
@@ -100,6 +103,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         # `claude/mcp_bridge.py`, answered by the trusted worker with `BoundRun`
         # authority, so a run pinned to reach them can be admitted here.
         management=True,
+        management_protocol="claude_mcp_bridge",
         binary_pin="claude_live_binary",
     ),
 }
@@ -145,6 +149,20 @@ def label(kind: str) -> str:
     """How a runtime kind is named to an operator; the kind itself if nothing names it."""
     spec = RUNTIMES.get(kind)
     return spec.label if spec is not None else kind
+
+
+def management_protocol(kind: str) -> str:
+    """The transport Hearth's own tools reached a session on, named by the run's kind.
+
+    Codex carries them as the app server's dynamic tools and Claude over the MCP shim
+    and socket, so what the operator is shown is the provider's own protocol rather
+    than one word for both. A run recorded against a kind no adapter remains for keeps
+    the historical name, which is what its evidence was written under.
+    """
+    spec = RUNTIMES.get(kind)
+    if spec is None or spec.management_protocol is None:
+        return "native_management"
+    return spec.management_protocol
 
 
 def pricing_pin(kind: str, mode: str | None = None) -> dict | None:

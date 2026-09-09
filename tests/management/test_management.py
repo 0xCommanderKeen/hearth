@@ -34,6 +34,11 @@ def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
         path = f"/api/residents/{resident_id}/management"
         grant = client.get(path, headers=AUTH).json()
         assert grant["enabled"] and grant["profiles"] == ["codex_subscription"]
+        # The catalog an operator grants from names each runtime as well as identifying
+        # it, so no view has to know what `codex_subscription` is called.
+        assert client.get("/api/management", headers=AUTH).json()["profiles"] == [
+            {"id": "codex_subscription", "name": "Configured Codex subscription"}
+        ]
         assert "create_residents" in grant["capabilities"]
         disabled = {
             key: value for key, value in grant.items() if key not in {"resident_id", "revision"}

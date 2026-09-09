@@ -364,6 +364,12 @@ def test_a_granted_resident_is_offered_the_whole_management_surface(tmp_path):
     assert catalog["isError"] is False
     assert [resident["id"] for resident in catalog["residents"]] == ["writer"]
     assert store.rows("SELECT * FROM management_calls WHERE run_id=?", run.id) != []
+    # What the operator is shown names the transport those calls really travelled on,
+    # which is this provider's own and not the one the other adapter uses.
+    from hearth.observation.snapshot import snapshot
+
+    shown = {row["id"]: row for row in snapshot(store.hearth)["runs"]}[run.id]["management"]
+    assert shown["protocol"] == "claude_mcp_bridge" and shown["calls"] == 1
 
 
 def test_a_grant_revoked_mid_session_closes_management_but_not_memory(tmp_path):

@@ -4,7 +4,8 @@ import json
 
 from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
-from hearth.integrations.interface import live_kinds
+from hearth.integrations.interface import RUNTIMES, live_kinds
+from hearth.integrations.interface import label as runtime_label
 from hearth.management.authority import management_summary
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
@@ -18,7 +19,7 @@ from hearth.work.letters import (
     resident_names,
     task_lineage,
 )
-from hearth.work.service import ACTIVE_RUNS, Hearth
+from hearth.work.service import ACTIVE_RUNS, Hearth, configured_runtime, default_runtime
 
 # A run priced under a live runtime's own schedule is an API-equivalent estimate of a
 # subscription. Anything else with a price is history from a runtime that only pretended.
@@ -84,6 +85,9 @@ def snapshot(hearth: Hearth) -> dict:
             for row in db.execute(f"""SELECT id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
                    runtime_kind, runtime_version, input_digest,
+                   (SELECT model FROM run_pricing p WHERE p.run_id=runs.id) AS model,
+                   (SELECT schedule FROM run_pricing p WHERE p.run_id=runs.id)
+                   AS price_schedule,
                    created_at, actual_cost,
                    COALESCE((SELECT revision FROM run_memory m WHERE m.run_id=runs.id),0)
                    AS memory_revision,
@@ -122,6 +126,18 @@ def snapshot(hearth: Hearth) -> dict:
                 db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
             ),
             "schema_version": 1,
+            # Which brains this household has, and how every kind a run may carry is
+            # named to an operator. The registry answers both, so no view downstream of
+            # here has a provider's name written into it
+            # (`docs/adr/0015-runtime-per-resident.md`).
+            "runtimes": {
+                "default": default_runtime(db),
+                "configured": [kind for kind in live_kinds() if configured_runtime(db, kind)],
+                "kinds": {
+                    kind: {"label": runtime_label(kind), "live": spec.live}
+                    for kind, spec in RUNTIMES.items()
+                },
+            },
             "epoch": epoch,
             "cursor": cursor,
             "residents": residents,

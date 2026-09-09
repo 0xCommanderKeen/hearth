@@ -26,7 +26,9 @@ def mount_management(app: FastAPI, hearth: Hearth) -> None:
             ]
             return {
                 "residents": residents,
-                "profiles": [profile["id"] for profile in execution_profiles(db)],
+                # Named as well as identified: an operator grants a runtime by its own
+                # name, and only the registry knows what that name is.
+                "profiles": execution_profiles(db),
                 "input_sets": [
                     {key: item[key] for key in ("input_set_id", "name", "revision", "synthetic")}
                     for item in list_inputs(db)

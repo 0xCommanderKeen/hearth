@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.inputs.catalog import read_input
+from hearth.integrations.interface import management_protocol
 from hearth.residents.models import Refused, identifier
 from hearth.work.service import Hearth, _audit
 
@@ -210,8 +211,12 @@ def validate_management(db) -> None:
 def management_summary(db, identity: str, *, run: bool = False) -> dict | None:
     try:
         if run:
+            # The protocol is the run's own runtime's, read from the pin the run keeps,
+            # because that is the transport the tools really travelled on.
             row = db.execute(
-                "SELECT grant_revision,expires_at FROM run_management WHERE run_id=?", (identity,)
+                "SELECT m.grant_revision,m.expires_at,r.runtime_kind FROM run_management m "
+                "JOIN runs r ON r.id=m.run_id WHERE m.run_id=?",
+                (identity,),
             ).fetchone()
             # A memory-only pin is not management authority and is never reported as any.
             if row is None or row["grant_revision"] is None:
@@ -219,7 +224,12 @@ def management_summary(db, identity: str, *, run: bool = False) -> dict | None:
             calls = db.execute(
                 "SELECT COUNT(*) FROM management_calls WHERE run_id=?", (identity,)
             ).fetchone()[0]
-            return dict(row) | {"calls": calls, "protocol": "native_management"}
+            return {
+                "grant_revision": row["grant_revision"],
+                "expires_at": row["expires_at"],
+                "calls": calls,
+                "protocol": management_protocol(row["runtime_kind"]),
+            }
         return read_grant(db, identity)
     except Refused as error:
         return {"error": error.code, "enabled": False}

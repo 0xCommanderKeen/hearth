@@ -87,6 +87,18 @@ def test_only_a_runtime_that_carries_hearth_s_tools_says_so():
     assert manages_tools("nothing_hearth_ships") is False
 
 
+def test_the_transport_hearth_s_tools_travelled_on_is_the_run_s_own_runtime_s():
+    """One word for both providers would have said nothing about either."""
+    from hearth.integrations.interface import management_protocol
+
+    assert management_protocol("codex_subscription") == "codex_app_server"
+    assert management_protocol("claude_subscription") == "claude_mcp_bridge"
+    # A run recorded against a kind no adapter remains for keeps the name its own
+    # evidence was written under.
+    assert management_protocol("codex_mock") == "native_management"
+    assert management_protocol("nothing_hearth_ships") == "native_management"
+
+
 def test_an_unknown_kind_is_answered_as_nothing_rather_than_as_the_one_that_ships():
     assert live("nothing_hearth_ships") is False
     assert label("nothing_hearth_ships") == "nothing_hearth_ships"
