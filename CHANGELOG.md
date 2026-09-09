@@ -52,7 +52,12 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   carries those tools into a Claude session has not landed. It is refused where nothing
   has been spent rather than launched into a session holding none of the authority its
   declaration promised. A stored price pin is also now read by the runtime the run was
-  pinned to, instead of by whichever schedule happens to recognise it.
+  pinned to, instead of by whichever schedule happens to recognise it. A session the
+  stream proves billed nothing — no model usage, a zero total, no requests and no API
+  response — settles at zero rather than at unknown, so a subscription login that lapses
+  fails its runs without holding every resident's allowance behind a manual
+  reconciliation; and a lapsed login is now reported as `claude_subscription_login_required`,
+  because `claude auth status --json` prints its answer and exits 1 when there is none.
 
 - Hearth knows a second live runtime kind. One registry in
   `integrations/interface.py` now answers every question about a runtime kind — what is

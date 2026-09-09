@@ -84,14 +84,85 @@ def test_a_budget_stop_is_a_failure_whose_cost_is_still_known():
     assert estimate.microdollars == transcript.reported_total == 38_051
 
 
-def test_a_session_that_never_reached_the_api_costs_nothing_and_names_no_model():
-    """The CLI's own 'Not logged in' answer is written as a synthetic assistant message."""
+def test_a_session_that_never_reached_the_api_settles_at_a_proven_zero():
+    """The CLI's own 'Not logged in' answer is written as a synthetic assistant message.
+
+    Nothing was billed and the stream proves it, so this is a settled zero rather than
+    unknown usage. A lapsed login would otherwise hold every resident it touched.
+    """
     transcript = read(stream("not-logged-in"), exit_code=1)
     assert transcript.status == "failed"
     assert transcript.output is None
     assert transcript.reported_total == 0
-    # No model billed anything, so there is no usage to price and no cost to claim.
-    assert transcript.usage is None and transcript.reason == "model_usage_absent"
+    assert transcript.usage == () and transcript.reported == ()
+    assert transcript.reason == "api_error" and "success" not in str(transcript.reason)
+
+
+def broken_zero(change):
+    """The not-logged-in session with one leg of the proof removed."""
+    return read(rewritten("not-logged-in", change), exit_code=1)
+
+
+def test_every_leg_of_the_proof_of_zero_is_load_bearing():
+    def bill(event):
+        if event.get("type") == "result":
+            event["total_cost_usd"] = 0.01
+        return event
+
+    def answer(event):
+        # The same message, no longer flagged as the CLI's own error: an API response.
+        if event.get("type") == "assistant":
+            del event["is_api_error_message"]
+            event["message"]["model"] = MODEL
+        return event
+
+    def request(event):
+        if event.get("type") == "result":
+            event["usage"]["iterations"] = [{"input_tokens": 1}]
+        return event
+
+    def unreadable(event):
+        if event.get("type") == "assistant":
+            del event["is_api_error_message"]
+            event["message"]["model"] = None
+        return event
+
+    for change in (bill, answer, request, unreadable):
+        transcript = broken_zero(change)
+        assert transcript.usage is None, change.__name__
+        assert transcript.reason == "model_usage_absent", change.__name__
+
+
+def test_a_model_usage_entry_without_a_canonical_name_is_still_read_and_still_priced():
+    """The key is the model when the entry does not name one; both sides read it alike."""
+
+    def strip(event):
+        if event.get("type") == "result":
+            event["modelUsage"] = {
+                name: {key: value for key, value in entry.items() if key != "canonicalModel"}
+                for name, entry in event["modelUsage"].items()
+            }
+        return event
+
+    transcript = read(rewritten("success", strip))
+    assert transcript.status == "completed"
+    # The haiku entry is keyed by its dated id, which canonicalises to the price row.
+    assert [row.model for row in transcript.usage or ()] == [MODEL, SECONDARY_MODEL]
+    assert transcript.reported == ((SECONDARY_MODEL, 950), (MODEL, 35_630))
+    estimate = estimate_api_equivalent(transcript.usage, model=MODEL, mode="standard")
+    assert estimate.microdollars == transcript.reported_total
+
+
+def test_the_cli_s_own_error_message_is_recognised_wherever_it_flags_it():
+    """The recorded streams flag it on the event; the message is read for it as well."""
+
+    def move(event):
+        if event.get("type") == "assistant":
+            del event["is_api_error_message"]
+            event["message"]["is_api_error_message"] = True
+        return event
+
+    assert broken_zero(move).usage == ()
 
 
 def test_the_session_model_and_every_answering_model_must_be_the_pinned_one():

@@ -99,6 +99,18 @@ def canonical(name: object) -> str | None:
     return head if len(tail) == 8 and tail.isdigit() and head else name
 
 
+def named_model(key: object, entry: object) -> str | None:
+    """Which price row one `modelUsage` entry belongs to.
+
+    The entry's own `canonicalModel` when it has one, the key it is filed under
+    otherwise. Both readings live here so the usage side and the reported-cost side
+    can never disagree about which model an entry is -- a disagreement would read as
+    a model that billed nothing and leave a perfectly readable session unpriced.
+    """
+    named = canonical(entry.get("canonicalModel")) if isinstance(entry, dict) else None
+    return named if named is not None else canonical(key)
+
+
 def counts(value: object, fields: tuple[str, ...]) -> tuple[int, ...] | None:
     """Read a fixed set of token counters, refusing anything that is not a count."""
     if not isinstance(value, dict):
@@ -150,6 +162,9 @@ class ClaudeEvents:
         # checked against `modelUsage`, and a session holding any of them prices no
         # cache write, because the tokens behind one could belong to any model.
         self.unsplit: set[str | None] = set()
+        # Whether any API response ever came back. The CLI writes its own failures as
+        # assistant messages too, and those are not answers.
+        self.answered = False
         self.messages = 0
         self.error: str | None = None
         self.sealed = False
@@ -212,7 +227,7 @@ class ClaudeEvents:
         if kind == "system" and event.get("subtype") == "init":
             self._init(event)
         elif kind == "assistant":
-            self._assistant(event.get("message"))
+            self._assistant(event)
         elif kind == "result":
             self.result = event
         # Anything else is a surface Hearth settles nothing on: it is skipped, never
@@ -227,7 +242,7 @@ class ClaudeEvents:
         if self.model is None:
             self.error = "invalid_session"
 
-    def _assistant(self, message: object) -> None:
+    def _assistant(self, event: dict) -> None:
         """Record the model and the cache-write split; the counts themselves are not.
 
         A message this cannot read is remembered rather than fatal. The session's
@@ -244,13 +259,19 @@ class ClaudeEvents:
             # price, never the work.
             self.unsplit.add(None)
             return
+        message = event.get("message")
         if not isinstance(message, dict):
             self.unsplit.add(None)
             return
-        if message.get("is_api_error_message") is True:
-            # The CLI writes its own failures as assistant messages under a synthetic
-            # model. They are not API responses and bill nothing, so they are skipped.
+        # The CLI writes its own failures as assistant messages under a synthetic
+        # model. They are not API responses and bill nothing, so they are skipped.
+        # The recorded streams carry the flag on the event; it is read from the message
+        # too, because where the CLI keeps it is not a documented promise.
+        if True in (event.get("is_api_error_message"), message.get("is_api_error_message")):
             return
+        # Anything the CLI did not flag as its own error is treated as a real response,
+        # readable or not: only a session with none of them can have billed nothing.
+        self.answered = True
         usage = message.get("usage")
         model = canonical(message.get("model"))
         creation = counts(usage, ("cache_creation_input_tokens",))
@@ -297,7 +318,17 @@ class ClaudeEvents:
             if len(answer.encode("utf-8", errors="replace")) > MAX_OUTPUT:
                 return settled("invalid", reason="output_too_large")
             return settled("completed", output=answer, reason=unpriced)
-        return settled("failed", reason=unpriced or subtype or "unreported_failure")
+        # A session can carry `subtype: "success"` and `is_error: true` together -- the
+        # not-logged-in one does -- so the subtype alone is not a reason it failed.
+        failure = subtype if subtype != "success" else None
+        terminal = result.get("terminal_reason")
+        return settled(
+            "failed",
+            reason=unpriced
+            or failure
+            or (terminal if short_string(terminal) else None)
+            or "unreported_failure",
+        )
 
     def _usage(self, result: dict) -> tuple[tuple[TokenUsage, ...] | None, str | None]:
         """What the session spent, per model, or why the stream cannot say.
@@ -310,13 +341,13 @@ class ClaudeEvents:
         the rows and their sum has to agree with the total or nothing is priced.
         """
         reported = result.get("modelUsage")
-        if not isinstance(reported, dict) or not reported or len(reported) > MAX_MODELS:
+        if not isinstance(reported, dict) or len(reported) > MAX_MODELS:
             return None, "model_usage_absent"
+        if not reported:
+            return self._nothing_billed(result)
         totals: dict[str, tuple[int, ...]] = {}
         for key, entry in reported.items():
-            model = canonical(entry.get("canonicalModel") if isinstance(entry, dict) else key)
-            if model is None:
-                model = canonical(key)
+            model = named_model(key, entry)
             if model is None or model in totals:
                 return None, "model_usage_invalid"
             counted = counts(entry, MODEL_USAGE_FIELDS + ("cacheCreationInputTokens",))
@@ -350,6 +381,28 @@ class ClaudeEvents:
                 continue
             rows.append(TokenUsage(model, given, read, tiers[0], tiers[1], produced))
         return tuple(rows), None
+
+    def _nothing_billed(self, result: dict) -> tuple[tuple[TokenUsage, ...] | None, str | None]:
+        """An empty `modelUsage` is either proof of a free session or no account at all.
+
+        A login that lapses mid-week would otherwise pause every resident it touches:
+        each run reaches the CLI, fails before any request, and reports no usage --
+        which as unknown usage holds the resident's allowance and needs an operator's
+        reconciliation to clear, for sessions that cost nothing. The stream can prove
+        the zero, and only this whole conjunction does: no model billed anything, the
+        CLI's own total is zero, it reported no requests, no API response ever came
+        back, and no message was left unread. Anything short of that stays unknown.
+        """
+        usage = result.get("usage")
+        iterations = usage.get("iterations") if isinstance(usage, dict) else None
+        if (
+            self.answered
+            or self.unsplit
+            or microdollars(result.get("total_cost_usd")) != 0
+            or (iterations is not None and iterations != [])
+        ):
+            return None, "model_usage_absent"
+        return (), None
 
     def _requests(self, model, result, total, tiers) -> list[TokenUsage] | None:
         """The pinned model's individual requests, when the CLI reported them all.
@@ -393,7 +446,7 @@ class ClaudeEvents:
             return None, total
         rows = []
         for key, entry in reported.items():
-            model = canonical(entry.get("canonicalModel") if isinstance(entry, dict) else key)
+            model = named_model(key, entry)
             cost = microdollars(entry.get("costUSD")) if isinstance(entry, dict) else None
             if model is None or cost is None:
                 return None, total
