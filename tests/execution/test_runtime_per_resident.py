@@ -180,3 +180,58 @@ def test_a_declared_runtime_survives_every_save_that_does_not_mention_it(tmp_pat
         assert hearth.declared_runtime(db, "scribe") == CLAUDE_KIND
     # A run admitted afterwards is still pinned to it.
     assert admit(hearth, "scribe", "later").runtime_kind == CLAUDE_KIND
+
+
+def test_the_operator_moves_one_resident_between_brains_and_only_when_it_says_so(tmp_path):
+    """The declaration route never moves a resident it was not asked to move."""
+    from fastapi.testclient import TestClient
+    from hearth.app import create_app
+
+    from tests.fake_runtime import fake_runtimes
+
+    token = "synthetic-operator-token-for-tests"
+    headers = {"Authorization": "Bearer " + token}
+    app = create_app(tmp_path, token, supervise=False, runtime=fake_runtimes())
+    hearth = app.state.hearth
+    hearth.save_resident("scribe", Declaration("Scribe", "Writes", 10_000_000), expected_revision=0)
+    with TestClient(app) as client:
+        saved = client.get("/api/residents/scribe", headers=headers).json()
+        assert saved["declaration"]["runtime"] is None
+        body = saved["declaration"] | {"expected_revision": saved["revision"]}
+
+        # Moved because the body says so.
+        moved = client.put(
+            "/api/residents/scribe", headers=headers, json=body | {"runtime": CLAUDE_KIND}
+        ).json()
+        assert moved["declaration"]["runtime"] == CLAUDE_KIND
+
+        # A save that never mentions the runtime keeps it.
+        whole = {key: value for key, value in body.items() if key != "runtime"}
+        kept = client.put(
+            "/api/residents/scribe",
+            headers=headers,
+            json=whole | {"purpose": "Writes more", "expected_revision": moved["revision"]},
+        ).json()
+        assert kept["declaration"]["runtime"] == CLAUDE_KIND
+        door = client.put(
+            "/api/residents/scribe",
+            headers=headers,
+            json={"letters_accept": True, "expected_revision": kept["revision"]},
+        ).json()
+        assert door["declaration"]["runtime"] == CLAUDE_KIND
+        assert door["declaration"]["letters_accept"] is True
+
+        # And an explicit null is the way back to the store's default.
+        back = client.put(
+            "/api/residents/scribe",
+            headers=headers,
+            json={"runtime": None, "expected_revision": door["revision"]},
+        ).json()
+        assert back["declaration"]["runtime"] is None
+        # A runtime nobody ships is refused rather than stored.
+        refused = client.put(
+            "/api/residents/scribe",
+            headers=headers,
+            json={"runtime": "inline_mock", "expected_revision": back["revision"]},
+        )
+        assert refused.status_code == 409 and refused.json()["error"] == "runtime_not_configured"

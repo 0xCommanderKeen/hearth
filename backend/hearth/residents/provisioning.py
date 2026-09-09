@@ -87,7 +87,6 @@ def profile_summary(db, resident_id: str) -> dict | None:
             originating_run_id=None,
             created_at=initial[0],
             creation_reason="Explicit resident setup",
-            execution_profile=None,
         )
     else:
         profile = dict(row)
