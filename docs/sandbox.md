@@ -109,7 +109,12 @@ context, never downloaded: an image that fetches its own tools cannot be the sam
 twice, and the whole point of the pin is that it can.
 
 It is not built in continuous integration, because no CI host has the pinned provider
-CLIs, and nothing Hearth ships downloads them.
+CLIs, and nothing Hearth ships downloads them. It was built once by hand on 2026-09-09
+with two stand-in binaries in place of them, to prove the file itself: the build
+succeeded, and the image it produced runs as uid 1000, has no `apt` and no `pip`, and
+imports the bridge shim under `python3 -I` -- which is how the shim is started and why
+Hearth's package sits in the interpreter's own site directory rather than anywhere
+`PYTHONPATH` would have to name.
 
 ## Measured, 2026-09-09
 
