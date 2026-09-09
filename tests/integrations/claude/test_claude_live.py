@@ -286,6 +286,15 @@ def test_the_fence_is_what_the_resident_may_still_spend_today(tmp_path):
         # because that promise was made before anything was launched.
         db.execute("UPDATE runs SET actual_cost=9_990_000 WHERE id='earlier'")
         assert spend_fence(db, row) == 250_000
+        # A resident may be allowed more in a day than the household it lives in, and
+        # the fence is never wider than the household's own limit.
+        db.execute("UPDATE runs SET actual_cost=0 WHERE id='earlier'")
+        db.execute(
+            "INSERT INTO household_policy (id,revision,daily_limit,timezone,resident_limit,"
+            "concurrency_limit,journal_limit,max_letter_depth,letter_ttl_seconds,"
+            "letter_daily_limit) VALUES (1,1,1000000,'Europe/Ljubljana',20,2,30,2,86400,5)"
+        )
+        assert spend_fence(db, row) == 1_000_000
 
 
 @pytest.mark.parametrize("field", ["prompt", "sha256"])

@@ -313,10 +313,19 @@ run Karen.
 ### What the operator sees
 
 `GET /health` takes no token and names the runtimes this instance actually opened,
-the store's own default among them, and every one it was pointed at that refused:
+the store's own default among them:
 
 ```json
 {"service": "hearth",
+ "runtimes": [{"kind": "codex_subscription", "label": "Codex subscription",
+               "default": true}]}
+```
+
+`GET /api/health`, behind the operator's own token, adds why a runtime is missing —
+a lapsed login, a CLI past its pin, half a configuration:
+
+```json
+{"supervisor": "running",
  "runtimes": [{"kind": "codex_subscription", "label": "Codex subscription",
                "default": true}],
  "unavailable": [{"kind": "claude_subscription",
@@ -325,8 +334,9 @@ the store's own default among them, and every one it was pointed at that refused
 
 That is the first thing to read when a resident's work seems to be going nowhere: a
 run pinned to a runtime this instance is not configured for **waits** rather than
-failing, so nothing else surfaces it. No path, binary, configuration directory or
-credential appears in the answer.
+failing, so nothing else surfaces it. The reason names what is wrong with this
+machine, which is why it asks for the token first; neither answer carries a path,
+binary, configuration directory or credential.
 
 Townhall reads the same facts from the snapshot's own runtime table — the household's
 default, what it is configured for, and how the registry names every kind a finished

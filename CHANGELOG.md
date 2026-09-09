@@ -12,8 +12,10 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   one its work is admitted to, and the grant catalog names its execution profiles.
   A state that cannot say which runtimes a household has is refused rather than
   displayed. Beside that: `GET /health` names the runtimes this instance opened and
-  every one that refused, with the provider's own reason, because a run pinned to a
-  runtime that is not configured here waits and nothing else surfaces it; and a
+  `GET /api/health` adds, behind the operator's own token, every one that refused with
+  the provider's reason -- because a run pinned to a runtime that is not configured
+  here waits and nothing else surfaces it, while why a provider is missing is a fact
+  about the operator's own machine; and a
   granted run's management protocol is its own runtime's transport
   (`codex_app_server`, `claude_mcp_bridge`) rather than one word for both. The Claude
   runtime's own document is finished with the operator's setup and login procedure,

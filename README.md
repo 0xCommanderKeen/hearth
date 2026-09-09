@@ -69,8 +69,9 @@ HEARTH_CLAUDE_CONFIG_DIR=/path/to/private-claude-config \
 uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
-`GET /health` needs no token and answers with the runtimes this instance opened and
-any it was pointed at and could not — a lapsed login, a CLI past its pin — with the
+`GET /health` needs no token and answers with the runtimes this instance opened;
+`GET /api/health`, behind the operator token, adds any it was pointed at and could
+not open — a lapsed login, a CLI past its pin, half a configuration — with the
 provider's own reason. The store's own default has to open or Hearth refuses to
 start; a second runtime that will not open leaves the household running and only
 its own residents' runs waiting.

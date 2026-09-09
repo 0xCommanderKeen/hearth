@@ -13,9 +13,16 @@ export function runtimeLabel(runtimes: Runtimes, kind?: string | null): string {
   return runtimes.kinds[named]?.label ?? named;
 }
 
-/** Just the provider: "Codex". Enough for a chip, where the whole name will not fit. */
+/** Just the provider: "Codex". Enough for a chip, where the whole name will not fit.
+ *
+ * Only a live provider's name shortens. A kind that was never a provider is named in
+ * full, because every retired one is called "retired <something>" and the first word
+ * of that is not a name at all -- a restored copy still records one as its default.
+ */
 export function providerName(runtimes: Runtimes, kind?: string | null): string {
-  return runtimeLabel(runtimes, kind).split(" ")[0];
+  const named = kind ?? runtimes.default;
+  const label = runtimeLabel(runtimes, named);
+  return runtimes.kinds[named]?.live ? label.split(" ")[0] : label;
 }
 
 /** Every runtime this household is configured for, its own default first.

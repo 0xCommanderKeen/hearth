@@ -19,9 +19,11 @@ Nothing here reads, copies or prints a credential: the two configuration directo
 passed to the server as environment and are never opened. The private Claude login they
 need is the operator's own one-off step -- see `docs/claude-runtime.md`.
 
-    uv run python scripts/claude-journey.py --claude-config-dir ~/private-claude-config \\
-        --codex-binary ... --codex-auth-home ... --data /tmp/hearth-journey \\
-        --out docs/evidence/claude-journey-<date>.json
+    uv run python scripts/claude-journey.py \\
+        --claude-binary ~/.local/share/claude/versions/2.1.263 \\
+        --claude-config-dir ~/private-claude-config \\
+        --codex-binary /path/to/codex --codex-auth-home /path/to/codex-home \\
+        --data /tmp/hearth-journey --out docs/evidence/claude-journey-<date>.json
 """
 
 import argparse

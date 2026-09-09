@@ -35,6 +35,15 @@ it("falls back to the kind itself rather than to a provider it guessed", () => {
   );
 });
 
+it("never shortens a kind that was never a provider to its first word", () => {
+  // A restored copy keeps the runtime it recorded, so a household really can stand on
+  // one of these; "retired Codex mock" must not be shown as "retired".
+  expect(providerName(table, "codex_mock")).toBe("retired Codex mock");
+  expect(
+    runtimeNames({ default: "codex_mock", configured: [], kinds: table.kinds }),
+  ).toEqual(["retired Codex mock"]);
+});
+
 it("says which provider produced a result, and says when none did", () => {
   expect(resultEyebrow(table, "codex_subscription")).toBe("CODEX RESULT");
   expect(resultEyebrow(table, "claude_subscription")).toBe("CLAUDE RESULT");

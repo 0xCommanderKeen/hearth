@@ -11,7 +11,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from hearth.authority.household import check_admission, check_creation, pin_admission
+from hearth.authority.household import DEFAULTS, check_admission, check_creation, pin_admission
 from hearth.residents.models import (
     Declaration,
     Receipt,
@@ -122,11 +122,12 @@ def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
     admitted under, and its own budget day and timezone -- so a resident edited or
     moved between runs cannot change the fence of work already admitted.
 
-    The household's own allowance is deliberately not part of it. A fence that is too
-    small is the harmful direction -- it bills a request and then throws the work away
-    -- while a fence that is too large costs nothing, because Hearth's accounting is
-    what actually holds the household: a run that overspends settles at what it cost
-    and leaves its resident held.
+    The household's whole daily limit bounds it too, because a resident may be allowed
+    more in a day than the household it lives in. What the household has already spent
+    is deliberately *not* subtracted: a fence that is too small is the harmful
+    direction -- it bills a request and then throws the work away -- while a fence
+    that is merely generous costs nothing, since Hearth's own accounting is what holds
+    the household afterwards.
     """
     declaration = db.execute(
         "SELECT daily_limit FROM declarations WHERE resident_id=? AND revision=?",
@@ -148,7 +149,9 @@ def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
         f"AND status IN {ACTIVE_RUNS}",
         (run["resident_id"], run["id"]),
     ).fetchone()[0]
-    return max(declaration["daily_limit"] - spent - outstanding, run["reserved"])
+    household = db.execute("SELECT daily_limit FROM household_policy WHERE id=1").fetchone()
+    ceiling = household["daily_limit"] if household is not None else DEFAULTS["daily_limit"]
+    return max(min(declaration["daily_limit"] - spent - outstanding, ceiling), run["reserved"])
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:

@@ -363,14 +363,21 @@ def test_a_second_provider_that_will_not_open_does_not_take_the_household_down(t
         ).fetchall()
     assert [row[0] for row in recorded] == [CLAUDE_KIND]
     assert '"reason": "claude_subscription_login_required"' in recorded[0][1]
+    opened = [{"kind": CODEX_KIND, "label": "Codex subscription", "default": True}]
     with TestClient(app) as client:
-        # An operator whose scribe is waiting reads why here: the runtime opened
-        # nowhere, and the provider's own refusal says which configuration to fix.
-        assert client.get("/health").json() == {
-            "service": "hearth",
-            "runtimes": [{"kind": CODEX_KIND, "label": "Codex subscription", "default": True}],
-            "unavailable": [{"kind": CLAUDE_KIND, "reason": "claude_subscription_login_required"}],
-        }
+        # Liveness says which brains work is handed to, and nothing about the machine
+        # this instance was started on: no path, and no reason a provider refused.
+        assert client.get("/health").json() == {"service": "hearth", "runtimes": opened}
+        # An operator whose scribe is waiting reads why behind their own token: the
+        # runtime opened nowhere, and the provider's refusal says what to fix.
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+        assert health["runtimes"] == opened
+        assert health["unavailable"] == [
+            {"kind": CLAUDE_KIND, "reason": "claude_subscription_login_required"}
+        ]
     assert VERSION  # the pinned version is what the synthetic CLI answered with
 
 
