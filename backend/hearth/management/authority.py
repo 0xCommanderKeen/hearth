@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.inputs.catalog import read_input
 from hearth.integrations.interface import management_protocol
+from hearth.integrations.launcher import mounted
 from hearth.residents.models import Refused, identifier
 from hearth.work.service import Hearth, _audit
 
@@ -257,6 +258,70 @@ class Management:
                 {"actor": "operator", "revision": revision, "mounts": writable},
             )
         return result
+
+
+def pin_mounts(db, run_id: str, resident_id: str) -> None:
+    """Turn the grant's filesystem section, as it stands now, into this run's own reach.
+
+    Read at admission and never again: a grant revision that removes a folder removes it
+    from the next run, and a run already admitted keeps what it was admitted with
+    (`docs/adr/0016-sandbox-per-run.md`). The revision travels with each row, because a
+    run without management authority pins no grant revision anywhere else and its reach
+    would otherwise be a list nothing can be traced back to.
+
+    A host path that is not there refuses the admission rather than the launch. The task
+    stays queued and is admitted the moment an operator puts the folder back or takes it
+    out of the grant -- the wait of ADR 0015, for the same reason: work is not thrown
+    away over a configuration somebody can fix.
+    """
+    grant = read_grant(db, resident_id)
+    for position, mount in enumerate(grant["mounts"]):
+        if not Path(mount["host_path"]).exists():
+            raise Refused("mount_unavailable", {"name": mount["name"]})
+        db.execute(
+            "INSERT INTO run_mounts VALUES (?,?,?,?,?,?)",
+            (
+                run_id,
+                position,
+                grant["revision"],
+                mount["name"],
+                mount["host_path"],
+                mount["mode"],
+            ),
+        )
+
+
+def run_mounts(db, run_id: str) -> list[dict]:
+    """What this run could reach on disk, in the order its grant listed it.
+
+    Each entry says what the folder is called, where it is on the host, how far the run
+    may go into it and what it is called from inside a sandbox. The last one is the same
+    answer whichever launcher started the session: a run on the process launcher reaches
+    the host path itself, and saying what it *would* have been mounted as is how a
+    finished run on a laptop still says what it was granted.
+    """
+    return [
+        {
+            "name": row["name"],
+            "host_path": row["host_path"],
+            "mode": row["mode"],
+            "path": mounted(row["name"]),
+            "grant_revision": row["grant_revision"],
+        }
+        for row in db.execute(
+            "SELECT * FROM run_mounts WHERE run_id=? ORDER BY position", (run_id,)
+        )
+    ]
+
+
+def mount_summary(db, identity: str, *, run: bool = False) -> dict:
+    """What an operator is shown about a filesystem grant, for a run or a resident."""
+    if run:
+        return {"mounts": [
+            {key: entry[key] for key in ("name", "host_path", "mode", "path")}
+            for entry in run_mounts(db, identity)
+        ]}
+    return {"mounts": read_grant(db, identity)["mounts"]}
 
 
 def works_a_letter(db, run_id: str) -> bool:

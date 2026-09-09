@@ -85,6 +85,10 @@ PYTHON = "/usr/local/bin/python3"
 # own folders are its grant's business and are named by the grant (slice #187).
 LOGIN = "/hearth/login"
 OUTPUT = "/hearth/output"
+# Where a resident's own folders are, one directory per mount its grant names. Hearth's
+# own three above are `/hearth`; everything under here is the grant's and nothing else
+# of the host exists in the container (`docs/adr/0016-sandbox-per-run.md`).
+MOUNTS = "/mounts"
 # How much a directory of the run's own may hold. The CLIs write session state and
 # logs into their configuration directory; nothing a run keeps belongs there.
 SCRATCH = "64m"
@@ -99,6 +103,16 @@ STRAY_TIMEOUT = 5
 # How long the client is given to write the id of the container it created before the
 # run is treated as one whose identity was never observed.
 IDENTITY_TIMEOUT = 30
+
+
+def mounted(name: str) -> str:
+    """Where the folder a grant calls `name` is, as the session inside a sandbox sees it.
+
+    One answer, written here rather than in the grant, because it is a fact about the
+    sandbox's layout: the run's own context quotes it so a resident knows what to open,
+    and the adapters place the mount at it.
+    """
+    return f"{MOUNTS}/{name}"
 
 
 @dataclass(frozen=True)

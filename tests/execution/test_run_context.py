@@ -61,7 +61,7 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
     sent = inputs[0][1]
     assert json.loads(sent) == expected
     assert expected["purpose"] == "Original synthetic purpose"
-    assert expected["resident_revision"] == 1 and expected["context_version"] == 9
+    assert expected["resident_revision"] == 1 and expected["context_version"] == 10
     assert expected["instruction"] == "Summarize the synthetic notes"
     assert expected["notes"] == []
     # Reader is unchanged: it opens with no journal, cannot write its memory, and is
@@ -89,6 +89,8 @@ def test_launch_and_scoped_context_match_without_authority_secrets(system, monke
         "inputs",
         "input_state",
         "input_usage",
+        "mounts",
+        "mounts_usage",
     }
     assert run.owner_token not in sent and credential.token not in sent
     evidence = (root / "fake-runtime" / run.id / "request.json").read_text()

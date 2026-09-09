@@ -647,6 +647,12 @@ class Hearth:
         from hearth.inputs.selection import pin_inputs
 
         pin_inputs(db, run.id, resident_id)
+        from hearth.management.authority import pin_mounts
+
+        # What this run reaches on disk, resolved from the grant as it stands now and
+        # never read again (`docs/adr/0016-sandbox-per-run.md`). A folder the grant
+        # names and the host does not have refuses here, before any money is reserved.
+        pin_mounts(db, run.id, resident_id)
         context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
         encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
         from hearth.execution.staging import MAX_INPUT

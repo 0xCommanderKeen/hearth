@@ -68,6 +68,8 @@ def test_staging_pins_context_and_excludes_authority_and_other_residents(system)
         "inputs",
         "input_state",
         "input_usage",
+        "mounts",
+        "mounts_usage",
     }
     assert set(p.name for p in path.parent.iterdir()) == {"context.json"}
     assert path.stat().st_mode & 0o777 == 0o400

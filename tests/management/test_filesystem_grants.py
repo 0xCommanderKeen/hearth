@@ -88,3 +88,93 @@ def test_a_grant_naming_hearths_own_data_directory_is_refused(tmp_path):
             refused = write_grant(client, who, [{"name": "store", "host_path": str(path)}])
             assert refused.status_code == 409, path
             assert refused.json()["error"] == "grant_mount_forbidden"
+
+
+def admit(client, resident_id, command="work"):
+    hearth = client.app.state.hearth
+    receipt = hearth.submit(
+        command, resident_id, "Read the folder", expires_at=int(hearth.clock()) + 600
+    )
+    return hearth.admit(receipt.task_id, reserve=3000)
+
+
+def test_admission_pins_what_the_grant_said_and_the_run_context_names_it(tmp_path):
+    shared, drafts = tmp_path / "shared", tmp_path / "drafts"
+    shared.mkdir()
+    drafts.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(
+            client,
+            who,
+            [
+                {"name": "notes", "host_path": str(shared)},
+                {"name": "drafts", "host_path": str(drafts), "mode": "rw"},
+            ],
+        )
+        run = admit(client, who)
+        hearth = client.app.state.hearth
+        with hearth.database.transaction() as db:
+            from hearth.execution.context import read_context
+            from hearth.management.authority import run_mounts
+            from hearth.residents.memory import MemoryFiles
+
+            pinned = run_mounts(db, run.id)
+            context = read_context(db, run.id, MemoryFiles(hearth.database.path.parent / "memory"))
+        assert pinned == [
+            {
+                "name": "notes",
+                "host_path": str(shared),
+                "mode": "ro",
+                "path": "/mounts/notes",
+                "grant_revision": 1,
+            },
+            {
+                "name": "drafts",
+                "host_path": str(drafts),
+                "mode": "rw",
+                "path": "/mounts/drafts",
+                "grant_revision": 1,
+            },
+        ]
+        # The run tells the resident what it can see, by name, where and how far.
+        assert [(entry["name"], entry["path"], entry["mode"]) for entry in context["mounts"]] == [
+            ("notes", "/mounts/notes", "ro"),
+            ("drafts", "/mounts/drafts", "rw"),
+        ]
+        assert "read-only" in context["mounts_usage"]
+
+
+def test_a_run_keeps_the_mounts_it_was_admitted_with_when_the_grant_changes(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(client, who, [{"name": "notes", "host_path": str(shared)}])
+        run = admit(client, who)
+        assert write_grant(client, who, [], revision=1).status_code == 200
+        with client.app.state.hearth.database.transaction() as db:
+            from hearth.management.authority import run_mounts
+
+            kept = run_mounts(db, run.id)
+        assert [entry["name"] for entry in kept] == ["notes"]
+        assert kept[0]["grant_revision"] == 1
+
+
+def test_a_granted_folder_that_is_not_there_makes_the_run_wait(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(client, who, [{"name": "notes", "host_path": str(shared)}])
+        shared.rmdir()
+        hearth = client.app.state.hearth
+        receipt = hearth.submit("waiting", who, "Read it", expires_at=int(hearth.clock()) + 600)
+        with pytest.raises(Exception) as refusal:
+            hearth.admit(receipt.task_id, reserve=3000)
+        assert getattr(refusal.value, "code", None) == "mount_unavailable"
+        # The work is not lost: the task is still queued, waiting for the operator to
+        # put the folder back or take it out of the grant.
+        assert hearth.task(receipt.task_id).status == "queued"
+        shared.mkdir()
+        assert hearth.admit(receipt.task_id, reserve=3000).status == "starting"
