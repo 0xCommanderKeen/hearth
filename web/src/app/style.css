@@ -1371,3 +1371,62 @@ main:has(.hamlet-scene) {
     max-height: 480px;
   }
 }
+
+.scene-canvas {
+  position: relative;
+}
+.scene-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.scene-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 9px;
+  border: 1px solid #82755b;
+  border-radius: 3px;
+  background: #fff7e6ed;
+  color: #362e23;
+  box-shadow: 0 2px 3px #36352230;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.scene-label.selected,
+.scene-label.hovered {
+  background: #fff0b2;
+  border-color: #62512a;
+}
+.scene-label:focus-visible {
+  outline: 3px solid #563c18;
+  outline-offset: 2px;
+}
+.scene-directory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 14px 18px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.scene-directory button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.scene-directory button[aria-pressed="true"] {
+  background: #efe0ad;
+  color: #362e23;
+  border-color: #82755b;
+}
+.scene-selection {
+  margin: 0;
+  padding: 0 18px 12px;
+  font-size: 13px;
+}

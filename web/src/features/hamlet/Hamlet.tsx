@@ -12,6 +12,11 @@ export function Hamlet({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const select = (identity: string) => {
+    setSelected(identity);
+    scene.current?.select(identity);
+  };
   const letters = snapshot.letters ?? [];
   // The operator stands at Townhall and has no resident row; everyone else is named.
   const name = (id: string | null) =>
@@ -28,8 +33,10 @@ export function Hamlet({
   useEffect(() => {
     if (!host.current) return;
     try {
-      scene.current = createVillageScene(host.current, () =>
-        setUnavailable(true),
+      scene.current = createVillageScene(
+        host.current,
+        () => setUnavailable(true),
+        setSelected,
       );
       setUnavailable(false);
     } catch {
@@ -41,8 +48,21 @@ export function Hamlet({
     };
   }, []);
   useEffect(() => {
-    scene.current?.update(villageResidents, letters);
+    scene.current?.update(villageResidents, letters, snapshot.epoch);
+    if (
+      selected &&
+      selected !== "#townhall" &&
+      !villageResidents.some(
+        (r) => selected === `#residents/${encodeURIComponent(r.id)}`,
+      )
+    ) {
+      setSelected(null);
+      scene.current?.select(null);
+    }
   }, [snapshot]);
+  useEffect(() => {
+    setSelected(null);
+  }, [snapshot.epoch]);
   return (
     <section className="hamlet-scene" aria-label="Hamlet village">
       <div className="scene-toolbar">
@@ -91,8 +111,8 @@ export function Hamlet({
       <div
         ref={host}
         className="scene-canvas"
-        role="img"
-        aria-label={`${villageResidents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a resident using the links below.`}
+        role="group"
+        aria-label={`${villageResidents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a building here or in the directory below.`}
       />
       {unavailable && (
         <p className="notice">
@@ -127,6 +147,41 @@ export function Hamlet({
           remain.
         </p>
       ))}
+      <div
+        className="scene-directory"
+        role="group"
+        aria-label="Building directory"
+      >
+        <button
+          aria-pressed={selected === "#townhall"}
+          onClick={() => select("#townhall")}
+        >
+          Select Townhall
+        </button>
+        {villageResidents.map((r) => {
+          const identity = `#residents/${encodeURIComponent(r.id)}`;
+          return (
+            <button
+              key={r.id}
+              aria-pressed={selected === identity}
+              onClick={() => select(identity)}
+            >
+              Select {r.name}
+            </button>
+          );
+        })}
+      </div>
+      {selected && (
+        <p className="scene-selection" role="status">
+          Selected:{" "}
+          {selected === "#townhall"
+            ? "Townhall"
+            : villageResidents.find(
+                (r) => selected === `#residents/${encodeURIComponent(r.id)}`,
+              )?.name}{" "}
+          · <a href={selected}>Open records →</a>
+        </p>
+      )}
       <div className="scene-residents">
         <a href="#townhall">Townhall →</a>
         <a href="#residents-archived">Archived residents & history →</a>

@@ -18,6 +18,7 @@ const snapshot = { residents: [resident], letters: [] } as unknown as Snapshot;
 it("updates records and roster without recreating the renderer and disposes on unmount", () => {
   const scene = {
     update: vi.fn(),
+    select: vi.fn(),
     dispose: vi.fn(),
     zoom: vi.fn(),
     rotate: vi.fn(),
@@ -61,4 +62,49 @@ it("graphics failure leaves Townhall and truthful resident navigation available"
   expect(
     screen.getByRole("button", { name: "Zoom in" }).hasAttribute("disabled"),
   ).toBe(true);
+});
+it("shares selection between buildings and directory and clears an archived or other-store selection", () => {
+  const scene = {
+    update: vi.fn(),
+    select: vi.fn(),
+    dispose: vi.fn(),
+    zoom: vi.fn(),
+    rotate: vi.fn(),
+    overview: vi.fn(),
+  };
+  vi.mocked(createVillageScene).mockReturnValue(scene);
+  const { rerender } = render(
+    <Hamlet snapshot={{ ...snapshot, epoch: "one" }} connected />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Select Reader" }));
+  expect(scene.select).toHaveBeenLastCalledWith("#residents/reader");
+  expect(
+    screen
+      .getByRole("button", { name: "Select Reader" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(
+    screen.getByRole("link", { name: "Open records →" }).getAttribute("href"),
+  ).toBe("#residents/reader");
+  rerender(
+    <Hamlet
+      snapshot={{
+        ...snapshot,
+        epoch: "one",
+        residents: [
+          {
+            ...resident,
+            lifecycle: { state: "archived" },
+            unresolved_runs: 2,
+          } as Resident,
+        ],
+      }}
+      connected
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByText(/Accounting holds remain/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Select Townhall" }));
+  rerender(<Hamlet snapshot={{ ...snapshot, epoch: "two" }} connected />);
+  expect(screen.queryByRole("status")).toBeNull();
 });
