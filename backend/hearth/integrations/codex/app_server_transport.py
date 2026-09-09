@@ -21,6 +21,7 @@ from hearth.integrations.codex.events import (
     unique_object,
 )
 from hearth.integrations.codex.pricing import MODEL
+from hearth.integrations.codex.subscription import AUTH
 from hearth.integrations.launcher import LOGIN, Placement, ProcessLauncher
 from hearth.residents.models import Refused
 
@@ -397,7 +398,7 @@ def run(
             # The catalog is generated here from the CLI this store is pinned to and
             # read inside as a file the session may not change.
             program = placement.binary(binary, "codex")
-            home = placement.directory(auth_home, LOGIN)
+            home = placement.login(auth_home, AUTH, LOGIN)
             catalog_json = placement.same(temporary) + "/models.json"
             inside = placement.workspace(workspace)
             mounts = placement.mounts

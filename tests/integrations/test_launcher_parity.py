@@ -247,15 +247,21 @@ def test_a_sandboxed_session_is_the_bounded_command_the_adapter_built(tmp_path):
     assert command[command.index("-o") + 1] == OUTPUT + "/final.md"
     assert "CODEX_HOME=" + LOGIN in argv
     folder = runtime.folder(run.id)
-    assert f"type=bind,source={runtime.auth_home},target={LOGIN},readonly" in argv
+    # The configuration directory is the session's own and dies with it; the one file
+    # in it that is the household's is read-only (measured, `docs/sandbox.md`).
+    assert f"type=tmpfs,destination={LOGIN},tmpfs-size=64m" in argv
+    credential = f"type=bind,source={runtime.auth_home / 'auth.json'},target={LOGIN}/auth.json"
+    assert credential + ",readonly" in argv
     assert f"type=bind,source={folder / 'workspace'},target={OUTPUT}" in argv
     assert not any(str(folder) in part for part in command)
     # And it really wrote through that mount: the file the worker reads is on the host.
     assert (folder / "workspace" / "final.md").read_text() == "A real-model summary."
     # And the run's evidence knows the container it ran in, by the id the runtime gave.
     handle = json.loads((runtime.folder(run.id) / "handle.json").read_text())
-    assert handle == {"launcher": "container", "id": handle["id"]}
-    assert len(handle["id"]) == 64
+    # What was started, and who was holding it: the two things a later observation
+    # asks before it decides a session has been left behind.
+    assert handle == {"launcher": "container", "id": handle["id"], "worker": handle["worker"]}
+    assert len(handle["id"]) == 64 and handle["worker"] > 0
     assert (
         hashlib.sha256(runtime.receipt(run.id)["stdout"].encode()).hexdigest()
         == hashlib.sha256(

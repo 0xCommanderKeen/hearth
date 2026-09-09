@@ -126,6 +126,30 @@ def test_a_run_whose_worker_still_holds_it_is_running_and_is_left_alone(tmp_path
     launcher.wait(handle, 30)
 
 
+def test_a_session_whose_worker_is_still_here_is_never_removed_by_a_lock_alone(tmp_path):
+    """Two reasons are needed, because one of them can silently be wrong.
+
+    `flock` does not exclude on a Docker Desktop bind mount from macOS: it says free
+    while a worker holds it (measured, `docs/sandbox.md`). Ending a live session on
+    the strength of that is the worse way to be wrong, so the worker that holds the
+    stream says so itself, and while it is here nothing of its is touched.
+    """
+    runtime, run, sandbox, docker = sandboxed(tmp_path)
+    launcher = sandbox.open()
+    handle = launcher.start(
+        ["sleep", "60"], env={"PATH": os.defpath}, cwd=runtime.folder(run.id), stdin=None
+    )
+    identity = launcher.identify(handle)
+    (runtime.folder(run.id) / "handle.json").write_text(
+        json.dumps({"launcher": "container", "id": identity, "worker": os.getpid()})
+    )
+    assert runtime.inspect(run.id, expected_digest=run.input_digest).status == "unknown"
+    assert launcher.inspect(handle) == "running"
+    assert facts(runtime, "sandbox.stray_removed") == []
+    launcher.stop(handle, signal.SIGKILL)
+    launcher.wait(handle, 30)
+
+
 def test_a_session_the_runtime_never_named_leaves_nothing_to_remove(tmp_path):
     """An execution nobody can name is never guessed at, and never invented."""
     runtime, run, sandbox, _ = sandboxed(tmp_path)

@@ -1,0 +1,201 @@
+{
+  "journey": "epic-183-sandbox-per-run-codex",
+  "synthetic_inputs": true,
+  "real_model_called": true,
+  "runtime_kind": "codex_subscription",
+  "launcher": "container",
+  "host": "a Linux Docker host; Hearth itself in a container on it",
+  "data_directory": "fresh, outside the repository, discarded after recording",
+  "health": {
+    "service": "hearth",
+    "runtimes": [
+      {
+        "kind": "codex_subscription",
+        "label": "Codex subscription",
+        "default": true
+      }
+    ],
+    "sandbox": {
+      "launcher": "container",
+      "image": "sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce"
+    }
+  },
+  "operator_health": {
+    "supervisor": "running",
+    "executor_error": null,
+    "scheduler_error": null,
+    "validation_error": null,
+    "letters_error": null,
+    "runtimes": [
+      {
+        "kind": "codex_subscription",
+        "label": "Codex subscription",
+        "default": true
+      }
+    ],
+    "sandbox": {
+      "launcher": "container",
+      "image": "sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce",
+      "network": "hearth-sandbox-185"
+    },
+    "unavailable": []
+  },
+  "provisioning": {
+    "setup": {
+      "budget_timezone": "Europe/Ljubljana",
+      "creation_reason": "The sandbox's acceptance journey (hearth#185).",
+      "daily_limit": 200000,
+      "execution_profile": "codex_subscription",
+      "first_assignment": null,
+      "initial_memory": "The orchard notes are fictional.",
+      "input_sets": [],
+      "instructions": "Answer in at most four sentences. The notes are fictional.",
+      "manager": "operator",
+      "memory_writable": false,
+      "name": "Fictional orchard reporter",
+      "purpose": "Summarize the fictional orchard notes each day.",
+      "routine": null,
+      "skills": []
+    },
+    "command_id": "sandbox-journey-provision",
+    "resident_id": "9c426f77-13c1-5886-a77c-3d7217295264",
+    "status": "ready",
+    "reason": null,
+    "creator": "operator",
+    "manager": "operator",
+    "originating_run_id": null,
+    "created_at": 1788969740,
+    "routine_id": null,
+    "task_id": null
+  },
+  "runtimes": {
+    "default": "codex_subscription",
+    "configured": [
+      "codex_subscription"
+    ],
+    "kinds": {
+      "inline_mock": {
+        "label": "retired inline mock",
+        "live": false
+      },
+      "process_mock": {
+        "label": "retired process mock",
+        "live": false
+      },
+      "codex_mock": {
+        "label": "retired Codex mock",
+        "live": false
+      },
+      "codex_subscription": {
+        "label": "Codex subscription",
+        "live": true
+      },
+      "claude_subscription": {
+        "label": "Claude subscription",
+        "live": true
+      }
+    }
+  },
+  "runs": [
+    {
+      "id": "7152947a-ac7a-453a-a686-9925f89bab56",
+      "task_id": "09b54005-649d-4f03-8c67-586d6f1168f4",
+      "resident_id": "9c426f77-13c1-5886-a77c-3d7217295264",
+      "resident_revision": 1,
+      "status": "failed",
+      "reserved": 10000,
+      "budget_day": "2026-09-09",
+      "budget_timezone": "Europe/Ljubljana",
+      "runtime_kind": "codex_subscription",
+      "runtime_version": 1,
+      "input_digest": "bdd6ce11f49b8d376cf38f43a65bff54b070ec5760ce65817983485013e37ac4",
+      "model": "gpt-6-astra",
+      "price_schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+      "created_at": 1788969741,
+      "actual_cost": null,
+      "memory_revision": 1,
+      "usage_known": 0,
+      "finished_at": 1788969742,
+      "artifact_id": null,
+      "cancellation_requested": 0,
+      "usage_source": "unknown",
+      "letters_refused": [],
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "management": null,
+      "journal_opened": [],
+      "journal_written": null,
+      "memory_written": []
+    }
+  ],
+  "accounting": {
+    "7152947a-ac7a-453a-a686-9925f89bab56": {
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "accounting": {
+        "model": "gpt-6-astra",
+        "mode": "standard",
+        "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+        "basis": "api_equivalent_estimate",
+        "receipt_sha256": "b5884984c44a6b7cd752e97673aa20841a7f373495d92d6669df9f939f75d530",
+        "requests": []
+      },
+      "id": "7152947a-ac7a-453a-a686-9925f89bab56",
+      "status": "failed",
+      "artifact_id": null,
+      "runtime_kind": "codex_subscription",
+      "runtime_version": 1,
+      "input_digest": "bdd6ce11f49b8d376cf38f43a65bff54b070ec5760ce65817983485013e37ac4"
+    }
+  },
+  "answers": {},
+  "sandbox_audit": [
+    {
+      "sequence": 2,
+      "kind": "sandbox.configured",
+      "resource_id": "container",
+      "at": 1788969739,
+      "detail": "{\"binaries\": [\"codex_live_binary\"], \"image\": \"sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce\", \"network\": \"hearth-sandbox-185\"}"
+    },
+    {
+      "sequence": 12,
+      "kind": "sandbox.stray_removed",
+      "resource_id": "7152947a-ac7a-453a-a686-9925f89bab56",
+      "at": 1788969742,
+      "detail": "{\"container\": \"b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43\", \"launcher\": \"container\"}"
+    }
+  ],
+  "sessions": {
+    "7152947a-ac7a-453a-a686-9925f89bab56": {
+      "sandbox": {
+        "container_id": "b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43",
+        "image": "sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce",
+        "launcher": "container"
+      },
+      "handle": {
+        "id": "b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43",
+        "launcher": "container"
+      },
+      "exit_code": 137,
+      "cancelled": false,
+      "launched": true,
+      "binary_sha256": "4d76e542c222ea8c75861d8c4ade60a1a332a63255ce1c60bdaebf7c2a2869e6",
+      "cli_reported_usage": null
+    }
+  },
+  "containers_afterwards": {
+    "7152947a-ac7a-453a-a686-9925f89bab56": "absent"
+  },
+  "total_cost_microdollars": 0,
+  "limits": "One bounded run on fictional notes. This records that a resident's session executed inside a per-run container from the pinned image, that the receipt is the CLI's own stream out of that container, and that the run settled from the usage the CLI reported there. It is not evidence of model quality, of the network fence (#189), of filesystem grants (#187) or of anything about real sources."
+}

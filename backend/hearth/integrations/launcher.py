@@ -78,7 +78,9 @@ BINARIES = {name + "_live_binary": path for name, path in CLI.items()}
 # own folders are its grant's business and are named by the grant (slice #187).
 LOGIN = "/hearth/login"
 OUTPUT = "/hearth/output"
-SETTINGS = "/hearth/settings"
+# How much a directory of the run's own may hold. The CLIs write session state and
+# logs into their configuration directory; nothing a run keeps belongs there.
+SCRATCH = "64m"
 # One question to the container runtime -- a version, an inspect, a hash -- may take
 # this long. A daemon that cannot answer in half a minute is unavailable.
 CLIENT_TIMEOUT = 30
@@ -89,19 +91,24 @@ IDENTITY_TIMEOUT = 30
 
 @dataclass(frozen=True)
 class Mount:
-    """One host path a run may reach, at one path inside the sandbox.
+    """One path inside the sandbox: something of the host's, or nothing at all.
 
-    Read-only unless `writable` is said. Nothing here decides *whether* a path may be
-    mounted -- that is the grant's business (epic #183, slice #187) -- only that what
-    reaches the container runtime is a shape a command line cannot be smuggled through.
+    With a source it is one host path the run may reach, read-only unless `writable`
+    is said. With no source it is a directory of the run's own -- a tmpfs the runtime
+    creates and takes away again -- for the places a CLI insists on writing and where
+    nothing it writes should outlive the run or be visible to the next one.
+
+    Nothing here decides *whether* a host path may be mounted -- that is the grant's
+    business (epic #183, slice #187) -- only that what reaches the container runtime is
+    a shape a command line cannot be smuggled through.
     """
 
-    source: str
+    source: str | None
     target: str
     writable: bool = False
 
     def __post_init__(self):
-        for path in (self.source, self.target):
+        for path in ((self.source,) if self.source is not None else ()) + (self.target,):
             if (
                 not isinstance(path, str)
                 or not path.startswith("/")
@@ -113,6 +120,8 @@ class Mount:
             raise Refused("sandbox_mount_invalid")
 
     def argument(self) -> str:
+        if self.source is None:
+            return f"type=tmpfs,destination={self.target},tmpfs-size={SCRATCH}"
         value = f"type=bind,source={self.source},target={self.target}"
         return value if self.writable else value + ",readonly"
 
@@ -161,13 +170,40 @@ class Placement:
             raise Refused("sandbox_binary_unknown")
         return CLI[name]
 
+    def place(self, mount: Mount) -> str:
+        """One path inside the sandbox, held against anything else claiming it."""
+        if self.placed.setdefault(mount.target, mount) != mount:
+            raise Refused("sandbox_mount_conflict")
+        return mount.target
+
     def directory(self, path, target: str, *, writable: bool = False) -> str:
         """One host directory, at the path the session will name it by."""
         if not self.contained:
             return str(path)
-        mount = Mount(str(path), target, writable=writable)
-        if self.placed.setdefault(target, mount) != mount:
-            raise Refused("sandbox_mount_conflict")
+        return self.place(Mount(str(path), target, writable=writable))
+
+    def login(self, directory, credential: str, target: str) -> str:
+        """The CLI's own configuration directory, and the one file in it Hearth owns.
+
+        ADR 0016 said a login is a directory mounted read-only at the CLI's config
+        path. Measured on 2026-09-09 against the pinned Codex CLI, that does not run:
+        the CLI initializes its own app-server client inside `CODEX_HOME` and refuses
+        on a read-only filesystem (`failed to initialize in-process app-server client:
+        Read-only file system`). So the session is given a configuration directory of
+        its own -- a tmpfs that is nothing of the host's and is gone when the run ends
+        -- with the household's credential as the one file in it, read-only.
+
+        What the ADR wanted from read-only holds and is stronger: a run cannot change
+        the login it was given, and what it does write (session state, logs, a
+        regenerated cache) neither outlives it nor is visible to the next resident.
+        The credential must be a valid one when the run starts, because a session that
+        needs to refresh it cannot write it back; keeping it fresh stays outside the
+        sandbox, where it always was.
+        """
+        if not self.contained:
+            return str(directory)
+        self.place(Mount(None, target, writable=True))
+        self.place(Mount(str(Path(directory) / credential), f"{target}/{credential}"))
         return target
 
     def same(self, path) -> str:

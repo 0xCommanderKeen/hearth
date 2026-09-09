@@ -474,6 +474,31 @@ def test_a_process_sees_the_host_and_a_sandbox_sees_only_what_is_placed_in_it():
     )
 
 
+def test_a_login_is_a_directory_of_the_run_s_own_holding_one_file_it_may_not_change():
+    """Measured: the CLI cannot run with a read-only config directory.
+
+    It initializes its own app-server client inside `CODEX_HOME` and refuses on a
+    read-only filesystem, so what the ADR asked for -- a run that cannot change the
+    login it was given -- is held the other way round (`docs/sandbox.md`).
+    """
+    here = Placement()
+    assert here.login("/home/hearth/codex-home", "auth.json", LOGIN) == "/home/hearth/codex-home"
+    assert here.mounts == ()
+
+    inside = Placement(CONTAINER)
+    assert inside.login("/home/hearth/codex-home", "auth.json", LOGIN) == LOGIN
+    assert inside.mounts == (
+        # Nothing of the host's, writable, and gone when the run ends...
+        Mount(None, LOGIN, writable=True),
+        # ...except the household's own credential, which the session may only read.
+        Mount("/home/hearth/codex-home/auth.json", LOGIN + "/auth.json"),
+    )
+    assert [mount.argument() for mount in inside.mounts] == [
+        f"type=tmpfs,destination={LOGIN},tmpfs-size=64m",
+        f"type=bind,source=/home/hearth/codex-home/auth.json,target={LOGIN}/auth.json,readonly",
+    ]
+
+
 def test_two_host_paths_never_land_on_one_path_inside_the_sandbox():
     """The second would hide the first, and the session would read the wrong login."""
     inside = Placement(CONTAINER)

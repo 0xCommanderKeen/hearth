@@ -561,7 +561,8 @@ def test_a_management_session_inside_a_sandbox_names_only_the_image_s_own_paths(
         command = argv[argv.index(image) + 1 :]
         assert command[:2] == ["/usr/local/bin/codex", "app-server"]
         assert "CODEX_HOME=" + LOGIN in argv
-        assert f"type=bind,source={cli[1]},target={LOGIN},readonly" in argv
+        assert f"type=tmpfs,destination={LOGIN},tmpfs-size=64m" in argv
+        assert f"type=bind,source={cli[1]}/auth.json,target={LOGIN}/auth.json,readonly" in argv
         # The catalog Hearth generated for this session is mounted where it already
         # is, because the CLI reports that path back and the two have to agree.
         setting = next(part for part in command if part.startswith("model_catalog_json="))

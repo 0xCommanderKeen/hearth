@@ -12,6 +12,7 @@
 #   docker build -f deploy/Dockerfile.sandbox \
 #     --build-arg HEARTH_UID="$(id -u)" --build-arg HEARTH_GID="$(id -g)" \
 #     --build-arg CODEX_BINARY=binaries/codex --build-arg CLAUDE_BINARY=binaries/claude \
+#     --build-arg CODEX_CODE_MODE_HOST=binaries/codex-code-mode-host \
 #     -t hearth/sandbox:<version> .
 #
 # Then read the digest it resolves to and configure Hearth with it:
@@ -37,16 +38,37 @@ ARG HEARTH_GID=1000
 # Where the pinned Linux CLIs are in the build context.
 ARG CODEX_BINARY=binaries/codex
 ARG CLAUDE_BINARY=binaries/claude
+# Codex on Linux is not one file. Its own package ships three more things beside the
+# executable, and the CLI finds them by their place in that layout -- the directory
+# above the one it is in -- so this image keeps the same shape. All three were measured
+# on 2026-09-09 (`docs/sandbox.md`) and every one of them fails a run when it is absent:
+#
+#   codex-code-mode-host   the CLI looks for it by name even with code mode disabled.
+#                          Present, it says "code-mode host is disabled", which is the
+#                          diagnostic Hearth knows and steps over; absent, it says
+#                          "failed to spawn ... host executable was not found", which
+#                          Hearth reads as a stream error and the run settles failed.
+#   codex-resources/bwrap  the CLI's *own* filesystem sandbox, which Hearth's read-only
+#                          profile turns on. Without it a session ends before its first
+#                          turn: "bubblewrap is unavailable".
+#   codex-path/rg          what the CLI puts on the session's PATH for search.
+ARG CODEX_CODE_MODE_HOST=binaries/codex-code-mode-host
+ARG CODEX_RESOURCES=binaries/codex-resources
+ARG CODEX_PATH=binaries/codex-path
 # Hearth's own package, for the bridge shim alone. Nothing else in the image imports it.
 ARG HEARTH_PACKAGE=backend/hearth
 ARG SITE=/usr/local/lib/python3.14/site-packages
 
 COPY ${CODEX_BINARY} /usr/local/bin/codex
+COPY ${CODEX_CODE_MODE_HOST} /usr/local/bin/codex-code-mode-host
+COPY ${CODEX_RESOURCES} /usr/local/codex-resources
+COPY ${CODEX_PATH} /usr/local/codex-path
 COPY ${CLAUDE_BINARY} /usr/local/bin/claude
 COPY ${HEARTH_PACKAGE} ${SITE}/hearth
 
 RUN set -eux; \
-    chmod 0755 /usr/local/bin/codex /usr/local/bin/claude; \
+    chmod 0755 /usr/local/bin/codex /usr/local/bin/codex-code-mode-host /usr/local/bin/claude; \
+    chmod -R a=rX /usr/local/codex-resources /usr/local/codex-path; \
     chmod -R a=rX ${SITE}/hearth; \
     # The shim has to be importable with the interpreter's own flags and stdlib alone;
     # a build that produced an image whose bridge cannot start is a failed build.

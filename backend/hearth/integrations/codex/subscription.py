@@ -33,6 +33,8 @@ RUN_TIMEOUT = 120
 # joins them where a run has one to name, and is absent from every receipt written
 # before this seam existed (`docs/adr/0016-sandbox-per-run.md`).
 FIELDS = {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
+# The one file in `CODEX_HOME` that is the household's rather than the session's.
+AUTH = "auth.json"
 CONFIG = {
     "forced_login_method": "chatgpt",
     "cli_auth_credentials_store": "file",
@@ -185,7 +187,7 @@ class CodexLiveRuntime:
             raise Refused("codex_subscription_configuration_required")
         self.binary = binary.resolve()
         self.auth_home = auth_home.resolve()
-        if not (self.auth_home / "auth.json").is_file():
+        if not (self.auth_home / AUTH).is_file():
             raise Refused("codex_subscription_login_required")
         env = {"PATH": os.defpath, "CODEX_HOME": str(self.auth_home)}
         version = subprocess.check_output(
@@ -335,6 +337,14 @@ class CodexLiveRuntime:
         if self.database.restored() or not handle.is_file():
             return
         started = read(handle)
+        if alive(started.get("worker")):
+            # The lock says this run's worker is gone and the worker itself says it is
+            # not. One of the two is wrong, and ending a live session is the worse way
+            # to be wrong: a container left with Hearth's label on it is somebody's to
+            # remove, a killed session is somebody's work. Measured 2026-09-09: on a
+            # Docker Desktop bind mount from macOS `flock` does not exclude at all and
+            # says free while a worker holds it (`docs/sandbox.md`).
+            return
         launcher = Sandbox.of(request.get("sandbox")).open()
         if not launcher.stray(started.get("id")):
             return
@@ -353,6 +363,24 @@ class CodexLiveRuntime:
         folder = self.folder(run_id)
         if folder.exists() and not (folder / "cancel.json").exists():
             publish(folder / "cancel.json", {"cancelled": True})
+
+
+def alive(pid) -> bool:
+    """Whether the process that was holding this run's stream is still here.
+
+    The worker is Hearth's own child on Hearth's own host, so its pid is answerable
+    from here. A pid the system has since given to something else only ever leaves a
+    container for the operator to remove, which is the safe direction to be wrong in.
+    """
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def check_pin(sandbox, binary: Path, expected: str, image: str | None) -> None:
@@ -478,7 +506,7 @@ def worker(folder, inherited_fd=None):
                         cmd,
                         env={
                             "PATH": os.defpath,
-                            "CODEX_HOME": placement.directory(request["auth_home"], LOGIN),
+                            "CODEX_HOME": placement.login(request["auth_home"], AUTH, LOGIN),
                         },
                         cwd=workspace,
                         stdin=prompt,
@@ -490,7 +518,9 @@ def worker(folder, inherited_fd=None):
             # runtime names what it created a moment later and the guard is one write
             # transaction over the whole store.
             launcher.identify(handle)
-            publish(folder / "handle.json", handle.document())
+            # ...and who is holding it, so that a later observation has a second and
+            # independent way to know whether this session still has a worker.
+            publish(folder / "handle.json", handle.document() | {"worker": os.getpid()})
             assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             with selectors.DefaultSelector() as selector:
