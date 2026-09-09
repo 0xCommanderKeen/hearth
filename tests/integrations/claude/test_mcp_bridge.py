@@ -229,6 +229,21 @@ def test_a_real_session_that_called_a_tool_settles_at_the_price_the_cli_reported
     assert evidence.cost == 45_514
 
 
+def test_one_grant_hashes_to_one_tools_pin_on_either_runtime():
+    """The Claude pin is the same digest of the same list Codex pins, or it means less."""
+    from hearth.integrations.claude.mcp_bridge import configuration_pins
+    from hearth.integrations.codex import app_server_config
+    from hearth.management.tools import tool_specs
+
+    # `app_server_config.digest` is what Codex's own `configuration_pins` writes as
+    # `tools_sha256`; the Claude pin has to be the same number for the same list.
+    for tools in (
+        tool_specs(memory=True, management=False),
+        tool_specs(memory=True, management=True, send_letters=True),
+    ):
+        assert configuration_pins(tools)["tools_sha256"] == app_server_config.digest(tools)
+
+
 def test_a_run_is_offered_exactly_the_tools_its_authority_allows(tmp_path):
     """A resident that may write its own memory reaches those three tools and no more."""
     store = Store(tmp_path)
