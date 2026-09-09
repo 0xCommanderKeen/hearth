@@ -318,6 +318,17 @@ def main() -> None:
             server.wait(timeout=30)
         except subprocess.TimeoutExpired:
             server.kill()
+        if "runs" in record:
+            write_evidence(record, args)
+        else:
+            # The journey never reached a run. A record without runs would still say
+            # `real_model_called`, which is exactly the evidence this file must not fake.
+            print("no evidence written: the journey did not reach a run")
+
+
+def write_evidence(record: dict, args) -> None:
+    """The record, with the CLI's own numbers beside Hearth's, as the evidence file."""
+    if True:
         record["cli"] = cli_numbers(args.data)
         record["total_cost_microdollars"] = sum(
             row["actual_cost"] or 0 for row in record.get("runs", [])

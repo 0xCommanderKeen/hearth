@@ -16,7 +16,10 @@ the shape of this file, and each contradicts something the plan assumed:
 2. **An `assistant` message's `usage` is a mid-stream snapshot.** Its
    `output_tokens` was `1` in a turn that billed `4`. Its cache-creation numbers were
    final in every recording, and it is the only place the five-minute/one-hour write
-   split appears, so that split -- and nothing else -- is taken from it.
+   split appears, so that split -- and nothing else -- is taken from it. One response
+   arrives as one event per content block (measured 2026-09-09: a thinking block and
+   the tool call it led to, same message id, identical usage), so the split is counted
+   once per response, not once per event.
 3. **A session spends a second model.** `modelUsage` named `claude-haiku-4-5`
    beside the pinned model in every recording, and `total_cost_usd` is the sum of
    both. So the pinned-model check is about the *turn's* model, from the session's
@@ -162,6 +165,11 @@ class ClaudeEvents:
         # checked against `modelUsage`, and a session holding any of them prices no
         # cache write, because the tokens behind one could belong to any model.
         self.unsplit: set[str | None] = set()
+        # The responses whose split is already counted. One API response streams as
+        # one assistant event per content block (a thinking block, then the tool call
+        # it decided on), each carrying the response's id and the same usage block;
+        # counting the split once per event would double it and price nothing.
+        self.counted: set[tuple[str, str]] = set()
         # Whether any API response ever came back. The CLI writes its own failures as
         # assistant messages too, and those are not answers.
         self.answered = False
@@ -279,6 +287,12 @@ class ClaudeEvents:
         if model is None or creation is None or split is None or sum(split) != creation[0]:
             self.unsplit.add(model)
             return
+        identity = message.get("id")
+        if isinstance(identity, str) and identity:
+            response = (identity, json.dumps(usage, sort_keys=True))
+            if response in self.counted:
+                return
+            self.counted.add(response)
         tiers = self.tiers.setdefault(model, [0, 0])
         tiers[0] += split[0]
         tiers[1] += split[1]

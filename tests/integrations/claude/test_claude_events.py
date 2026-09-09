@@ -196,6 +196,30 @@ def test_a_model_reported_without_its_cache_write_tier_is_not_priced():
     assert transcript.usage is None and transcript.reason == "cache_write_tier_unknown"
 
 
+def test_one_response_streamed_as_several_events_counts_its_cache_write_once():
+    """Measured 2026-09-09: a thinking block and the tool call it led to arrive as two
+    assistant events with the same message id and the same usage. Summing the split
+    per event doubled it against `modelUsage` and left a real session unpriced."""
+    lines = []
+    for event in events("success"):
+        if event.get("type") == "assistant":
+            first = json.loads(json.dumps(event))
+            first["message"]["content"] = [{"type": "thinking", "thinking": "…"}]
+            lines.append(json.dumps(first))
+        lines.append(json.dumps(event))
+    transcript = read("\n".join(lines) + "\n")
+    assert transcript.status == "completed"
+    assert transcript.usage == read(stream("success")).usage
+    assert transcript.reason is None
+
+
+def test_two_responses_that_happen_to_share_an_id_are_still_both_counted():
+    """The recorded fixtures carry one scrubbed id for every message; what makes two
+    events one response is the id together with an identical usage block."""
+    transcript = read(stream("management"))
+    assert transcript.usage is not None and transcript.reason is None
+
+
 def test_an_unreadable_assistant_message_costs_the_price_and_not_the_answer():
     """The answer is in the result event; only the cache-write split needs the messages."""
 

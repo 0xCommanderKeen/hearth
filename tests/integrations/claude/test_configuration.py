@@ -5,6 +5,7 @@ The CLI is never really spawned: a synthetic executable answers `--version` and
 """
 
 import json
+import os
 import sys
 from dataclasses import replace
 
@@ -136,9 +137,18 @@ def test_a_different_binary_behind_the_pin_refuses_and_keeps_the_original(tmp_pa
     assert pins(database) == (pinned, audits)
 
 
-def test_the_session_environment_carries_no_machine_state(tmp_path):
+def test_the_session_environment_carries_no_machine_state(tmp_path, monkeypatch):
+    import pwd
+
+    # `USER` is the one exception: the macOS Keychain files the login under the
+    # account name. It comes from the uid, not the environment, because the detached
+    # worker that launches a session inherits no environment at all.
+    monkeypatch.setenv("USER", "someone-else")
     env = environment(tmp_path / "claude-config")
-    assert set(env) == {"PATH", "CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER"}
+    assert set(env) == {"PATH", "CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER", "USER"}
+    assert env["USER"] == pwd.getpwuid(os.getuid()).pw_name
+    monkeypatch.delenv("USER")
+    assert environment(tmp_path / "claude-config")["USER"] == env["USER"]
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "claude-config")
     # The pinned binary cannot change under its own pin mid-run.
     assert env["DISABLE_AUTOUPDATER"] == "1"

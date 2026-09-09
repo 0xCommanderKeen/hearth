@@ -2,6 +2,17 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- The Claude journey ran for real, and two things it found are fixed. The evidence
+  file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
+  `claude_subscription` beside a Codex default, each settled to exactly the CLI's own
+  `total_cost_usd`, with the journal written over the bridge and read back. On the way:
+  the detached worker handed the CLI no `USER`, and on macOS the Keychain files the
+  login under it, so every session answered `Not logged in` -- the session environment
+  now carries the account name, read from the uid rather than inherited; and one API
+  response streams as one assistant event per content block with the same id and usage,
+  so the parser counts a response's cache-write split once instead of refusing to price
+  a session that thought before it called a tool. The journey script no longer writes
+  an evidence file for a journey that never reached a run.
 - The operator is told which brain worked each run. Townhall stops naming a provider
   in its own markup: the snapshot carries the household's runtime table -- its default,
   what it is configured for, and how Hearth's registry names every kind a finished run
