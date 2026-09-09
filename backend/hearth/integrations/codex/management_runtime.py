@@ -167,9 +167,8 @@ def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
 
-    from hearth.integrations.codex.subscription import written_handle
     from hearth.integrations.codex.usage import UsageBinding
-    from hearth.integrations.launcher import Sandbox
+    from hearth.integrations.launcher import Sandbox, written_handle
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
     from hearth.work.letters import run_letter_scope

@@ -17,17 +17,19 @@ from pathlib import Path
 from hearth.integrations.codex.container import container_lock
 from hearth.integrations.codex.events import MAX_STREAM, CodexEvents
 from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
-from hearth.integrations.codex.usage import UsageBinding, publish, read, sync_directory
+from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
 from hearth.integrations.launcher import (
     CONTAINER,
-    IDENTITY,
     IMAGE_PIN,
-    KINDS,
     LOGIN,
     OUTPUT,
     Sandbox,
+    check_image,
+    discard,
+    sandboxed,
+    written_handle,
 )
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
@@ -74,32 +76,6 @@ CONFIG = {
     },
     "otel.metrics_exporter": "none",
 }
-
-
-def sandboxed(value) -> bool:
-    """Whether a receipt's account of where its session ran is one Hearth could write.
-
-    Every field is answerable: which launcher started the session, the container it
-    ran in, and the image that container came from. A container the runtime never
-    named leaves the id `None`, which is an execution nobody can name -- never a
-    reason to call it something else.
-    """
-    if value is None:
-        return True
-    if (
-        not isinstance(value, dict)
-        or set(value) != {"launcher", "container_id", "image"}
-        or value["launcher"] not in KINDS
-        or not all(item is None or isinstance(item, str) for item in value.values())
-    ):
-        return False
-    if value["launcher"] != CONTAINER:
-        # A run that was a child of its worker has no container and no image to name,
-        # and a receipt naming one would say this run happened where it did not.
-        return (value["container_id"], value["image"]) == (None, None)
-    # A sandboxed run always knows which image it was admitted to, whether or not the
-    # runtime ever named the container: the image is the whole point of recording it.
-    return isinstance(value["image"], str)
 
 
 def encode(receipt, expected):
@@ -336,43 +312,8 @@ class CodexLiveRuntime:
             return Evidence("unknown")
 
     def discard(self, run_id, request) -> None:
-        """End and remove the session a dead worker left behind, and record that.
-
-        A container outlives the client that was attached to it, so a worker that
-        died mid-session leaves one running and spending real money (measured,
-        `docs/sandbox.md`). It is stopped and removed, and it is never adopted: the
-        stream that was being priced died with the worker, so this run settles from
-        what was written down or not at all -- unknown, never zero (ADR 0008) -- and
-        nothing anywhere relaunches a session.
-
-        Only the container this run's own worker named is touched. A copy opened for
-        reading touches nothing at all: the containers its store names are another
-        instance's, still running its work.
-        """
-        handle = self.folder(run_id) / "handle.json"
-        if self.database.restored() or not handle.is_file():
-            return
-        started = read(handle)
-        if alive(started.get("worker")):
-            # The lock says this run's worker is gone and the worker itself says it is
-            # not. One of the two is wrong, and ending a live session is the worse way
-            # to be wrong: a container left with Hearth's label on it is somebody's to
-            # remove, a killed session is somebody's work. Measured 2026-09-09: on a
-            # Docker Desktop bind mount from macOS `flock` does not exclude at all and
-            # says free while a worker holds it (`docs/sandbox.md`).
-            return
-        identity = named(started)
-        launcher = Sandbox.of(request.get("sandbox")).open()
-        if not launcher.stray(identity):
-            return
-        with self.database.transaction(write=True) as db:
-            _audit(
-                db,
-                "sandbox.stray_removed",
-                run_id,
-                int(time.time()),
-                {"launcher": started.get("launcher"), "container": identity},
-            )
+        """End the session a dead worker left behind. The rule is the launcher's."""
+        discard(self.database, self.folder(run_id), run_id, request)
 
     def stop(self, run_id):
         if self.database.restored():
@@ -380,69 +321,6 @@ class CodexLiveRuntime:
         folder = self.folder(run_id)
         if folder.exists() and not (folder / "cancel.json").exists():
             publish(folder / "cancel.json", {"cancelled": True})
-
-
-def written_handle(folder: Path, handle) -> None:
-    """What this run started, as best its worker knows at this moment.
-
-    Twice for one session -- before the runtime has named the container and again
-    after -- and once more for each further session a management run starts. It is
-    the only thing a later observation can find a container by, so unlike everything
-    else a run writes down it is *replaced* rather than published once: each of those
-    facts changes, and a worker that died holding an older answer still left the best
-    one it had. The write is atomic, so a reader sees one document or the other and
-    never half of either.
-    """
-    document = handle.document() | {"worker": os.getpid()}
-    raw = json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    path = folder / "handle.json"
-    writing = path.with_name(path.name + ".writing")
-    fd = os.open(writing, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(raw)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(writing, path)
-    sync_directory(folder)
-
-
-def named(started: dict) -> str | None:
-    """The container this run started, by the id or by the file it was written to.
-
-    A worker killed while waiting for the runtime to name what it created leaves the
-    file it was waiting on, and the runtime has usually written it by then. Reading it
-    is how that container is still findable; nothing else on disk names it, and a
-    sweep by Hearth's own label would find every other resident's live session.
-    """
-    identity = started.get("id")
-    if isinstance(identity, str):
-        return identity
-    cidfile = started.get("cidfile")
-    if not isinstance(cidfile, str):
-        return None
-    try:
-        value = Path(cidfile).read_text().strip()
-    except OSError:
-        return None
-    return value if IDENTITY.match(value) else None
-
-
-def alive(pid) -> bool:
-    """Whether the process that was holding this run's stream is still here.
-
-    The worker is Hearth's own child on Hearth's own host, so its pid is answerable
-    from here. A pid the system has since given to something else only ever leaves a
-    container for the operator to remove, which is the safe direction to be wrong in.
-    """
-    if type(pid) is not int or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def check_pin(sandbox, binary: Path, expected: str, image: str | None) -> None:
@@ -456,9 +334,8 @@ def check_pin(sandbox, binary: Path, expected: str, image: str | None) -> None:
     what can still change under a waiting run is the image this store is pinned to,
     and that is what is compared.
     """
+    check_image(sandbox, image)
     if sandbox.launcher == CONTAINER:
-        if image is None or sandbox.digest != image:
-            raise Refused("sandbox_image_changed")
         return
     if hashlib.sha256(binary.read_bytes()).hexdigest() != expected:
         raise Refused("codex_subscription_binary_changed")

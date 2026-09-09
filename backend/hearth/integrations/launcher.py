@@ -29,6 +29,7 @@ Measured against Docker Desktop's Linux VM on 2026-09-09; what was measured, and
 two places it differs from what the ADR assumed, is `docs/sandbox.md`.
 """
 
+import json
 import os
 import re
 import shutil
@@ -39,6 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Protocol
 
+from hearth.integrations.durable import read, sync_directory
 from hearth.residents.models import Refused
 
 PROCESS = "process"
@@ -72,6 +74,11 @@ LABEL = "org.hearth.sandbox"
 # equal the binary pin the store already holds.
 CLI = {"codex": "/usr/local/bin/codex", "claude": "/usr/local/bin/claude"}
 BINARIES = {name + "_live_binary": path for name, path in CLI.items()}
+# The interpreter inside the image, which is what starts Hearth's bridge shim there.
+# The shim is a program of Hearth's that a provider's CLI launches for itself
+# (`claude/mcp_bridge.py`), so the path in the configuration Hearth writes has to be
+# a path that exists in the sandbox, not this host's virtual environment.
+PYTHON = "/usr/local/bin/python3"
 # Where Hearth's own files are placed inside a sandbox. A session needs three of them
 # and no more: the login directory the CLI reads, the directory it writes its final
 # message into, and the settings Hearth generated for this session alone. A resident's
@@ -175,6 +182,17 @@ class Placement:
             raise Refused("sandbox_binary_unknown")
         return CLI[name]
 
+    def interpreter(self, python) -> str:
+        """The Python that starts Hearth's bridge shim: this worker's, or the image's.
+
+        The shim is launched by the provider's CLI, from a configuration document
+        Hearth writes for the run, so the interpreter named in it has to exist where
+        the session runs. On the host that is the interpreter Hearth itself is
+        running; in a container it is the image's own, which is also where Hearth's
+        package sits for `python -I` to find (`deploy/Dockerfile.sandbox`).
+        """
+        return PYTHON if self.contained else str(python)
+
     def place(self, mount: Mount) -> str:
         """One path inside the sandbox, held against anything else claiming it."""
         if self.placed.setdefault(mount.target, mount) != mount:
@@ -212,13 +230,15 @@ class Placement:
         return target
 
     def same(self, path) -> str:
-        """One host directory, mounted at the path it already has.
+        """One host file or directory, mounted at the path it already has.
 
         For files Hearth generates for a session and then hears named back to it --
         the model catalog the CLI reports as its own effective configuration -- a path
         that changed on the way in would be a disagreement Hearth reads as tampering.
         Those are placed where they already are, which is what the bridge socket does
-        for the same reason (`docs/adr/0016-sandbox-per-run.md`).
+        for the same reason (`docs/adr/0016-sandbox-per-run.md`), and so does the
+        configuration document that names that socket: it and the socket it points at
+        are one statement, and it says the same thing inside the sandbox and out.
         """
         return self.directory(path, str(path))
 
@@ -763,6 +783,150 @@ class Sandbox:
             return ProcessLauncher()
         assert self.image is not None and self.network is not None
         return ContainerLauncher(self.image, self.network, docker=self.docker, host=self.host)
+
+
+def sandboxed(value) -> bool:
+    """Whether a receipt's account of where its session ran is one Hearth could write.
+
+    Every field is answerable: which launcher started the session, the container it
+    ran in, and the image that container came from. A container the runtime never
+    named leaves the id `None`, which is an execution nobody can name -- never a
+    reason to call it something else.
+    """
+    if value is None:
+        return True
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"launcher", "container_id", "image"}
+        or value["launcher"] not in KINDS
+        or not all(item is None or isinstance(item, str) for item in value.values())
+    ):
+        return False
+    if value["launcher"] != CONTAINER:
+        # A run that was a child of its worker has no container and no image to name,
+        # and a receipt naming one would say this run happened where it did not.
+        return (value["container_id"], value["image"]) == (None, None)
+    # A sandboxed run always knows which image it was admitted to, whether or not the
+    # runtime ever named the container: the image is the whole point of recording it.
+    return isinstance(value["image"], str)
+
+
+def check_image(sandbox: Sandbox, image: str | None) -> None:
+    """Refuse unless this store is still pinned to the image the run was admitted to.
+
+    Two launchers, two things that can change under a waiting run. A child of the
+    worker executes a file on this host, so its bytes are what the adapter hashes,
+    exactly as they always were. A container executes the image's own copy of the CLI,
+    which every start hashes against this store's binary pin before a resident is
+    admitted (`configure`), so hashing a host file the session will never open would
+    be a check of nothing; what is left to compare is the image itself.
+    """
+    if sandbox.launcher == CONTAINER and (image is None or sandbox.digest != image):
+        raise Refused("sandbox_image_changed")
+
+
+def written_handle(folder: Path, handle: Handle) -> None:
+    """What this run started, as best its worker knows at this moment.
+
+    Twice for one session -- before the runtime has named the container and again
+    after -- and once more for each further session a management run starts. It is
+    the only thing a later observation can find a container by, so unlike everything
+    else a run writes down it is *replaced* rather than published once: each of those
+    facts changes, and a worker that died holding an older answer still left the best
+    one it had. The write is atomic, so a reader sees one document or the other and
+    never half of either.
+    """
+    document = handle.document() | {"worker": os.getpid()}
+    raw = json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    path = folder / "handle.json"
+    writing = path.with_name(path.name + ".writing")
+    fd = os.open(writing, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(writing, path)
+    sync_directory(folder)
+
+
+def named(started: dict) -> str | None:
+    """The container this run started, by the id or by the file it was written to.
+
+    A worker killed while waiting for the runtime to name what it created leaves the
+    file it was waiting on, and the runtime has usually written it by then. Reading it
+    is how that container is still findable; nothing else on disk names it, and a
+    sweep by Hearth's own label would find every other resident's live session.
+    """
+    identity = started.get("id")
+    if isinstance(identity, str):
+        return identity
+    cidfile = started.get("cidfile")
+    if not isinstance(cidfile, str):
+        return None
+    try:
+        value = Path(cidfile).read_text().strip()
+    except OSError:
+        return None
+    return value if IDENTITY.match(value) else None
+
+
+def alive(pid) -> bool:
+    """Whether the process that was holding this run's stream is still here.
+
+    The worker is Hearth's own child on Hearth's own host, so its pid is answerable
+    from here. A pid the system has since given to something else only ever leaves a
+    container for the operator to remove, which is the safe direction to be wrong in.
+    """
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def discard(database, folder: Path, run_id: str, request: dict, clock=time.time) -> None:
+    """End and remove the session a dead worker left behind, and record that.
+
+    A container outlives the client that was attached to it, so a worker that died
+    mid-session leaves one running and spending real money (measured,
+    `docs/sandbox.md`). It is stopped and removed, and it is never adopted: the
+    stream that was being priced died with the worker, so the run settles from what
+    was written down or not at all -- unknown, never zero (ADR 0008) -- and nothing
+    anywhere relaunches a session.
+
+    Only the container this run's own worker named is touched. A copy opened for
+    reading touches nothing at all: the containers its store names are another
+    instance's, still running its work.
+    """
+    from hearth.work.service import _audit
+
+    handle = folder / "handle.json"
+    if database.restored() or not handle.is_file():
+        return
+    started = read(handle)
+    if alive(started.get("worker")):
+        # The lock says this run's worker is gone and the worker itself says it is
+        # not. One of the two is wrong, and ending a live session is the worse way to
+        # be wrong: a container left with Hearth's label on it is somebody's to
+        # remove, a killed session is somebody's work. Measured 2026-09-09: on a
+        # Docker Desktop bind mount from macOS `flock` does not exclude at all and
+        # says free while a worker holds it (`docs/sandbox.md`).
+        return
+    identity = named(started)
+    if not Sandbox.of(request.get("sandbox")).open().stray(identity):
+        return
+    with database.transaction(write=True) as db:
+        _audit(
+            db,
+            "sandbox.stray_removed",
+            run_id,
+            int(clock()),
+            {"launcher": started.get("launcher"), "container": identity},
+        )
 
 
 def configure(database, sandbox: Sandbox, clock=time.time) -> dict:
