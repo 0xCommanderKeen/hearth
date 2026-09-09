@@ -24,10 +24,12 @@ for the current acceptance gate.
   data directory for a Hearth version change (`docs/adr/0013-forward-schema-upgrades.md`).
   Do not import from other systems; definition-only resident bundles
   (`docs/adr/0010-portable-resident-bundles.md`) are the one cross-system path.
-- One runtime ships: the Codex subscription. Hearth writes only that kind; a store
-  recorded against a removed runtime adopts it on start, and finished runs keep their
-  own pin because that is where the work happened. Tests and the installed-wheel
-  smoke inject `tests/fake_runtime.py`; it is never packaged.
+- Runtime kinds live in one registry, `integrations/interface.py`. Two are live: the
+  Codex subscription, which every new store records, and the Claude subscription, which
+  a store may be configured for. A store recorded against a removed runtime adopts the
+  default on start, and finished runs keep their own pin because that is where the work
+  happened. Tests and the installed-wheel smoke inject `tests/fake_runtime.py`; it is
+  never packaged.
 - Live data and credentials stay outside the repository. Use synthetic notes until
   real testing is explicitly selected; obtain concrete runtime/source decisions first.
 - Record decisions that change scope, persistence or authority in an ADR and add a

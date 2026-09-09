@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.inputs.catalog import list_inputs
 from hearth.inputs.selection import input_summary, save_selection
+from hearth.integrations.interface import label as runtime_label
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused, bounded_text, identifier
 from hearth.skills.assignments import save_assignments
@@ -162,7 +163,9 @@ class Provisioning:
                 "SELECT value FROM system_meta WHERE key='runtime_kind'"
             ).fetchone()[0]
             return {
-                "execution_profiles": [{"id": runtime, "name": "Configured Codex subscription"}],
+                "execution_profiles": [
+                    {"id": runtime, "name": f"Configured {runtime_label(runtime)}"}
+                ],
                 "input_sets": list_inputs(db),
                 "managers": [{"id": "operator", "name": "Operator"}]
                 + [

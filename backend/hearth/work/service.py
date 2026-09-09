@@ -508,11 +508,15 @@ class Hearth:
         from hearth.integrations.interface import pricing_pin
 
         pricing = pricing_pin(run.runtime_kind, pricing_mode)
-        if pricing is not None:
-            db.execute(
-                "INSERT INTO run_pricing VALUES (?,?,?,?)",
-                (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
-            )
+        # A runtime whose evidence Hearth cannot read cannot price the work it does, and
+        # a run admitted without a pinned schedule could only ever settle at a number
+        # nobody can check. Such a runtime admits no work at all.
+        if pricing is None:
+            raise Refused("run_pricing_required")
+        db.execute(
+            "INSERT INTO run_pricing VALUES (?,?,?,?)",
+            (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
+        )
         _audit(
             db,
             "run.admitted",
@@ -529,7 +533,7 @@ class Hearth:
                 "runtime_version": run.runtime_version,
                 "input_digest": run.input_digest,
             }
-            | ({"accounting": pricing} if pricing else {}),
+            | {"accounting": pricing},
         )
         return run
 

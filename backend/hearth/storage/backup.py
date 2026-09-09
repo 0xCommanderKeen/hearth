@@ -19,6 +19,7 @@ from hearth.authority.household import validate_windows
 from hearth.execution import usage as codex_accounting
 from hearth.inputs.catalog import checked_input
 from hearth.inputs.selection import read_selection, run_inputs
+from hearth.integrations.interface import live
 from hearth.management.authority import validate_management
 from hearth.residents.journal import (
     JournalFiles,
@@ -36,7 +37,6 @@ from hearth.skills.evaluation import verify_authoring_backup
 from hearth.storage.artifacts import Artifact, Artifacts, sync_directory
 from hearth.storage.database import (
     HISTORICAL_RUNTIME_KINDS,
-    RUNTIME_KIND,
     SCHEMA_VERSION,
     Database,
     schema_matches,
@@ -224,7 +224,7 @@ def _check_database(root: Path) -> dict:
         for revision in db.execute("SELECT * FROM skill_revisions"):
             checked_revision(revision)
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
-        if selected is None or selected[0] not in (RUNTIME_KIND, *HISTORICAL_RUNTIME_KINDS):
+        if selected is None or not (live(selected[0]) or selected[0] in HISTORICAL_RUNTIME_KINDS):
             raise Refused("backup_runtime_invalid")
         validate_management(db)
         verify_authoring_backup(db, root)
@@ -236,7 +236,7 @@ def _check_database(root: Path) -> dict:
                 r"[0-9a-f]{64}", run["input_digest"]
             ):
                 raise Refused("backup_runtime_invalid")
-            if run["runtime_kind"] != RUNTIME_KIND:
+            if not live(run["runtime_kind"]):
                 # A runtime this release no longer ships took its evidence with it.
                 # Such a run is finished history; nothing here can reinterpret it.
                 if (
@@ -245,7 +245,7 @@ def _check_database(root: Path) -> dict:
                 ):
                     raise Refused("backup_runtime_invalid")
                 continue
-            # Every run on the current runtime is priced: its receipt is the record.
+            # Every run on a live runtime is priced: its receipt is the record.
             codex_accounting.verify_stored(db, run)
         rows = db.execute("SELECT * FROM artifacts").fetchall()
         for row in rows:

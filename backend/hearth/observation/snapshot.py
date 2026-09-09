@@ -4,6 +4,7 @@ import json
 
 from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
+from hearth.integrations.interface import live_kinds
 from hearth.management.authority import management_summary
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
@@ -18,6 +19,10 @@ from hearth.work.letters import (
     task_lineage,
 )
 from hearth.work.service import ACTIVE_RUNS, Hearth
+
+# A run priced under a live runtime's own schedule is an API-equivalent estimate of a
+# subscription. Anything else with a price is history from a runtime that only pretended.
+LIVE_KINDS = "(" + ", ".join(repr(kind) for kind in sorted(live_kinds())) + ")"
 
 
 def snapshot(hearth: Hearth) -> dict:
@@ -86,7 +91,7 @@ def snapshot(hearth: Hearth) -> dict:
                    CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
                    THEN 'operator_reported' WHEN usage_known=1 AND EXISTS
                    (SELECT 1 FROM run_pricing p WHERE p.run_id=runs.id)
-                   THEN CASE WHEN runtime_kind='codex_subscription'
+                   THEN CASE WHEN runtime_kind IN {LIVE_KINDS}
                    THEN 'api_equivalent_subscription' ELSE 'api_equivalent_mock' END
                    WHEN usage_known=1 THEN 'mock_runtime'
                    ELSE 'unknown' END AS usage_source

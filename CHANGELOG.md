@@ -2,6 +2,24 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hearth knows a second live runtime kind. One registry in
+  `integrations/interface.py` now answers every question about a runtime kind — what is
+  live, what settles from receipts, whose start is replayable, which adapter and which
+  price schedule — replacing the kind checks each call site carried, and the four kinds
+  Hearth already knew answer exactly as they did. `claude_subscription` joins it: a store
+  can record it, a run can be pinned to it, and `HEARTH_CLAUDE_BINARY` /
+  `HEARTH_CLAUDE_CONFIG_DIR` configure it the way the Codex pair does. Configuring it
+  checks the pinned CLI version, checks that the private `CLAUDE_CONFIG_DIR` reports a
+  login, and pins the binary's sha256 — refusing `claude_subscription_version_unsupported`,
+  `claude_subscription_login_required` or `claude_subscription_binary_changed` and
+  writing nothing when it does. No run executes on it yet, and a runtime that cannot
+  price its work admits none: a store configured for Claude refuses `run_pricing_required`
+  at admission until its price schedule lands, rather than creating runs that could only
+  settle at a number nobody can check. `docs/claude-runtime.md`
+  records the spike and every flag measurement behind it, including the two that came
+  back against the plan: `--bare` cannot run under a subscription at all, and
+  `--max-budget-usd` stops a session only after a request has already been billed past it.
+
 - A new resident is proposed $1.00 a day: Townhall's New resident form opens at
   1,000,000 microdollars instead of 100,000, and Karen's seeded **Create residents**
   wording proposes the same unless the operator or the resident's purpose says otherwise
