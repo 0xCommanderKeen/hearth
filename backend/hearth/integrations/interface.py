@@ -44,6 +44,9 @@ class RuntimeSpec:
     start reply is re-observed rather than re-launched. `management` records that the
     adapter can carry Hearth's own tools into a session; a kind without it admits no run
     that was pinned to reach them. `label` is how the kind is named to an operator.
+    `binary_pin` is the `system_meta` key holding the sha256 of the binary this store
+    was configured with, which is also the store's own record that it was ever
+    configured for that runtime at all.
     """
 
     kind: str
@@ -54,6 +57,7 @@ class RuntimeSpec:
     runtime: str | None = None
     receipts: str | None = None
     management: bool = False
+    binary_pin: str | None = None
 
     @property
     def receipted(self) -> bool:
@@ -82,6 +86,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         runtime="CodexLiveRuntime",
         receipts="hearth.integrations.codex.receipts",
         management=True,
+        binary_pin="codex_live_binary",
     ),
     "claude_subscription": RuntimeSpec(
         "claude_subscription",
@@ -95,6 +100,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         # `claude/mcp_bridge.py`, answered by the trusted worker with `BoundRun`
         # authority, so a run pinned to reach them can be admitted here.
         management=True,
+        binary_pin="claude_live_binary",
     ),
 }
 
@@ -117,6 +123,12 @@ def build(kind: str, data, **options) -> Runtime:
     if spec is None or not spec.live or spec.module is None or spec.runtime is None:
         raise Refused("runtime_configuration_invalid")
     return getattr(importlib.import_module(spec.module), spec.runtime)(data, **options)
+
+
+def binary_pin(kind: str) -> str | None:
+    """The `system_meta` key one runtime's binary sha256 is pinned under, if it has one."""
+    spec = RUNTIMES.get(kind)
+    return spec.binary_pin if spec is not None else None
 
 
 def live_kinds() -> tuple[str, ...]:

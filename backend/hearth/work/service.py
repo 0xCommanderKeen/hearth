@@ -53,6 +53,22 @@ def default_runtime(db: sqlite3.Connection) -> str:
     return db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
 
 
+def configured_runtime(db: sqlite3.Connection, kind: str) -> bool:
+    """Has this store ever been configured for that runtime?
+
+    The pin a runtime writes the first time it is configured is the store's own record
+    that its provider was really there: the binary, the version and the login were all
+    checked before it was written. Nothing else in the database says so, and asking the
+    process instead would make the answer depend on which instance happens to be open.
+    """
+    from hearth.integrations.interface import binary_pin
+
+    pin = binary_pin(kind)
+    return pin is not None and (
+        db.execute("SELECT 1 FROM system_meta WHERE key=?", (pin,)).fetchone() is not None
+    )
+
+
 def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
     """The runtime one resident's work is admitted to: its own, or the store's default.
 
@@ -259,6 +275,11 @@ class Hearth:
                 originating_run_id=None,
                 now=now,
             )
+        if declaration.runtime is not None and not configured_runtime(db, declaration.runtime):
+            # The kind is one this release ships, but this store has never had that
+            # provider configured, so work declared onto it could not be started here.
+            # Saying so now is better than admitting runs nothing can ever launch.
+            raise Refused("runtime_not_configured")
         writable = declaration.memory_writable
         accepts = declaration.letters_accept
         db.execute(
