@@ -2,6 +2,11 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet homes and Townhall open contextual panels with recorded work, bounded-history
+  limits and on-demand record links. A mobile bottom sheet, archived-selection holds,
+  keyboard return and retained camera/renderer keep the village context through
+  record visits, disconnects and reconnects.
+
 - Hamlet homes keep their plots through arrivals, archive, reorder and reload, with
   bounded epoch-scoped browser preferences (ADR 0017). Connected streets, projected
   names and shared building/directory selection make the miniature navigable at

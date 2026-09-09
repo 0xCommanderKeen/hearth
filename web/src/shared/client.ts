@@ -490,6 +490,8 @@ export type Task = {
   lineage?: LetterHop[];
 };
 export type Run = InputProvenance & {
+  created_at?: number;
+  finished_at?: number | null;
   management?: {
     grant_revision: number;
     expires_at: number;
@@ -534,6 +536,13 @@ export type Runtimes = {
   kinds: Record<string, { label: string; live: boolean }>;
 };
 export type Snapshot = {
+  limits?: {
+    tasks: number;
+    runs: number;
+    activity: number;
+    notifications: number;
+    letters: number;
+  };
   provisioning?: (Omit<ProvisionReceipt, "setup"> & { name: string })[];
   household?: HouseholdPolicy;
   restore_hold?: boolean;

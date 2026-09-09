@@ -1,22 +1,46 @@
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
+import { ContextPanel } from "./Panels";
 import type { Snapshot } from "../../shared/client";
 
 // Original Warren miniature models, shared here without its operational layer.
 export function Hamlet({
   snapshot,
   connected,
+  active = true,
 }: {
   snapshot: Snapshot;
   connected: boolean;
+  active?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const origin = useRef<HTMLElement | null>(null);
+  const selection = useRef(selected);
+  selection.current = selected;
   const select = (identity: string) => {
+    if (!selected) origin.current = document.activeElement as HTMLElement;
     setSelected(identity);
     scene.current?.select(identity);
   };
+  const close = () => {
+    setSelected(null);
+    scene.current?.select(null);
+    const target = origin.current?.isConnected ? origin.current : host.current;
+    target?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (!active || !selected) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [active, selected]);
   const letters = snapshot.letters ?? [];
   // The operator stands at Townhall and has no resident row; everyone else is named.
   const name = (id: string | null) =>
@@ -36,7 +60,17 @@ export function Hamlet({
       scene.current = createVillageScene(
         host.current,
         () => setUnavailable(true),
-        setSelected,
+        (id) => {
+          if (!selection.current) {
+            const focused = document.activeElement;
+            origin.current =
+              focused instanceof HTMLButtonElement &&
+              host.current?.contains(focused)
+                ? focused
+                : host.current;
+          }
+          setSelected(id);
+        },
       );
       setUnavailable(false);
     } catch {
@@ -49,22 +83,19 @@ export function Hamlet({
   }, []);
   useEffect(() => {
     scene.current?.update(villageResidents, letters, snapshot.epoch);
-    if (
-      selected &&
-      selected !== "#townhall" &&
-      !villageResidents.some(
-        (r) => selected === `#residents/${encodeURIComponent(r.id)}`,
-      )
-    ) {
-      setSelected(null);
-      scene.current?.select(null);
-    }
   }, [snapshot]);
   useEffect(() => {
     setSelected(null);
   }, [snapshot.epoch]);
+  useEffect(() => {
+    scene.current?.active(active);
+  }, [active]);
   return (
-    <section className="hamlet-scene" aria-label="Hamlet village">
+    <section
+      hidden={!active}
+      className="hamlet-scene"
+      aria-label="Hamlet village"
+    >
       <div className="scene-toolbar">
         <span>HAMLET · 3D VILLAGE</span>
         <span>
@@ -109,6 +140,7 @@ export function Hamlet({
         <span>Shift-drag or one finger to pan · Scroll to zoom</span>
       </div>
       <div
+        tabIndex={-1}
         ref={host}
         className="scene-canvas"
         role="group"
@@ -158,7 +190,7 @@ export function Hamlet({
         >
           Select Townhall
         </button>
-        {villageResidents.map((r) => {
+        {snapshot.residents.map((r) => {
           const identity = `#residents/${encodeURIComponent(r.id)}`;
           return (
             <button
@@ -167,29 +199,28 @@ export function Hamlet({
               onClick={() => select(identity)}
             >
               Select {r.name}
+              <small>
+                {connected
+                  ? r.presence
+                  : `disconnected · last known: ${r.presence}`}
+                {r.lifecycle?.state === "archived" ? " · archived" : ""}
+              </small>
             </button>
           );
         })}
       </div>
       {selected && (
-        <p className="scene-selection" role="status">
-          Selected:{" "}
-          {selected === "#townhall"
-            ? "Townhall"
-            : villageResidents.find(
-                (r) => selected === `#residents/${encodeURIComponent(r.id)}`,
-              )?.name}{" "}
-          · <a href={selected}>Open records →</a>
-        </p>
+        <ContextPanel
+          key={`${snapshot.epoch}:${selected}`}
+          identity={selected}
+          snapshot={snapshot}
+          connected={connected}
+          active={active}
+          onClose={close}
+        />
       )}
       <div className="scene-residents">
-        <a href="#townhall">Townhall →</a>
-        <a href="#residents-archived">Archived residents & history →</a>
-        {villageResidents.map((r) => (
-          <a key={r.id} href={`#residents/${encodeURIComponent(r.id)}`}>
-            {r.name} · {connected ? r.presence : "disconnected"} →
-          </a>
-        ))}
+        <a href="#residents-archived">Archived residents &amp; history →</a>
       </div>
     </section>
   );
