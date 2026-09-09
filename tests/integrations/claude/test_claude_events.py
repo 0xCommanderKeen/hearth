@@ -280,3 +280,16 @@ def test_a_sealed_transcript_cannot_be_fed_or_sealed_again():
     for call in (lambda: parser.feed(b"{}\n"), lambda: parser.finish(exit_code=0)):
         with pytest.raises(ValueError):
             call()
+
+
+def test_more_messages_than_the_bound_costs_the_price_and_never_the_answer():
+    """A tool-using session writes a message per call; the bound cannot eat its work."""
+    from hearth.integrations.claude.events import MAX_MESSAGES
+
+    events = [json.loads(line) for line in stream("success").splitlines()]
+    chatter = next(event for event in events if event.get("type") == "assistant")
+    crowded = [events[0]] + [chatter] * (MAX_MESSAGES + 2) + events[1:]
+    transcript = read("\n".join(json.dumps(event) for event in crowded) + "\n")
+    assert transcript.status == "completed" and transcript.output == "pong"
+    # The split those messages carried is gone, so the session is not priced.
+    assert transcript.usage is None

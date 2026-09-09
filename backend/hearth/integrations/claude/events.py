@@ -43,7 +43,10 @@ MAX_RECORD = 1024 * 1024
 MAX_STREAM = 4 * 1024 * 1024
 MAX_OUTPUT = 512 * 1024
 MAX_EVENTS = 10_000
-MAX_MESSAGES = 128
+# Assistant messages one session may carry. A run that reaches Hearth's own tools
+# writes at least one per call and may answer after each, so the bound has to sit well
+# above the 64 calls a grant allows rather than just above a single turn.
+MAX_MESSAGES = 512
 MAX_MODELS = 8
 MAX_TOKENS = 1_000_000_000
 # One session cannot plausibly bill more than this; a larger number is not evidence.
@@ -233,7 +236,13 @@ class ClaudeEvents:
         """
         self.messages += 1
         if self.messages > MAX_MESSAGES:
-            self.error = "too_many_events"
+            # Past the bound this stops reading messages, but it does not throw the
+            # session away: the answer is in the `result` event and survives, while
+            # the split those messages carried is gone and nothing is priced. A
+            # session that reaches Hearth's own tools writes a message per call, so
+            # this bound is one a real run can meet -- and meeting it must cost the
+            # price, never the work.
+            self.unsplit.add(None)
             return
         if not isinstance(message, dict):
             self.unsplit.add(None)
