@@ -352,39 +352,74 @@ def sandbox_facts(data: Path) -> list[dict]:
     """What the store recorded about the sandbox itself, read after the server stops."""
     import sqlite3
 
-    with sqlite3.connect(f"file:{data / 'hearth.db'}?mode=ro", uri=True) as db:
+    # `as_uri` because a data directory is the operator's own path and may hold a
+    # space, a `?` or a `#`, none of which a URI reads as part of a filename.
+    db = sqlite3.connect((data / "hearth.db").as_uri() + "?mode=ro", uri=True)
+    try:
         db.row_factory = sqlite3.Row
-        rows = db.execute("SELECT * FROM audit WHERE kind LIKE 'sandbox.%'").fetchall()
-    return [dict(row) for row in rows]
+        return [dict(row) for row in db.execute("SELECT * FROM audit WHERE kind LIKE 'sandbox.%'")]
+    finally:
+        db.close()
 
 
 def containers(sessions: dict) -> dict:
     """What the daemon still holds of this journey's own containers, by id.
 
     A sandbox is one container per run and it ends when its receipt is written, so the
-    honest answer here is that none of them is left.
+    honest answer here is that none of them is left -- but "absent" has to be a daemon
+    saying so. The client and the daemon are named the way the launcher names them
+    (`HEARTH_SANDBOX_DOCKER`, `HEARTH_SANDBOX_DOCKER_HOST`), because a question asked
+    of the wrong daemon answers "absent" about every container without having looked,
+    and this file would then claim nothing was left running.
     """
-    client = os.environ.get("HEARTH_SANDBOX_DOCKER", "docker")
-    answers = {}
+    client = os.environ.get("HEARTH_SANDBOX_DOCKER") or "docker"
+    host = os.environ.get("HEARTH_SANDBOX_DOCKER_HOST") or None
+    answers: dict[str, str] = {}
     for run, session in sessions.items():
         identity = (session.get("sandbox") or {}).get("container_id")
         if identity is None:
             continue
-        result = subprocess.run(
-            [client, "inspect", "--type", "container", "--format", "{{.State.Status}}", identity],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        argv = [client, *(("--host", host) if host else ()), "inspect"]
+        try:
+            result = subprocess.run(
+                [*argv, "--type", "container", "--format", "{{.State.Status}}", identity],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            # The client itself could not be run. That is not an answer about the
+            # container, and it must not read as one.
+            answers[run] = "unasked: " + type(error).__name__
+            continue
         answers[run] = result.stdout.strip() if result.returncode == 0 else "absent"
     return answers
 
 
+def gathered(what: str, answer) -> object:
+    """One part of the record, or why there is none of it.
+
+    This journey has already spent real money by the time any of this is read, so
+    nothing gathered afterwards may take the evidence file down with it: a store that
+    will not open or a container client that is not there is written down as that,
+    and the runs and their settlement are still recorded.
+    """
+    try:
+        return answer()
+    except Exception as error:  # noqa: BLE001 - the failure is the answer here
+        print(f"could not read {what}:", error)
+        return {"unread": f"{type(error).__name__}: {error}"}
+
+
 def write_evidence(record: dict, args) -> None:
     """The record, with the CLI's own numbers beside Hearth's, as the evidence file."""
-    record["cli"] = cli_numbers(args.data)
-    record["sandbox_audit"] = sandbox_facts(args.data)
-    record["containers_afterwards"] = containers(record["cli"])
+    record["cli"] = gathered("the receipts", lambda: cli_numbers(args.data))
+    record["sandbox_audit"] = gathered("the sandbox audit", lambda: sandbox_facts(args.data))
+    record["containers_afterwards"] = gathered(
+        "the containers afterwards",
+        lambda: containers(record["cli"] if isinstance(record["cli"], dict) else {}),
+    )
     record["total_cost_microdollars"] = sum(
         row["actual_cost"] or 0 for row in record.get("runs", [])
     )

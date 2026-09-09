@@ -29,6 +29,7 @@ from hearth.residents.memory import Memory
 from hearth.residents.models import Refused
 
 from tests import fake_docker
+from tests.integrations.claude import bridge_cli
 from tests.integrations.claude.test_journal_journey import ENTRY, NOTE
 from tests.integrations.claude.test_mcp_bridge import Store, answer
 from tests.integrations.test_launcher_parity import DIGEST, IMAGE, NETWORK, daemon, prepared_claude
@@ -161,6 +162,10 @@ def test_a_contained_session_is_given_the_image_s_cli_and_a_login_it_cannot_chan
     document = json.loads((folder / CONFIG_NAME).read_text())
     server = document["mcpServers"]["hearth"]
     assert server["command"] == PYTHON
+    # The fake CLI recognises that path and starts this test's own interpreter in its
+    # place, because the fake daemon has no image to take one from. It knows it by
+    # value, so the two have to agree.
+    assert PYTHON == bridge_cli.IMAGE_PYTHON
     assert server["args"] == [
         "-I",
         "-m",

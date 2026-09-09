@@ -53,7 +53,6 @@ from hearth.integrations.claude.mcp_bridge import (  # noqa: E402
 )
 from hearth.integrations.launcher import (  # noqa: E402
     CONTAINER,
-    LABEL,
     LOGIN,
     PYTHON,
     WORKSPACE,
@@ -64,6 +63,11 @@ from hearth.integrations.launcher import (  # noqa: E402
 # questions about the runtime; the questions about the CLI run the CLI itself, mounted
 # in. What is measured is the boundary, not the base layer.
 DEFAULT_IMAGE = "python:3.14-slim"
+# What this script stamps on every container it starts. Deliberately *not*
+# `launcher.LABEL`: that one marks a live session on a burrow, and an operator sweeping
+# by it must not find a measurement of this script's sitting among their residents'
+# work. Everything here is removed by id anyway; the label is for whoever is looking.
+LABEL = "org.hearth.measure"
 # Where the hearth package sits inside the sandbox image, and therefore where it is
 # mounted here: the shim is started with `python -I`, which ignores `PYTHONPATH`.
 SITE = "/usr/local/lib/python3.14/site-packages/hearth"

@@ -20,6 +20,11 @@ from pathlib import Path
 
 VERSION = "2.1.263 (Claude Code)"
 BUILD = "2.1.263"
+# `integrations.launcher.PYTHON`, spelled out rather than imported: nothing in this
+# file imports Hearth, because it is what the CLI runs and the CLI has none of Hearth
+# in it. A drift between the two is caught where that constant is asserted,
+# `tests/integrations/claude/test_claude_sandbox.py`.
+IMAGE_PYTHON = "/usr/local/bin/python3"
 
 
 def read_flag(argv, name, default=None):
@@ -105,12 +110,14 @@ def _connect(record, session):
     """Launch the shim with exactly the command and environment Hearth declared."""
     server = record["configuration"]["mcpServers"]["hearth"]
     command = server["command"]
-    if not Path(command).exists():
+    if command == IMAGE_PYTHON:
         # A sandboxed session is told to start the shim with the *image's* own
         # interpreter, which is where Hearth's package sits inside the sandbox. The
         # fake daemon has no namespace to provide one (`tests/fake_docker.py` runs the
         # command on this host), so the interpreter here is this test's own -- and the
         # path Hearth wrote is asserted where it is written, not silently accepted.
+        # Compared, never probed: that path exists on plenty of hosts, and an
+        # interpreter that merely exists is not one Hearth's package is importable from.
         command = sys.executable
     shim = Shim(command, server["args"], dict(server.get("env", {})))
     record["shim_environment"] = server.get("env")
