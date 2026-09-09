@@ -52,12 +52,11 @@ IMAGE_PIN = "sandbox_image"
 
 # A reference that names the bytes it resolves to. A tag alone is a moving target and
 # is refused: the pin has to be something a later start can compare against.
-IMAGE = re.compile(r"[A-Za-z0-9][\w./:-]{0,255}@(sha256:[0-9a-f]{64})\Z")
-DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+IMAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:-]{0,255}@(sha256:[0-9a-f]{64})\Z")
 NETWORK = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 # The container CLI itself: a bare program name found on the search path, or one
 # absolute path. `podman` is a drop-in and is spelled here the same way.
-CLIENT = re.compile(r"[A-Za-z0-9][\w.-]{0,63}\Z|/[\w./-]{1,4095}\Z")
+CLIENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z|/[A-Za-z0-9._/-]{1,4095}\Z")
 IDENTITY = re.compile(r"[0-9a-f]{64}\Z")
 VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
@@ -502,29 +501,42 @@ def configure(database, sandbox: Sandbox, clock=time.time) -> dict:
         launcher.client("network", "inspect", "--format", "{{.Name}}", sandbox.network or "")
     except Refused:
         raise Refused("sandbox_network_missing") from None
-    with database.transaction(write=True) as db:
-        from hearth.work.service import _audit
-
+    # What the store already holds is read first, and every question that has to be
+    # asked of the container runtime is asked with no transaction open: hashing the
+    # image's own files starts containers, and a write lock is not held across that.
+    with database.transaction() as db:
         previous = db.execute("SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)).fetchone()
-        if previous is not None and previous[0] != digest:
-            raise Refused("sandbox_image_changed")
         pins = {
             key: value
             for key, value in db.execute("SELECT key, value FROM system_meta").fetchall()
             if key in BINARIES
         }
-        for key, pin in sorted(pins.items()):
-            if hashed(launcher, BINARIES[key]) != pin:
-                raise Refused("sandbox_binary_mismatch")
-        if previous is None:
-            db.execute("INSERT INTO system_meta VALUES (?,?)", (IMAGE_PIN, digest))
-            _audit(
-                db,
-                "sandbox.configured",
-                CONTAINER,
-                int(clock()),
-                {"image": digest, "network": sandbox.network, "binaries": sorted(pins)},
-            )
+    if previous is not None and previous[0] != digest:
+        raise Refused("sandbox_image_changed")
+    for key, pin in sorted(pins.items()):
+        if hashed(launcher, BINARIES[key]) != pin:
+            raise Refused("sandbox_binary_mismatch")
+    if previous is None:
+        from hearth.work.service import _audit
+
+        with database.transaction(write=True) as db:
+            # Read again under the write: another start may have pinned this store in
+            # between, and two starts must not disagree about which image it is.
+            current = db.execute(
+                "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
+            ).fetchone()
+            if current is not None:
+                if current[0] != digest:
+                    raise Refused("sandbox_image_changed")
+            else:
+                db.execute("INSERT INTO system_meta VALUES (?,?)", (IMAGE_PIN, digest))
+                _audit(
+                    db,
+                    "sandbox.configured",
+                    CONTAINER,
+                    int(clock()),
+                    {"image": digest, "network": sandbox.network, "binaries": sorted(pins)},
+                )
     return {"launcher": CONTAINER, "image": digest}
 
 

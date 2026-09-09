@@ -156,6 +156,21 @@ folder on a volume -- the bridge is reachable; on a Mac the `container` launcher
 carry Hearth's own tools into a session, and the Mac stays a `process`-launcher
 development host, which is what the ADR decided anyway for other reasons.
 
+**7. An instance really starts on it, and refuses by name when it should.** Against the
+same daemon, with a stand-in image and a network created for the check, an instance
+configured `HEARTH_SANDBOX=container` started and answered:
+
+```
+GET /health: {"runtimes": [...], "sandbox": {"image": "sha256:cad9a2c8…525ef6",
+              "launcher": "container"}, "service": "hearth"}
+GET /api/health sandbox: {"image": "sha256:cad9a2c8…525ef6",
+              "launcher": "container", "network": "hearth-sandbox-check"}
+```
+
+and the same store, restarted pointed at a different image, refused
+`sandbox_image_changed`; at a network nobody created, `sandbox_network_missing`; at an
+image the daemon does not hold, `sandbox_image_unavailable`.
+
 ## Not yet true
 
 This slice is the seam, the pins and the measurements. No run executes in a container
