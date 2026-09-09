@@ -149,13 +149,34 @@ def test_a_model_that_answered_but_billed_nothing_leaves_the_session_unpriced():
     assert transcript.usage is None and transcript.reason == "model_usage_invalid"
 
 
-def test_per_request_rows_that_do_not_add_up_to_the_model_s_total_price_nothing():
+def test_per_request_rows_that_do_not_add_up_are_a_partial_view_not_a_contradiction():
+    """Measured 2026-09-09: a session with a tool call reports only its last request.
+
+    `usage.iterations` held one row while `modelUsage` totalled two requests, so rows
+    that do not add up are not the stream contradicting itself. The model's own total
+    is priced instead -- priceable because this schedule has no long-context tier --
+    and the CLI's `costUSD` is still what the estimate is checked against.
+    """
+
     def inflate(event):
         if event.get("type") == "result":
             event["usage"]["iterations"][0]["output_tokens"] = 99
         return event
 
     transcript = read(rewritten("success", inflate))
+    assert transcript.usage is not None and transcript.reason is None
+    assert [row.output_tokens for row in transcript.usage if row.model == MODEL] == [4]
+    estimate = estimate_api_equivalent(transcript.usage, model=MODEL, mode="standard")
+    assert estimate.microdollars == transcript.reported_total
+
+
+def test_request_rows_the_cli_reports_but_nobody_can_read_price_nothing():
+    def invent(event):
+        if event.get("type") == "result":
+            event["usage"]["iterations"][0]["output_tokens"] = "four"
+        return event
+
+    transcript = read(rewritten("success", invent))
     assert transcript.usage is None and transcript.reason == "request_usage_contradiction"
 
 

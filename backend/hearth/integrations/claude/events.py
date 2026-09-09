@@ -343,11 +343,17 @@ class ClaudeEvents:
         return tuple(rows), None
 
     def _requests(self, model, result, total, tiers) -> list[TokenUsage] | None:
-        """The pinned model's individual requests, when the CLI reported them.
+        """The pinned model's individual requests, when the CLI reported them all.
 
         `usage.iterations` was present on every recorded success and empty on the
-        budget stop. When it is there it must add up to the model's own total, or the
-        stream is contradicting itself and nothing is priced.
+        budget stop. Measured again on 2026-09-09 against a session that called a
+        tool: it held **one** row, the session's last request, while `modelUsage`
+        totalled both requests. So it is a partial view rather than a complete one,
+        and rows that do not add up to the model's total are not a contradiction --
+        they are simply not the whole session. The per-model total is priced instead,
+        which is sound here for the same reason it is on the budget stop: this
+        schedule has no long-context tier, so a total costs what its requests cost.
+        The CLI's own `costUSD` is still what any of it is checked against.
         """
         given, produced, read, written = total
         usage = result.get("usage")
@@ -367,7 +373,7 @@ class ClaudeEvents:
             for index, count in enumerate(row):
                 summed[index] += count
         if summed != [given, produced, read, tiers[0], tiers[1]]:
-            return None
+            return [TokenUsage(model, given, read, tiers[0], tiers[1], produced)]
         return rows
 
     def _reported(self, result: dict):
