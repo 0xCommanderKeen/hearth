@@ -121,7 +121,7 @@ def _connect(record, session):
 
 def _steps(record, shim, session, *, retry: bool):
     for step in session.get("steps", []):
-        _step(record, shim, step, retry=retry)
+        _step(record, shim, step, retry=retry and not session.get("no_retry", False))
 
 
 def _untrusted(reply) -> bool:

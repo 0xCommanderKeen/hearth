@@ -465,6 +465,102 @@ def test_a_frame_the_socket_never_expects_is_refused_without_ending_the_run(tmp_
     assert not socket_path(folder).exists()
 
 
+class Pairing:
+    """A selector that hands the worker one batch holding both readinesses at once.
+
+    Readiness for the session's stdout and for the bridge's socket normally arrive in
+    separate batches, seconds apart, and a batch's own order is not defined. This holds
+    a stdout-only readiness back -- the pipe is level-triggered, so it stays ready --
+    until a socket readiness joins it, and then releases both with the socket first:
+    the exact order the loop must not depend on. It gives up and passes everything
+    through after a while, so a session that never calls a tool still finishes.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        # The worker registers its child's stdout first and the bridge's listener
+        # second; everything after that is one connection carrying one call.
+        self.registered = []
+        self.withheld = 0
+        self.paired = False
+
+    @property
+    def stdout(self):
+        return self.registered[0] if self.registered else None
+
+    @property
+    def listener(self):
+        return self.registered[1] if len(self.registered) > 1 else None
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def __enter__(self):
+        self.inner.__enter__()
+        return self
+
+    def __exit__(self, *details):
+        return self.inner.__exit__(*details)
+
+    def register(self, fileobj, events, data=None):
+        if len(self.registered) < 2:
+            self.registered.append(fileobj)
+        return self.inner.register(fileobj, events, data)
+
+    def select(self, timeout=None):
+        ready = self.inner.select(timeout)
+        if self.paired or not ready:
+            return ready
+        held = [item for item in ready if item[0].fileobj is self.stdout]
+        others = [item for item in ready if item[0].fileobj is not self.stdout]
+        if others and any(item[0].fileobj is not self.listener for item in others) and held:
+            # A tool call and the chunk carrying `init`, in one batch, the call first.
+            self.paired = True
+            return others + held
+        if others:
+            # The listener still has to be answered, or no call is ever accepted.
+            return others
+        self.withheld += 1
+        return [] if self.withheld <= 40 else ready
+
+
+def test_a_call_arriving_with_the_init_it_depends_on_is_answered_not_refused(tmp_path):
+    """The session's own output is read and checked before any socket key beside it."""
+    import types
+
+    from hearth.integrations.claude import subscription
+
+    store = Store(tmp_path)
+    # No retry: the first answer this call gets is the one the test is about.
+    store.script(
+        [{"tool": "hearth_journal_write", "arguments": {"text": "Written first time."}}],
+        no_retry=True,
+    )
+    run = store.run()
+    made = []
+
+    def selector(*arguments, **options):
+        wrapper = Pairing(selectors.DefaultSelector(*arguments, **options))
+        made.append(wrapper)
+        return wrapper
+
+    original = subscription.selectors
+    subscription.selectors = types.SimpleNamespace(
+        DefaultSelector=selector,
+        EVENT_READ=selectors.EVENT_READ,
+        EVENT_WRITE=selectors.EVENT_WRITE,
+    )
+    try:
+        store.work(run)
+    finally:
+        subscription.selectors = original
+    assert made and made[0].paired, "the two readinesses were never delivered together"
+    assert answer(store.record()["calls"][0]["reply"])["isError"] is False
+    assert [row["text"] for row in store.rows("SELECT * FROM journal_entries")] == [
+        "Written first time."
+    ]
+
+
 def test_a_call_before_the_session_reports_its_tools_changes_nothing(tmp_path):
     """The bridge is shut until Hearth has seen the session's own `init` event."""
     store = Store(tmp_path)

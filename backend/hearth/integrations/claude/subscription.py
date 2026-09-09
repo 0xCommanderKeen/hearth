@@ -504,21 +504,22 @@ def worker(folder, inherited_fd=None):
                         failure = server.failure
                         break
                     finished = False
-                    for key, _ in selector.select(0.05):
+                    ready = selector.select(0.05)
+                    # One batch comes back in no particular order, so the session's own
+                    # output is read and checked first, and the bridge's sockets are
+                    # answered after. A `tools/call` arriving in the same batch as the
+                    # chunk that carries `init` is then answered by a session already
+                    # trusted, rather than refused for an event that had been written
+                    # before the call was made.
+                    for key, _ in ready:
                         if key.fileobj is not child.stdout:
-                            assert server is not None
-                            server.ready(key)
                             continue
                         chunk = os.read(child.stdout.fileno(), 8192)
                         if not chunk:
                             eof = finished = True
                             break
                         output.extend(chunk)
-                        if len(output) > MAX_STREAM // 2:
-                            finished = True
-                            break
-                    if finished:
-                        break
+                        finished = len(output) > MAX_STREAM // 2
                     if server is not None and not server.trusted:
                         try:
                             scanned = trust_session(server, output, scanned)
@@ -531,6 +532,14 @@ def worker(folder, inherited_fd=None):
                         except bridge_failures:
                             failure = "mcp_bridge_failed"
                             break
+                    if finished:
+                        # The session has ended or outrun its stream. Nothing pending
+                        # on the bridge is answered after that.
+                        break
+                    for key, _ in ready:
+                        if key.fileobj is not child.stdout:
+                            assert server is not None
+                            server.ready(key)
         except Refused:
             cancelled = True
         finally:
