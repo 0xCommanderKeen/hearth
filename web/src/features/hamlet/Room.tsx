@@ -3,7 +3,7 @@ import type { Snapshot } from "../../shared/client";
 import {
   createRoomScene,
   type RoomScene,
-  type RoomTarget,
+  type RoomTargets,
 } from "./village/room";
 
 export function Room({
@@ -29,20 +29,29 @@ export function Room({
   );
   const archived = resident?.lifecycle?.state === "archived";
   const available = townhall || (!!resident && !archived);
-  const targets: RoomTarget[] = townhall
-    ? [
-        { label: "Work table · household tasks & results", href: "#tasks" },
-        { label: "Ledger shelf · household & allowances", href: "#townhall" },
-        { label: "Letter cabinet · inbox", href: "#inbox" },
-      ]
-    : [
-        { label: "Desk · recorded work", href: `${identity}?panel=work` },
-        { label: "Journal shelf · journal", href: `${identity}?panel=journal` },
-        {
+  const targets: RoomTargets = townhall
+    ? {
+        work: {
+          label: "Work table · household tasks & results",
+          href: "#tasks",
+        },
+        shelf: {
+          label: "Ledger shelf · household & allowances",
+          href: "#townhall",
+        },
+        letters: { label: "Letter cabinet · inbox", href: "#inbox" },
+      }
+    : {
+        work: { label: "Desk · recorded work", href: `${identity}?panel=work` },
+        shelf: {
+          label: "Journal shelf · journal",
+          href: `${identity}?panel=journal`,
+        },
+        letters: {
           label: "Letter cabinet · letters",
           href: `${identity}?panel=letters`,
         },
-      ];
+      };
   useEffect(() => {
     if (!host.current || !available) return;
     setUnavailable(false);
@@ -97,7 +106,7 @@ export function Room({
                 "A home for this resident’s recorded work."}{" "}
             Select furniture or use the record links below.
           </p>
-          <div className="room-canvas" ref={host} />
+          <div className="room-canvas" ref={host} hidden={unavailable} />
           {unavailable && (
             <p className="notice">
               Room graphics are unavailable. All record links and Back to
@@ -105,7 +114,7 @@ export function Room({
             </p>
           )}
           <nav className="room-records" aria-label="Room records">
-            {targets.map((target, i) => (
+            {Object.values(targets).map((target, i) => (
               <a href={target.href} key={target.href}>
                 <span aria-hidden="true">0{i + 1}</span>
                 {target.label}
@@ -125,6 +134,19 @@ export function Room({
         Rooms and furniture are a visual representation of record access, not
         evidence of physical occupancy.
       </p>
+      {townhall && (
+        <p className="notice">
+          {snapshot.household
+            ? `$${(snapshot.household.unknown / 1e6).toFixed(2)} held for unknown usage.`
+            : "Household accounting unavailable."}{" "}
+          {snapshot.residents.reduce(
+            (total, row) => total + (row.unresolved_runs ?? 0),
+            0,
+          )}{" "}
+          unresolved run(s), including archived residents. Accounting holds
+          remain until resolved in the records.
+        </p>
+      )}
       {snapshot.restore_hold && (
         <p className="notice">Restore hold · household mutations are held.</p>
       )}

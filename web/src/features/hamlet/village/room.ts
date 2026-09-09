@@ -2,13 +2,14 @@ import * as THREE from "three";
 import { selectionGesture } from "./gesture";
 
 export type RoomScene = { active(visible: boolean): void; dispose(): void };
-export type RoomTarget = { label: string; href: string };
+type RoomTarget = { label: string; href: string };
+export type RoomTargets = Record<"work" | "shelf" | "letters", RoomTarget>;
 
 /** One cutaway owns its resources; no exterior geometry or camera is borrowed. */
 export function createRoomScene(
   element: HTMLElement,
   townhall: boolean,
-  targets: RoomTarget[],
+  targets: RoomTargets,
   unavailable: () => void,
 ): RoomScene {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -32,7 +33,7 @@ export function createRoomScene(
     color: string,
     position: number[],
     scale: number[],
-    target?: number,
+    target?: keyof RoomTargets,
   ) {
     if (!materials.has(color))
       materials.set(
@@ -77,37 +78,37 @@ export function createRoomScene(
   // Desk / council table: all parts are the same recorded-work target.
   const dx = townhall ? 0 : -1.7,
     dz = townhall ? 0.5 : -0.9;
-  box(wood, [dx, 1.1, dz], [townhall ? 3.1 : 2.5, 0.22, 1.35], 0);
+  box(wood, [dx, 1.1, dz], [townhall ? 3.1 : 2.5, 0.22, 1.35], "work");
   for (const x of [-0.9, 0.9])
     for (const z of [-0.45, 0.45])
-      box(wood, [dx + x, 0.55, dz + z], [0.16, 1, 0.16], 0);
-  box(paper, [dx, 1.24, dz], [0.95, 0.05, 0.65], 0);
+      box(wood, [dx + x, 0.55, dz + z], [0.16, 1, 0.16], "work");
+  box(paper, [dx, 1.24, dz], [0.95, 0.05, 0.65], "work");
   for (let i = 0; i < 4; i++)
-    box(teal, [dx, 1.27, dz - 0.2 + i * 0.12], [0.65, 0.01, 0.025], 0);
-  box(teal, [dx, 0.55, dz + 1.1], [0.8, 0.18, 0.75], 0);
-  box(teal, [dx, 0.95, dz + 1.4], [0.8, 0.9, 0.15], 0);
+    box(teal, [dx, 1.27, dz - 0.2 + i * 0.12], [0.65, 0.01, 0.025], "work");
+  box(teal, [dx, 0.55, dz + 1.1], [0.8, 0.18, 0.75], "work");
+  box(teal, [dx, 0.95, dz + 1.4], [0.8, 0.9, 0.15], "work");
   for (const x of [-0.3, 0.3])
-    box(wood, [dx + x, 0.3, dz + 1.1], [0.12, 0.5, 0.6], 0);
+    box(wood, [dx + x, 0.3, dz + 1.1], [0.12, 0.5, 0.6], "work");
   // Journal / household ledger shelf.
-  box(wood, [1.1, 1.2, -2.65], [1.7, 2.4, 0.6], 1);
+  box(wood, [1.1, 1.2, -2.65], [1.7, 2.4, 0.6], "shelf");
   for (let row = 0; row < 3; row++) {
-    box(cream, [1.1, 0.4 + row * 0.7, -2.29], [1.5, 0.08, 0.65], 1);
+    box(cream, [1.1, 0.4 + row * 0.7, -2.29], [1.5, 0.08, 0.65], "shelf");
     for (let i = 0; i < 5; i++)
       box(
         [teal, "#be6549", "#d4ad66"][i % 3],
         [0.5 + i * 0.28, 0.65 + row * 0.7, -2.4],
         [0.18, 0.45, 0.45],
-        1,
+        "shelf",
       );
   }
   // A separate letter cabinet and a visible envelope.
-  box(teal, [2.8, 0.7, 0.8], [1.25, 1.4, 0.95], 2);
+  box(teal, [2.8, 0.7, 0.8], [1.25, 1.4, 0.95], "letters");
   for (const y of [0.35, 0.8, 1.2]) {
-    box(cream, [2.8, y, 1.29], [1.05, 0.025, 0.025], 2);
-    box("#d4ad66", [2.8, y + 0.13, 1.32], [0.2, 0.07, 0.07], 2);
+    box(cream, [2.8, y, 1.29], [1.05, 0.025, 0.025], "letters");
+    box("#d4ad66", [2.8, y + 0.13, 1.32], [0.2, 0.07, 0.07], "letters");
   }
-  box(paper, [2.8, 1.43, 0.8], [0.7, 0.06, 0.5], 2);
-  box("#be6549", [2.8, 1.47, 0.8], [0.13, 0.02, 0.13], 2);
+  box(paper, [2.8, 1.43, 0.8], [0.7, 0.06, 0.5], "letters");
+  box("#be6549", [2.8, 1.47, 0.8], [0.13, 0.02, 0.13], "letters");
   if (!townhall) {
     box(wood, [-2.5, 0.35, 2.05], [2.1, 0.5, 1.35]);
     box(paper, [-2.5, 0.65, 2.05], [2, 0.24, 1.25]);

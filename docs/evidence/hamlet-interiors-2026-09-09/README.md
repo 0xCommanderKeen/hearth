@@ -19,9 +19,11 @@ No fixture method bypasses the scene's picking handler.
 WebGL creation verifies both room types still work through their record controls.
 Recorded status changes, rename, disconnect/reconnect and record routes preserve
 room identity; exiting retains the original exterior renderer and restores its camera.
-The desk focuses the existing resident Tasks & results section via `panel=work`.
+Townhall retains unknown-usage money and unresolved archived work even with zero
+active runs. Separate standards and spec reviews are clear after correcting that
+accounting omission and naming the furniture-to-record targets. The desk focuses the existing resident Tasks & results section via `panel=work`.
 
-`make web` passed formatting, 157 frontend tests, TypeScript, production build and
+`make web` passed formatting, 158 frontend tests, TypeScript, production build and
 packaged assets. Expected console diagnostics occur when the failure fixture refuses
 WebGL. The existing Three shadow deprecation and bundle-size warning remain.
 

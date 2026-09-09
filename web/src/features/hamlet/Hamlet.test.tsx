@@ -310,3 +310,36 @@ it.each(["initial", "context loss"])(
     ).toBeTruthy();
   },
 );
+
+it("keeps Townhall unknown usage and archived unresolved work visible with no active runs", () => {
+  vi.mocked(createRoomScene).mockReturnValue({
+    active: vi.fn(),
+    dispose: vi.fn(),
+  });
+  render(
+    <Hamlet
+      connected
+      snapshot={{
+        ...snapshot,
+        household: {
+          active_runs: 0,
+          resident_count: 1,
+          unknown: 100000,
+        } as Snapshot["household"],
+        residents: [
+          {
+            ...resident,
+            lifecycle: { state: "archived" },
+            unresolved_runs: 2,
+          } as Resident,
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Select Townhall" }));
+  fireEvent.click(screen.getByRole("button", { name: /Enter Townhall/ }));
+  expect(screen.getByText(/0 active runs/)).toBeTruthy();
+  expect(
+    screen.getByText(/\$0.10 held for unknown usage/).textContent,
+  ).toContain("2 unresolved run(s), including archived residents");
+});

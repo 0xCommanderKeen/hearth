@@ -178,13 +178,14 @@ try {
   await furniture("Ledger", "#townhall");
   await furniture("Letter", "#inbox");
   await page.evaluate(() => {
-    window.snapshot.household.active_runs = 2;
+    window.snapshot.household.active_runs = 0;
     window.publish();
   });
   await page
     .locator(".room-facts")
-    .filter({ hasText: "2 active runs" })
+    .filter({ hasText: "0 active runs" })
     .waitFor();
+  await page.getByText(/\$0.10 held for unknown usage/).waitFor();
   await back();
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 844 });
