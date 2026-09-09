@@ -164,6 +164,10 @@ class ProcessLauncher:
     Byte for byte the launch Hearth has always done. It confines nothing, so it takes
     no mounts: a caller that has a filesystem grant to enforce is on the wrong
     launcher, and being told so is better than a boundary that quietly is not one.
+
+    A bridge socket is accepted and does nothing, which is the truth here: the session
+    is a process on this host and the socket is already at the path its configuration
+    names. Only a boundary has to be told about it.
     """
 
     kind = PROCESS
