@@ -220,11 +220,20 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
     workspace.mkdir()
     monkeypatch.setattr("hearth.integrations.launcher.IDENTITY_TIMEOUT", 0.5)
     # A client that fails before it creates anything writes no id, and an execution
-    # nobody can name is never observed, signalled or adopted.
+    # nobody can name is never observed or adopted.
     monkeypatch.setattr(launcher, "docker", sys.executable)
     handle = launcher.start(["-c", "raise SystemExit(1)"], env={}, cwd=workspace, stdin=None)
     assert handle.id is None and handle.document() == {"launcher": "container", "id": None}
     assert launcher.inspect(handle) == "unknown"
+    launcher.stop(handle, signal.SIGKILL)
+    assert launcher.wait(handle, 30) is not None
+
+    # And a client that is still running while having named nothing is still stopped,
+    # because a worker that cannot end what it started would wait on it forever.
+    handle = launcher.start(
+        ["-c", "import time; time.sleep(60)"], env={}, cwd=workspace, stdin=None
+    )
+    assert handle.id is None
     launcher.stop(handle, signal.SIGKILL)
     assert launcher.wait(handle, 30) is not None
 

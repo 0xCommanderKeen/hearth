@@ -365,6 +365,14 @@ class ContainerLauncher:
 
     def stop(self, handle, signal):
         if handle.id is None:
+            # The runtime never named a container, so there is nothing to signal by
+            # name. The client itself is ended instead: a worker that cannot stop
+            # what it started would wait on it forever, and an unnamed execution is
+            # already `unknown` rather than something a later pass may retry.
+            try:
+                os.killpg(handle.process.pid, signal)
+            except ProcessLookupError:
+                pass
             return
         try:
             self.client("kill", "--signal", str(int(signal)), handle.id)
