@@ -553,7 +553,11 @@ class ContainerLauncher:
         if handle.id is not None:
             # The id is the durable answer and the file was only ever how it arrived,
             # so the private directory of this launch's own goes with it. When there
-            # is no id the file stays, and so does the handle's name for it.
+            # is no id the file stays, and so does the handle's name for it -- which
+            # means a launch that never got an id leaves an empty directory in the
+            # system's temporary space that nothing here reaps. That is the trade, and
+            # it is the right way round: the alternative is a container that exists and
+            # cannot be named, and temporary space is swept by the system it belongs to.
             shutil.rmtree(handle.directory, ignore_errors=True)
             handle.identity, handle.directory = None, None
         return handle.id
