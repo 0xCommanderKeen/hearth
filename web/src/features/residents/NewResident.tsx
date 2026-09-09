@@ -7,7 +7,9 @@ import {
   type ProvisionReceipt,
   type ResidentOptions,
   type ResidentProfile,
+  type Runtimes,
 } from "../../shared/client";
+import { runtimeLabel } from "../../shared/runtimes";
 import "./provisioning.css";
 
 const empty: ProvisionRequest = {
@@ -532,7 +534,13 @@ export function NewResident({
     </section>
   );
 }
-export function ProfileProvenance({ profile }: { profile: ResidentProfile }) {
+export function ProfileProvenance({
+  profile,
+  runtimes,
+}: {
+  profile: ResidentProfile;
+  runtimes: Runtimes;
+}) {
   return (
     <section className="provision-profile" aria-label="Resident setup profile">
       <h3>Setup provenance</h3>
@@ -552,7 +560,7 @@ export function ProfileProvenance({ profile }: { profile: ResidentProfile }) {
         </div>
         <div>
           <dt>Execution profile</dt>
-          <dd>{profile.execution_profile}</dd>
+          <dd>{runtimeLabel(runtimes, profile.execution_profile)}</dd>
         </div>
         <div>
           <dt>Inputs</dt>

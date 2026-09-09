@@ -91,10 +91,14 @@ def session_command(
 
 
 def budget(microdollars: int) -> str:
-    """The run's reserved allowance as the dollars the CLI's own fence takes.
+    """The microdollars a caller fenced the session at, as the dollars the CLI takes.
+
+    Not the run's reservation: that is an admission hold of a cent on every path here,
+    and a session stopped at a cent is a session billed and then thrown away. What the
+    fence is, and why it may exceed the hold, is `work.service.spend_fence`.
 
     Microdollars are exact to six decimal places, so this conversion neither invents
-    money the run was not admitted for nor rounds any of it away.
+    money nor rounds any of it away.
     """
     if type(microdollars) is not int or microdollars < 0:
         raise ValueError("invalid budget")

@@ -36,7 +36,15 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
     assert client.get("/api/state").status_code == 401
     assert client.post("/api/tasks", content="broken json").status_code == 401
     assert client.get("/api/state", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.get("/health").json() == {"service": "hearth"}
+    # Liveness names the runtimes this instance opened and nothing about the machine
+    # they were opened from: no path, no binary, no configuration directory, and no
+    # reason any provider refused -- that is the operator's own to read.
+    assert client.get("/health").json() == {
+        "service": "hearth",
+        "runtimes": [
+            {"kind": "codex_subscription", "label": "Codex subscription", "default": True}
+        ],
+    }
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
 

@@ -32,6 +32,12 @@ _Avoid_: Delivery, alert.
 
 **Observation:** Evidence about activity or presence, associated with its source and freshness.
 
+**Runtime:** The provider a resident's work is admitted to and settled under. Two are
+live — the Codex subscription and the Claude subscription — and a resident declares
+which one it runs on, so one household may hold both. A finished run keeps the runtime
+it was worked by.
+_Avoid_: Model, backend, engine.
+
 **Burrow:** A machine on which residents execute.
 
 **Hamlet:** Hearth's visual village view, showing real resident activity.

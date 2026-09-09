@@ -34,6 +34,7 @@ from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
 from hearth.integrations.interface import Runtime, build, live, live_kinds
+from hearth.integrations.interface import label as runtime_label
 from hearth.management.api import mount_management
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
@@ -85,6 +86,7 @@ def create_app(
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     kind = database.runtime_kind()
+    unavailable: dict[str, str] = {}
     if runtime is not None:
         built = runtime(data)
         adapters = [built] if hasattr(built, "kind") else list(built)
@@ -105,12 +107,17 @@ def create_app(
         if not restored:
             with database.transaction(write=True) as db:
                 for missing in declared_runtimes(db) - {adapter.kind for adapter in adapters}:
+                    # A runtime nothing here was pointed at is not in `unavailable`
+                    # yet, because saying so of every provider a household does not
+                    # use would say nothing. A resident declaring it makes it this
+                    # household's own missing brain, so the health answer says so too.
+                    unavailable.setdefault(missing, "runtime_not_configured")
                     _audit(
                         db,
                         "runtime.unavailable",
                         missing,
                         int(hearth.clock()),
-                        {"reason": unavailable.get(missing, "runtime_not_configured")},
+                        {"reason": unavailable[missing]},
                     )
     executor = Executor(execution, adapters)
     inbox = Inbox(hearth)
@@ -151,9 +158,35 @@ def create_app(
     def runtime_context(request: Request):
         return request.scope["hearth.runtime_context"]
 
+    def opened_runtimes():
+        """The runtimes work is really handed to, read from the executor's own map.
+
+        The store's own default is always among them on an instance Hearth built
+        itself; an injected one need not be, and both answers below must hold anyway.
+        """
+        opened = list(executor.runtimes)
+        default = kind if kind in opened or not opened else opened[0]
+        return [
+            {
+                "kind": opened_kind,
+                "label": runtime_label(opened_kind),
+                "default": opened_kind == default,
+            }
+            for opened_kind in opened
+        ]
+
     @app.get("/health")
     def healthcheck():
-        return {"service": "hearth"}
+        """Alive, and which brains this instance can work a run on.
+
+        A run pinned to a runtime this instance is not configured for waits rather
+        than failing (`docs/adr/0015-runtime-per-resident.md`), which from outside
+        looks like nothing happening at all, so the answer names every live runtime
+        that opened here and the store's own default among them. *Why* a runtime is
+        missing is a configuration fact about this operator's machine and is answered
+        by `/api/health`, which asks for the operator's own token first.
+        """
+        return {"service": "hearth", "runtimes": opened_runtimes()}
 
     @app.get("/api/state")
     def state(cursor: int | None = None, epoch: str | None = None):
@@ -164,7 +197,20 @@ def create_app(
 
     @app.get("/api/health")
     def operator_health():
-        return supervisor.health()
+        """The supervisor's own state, and what this instance could not open.
+
+        The reason a runtime is missing -- a lapsed login, a CLI past its pin, a
+        half-written configuration -- names what is wrong with this machine, so it is
+        answered here, behind the operator's token, rather than on the open liveness
+        path. It is what an operator reads when a resident's runs are waiting.
+        """
+        return supervisor.health() | {
+            "runtimes": opened_runtimes(),
+            "unavailable": [
+                {"kind": missing, "reason": reason}
+                for missing, reason in sorted(unavailable.items())
+            ],
+        }
 
     @app.get("/api/events")
     async def events(request: Request, cursor: int = -1, epoch: str = ""):
@@ -455,9 +501,12 @@ def configured_runtimes(
 
     Every other live runtime is different: it is a second brain some residents run on,
     and a household must not go dark because one of them is out. So a runtime whose
-    configuration is incomplete is simply absent, and one whose provider refuses -- a
-    lapsed login, a CLI that updated past its pin -- is left out with its reason,
-    which the caller records. Their runs wait; every other resident keeps working.
+    provider refuses -- a lapsed login, a CLI that updated past its pin -- is left out
+    with its reason, which the caller records, and so is one this host was pointed at
+    with half its configuration, which is the likeliest way to get it wrong. A runtime
+    nothing here was pointed at at all is simply absent, because saying so of every
+    provider a household does not use would say nothing. Their runs wait; every other
+    resident keeps working.
     """
     default = kind if live(kind) else CODEX_KIND
     if configuration.get(default) is None:
@@ -468,7 +517,11 @@ def configured_runtimes(
     refused: dict[str, str] = {}
     for other in live_kinds():
         options = configuration.get(other)
-        if other == default or options is None or any(value is None for value in options.values()):
+        if other == default or options is None:
+            continue
+        if any(value is None for value in options.values()):
+            if any(value is not None for value in options.values()):
+                refused[other] = "runtime_configuration_incomplete"
             continue
         try:
             adapters.append(build(other, data, **options))

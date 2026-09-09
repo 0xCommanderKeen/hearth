@@ -9,6 +9,19 @@ describe("same-origin operator interface", () => {
     expect(() => decodeSnapshot({ schema_version: 1, epoch: 1 })).toThrow(
       "state format",
     );
+    // A state that does not say which runtimes this household has would leave every
+    // result to be labelled by guesswork, so it is refused rather than displayed.
+    expect(() =>
+      decodeSnapshot({
+        schema_version: 1,
+        epoch: "demo",
+        cursor: 0,
+        residents: [],
+        tasks: [],
+        runs: [],
+        activity: [],
+      }),
+    ).toThrow("state format");
   });
   it("never forwards credentials to external paths", async () => {
     const fetcher = vi.spyOn(globalThis, "fetch");
@@ -155,6 +168,13 @@ it("keeps restored-state reads available but refuses mutations before fetch", as
           tasks: [],
           runs: [],
           activity: [],
+          runtimes: {
+            default: "codex_subscription",
+            configured: ["codex_subscription"],
+            kinds: {
+              codex_subscription: { label: "Codex subscription", live: true },
+            },
+          },
         }),
       ),
   );

@@ -67,6 +67,39 @@ def test_two_residents_on_one_store_each_reach_their_own_runtime(tmp_path):
     assert not (tmp_path / "data/fake-claude-runtime" / karen.id).exists()
 
 
+def test_the_operator_snapshot_names_both_brains_and_prices_each_run_by_its_own(tmp_path):
+    """Townhall reads provider names from here, so nothing in it is written by hand."""
+    from hearth.observation.snapshot import snapshot
+
+    hearth, execution, adapters = household(tmp_path)
+    karen = admit(hearth, "karen", "karen-task")
+    scribe = admit(hearth, "scribe", "scribe-task")
+    Executor(execution, adapters.values()).step()
+
+    state = snapshot(hearth)
+    assert state["runtimes"]["default"] == CODEX_KIND
+    assert set(state["runtimes"]["configured"]) == {CODEX_KIND, CLAUDE_KIND}
+    kinds = state["runtimes"]["kinds"]
+    assert kinds[CODEX_KIND] == {"label": "Codex subscription", "live": True}
+    assert kinds[CLAUDE_KIND] == {"label": "Claude subscription", "live": True}
+    # A run may carry a kind this release no longer ships, and the operator still
+    # gets a name for it -- one that says it was never a provider.
+    assert kinds["codex_mock"] == {"label": "retired Codex mock", "live": False}
+
+    runs = {row["resident_id"]: row for row in state["runs"]}
+    assert runs["karen"]["runtime_kind"] == CODEX_KIND
+    assert (runs["karen"]["model"], runs["karen"]["price_schedule"]) == (
+        "gpt-6-astra",
+        "gpt-6-astra-api-equivalent-2026-09-06",
+    )
+    assert runs["scribe"]["runtime_kind"] == CLAUDE_KIND
+    assert (runs["scribe"]["model"], runs["scribe"]["price_schedule"]) == (
+        "claude-opus-5",
+        "claude-opus-5-api-equivalent-2026-09-07",
+    )
+    assert {runs["karen"]["id"], runs["scribe"]["id"]} == {karen.id, scribe.id}
+
+
 def test_an_unlaunched_run_whose_runtime_is_gone_waits_rather_than_being_thrown_away(tmp_path):
     hearth, execution, adapters = household(tmp_path)
     scribe = admit(hearth, "scribe", "scribe-task")
@@ -363,8 +396,21 @@ def test_a_second_provider_that_will_not_open_does_not_take_the_household_down(t
         ).fetchall()
     assert [row[0] for row in recorded] == [CLAUDE_KIND]
     assert '"reason": "claude_subscription_login_required"' in recorded[0][1]
+    opened = [{"kind": CODEX_KIND, "label": "Codex subscription", "default": True}]
     with TestClient(app) as client:
-        assert client.get("/health").json() == {"service": "hearth"}
+        # Liveness says which brains work is handed to, and nothing about the machine
+        # this instance was started on: no path, and no reason a provider refused.
+        assert client.get("/health").json() == {"service": "hearth", "runtimes": opened}
+        # An operator whose scribe is waiting reads why behind their own token: the
+        # runtime opened nowhere, and the provider's refusal says what to fix.
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+        assert health["runtimes"] == opened
+        assert health["unavailable"] == [
+            {"kind": CLAUDE_KIND, "reason": "claude_subscription_login_required"}
+        ]
     assert VERSION  # the pinned version is what the synthetic CLI answered with
 
 
@@ -398,3 +444,14 @@ def test_a_runtime_nothing_here_is_configured_for_is_recorded_at_start(tmp_path)
             (CLAUDE_KIND,),
         ).fetchone()[0]
     assert '"reason": "runtime_not_configured"' in detail
+    # The scribe's runs will wait, and the operator's own health answer says why --
+    # a runtime a resident declares is this household's missing brain, not one of
+    # the providers it simply does not use.
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+    assert health["unavailable"] == [{"kind": CLAUDE_KIND, "reason": "runtime_not_configured"}]

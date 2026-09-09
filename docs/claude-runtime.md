@@ -223,7 +223,7 @@ builds:
 | Question | Observed |
 | --- | --- |
 | the prompt on stdin instead of in argv | accepted; identical stream and result. Hearth uses stdin, so a large pinned context can never meet an argv limit |
-| `--max-budget-usd 0.25` | accepted as decimal dollars; Hearth writes the run's reserved microdollars as `f"{n / 1_000_000:.6f}"`, which is exact |
+| `--max-budget-usd 0.25` | accepted as decimal dollars; Hearth writes microdollars as `f"{n / 1_000_000:.6f}"`, which is exact. **The number is the resident's remaining day, not the run's reservation** — see below |
 | `--tools ""` with no `--mcp-config` | `init` reports `"tools": []`; a run has no tools at all until the bridge grants some (#147) |
 | event types beyond `system` / `assistant` / `result` | `rate_limit_event` appeared in every session. The parser counts and skips what it does not know, and settles only on the one `result` event |
 
@@ -239,14 +239,63 @@ builds:
 3. **`--max-budget-usd` is a second fence, not a ceiling.** It stops the session after a
    request has already been billed past it, so Hearth's admission hold stays the
    authority and the receipt records that the CLI stopped on the fence.
+   **The fence is the resident's remaining day, and it cannot be the run's
+   reservation** — found by the real journey (#149) and corrected there. Every path in
+   Hearth reserves 10,000 µ$: the operator's start, a routine, a letter. A reservation
+   is an admission *hold*, not a cap — a run settles at what it really cost and the
+   resident's day is what bounds spending — so a fence of one cent would have stopped
+   every real session after its first billed request, at around four cents each, and
+   settled it as failed. `work.service.spend_fence` answers with what the resident may
+   still spend today (its own reservation included, and never less than what admission
+   promised it), read from the run's own pins so a resident edited between runs cannot
+   change the fence of work already admitted.
 4. **The configuration directory is written to even in a bounded session.** It must be a
    directory Hearth owns and the operator seeded, never the machine's own `~/.claude`.
 
 ## Configuring Hearth for it
 
+Three operator steps, and the second is the only one nobody can do for you.
+
+**1. Pin the versioned binary, never the symlink.** `~/.local/bin/claude` moves under
+an update; a version file's bytes never change (spike 3).
+
+```sh
+~/.local/share/claude/versions/2.1.263 --version   # => 2.1.263 (Claude Code)
+shasum -a 256 ~/.local/share/claude/versions/2.1.263
+```
+
+**2. Seed the private login, by hand, once.** Hearth always sets
+`CLAUDE_CONFIG_DIR`, and an explicitly configured directory has its own login
+namespace even when it names `~/.claude` (spike 1) — so the machine's own login is
+never the one Hearth's sessions use, and there is no supported way to copy one into
+place. `claude auth login` opens a browser and needs the account holder:
+
+```sh
+mkdir -p /path/to/private-claude-config && chmod 700 /path/to/private-claude-config
+CLAUDE_CONFIG_DIR=/path/to/private-claude-config \
+  ~/.local/share/claude/versions/2.1.263 auth login
+```
+
+Verify it without reading anything secret — the answer also names the account, and
+Hearth reads only `loggedIn` from it:
+
+```sh
+CLAUDE_CONFIG_DIR=/path/to/private-claude-config \
+  ~/.local/share/claude/versions/2.1.263 auth status --json
+```
+
+Until that says `"loggedIn": true`, the runtime refuses
+`claude_subscription_login_required` and this host simply does not open the Claude
+adapter. Nothing else about the directory belongs to anybody: Hearth owns it, writes
+into it (spike: a bounded session still writes `.claude.json`, `backups/` and an
+empty `projects/<cwd>/memory/`), and it must never be the machine's `~/.claude`.
+
+**3. Start with both environment sets** where the host runs both providers.
+
 ```sh
 HEARTH_CLAUDE_BINARY=~/.local/share/claude/versions/2.1.263 \
 HEARTH_CLAUDE_CONFIG_DIR=/path/to/private-claude-config \
+HEARTH_CODEX_BINARY=/path/to/codex HEARTH_CODEX_AUTH_HOME=/path/to/codex-home \
 HEARTH_OPERATOR_TOKEN=... \
 uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
@@ -272,6 +321,60 @@ Hearth's own tools — its resident holds an enabled grant, declares `memory_wri
 works a letter or holds post — is admitted, and the tools reach the session over the
 bridge measured below. Karen holds a grant, so a household bootstrapped on Claude can
 run Karen.
+
+### What the operator sees
+
+`GET /health` takes no token and names the runtimes this instance actually opened,
+the store's own default among them:
+
+```json
+{"service": "hearth",
+ "runtimes": [{"kind": "codex_subscription", "label": "Codex subscription",
+               "default": true}]}
+```
+
+`GET /api/health`, behind the operator's own token, adds why a runtime is missing —
+a lapsed login, a CLI past its pin, half a configuration:
+
+```json
+{"supervisor": "running",
+ "runtimes": [{"kind": "codex_subscription", "label": "Codex subscription",
+               "default": true}],
+ "unavailable": [{"kind": "claude_subscription",
+                  "reason": "claude_subscription_login_required"}]}
+```
+
+That is the first thing to read when a resident's work seems to be going nowhere: a
+run pinned to a runtime this instance is not configured for **waits** rather than
+failing, so nothing else surfaces it. The reason names what is wrong with this
+machine, which is why it asks for the token first; neither answer carries a path,
+binary, configuration directory or credential.
+
+Townhall reads the same facts from the snapshot's own runtime table — the household's
+default, what it is configured for, and how the registry names every kind a finished
+run may still carry. So the result panel says `CLAUDE RESULT` over a Claude run's
+summary and `CODEX RESULT` over a Codex one (and `SIMULATED ARTIFACT` over a run from
+a kind that never was a provider), the rail names both brains, a resident's view says
+which one its work is admitted to, and each run names its runtime, model and price
+schedule from its own pin. A granted run's management protocol is that provider's own
+transport — `claude_mcp_bridge` here, `codex_app_server` there.
+
+### When it refuses, and what to do
+
+Every refusal is by name, and each one writes nothing.
+
+| Refusal | What happened | What the operator does |
+| --- | --- | --- |
+| `claude_subscription_configuration_required` | `HEARTH_CLAUDE_BINARY` or `HEARTH_CLAUDE_CONFIG_DIR` is missing | set both (step 3) |
+| `claude_subscription_version_unsupported` | the binary is not the pinned `2.1.263` | point at the pinned version file, or re-measure and move the pin |
+| `claude_subscription_login_required` | `auth status` reports no login in *that* directory | seed the private login (step 2) |
+| `claude_subscription_binary_changed` | the bytes behind the pinned path differ from what the store recorded | investigate before anything else: a version file's bytes never change under an update |
+| `runtime_not_configured` | a resident is being moved to a runtime this store was never configured for | configure the runtime here first; the store's binary pin is its record of that |
+| `runtime_configuration_invalid` | the store's own default runtime has no adapter here | this refuses at start, by design: the household's own work cannot be done |
+| `claude_tools_changed` / `claude_session_unpinned` | the session's `init` did not report exactly the offered tools, the pinned model and the pinned build | the session is stopped before its first turn; nothing is trusted from it |
+| `management_configuration_changed` | the launch pins in the receipt disagree with those recorded at admission | the run settles as failed; the grant or catalog changed under it |
+| `mcp_bridge_failed` | the bridge could not be opened, or a call could not be written | the run settles as **failed with what it spent**, never as unknown with a relaunch |
+| `usage_unknown` (a hold, not a refusal) | Hearth's arithmetic and the CLI's own numbers disagree, or a model the schedule cannot price appeared | the answer is kept, the money is not, and the resident holds until an operator reports the usage |
 
 ## The bridge — Hearth's own tools inside a session
 
@@ -353,3 +456,38 @@ appears, and here they accounted for the model's whole 4,080 written tokens.
 - **A bridge that fails ends the session.** `mcp_bridge_failed` is recorded in the
   receipt and the session settles as failed with whatever it spent — never as unknown
   with a relaunch.
+
+## The end-to-end journey — what it is, and what it still needs
+
+The epic's acceptance demo (#144) is one resident, declared onto
+`claude_subscription` on a **throwaway instance** — its own data directory, its own
+port, discarded afterwards, with `.hearth/live` (Karen, 8771) untouched — that
+completes a run whose receipt is the CLI's own stream, whose cost is settled from
+usage under the pinned schedule and cross-checked against `total_cost_usd`, and whose
+run writes a journal entry through `hearth_journal_write` over the bridge. A second
+run then opens with that entry, and a third is cancelled mid-session to show that a
+launched run never claims zero usage.
+
+`scripts/claude-journey.py` drives exactly that, on a data directory and port it is
+given, and writes the evidence file. It is opt-in and never part of `make check`,
+because it spends real subscription money -- about four cents a run against the
+sessions measured here.
+
+**It has not been run, and no evidence file is committed for it.** The one thing
+missing is the private login of spike 1: `claude auth login` inside the private
+`CLAUDE_CONFIG_DIR` opens a browser and needs the account holder, and there is no
+supported path from the machine's own login into that directory. Until an operator
+runs the two commands under "Configuring Hearth for it", any instance pointed at
+Claude simply leaves that runtime out with `claude_subscription_login_required` —
+which `GET /health` says in as many words. Recording a journey from anything else
+would be recording a fiction, so nothing is recorded.
+
+The store's own default is `codex_subscription` on every fresh store, and no
+supported path changes it, so the demo instance is configured for **both** providers:
+the default opens for the household, and the journeying resident declares Claude for
+itself (ADR 0015). That is the same shape the epic asks for — Karen on Codex beside a
+resident on Claude — rather than a special case for the demo.
+
+What the runs cost is recorded beside Hearth's own settlement when the journey is
+run; the comparable measured sessions here were about $0.036 (#146) and $0.046
+(#147), so three runs sit well under a dollar.

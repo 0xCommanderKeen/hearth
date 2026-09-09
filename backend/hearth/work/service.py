@@ -11,7 +11,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from hearth.authority.household import check_admission, check_creation, pin_admission
+from hearth.authority.household import DEFAULTS, check_admission, check_creation, pin_admission
 from hearth.residents.models import (
     Declaration,
     Receipt,
@@ -103,6 +103,55 @@ def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
         (resident_id,),
     ).fetchone()
     return (row[0] if row is not None else None) or default_runtime(db)
+
+
+def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
+    """The most one run may spend, in microdollars, for a provider that enforces a stop.
+
+    A reservation is an admission hold, not a cap. A run that costs more than it
+    reserved still settles at what it really cost, and what actually bounds spending is
+    the resident's day: admission refuses new work once the day is committed, and a run
+    that overspends leaves its resident held. Every path in Hearth reserves a cent,
+    while one real session costs several, so a provider fence built from the
+    reservation would stop **every** run after its first billed request -- charging the
+    household for work it then threw away. The fence is therefore what the resident may
+    still spend today, this run's own reservation included, and never less than the
+    reservation admission already promised it before anything was launched.
+
+    Read from the run's own pins -- its resident's declaration at the revision it was
+    admitted under, and its own budget day and timezone -- so a resident edited or
+    moved between runs cannot change the fence of work already admitted.
+
+    The household's whole daily limit bounds it too, because a resident may be allowed
+    more in a day than the household it lives in. What the household has already spent
+    is deliberately *not* subtracted: a fence that is too small is the harmful
+    direction -- it bills a request and then throws the work away -- while a fence
+    that is merely generous costs nothing, since Hearth's own accounting is what holds
+    the household afterwards.
+    """
+    declaration = db.execute(
+        "SELECT daily_limit FROM declarations WHERE resident_id=? AND revision=?",
+        (run["resident_id"], run["resident_revision"]),
+    ).fetchone()
+    if declaration is None:
+        return run["reserved"]
+    start = datetime.fromisoformat(run["budget_day"]).replace(
+        tzinfo=ZoneInfo(run["budget_timezone"]), fold=0
+    )
+    end = (start + timedelta(days=1)).replace(fold=0)
+    spent = db.execute(
+        "SELECT COALESCE(SUM(actual_cost), 0) FROM runs WHERE resident_id=? "
+        "AND created_at >= ? AND created_at < ? AND usage_known = 1",
+        (run["resident_id"], int(start.timestamp()), int(end.timestamp())),
+    ).fetchone()[0]
+    outstanding = db.execute(
+        "SELECT COALESCE(SUM(reserved), 0) FROM runs WHERE resident_id=? AND id != ? "
+        f"AND status IN {ACTIVE_RUNS}",
+        (run["resident_id"], run["id"]),
+    ).fetchone()[0]
+    household = db.execute("SELECT daily_limit FROM household_policy WHERE id=1").fetchone()
+    ceiling = household["daily_limit"] if household is not None else DEFAULTS["daily_limit"]
+    return max(min(declaration["daily_limit"] - spent - outstanding, ceiling), run["reserved"])
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:

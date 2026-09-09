@@ -2,6 +2,28 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- The operator is told which brain worked each run. Townhall stops naming a provider
+  in its own markup: the snapshot carries the household's runtime table -- its default,
+  what it is configured for, and how Hearth's registry names every kind a finished run
+  may still carry -- plus each run's model and price schedule from its own pin, and
+  every label is read from there. So the result panel says `CLAUDE RESULT` over a
+  Claude run and `CODEX RESULT` over a Codex one (`SIMULATED ARTIFACT` over a kind
+  that never was a provider), the rail names both brains, a resident's view says which
+  one its work is admitted to, and the grant catalog names its execution profiles.
+  A state that cannot say which runtimes a household has is refused rather than
+  displayed. Beside that: `GET /health` names the runtimes this instance opened and
+  `GET /api/health` adds, behind the operator's own token, every one that refused with
+  the provider's reason -- because a run pinned to a runtime that is not configured
+  here waits and nothing else surfaces it, while why a provider is missing is a fact
+  about the operator's own machine; and a
+  granted run's management protocol is its own runtime's transport
+  (`codex_app_server`, `claude_mcp_bridge`) rather than one word for both. The Claude
+  runtime's own document is finished with the operator's setup and login procedure,
+  the refusal matrix and what the operator sees. And the Claude session's
+  `--max-budget-usd` fence is the resident's remaining day rather than the run's
+  reservation: every path in Hearth reserves a cent, a reservation is a hold and not a
+  cap, and a one-cent provider stop would have ended every real session after its
+  first billed request and settled it as failed.
 - Which runtime a resident runs on is a declaration fact. `declarations.runtime`
   (schema 11, null = the store's default) is pinned onto every run at admission, and
   `system_meta.runtime_kind` becomes that default rather than the household's only

@@ -4,7 +4,8 @@ import json
 
 from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
-from hearth.integrations.interface import live_kinds
+from hearth.integrations.interface import RUNTIMES, live_kinds
+from hearth.integrations.interface import label as runtime_label
 from hearth.management.authority import management_summary
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
@@ -18,7 +19,7 @@ from hearth.work.letters import (
     resident_names,
     task_lineage,
 )
-from hearth.work.service import ACTIVE_RUNS, Hearth
+from hearth.work.service import ACTIVE_RUNS, Hearth, configured_runtime, default_runtime
 
 # A run priced under a live runtime's own schedule is an API-equivalent estimate of a
 # subscription. Anything else with a price is history from a runtime that only pretended.
@@ -81,21 +82,25 @@ def snapshot(hearth: Hearth) -> dict:
             task["lineage"] = task_lineage(db, task["id"], names)
         runs = [
             dict(row)
-            for row in db.execute(f"""SELECT id, task_id, resident_id,
+            for row in db.execute(f"""SELECT runs.id AS id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
                    runtime_kind, runtime_version, input_digest,
+                   -- The run's own price pin, joined once: what a run was priced under
+                   -- is what the operator is shown beside its cost, and whether it was
+                   -- priced at all is what decides the usage source below.
+                   p.model AS model, p.schedule AS price_schedule,
                    created_at, actual_cost,
                    COALESCE((SELECT revision FROM run_memory m WHERE m.run_id=runs.id),0)
                    AS memory_revision,
                    usage_known, finished_at, artifact_id, cancellation_requested,
                    CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
-                   THEN 'operator_reported' WHEN usage_known=1 AND EXISTS
-                   (SELECT 1 FROM run_pricing p WHERE p.run_id=runs.id)
+                   THEN 'operator_reported' WHEN usage_known=1 AND p.model IS NOT NULL
                    THEN CASE WHEN runtime_kind IN {LIVE_KINDS}
                    THEN 'api_equivalent_subscription' ELSE 'api_equivalent_mock' END
                    WHEN usage_known=1 THEN 'mock_runtime'
                    ELSE 'unknown' END AS usage_source
-                   FROM runs ORDER BY status IN {ACTIVE_RUNS} DESC,
+                   FROM runs LEFT JOIN run_pricing p ON p.run_id=runs.id
+                   ORDER BY status IN {ACTIVE_RUNS} DESC,
                    (usage_known=0 AND finished_at IS NOT NULL) DESC,
                    created_at DESC, id DESC LIMIT 100""")
         ]
@@ -122,6 +127,18 @@ def snapshot(hearth: Hearth) -> dict:
                 db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
             ),
             "schema_version": 1,
+            # Which brains this household has, and how every kind a run may carry is
+            # named to an operator. The registry answers both, so no view downstream of
+            # here has a provider's name written into it
+            # (`docs/adr/0015-runtime-per-resident.md`).
+            "runtimes": {
+                "default": default_runtime(db),
+                "configured": [kind for kind in live_kinds() if configured_runtime(db, kind)],
+                "kinds": {
+                    kind: {"label": runtime_label(kind), "live": spec.live}
+                    for kind, spec in RUNTIMES.items()
+                },
+            },
             "epoch": epoch,
             "cursor": cursor,
             "residents": residents,

@@ -27,7 +27,10 @@ function fixture() {
   const client = new Client("synthetic-management");
   vi.spyOn(client, "managementCatalog").mockResolvedValue({
     residents: [{ id: "karen", name: "Karen", grant }],
-    profiles: ["codex_subscription"],
+    profiles: [
+      { id: "codex_subscription", name: "Codex subscription" },
+      { id: "claude_subscription", name: "Claude subscription" },
+    ],
     input_sets: [],
     operations: [],
   });
