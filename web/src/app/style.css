@@ -1093,7 +1093,7 @@ table.ledger {
   color: var(--ink);
 }
 .scene-canvas {
-  height: min(62vh, 620px);
+  height: min(68vh, 760px);
   min-height: 340px;
   touch-action: none;
   background: #e4e9d6;
@@ -1332,4 +1332,42 @@ form label + button {
 }
 .memory-diff .diff-same {
   color: var(--muted);
+}
+
+.scene-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f2f1e6;
+  border-bottom: 1px solid var(--line);
+}
+.scene-controls button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.scene-controls span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scene-controls button:focus-visible,
+.scene-residents a:focus-visible {
+  outline: 3px solid #54713d;
+  outline-offset: 3px;
+}
+
+main:has(.hamlet-scene) {
+  max-width: none;
+}
+.scene-controls button:not(:first-child) {
+  font-size: 20px;
+}
+@media (max-width: 640px) {
+  .scene-canvas {
+    height: 100vw;
+    min-height: 300px;
+    max-height: 480px;
+  }
 }
