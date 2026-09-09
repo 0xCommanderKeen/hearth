@@ -145,6 +145,39 @@ def test_a_launched_run_whose_runtime_is_gone_stays_unknown_and_is_never_retried
     assert settled.status == "cancelled" and not settled.usage_known
 
 
+def test_a_run_nobody_can_settle_waits_alone_and_the_rest_of_the_pass_is_worked(tmp_path):
+    """A zero settlement needs the pins the store wrote when its runtime was configured.
+
+    A store that never got them -- a provider that refused before it could write one --
+    can prove no run's zero. That is one run nobody can settle, not a reason to stop
+    working every other resident, and it settles itself once the pin is there.
+    """
+    hearth, execution, adapters = household(tmp_path)
+    karen = admit(hearth, "karen", "karen-task")
+    scribe = admit(hearth, "scribe", "scribe-task")
+    execution.cancel(scribe.id)
+    with hearth.database.transaction(write=True) as db:
+        db.execute("DELETE FROM system_meta WHERE key='claude_live_binary'")
+
+    executor = Executor(execution, [adapters["codex"]])
+    worked = {run.resident_id: run for run in executor.step()}
+    # Karen's run is worked in the same pass, on her own runtime.
+    assert worked["karen"].status == "succeeded" and worked["karen"].actual_cost == 2000
+    assert hearth.run(karen.id).runtime_kind == CODEX_KIND
+    # The one nobody can settle is still exactly where it was, and nothing was invented.
+    assert worked["scribe"].status == "stopping"
+    assert worked["scribe"].finished_at is None and worked["scribe"].actual_cost is None
+    # Every later pass is the same: it waits, it never aborts, it is never launched.
+    assert executor.step()[0].status == "stopping"
+    assert not (tmp_path / "data/fake-claude-runtime" / scribe.id).exists()
+
+    # Configuring that runtime writes the pin, and the run settles at zero.
+    FakeClaudeRuntime(tmp_path / "data")
+    settled = Executor(execution, adapters.values()).step()[0]
+    assert settled.id == scribe.id and settled.status == "cancelled"
+    assert settled.actual_cost == 0 and settled.usage_known
+
+
 def test_the_store_default_must_be_a_runtime_this_instance_is_configured_for(tmp_path):
     hearth, execution, adapters = household(tmp_path)
     with pytest.raises(Refused, match="runtime_store_mismatch"):

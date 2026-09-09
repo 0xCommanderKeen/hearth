@@ -344,14 +344,21 @@ class Executor:
         if run.cancellation_requested and not run.launch_attempted:
             # Nothing was launched, so this settles at zero from the run's own pin,
             # which the registry answers for whether or not that provider is
-            # configured here.
-            with self.execution.hearth.database.transaction() as db:
-                row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
-                receipt = interface.cancellation_receipt(
-                    run.runtime_kind,
-                    usage_accounting.binding(db, row),
-                    usage_accounting.runtime_pins(db, run.id),
-                )
+            # configured here -- as long as the store holds the pins that receipt has
+            # to name. A store that never got them cannot prove this run's zero, and
+            # one run nobody can settle waits alone rather than ending the pass for
+            # every other resident (`docs/adr/0015-runtime-per-resident.md`). It
+            # settles as soon as the runtime is configured and writes its pin.
+            try:
+                with self.execution.hearth.database.transaction() as db:
+                    row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
+                    receipt = interface.cancellation_receipt(
+                        run.runtime_kind,
+                        usage_accounting.binding(db, row),
+                        usage_accounting.runtime_pins(db, run.id),
+                    )
+            except Refused:
+                return self.execution.runtime_unavailable(run.id, run.owner_token)
             return self.execution.finish(
                 run.id, run.owner_token, Evidence("cancelled", cost=0), _usage_receipt=receipt
             )
