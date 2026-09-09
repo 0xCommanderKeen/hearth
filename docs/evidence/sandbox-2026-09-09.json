@@ -1,0 +1,87 @@
+{
+  "bridge_socket": {
+    "host_bind_mount": "docker: Error response from daemon: invalid mount config for type \"bind\": stat /host_mnt/private/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-measure-j354b4f3/bridge.sock: operation not supported.\nSee 'docker run --help'.",
+    "host_bind_mount_exit_code": 125,
+    "host_socket_was_connected_to": false,
+    "volume_shared_between_containers": "connected pong"
+  },
+  "daemon": {
+    "client_version": "27.3.1",
+    "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "kernel": "6.10.14-linuxkit",
+    "platform": "Docker Desktop",
+    "server_arch": "arm64",
+    "server_os": "linux",
+    "server_version": "27.3.1",
+    "storage_driver": "overlay2"
+  },
+  "image": "python:3.14-slim",
+  "image_binary_hash": {
+    "path": "/usr/local/bin/python3.14",
+    "seconds": 0.1,
+    "sha256": "c73c526e9bfa0d217b548ce27c576f1628a55fa0f4b65b1f6f0a142e2cd530a1"
+  },
+  "image_id": "sha256:19fe7a28429c4e92086fe53d7ec56f5801f158ff069faf8283931031249985da",
+  "measured_at": "2026-09-09T14:30:19Z",
+  "network": "none",
+  "orphaned": {
+    "after_an_explicit_kill": "absent",
+    "container_after_the_client_was_killed": "running",
+    "listed_by_the_daemon": true,
+    "removed_by_rm_after_kill": true
+  },
+  "start_latency": {
+    "container_first_byte_seconds": [
+      0.1995,
+      0.1604,
+      0.1272,
+      0.1134,
+      0.1145
+    ],
+    "container_median": 0.1272,
+    "process_first_byte_seconds": [
+      0.0192,
+      0.0262,
+      0.0222,
+      0.0293,
+      0.0233
+    ],
+    "process_median": 0.0233,
+    "rounds": 5
+  },
+  "stopping": {
+    "container_after_stop": "absent",
+    "exit_code_of_a_session_that_did_not_handle_the_signal": 143,
+    "exit_code_seen_by_the_attached_client": 0,
+    "processes_in_container": 4,
+    "seconds_to_exit": 0.075,
+    "sigterm_reached_pid_1": true,
+    "sigterm_reached_the_child_process": false
+  },
+  "streaming": {
+    "arrivals": [
+      [
+        "line 0",
+        0.094
+      ],
+      [
+        "line 1",
+        0.399
+      ],
+      [
+        "line 2",
+        0.702
+      ],
+      [
+        "line 3",
+        1.008
+      ],
+      [
+        "line 4",
+        1.309
+      ]
+    ],
+    "spread_seconds": 1.215,
+    "unbuffered": true
+  }
+}

@@ -63,6 +63,9 @@ VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
 # The working directory a sandboxed session runs in: a fresh tmpfs, never a host path.
 WORKSPACE = "/workspace"
+# Every container Hearth starts carries this label, so what it left behind is always
+# distinguishable from what somebody else is running on the same host.
+LABEL = "org.hearth.sandbox"
 # Where the sandbox image keeps each provider's pinned CLI. The image is built to put
 # them here (`deploy/Dockerfile.sandbox`), and these are the files whose sha256 has to
 # equal the binary pin the store already holds.
@@ -290,6 +293,10 @@ class ContainerLauncher:
             "no-new-privileges=true",
             "--pids-limit",
             "512",
+            # Every container Hearth starts says so, so a stray left by a worker that
+            # died can be found and removed rather than guessed at.
+            "--label",
+            LABEL + "=1",
             *[part for name, value in sorted(env.items()) for part in ("--env", f"{name}={value}")],
             *[part for mount in mounts for part in ("--mount", mount.argument())],
         ]

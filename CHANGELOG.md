@@ -2,6 +2,25 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- There is one seam under the worker for starting a session, and a sandbox it can be
+  pointed at. Neither live adapter calls `subprocess.Popen` on a provider CLI any more:
+  `process` is byte for byte what Hearth has always done, and `container` starts the
+  same command inside a container created for that run, from an image pinned by digest,
+  on the operator's own network, read-only, on a tmpfs workspace, as Hearth's own uid.
+  Which one is `HEARTH_SANDBOX`, and it travels in the run's request because the
+  detached worker has a search path and nothing else. The image digest is pinned in
+  `system_meta` with an audit fact, and the CLIs inside the image are hashed by the
+  image's own `sha256sum` against the binary pins the store already holds, so
+  `sandbox_image_changed`, `sandbox_image_unavailable`, `sandbox_network_missing`,
+  `sandbox_runtime_unavailable` and `sandbox_binary_mismatch` are all refusals at start
+  rather than one failed run at a time. `/health` names the launcher and the digest;
+  the network and the reasons stay behind the operator's token. Measured against a real
+  daemon (`docs/sandbox.md`, `docs/evidence/sandbox-2026-09-09.json`), and two of the
+  measurements contradict what the decision assumed: killing the attached worker does
+  **not** stop its container, and a unix socket cannot be bind-mounted from a Mac's
+  filesystem into a container at all, though it works between containers over a volume,
+  which is the shape the server runs in. No run executes in a container yet; this is the
+  seam, the pins and the measurements the rest of the epic stands on.
 - The Claude journey ran for real, and two things it found are fixed. The evidence
   file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
   `claude_subscription` beside a Codex default, each settled to exactly the CLI's own

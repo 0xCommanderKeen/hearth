@@ -1,0 +1,81 @@
+# The sandbox a run executes in: the two pinned CLIs, Hearth's bridge shim, nothing
+# that can install anything, and no root.
+#
+# The image is pinned by digest in the store (`system_meta.sandbox_image`), and the
+# CLIs inside it are hashed at start and must equal the binary pins that store already
+# holds (`codex_live_binary`, `claude_live_binary`). That only holds if the image
+# carries exactly the bytes Hearth measured, so the CLIs are copied in from the build
+# context rather than downloaded here: an image that fetches its own tools cannot be
+# the same image twice. The binaries have to be the *Linux* builds for the host's
+# architecture; a macOS build of either will hash correctly and refuse to execute.
+#
+#   docker build -f deploy/Dockerfile.sandbox \
+#     --build-arg HEARTH_UID="$(id -u)" --build-arg HEARTH_GID="$(id -g)" \
+#     --build-arg CODEX_BINARY=binaries/codex --build-arg CLAUDE_BINARY=binaries/claude \
+#     -t hearth/sandbox:<version> .
+#
+# Then read the digest it resolves to and configure Hearth with it:
+#
+#   docker image inspect --format '{{index .RepoDigests 0}}' hearth/sandbox:<version>
+#
+# See `docs/sandbox.md`. This file is not built in continuous integration: no CI host
+# has the pinned provider CLIs, and nothing Hearth ships downloads them.
+
+# Debian slim with the interpreter Hearth is written for. The bridge shim is imported
+# with `python -I`, which ignores `PYTHONPATH` and the user site directory, so the
+# package is placed in the interpreter's own site directory and no installer is needed
+# to put it there. Pinned by digest: the sandbox's own digest means nothing if what it
+# was built on can move underneath it.
+ARG BASE=python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
+FROM ${BASE}
+
+# The uid Hearth itself runs as. The session runs as this user so that the bridge's
+# peer-credential check still means something across the boundary: the worker created
+# the socket, and the process connecting to it is the uid the worker expects.
+ARG HEARTH_UID=1000
+ARG HEARTH_GID=1000
+# Where the pinned Linux CLIs are in the build context.
+ARG CODEX_BINARY=binaries/codex
+ARG CLAUDE_BINARY=binaries/claude
+# Hearth's own package, for the bridge shim alone. Nothing else in the image imports it.
+ARG HEARTH_PACKAGE=backend/hearth
+ARG SITE=/usr/local/lib/python3.14/site-packages
+
+COPY ${CODEX_BINARY} /usr/local/bin/codex
+COPY ${CLAUDE_BINARY} /usr/local/bin/claude
+COPY ${HEARTH_PACKAGE} ${SITE}/hearth
+
+RUN set -eux; \
+    chmod 0755 /usr/local/bin/codex /usr/local/bin/claude; \
+    chmod -R a=rX ${SITE}/hearth; \
+    # The shim has to be importable with the interpreter's own flags and stdlib alone;
+    # a build that produced an image whose bridge cannot start is a failed build.
+    python3 -I -c 'import hearth.integrations.claude.mcp_bridge'; \
+    # The session's own user. It owns nothing: the workspace is a tmpfs the runtime
+    # mounts, and every other writable path is a mount the run's grant asked for.
+    groupadd --gid ${HEARTH_GID} --non-unique hearth; \
+    useradd --uid ${HEARTH_UID} --gid ${HEARTH_GID} --non-unique --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin hearth; \
+    # Nothing in here may install, fetch or replace anything. The root filesystem is
+    # read-only at runtime as well, but a package manager that cannot be run is one
+    # less thing that has to be true about how the container was started.
+    rm -rf ${SITE}/pip ${SITE}/pip-* /usr/local/lib/python3.14/ensurepip \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.14 \
+        /usr/bin/apt /usr/bin/apt-get /usr/bin/apt-cache /usr/bin/apt-config \
+        /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/dpkg /usr/bin/dpkg-deb \
+        /usr/bin/dpkg-query /usr/bin/dpkg-split /usr/bin/dpkg-trigger \
+        /usr/bin/dpkg-divert /usr/bin/dpkg-statoverride /usr/bin/dpkg-maintscript-helper \
+        /var/lib/apt/lists/* /var/cache/apt/*; \
+    # A last check that what the image is for still runs, as the user it will run as.
+    su hearth -s /bin/sh -c '/usr/local/bin/codex --version' >/dev/null; \
+    su hearth -s /bin/sh -c '/usr/local/bin/claude --version' >/dev/null
+
+USER ${HEARTH_UID}:${HEARTH_GID}
+# The launcher mounts a fresh tmpfs here and starts the session in it. Nothing is
+# baked into the workspace, and nothing survives the run.
+WORKDIR /workspace
+# No entrypoint of the image's own: the whole command is Hearth's, built by the
+# provider's adapter, and the only thing that ever replaces it is `sha256sum` when
+# Hearth checks which CLIs this image carries.
+ENTRYPOINT []
+CMD ["/usr/local/bin/claude", "--version"]
