@@ -65,7 +65,9 @@ def fake_cli(path: Path, *, fixture="success", pause=0.0, version=VERSION) -> Pa
     return path
 
 
-def prepared(tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=False):
+def prepared(
+    tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=False, sandbox=None
+):
     """A store with one admitted run, started, its worker left for the test to drive.
 
     `start` really publishes the request and takes the folder's lock; only the
@@ -89,7 +91,7 @@ def prepared(tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=
     database.initialize()
     with database.transaction(write=True) as db:
         db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (KIND,))
-    runtime = ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir)
+    runtime = ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir, sandbox=sandbox)
     hearth = Hearth(database)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
@@ -314,8 +316,10 @@ def test_the_worker_refuses_a_changed_persisted_launch_input(tmp_path, monkeypat
     value[field] = "changed"
     path.write_text(json.dumps(value))
     launched = []
+    # The session is started through the launcher, whichever one this run was admitted
+    # under, so that is the launch the refusal has to happen before.
     monkeypatch.setattr(
-        "hearth.integrations.claude.subscription.subprocess.Popen",
+        "hearth.integrations.launcher.subprocess.Popen",
         lambda *a, **kw: launched.append(a),
     )
     worker(runtime.folder(run.id))

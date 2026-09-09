@@ -31,7 +31,9 @@ two places it differs from what the ADR assumed, is `docs/sandbox.md`.
 
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -293,24 +295,29 @@ class ContainerLauncher:
         ]
 
     def start(self, command, *, env, cwd, stdin, mounts=(), socket=None, bufsize=-1):
-        identity = Path(cwd) / ".container-id"
-        if identity.exists():
-            # The runtime refuses to overwrite a cidfile, and a run launches once, so
-            # a file already there is a folder that has been used before.
-            raise Refused("sandbox_container_reused")
         argv = self.arguments(command, env=env, mounts=mounts, socket=socket)
-        argv += ["--cidfile", str(identity), self.image, *command]
-        child = subprocess.Popen(
-            argv,
-            cwd=cwd,
-            env={"PATH": os.defpath},
-            stdin=stdin,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=bufsize,
-            start_new_session=True,
-        )
-        return Handle(self.kind, self._identify(identity, child), child)
+        # The runtime refuses to overwrite a cidfile, so it is written into a private
+        # directory of this launch's own and read once. The durable record of what was
+        # started is the worker's, beside the receipt; this is a handover, and it is
+        # deliberately not the session's working directory, which a provider's own
+        # adapter may require to be empty.
+        directory = tempfile.mkdtemp(prefix="hearth-sandbox-")
+        try:
+            identity = Path(directory) / "container-id"
+            argv += ["--cidfile", str(identity), self.image, *command]
+            child = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env={"PATH": os.defpath},
+                stdin=stdin,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=bufsize,
+                start_new_session=True,
+            )
+            return Handle(self.kind, self._identify(identity, child), child)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
 
     @staticmethod
     def _identify(path: Path, child: subprocess.Popen) -> str | None:
@@ -519,18 +526,26 @@ def hashed(launcher: ContainerLauncher, path: str) -> str:
 
     `sha256sum` is the image's own, run with no network and nothing mounted, so what
     is hashed is the file the session would execute and not a copy of it on the host.
+
+    An image that cannot produce the hash -- because it does not carry that CLI at
+    all -- is the same refusal as one carrying different bytes. The daemon has
+    already answered for its version, the image and the network by the time this
+    runs, so what fails here is the image's own contents.
     """
-    answer = launcher.client(
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--read-only",
-        "--entrypoint",
-        "sha256sum",
-        launcher.image,
-        path,
-    )
+    try:
+        answer = launcher.client(
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "--entrypoint",
+            "sha256sum",
+            launcher.image,
+            path,
+        )
+    except Refused:
+        raise Refused("sandbox_binary_mismatch") from None
     value = answer.split(" ")[0] if answer else ""
     if not re.fullmatch("[0-9a-f]{64}", value):
         raise Refused("sandbox_binary_mismatch")

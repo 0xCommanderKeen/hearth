@@ -36,6 +36,8 @@ VALUED = {
     "--tmpfs",
     "--workdir",
     "--pids-limit",
+    "--cap-drop",
+    "--cap-add",
     "--security-opt",
     "--entrypoint",
     "--pull",
@@ -96,6 +98,12 @@ def calls(executable: Path) -> list[list[str]]:
 
 
 def _parse(argv):
+    """Flags up to the first bare word; everything from it is taken verbatim.
+
+    That is the real client's own rule, and it is the one that matters here: the
+    command after the image is the session's argv, and a `-c` or a `--print` inside
+    it is the CLI's flag, never this client's.
+    """
     flags, positional = {}, []
     index = 0
     while index < len(argv):
@@ -108,8 +116,8 @@ def _parse(argv):
             flags.setdefault(item, []).append("")
             index += 1
             continue
-        positional.append(item)
-        index += 1
+        positional = list(argv[index:])
+        break
     return flags, positional
 
 
