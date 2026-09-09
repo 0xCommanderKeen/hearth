@@ -21,6 +21,9 @@ from hearth.integrations.claude.mcp_bridge import TOOL_PREFIX
 from hearth.integrations.claude.subscription import ClaudeLiveRuntime, worker
 from hearth.residents.models import Declaration, Refused
 
+from tests import fake_docker
+from tests.integrations.claude.test_claude_live import login
+
 FIXTURES = Path(__file__).parent / "fixtures"
 MEMORY_TOOLS = ["hearth_memory_read", "hearth_memory_save", "hearth_journal_write"]
 
@@ -41,8 +44,9 @@ def fake_cli(path: Path, session: Path) -> Path:
 class Store:
     """One Claude store with one resident, ready to run sessions in-process."""
 
-    def __init__(self, tmp_path: Path, *, memory_writable=True, grant=None):
+    def __init__(self, tmp_path: Path, *, memory_writable=True, grant=None, sandbox=None):
         from hearth.execution.lifecycle import Execution
+        from hearth.integrations.launcher import BINARIES, configure
         from hearth.storage.artifacts import Artifacts
         from hearth.storage.database import Database
         from hearth.work.service import Hearth
@@ -51,15 +55,25 @@ class Store:
         self.data = tmp_path / "data"
         self.session_path = tmp_path / "session.json"
         self.record_path = tmp_path / "record.json"
-        config_dir = tmp_path / "private-claude-config"
-        config_dir.mkdir()
+        config_dir = login(tmp_path / "private-claude-config")
         self.binary = fake_cli(tmp_path / "claude", self.session_path)
         self.session_path.write_text("{}")
         database = Database(self.data / "hearth.db")
         database.initialize()
         with database.transaction(write=True) as db:
             db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (KIND,))
-        self.runtime = ClaudeLiveRuntime(self.data, binary=self.binary, config_dir=config_dir)
+        self.runtime = ClaudeLiveRuntime(
+            self.data, binary=self.binary, config_dir=config_dir, sandbox=sandbox
+        )
+        if sandbox is not None and sandbox.launcher == "container":
+            # The image carries the very CLI this store is pinned to -- which is what
+            # a start checks before any resident is admitted, and what the container
+            # then executes instead of anything on the host -- and the store is pinned
+            # to the image, as a start on the container launcher pins it.
+            fake_docker.carry(
+                Path(sandbox.docker), BINARIES["claude_live_binary"], self.binary.read_bytes()
+            )
+            configure(database, sandbox)
         self.hearth = Hearth(database)
         self.hearth.save_resident(
             "writer",

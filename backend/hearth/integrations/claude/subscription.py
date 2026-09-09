@@ -24,6 +24,7 @@ from pathlib import Path
 
 from hearth.integrations.claude.config import (
     BINARY_PIN,
+    CREDENTIALS,
     KIND,
     MODEL,
     PROBE_TIMEOUT,
@@ -48,13 +49,25 @@ from hearth.integrations.durable import (
     unique_object,
 )
 from hearth.integrations.interface import Evidence
-from hearth.integrations.launcher import Sandbox
+from hearth.integrations.launcher import (
+    CONTAINER,
+    IMAGE_PIN,
+    LOGIN,
+    Sandbox,
+    check_image,
+    discard,
+    sandboxed,
+    written_handle,
+)
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
 from hearth.work.service import Hearth, _audit, spend_fence
 
 # The whole of one native receipt. There is no separate final-message file: the
-# session's answer is inside the stream, in the CLI's own `result` event.
+# session's answer is inside the stream, in the CLI's own `result` event. `sandbox`
+# joins them where a run has one to name, and is absent from every receipt written
+# before this seam existed (`docs/adr/0016-sandbox-per-run.md`) and from one a session
+# that was never launched left behind, which ran nowhere at all.
 RECEIPT = {"kind", "binding", "binary", "stdout", "exit_code", "cancelled", "launched"}
 # What a session that carried Hearth's own tools records beside the stream: the pins
 # it was launched under, and the code that ended its bridge if anything did. The calls
@@ -134,9 +147,11 @@ def valid_management(value) -> bool:
 def encode(receipt, expected):
     if (
         not isinstance(receipt, dict)
-        or set(receipt) not in (RECEIPT, RECEIPT | {"management"})
+        or not RECEIPT <= set(receipt)
+        or not set(receipt) <= RECEIPT | {"management", "sandbox"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
     ):
         raise Refused("run_usage_invalid")
     raw = serialized(receipt)
@@ -198,6 +213,15 @@ class ClaudeLiveRuntime:
         # Only `loggedIn` is read; the rest of that answer names the account and is
         # never kept, logged or passed on.
         if not logged_in(self._probe("auth", "status", "--json")):
+            raise Refused("claude_subscription_login_required")
+        if self.sandbox.launcher == CONTAINER and not (self.config_dir / CREDENTIALS).is_file():
+            # A sandboxed session's login is one file mounted into a configuration
+            # directory of its own, so a login that is not a file cannot cross the
+            # boundary: on macOS the CLI keeps it in the Keychain, and a store on the
+            # container launcher whose configuration directory holds no credential
+            # would admit residents and fail every run at the mount. ADR 0016 says the
+            # Keychain stays a convenience of the `process` launcher, and this is
+            # where that is refused rather than discovered.
             raise Refused("claude_subscription_login_required")
         pin = binary_digest(self.binary)
         with self.database.transaction(write=True) as db:
@@ -348,6 +372,11 @@ class ClaudeLiveRuntime:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return Evidence("running")
+            # The lock is free and no receipt was written: the worker that held this
+            # run's stream is gone, and whatever it started may not be. A container
+            # outlives the client that was attached to it, and one left running is
+            # one still spending (`docs/sandbox.md`).
+            discard(self.database, folder, run_id, request)
             return Evidence("unknown")
         except OSError, ValueError, KeyError, TypeError, Refused:
             return Evidence("unknown")
@@ -360,12 +389,22 @@ class ClaudeLiveRuntime:
             publish(folder / "cancel.json", {"cancelled": True})
 
 
-def unlaunched(request: dict, management: dict, code: str) -> dict:
-    """A management session Hearth refused to launch: no stream, no cost, no doubt."""
+def unlaunched(request: dict, management: dict, code: str, sandbox: Sandbox) -> dict:
+    """A management session Hearth refused to launch: no stream, no cost, no doubt.
+
+    It still says where it would have run, because that is what the run was admitted
+    to and a reader asking where a run happened is owed the same answer whether it got
+    as far as a container or not. The container id is `None`: none was ever created.
+    """
     return {
         "kind": KIND,
         "binding": request["binding"],
         "binary": request["sha256"],
+        "sandbox": {
+            "launcher": sandbox.launcher,
+            "container_id": None,
+            "image": sandbox.digest,
+        },
         "stdout": "",
         "exit_code": None,
         "cancelled": True,
@@ -446,17 +485,23 @@ def worker(folder, inherited_fd=None):
             or prompt_digest != request["binding"]["input_digest"]
         ):
             return
-        binary = Path(request["binary"])
-        if binary_digest(binary) != request["sha256"]:
-            return
         try:
-            launcher = Sandbox.of(request.get("sandbox")).open()
+            sandbox = Sandbox.of(request.get("sandbox"))
         except Refused:
             # Where this run was admitted to execute is Hearth's own writing, and a
             # request this worker cannot read is not a session to launch. Nothing has
             # started, exactly as for a changed pin above, and the run reads as
             # unknown rather than as something a later pass may retry.
             return
+        binary = Path(request["binary"])
+        # A sandboxed session executes the image's own copy of the CLI, whose bytes
+        # every start hashes against this store's pin (`launcher.configure`); the file
+        # on this host is not the one it will open, and on a burrow it may not be here
+        # at all.
+        if sandbox.launcher != CONTAINER and binary_digest(binary) != request["sha256"]:
+            return
+        launcher = sandbox.open()
+        placement = sandbox.placement()
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         management = request.get("management")
@@ -476,24 +521,41 @@ def worker(folder, inherited_fd=None):
 
             try:
                 # The bridge is opened before the launch, so a run whose authority
-                # changed since admission is refused with nothing spent on it.
-                server = open_bridge(folder, request, Hearth(database))
+                # changed since admission is refused with nothing spent on it. The
+                # configuration it writes names the interpreter that will start the
+                # shim where the session runs -- this worker's, or the image's.
+                server = open_bridge(
+                    folder,
+                    request,
+                    Hearth(database),
+                    placement.interpreter(sys.executable),
+                )
             except Refused as error:
-                publish(folder / "receipt.json", unlaunched(request, management, error.code))
+                publish(
+                    folder / "receipt.json", unlaunched(request, management, error.code, sandbox)
+                )
                 return
             except bridge_failures:
                 # A socket that cannot be bound or a configuration that cannot be
                 # written is Hearth's own failure, and it leaves a receipt rather than
                 # a run nobody can ever settle.
                 publish(
-                    folder / "receipt.json", unlaunched(request, management, "mcp_bridge_failed")
+                    folder / "receipt.json",
+                    unlaunched(request, management, "mcp_bridge_failed", sandbox),
                 )
                 return
+        # The session's own view of the two host paths in its argv: the CLI it runs,
+        # and the configuration that tells it how to start Hearth's shim. Inside a
+        # container each is a mount and nothing else on this host exists; on the
+        # process launcher each is itself and the command is byte for byte the one
+        # Hearth has always built. The socket that configuration names is mounted by
+        # the launcher itself, at the path it already has, so the shim connects to the
+        # string Hearth wrote (`launcher.ContainerLauncher.arguments`).
         command = session_command(
-            binary,
+            placement.binary(binary, "claude"),
             budget_usd=request["budget_usd"],
             tools=server.offered if server is not None else (),
-            mcp_config=configuration_path(folder) if server is not None else None,
+            mcp_config=placement.same(configuration_path(folder)) if server is not None else None,
         )
         handle = None
         output = bytearray()
@@ -505,9 +567,21 @@ def worker(folder, inherited_fd=None):
                 request["owner"],
                 epoch=request["epoch"],
                 input_digest=prompt_digest,
-            ):
-                if binary_digest(binary) != request["sha256"]:
+            ) as db:
+                # Read inside the guard, which is already this store's one write
+                # transaction: a pin that changed while this run waited is refused
+                # here, before anything is launched, and never afterwards -- a session
+                # already running is priced from what it really said.
+                current = db.execute(
+                    "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
+                ).fetchone()
+                check_image(sandbox, current[0] if current else None)
+                if sandbox.launcher != CONTAINER and binary_digest(binary) != request["sha256"]:
                     raise Refused("claude_subscription_binary_changed")
+                # The environment is built after the login is placed, because placing
+                # a path is what registers the mount that backs it.
+                home = placement.login(request["config_dir"], CREDENTIALS, LOGIN)
+                mounts = placement.mounts
                 # A regular file cannot block prompt delivery when the CLI stalls, and
                 # the prompt is context that does not belong on a command line.
                 with tempfile.TemporaryFile() as prompt:
@@ -515,18 +589,23 @@ def worker(folder, inherited_fd=None):
                     prompt.seek(0)
                     handle = launcher.start(
                         command,
-                        env=environment(Path(request["config_dir"])),
+                        env=environment(home, account=not placement.contained),
                         cwd=workspace,
                         stdin=prompt,
+                        mounts=mounts,
                         socket=server.path if server is not None else None,
                     )
             # What was started, named where the worker's own pid is named: a process
             # group on the process launcher and a container id on the container one.
+            # Written down before the id is asked for and again after, because asking
+            # waits, and a worker that dies while waiting would otherwise leave a live
+            # container that nothing on disk names.
+            written_handle(folder, handle)
             # Asked for after the dispatch guard has closed, because a container
             # runtime names what it created a moment later and the guard is one write
             # transaction over the whole store.
             launcher.identify(handle)
-            publish(folder / "handle.json", handle.document())
+            written_handle(folder, handle)
             assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             scanned = 0
@@ -604,6 +683,13 @@ def worker(folder, inherited_fd=None):
             "kind": KIND,
             "binding": request["binding"],
             "binary": request["sha256"],
+            # Where this session ran, so a finished run says it rather than leaving a
+            # reader to infer it from configuration that has moved on since.
+            "sandbox": {
+                "launcher": sandbox.launcher,
+                "container_id": handle.id if handle is not None and placement.contained else None,
+                "image": sandbox.digest,
+            },
             "stdout": output.decode("utf-8", errors="replace"),
             "exit_code": handle.returncode if handle else None,
             # `launched` is the only thing that can make a cancellation free, so it is

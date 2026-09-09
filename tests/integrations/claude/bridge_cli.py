@@ -104,7 +104,15 @@ def main(session_path, argv) -> int:
 def _connect(record, session):
     """Launch the shim with exactly the command and environment Hearth declared."""
     server = record["configuration"]["mcpServers"]["hearth"]
-    shim = Shim(server["command"], server["args"], dict(server.get("env", {})))
+    command = server["command"]
+    if not Path(command).exists():
+        # A sandboxed session is told to start the shim with the *image's* own
+        # interpreter, which is where Hearth's package sits inside the sandbox. The
+        # fake daemon has no namespace to provide one (`tests/fake_docker.py` runs the
+        # command on this host), so the interpreter here is this test's own -- and the
+        # path Hearth wrote is asserted where it is written, not silently accepted.
+        command = sys.executable
+    shim = Shim(command, server["args"], dict(server.get("env", {})))
     record["shim_environment"] = server.get("env")
     record["initialize"] = shim.request(
         "initialize",

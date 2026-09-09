@@ -61,6 +61,20 @@ def daemon(tmp_path) -> Path:
     return docker
 
 
+def pinned(database, sandbox, docker, name: str, binary: Path) -> None:
+    """Put this store's own CLI inside the fake image, and pin the store to the image.
+
+    Both halves are what a real start does: the image carries the very CLI the store
+    is pinned to -- which `configure` checks before any resident is admitted, and
+    which the container then executes instead of anything on the host -- and the
+    image's digest is written to `system_meta` as the store's own.
+    """
+    from hearth.integrations.launcher import BINARIES, configure
+
+    fake_docker.carry(docker, BINARIES[name + "_live_binary"], binary.read_bytes())
+    configure(database, sandbox)
+
+
 def sandboxes(tmp_path):
     """Today's launcher, and the container launcher over a fake daemon."""
     docker = daemon(tmp_path)
@@ -76,13 +90,21 @@ def sandboxes(tmp_path):
 # -- the Claude adapter ---------------------------------------------------
 
 
+def prepared_claude(tmp_path, sandbox, docker=None, pause: float = 0):
+    """A store with one admitted Claude run, started, its worker left to be driven."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    runtime, _, run, _ = claude_prepared(tmp_path, pause=pause, sandbox=sandbox)
+    if docker is not None:
+        pinned(runtime.database, sandbox, docker, "claude", runtime.binary)
+    return runtime, run
+
+
 def test_a_claude_session_settles_the_same_whichever_launcher_started_it(tmp_path):
     from hearth.integrations.claude.subscription import worker as claude_worker
 
     receipts, evidence = {}, {}
-    for name, (sandbox, _) in sandboxes(tmp_path).items():
-        (tmp_path / name).mkdir()
-        runtime, _, run, _ = claude_prepared(tmp_path / name, sandbox=sandbox)
+    for name, (sandbox, docker) in sandboxes(tmp_path).items():
+        runtime, run = prepared_claude(tmp_path / name, sandbox, docker)
         claude_worker(runtime.folder(run.id))
         receipts[name] = runtime.receipt(run.id)
         evidence[name] = runtime.inspect(run.id, expected_digest=run.input_digest)
@@ -94,15 +116,23 @@ def test_a_claude_session_settles_the_same_whichever_launcher_started_it(tmp_pat
         assert receipts["process"][field] == receipts["container"][field]
     assert evidence["process"] == evidence["container"]
     assert evidence["process"].status == "succeeded" and evidence["process"].cost == 36_580
+    # The one thing the two receipts do not share: where the session ran.
+    assert receipts["process"]["sandbox"] == {
+        "launcher": "process",
+        "container_id": None,
+        "image": None,
+    }
+    assert receipts["container"]["sandbox"]["launcher"] == "container"
+    assert receipts["container"]["sandbox"]["image"] == DIGEST
+    assert len(receipts["container"]["sandbox"]["container_id"]) == 64
 
 
 def test_cancelling_a_sandboxed_claude_session_stops_it_and_is_never_free(tmp_path):
     from hearth.integrations.claude.subscription import worker as claude_worker
 
     endings = {}
-    for name, (sandbox, _) in sandboxes(tmp_path).items():
-        (tmp_path / name).mkdir()
-        runtime, _, run, _ = claude_prepared(tmp_path / name, pause=5, sandbox=sandbox)
+    for name, (sandbox, docker) in sandboxes(tmp_path).items():
+        runtime, run = prepared_claude(tmp_path / name, sandbox, docker, pause=5)
         timer = threading.Timer(0.5, runtime.stop, args=(run.id,))
         timer.start()
         try:
@@ -154,7 +184,6 @@ def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
 
     from hearth.execution.context import read_context
     from hearth.execution.lifecycle import Execution
-    from hearth.integrations.launcher import BINARIES, configure
     from hearth.residents.memory import Memory
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
@@ -169,11 +198,7 @@ def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
     binary = codex_cli(tmp_path / "codex", pause)
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth, sandbox=sandbox)
     if docker is not None:
-        # The image carries the very CLI this store is pinned to -- which is what a
-        # start checks before any resident is admitted, and what the container then
-        # executes instead of anything on the host.
-        fake_docker.carry(docker, BINARIES["codex_live_binary"], binary.read_bytes())
-        configure(database, sandbox)
+        pinned(database, sandbox, docker, "codex", binary)
     hearth = Hearth(database)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
