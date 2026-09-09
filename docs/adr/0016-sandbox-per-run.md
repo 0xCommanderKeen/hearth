@@ -9,8 +9,9 @@ but the provider CLI it launches runs as the same user, on the same filesystem, 
 same network as Hearth itself. A resident is confined by flags Hearth measured
 (`docs/claude-runtime.md`, `docs/mac-isolation.md`), not by a boundary. That was the
 demo shape, and #106 has said since then that production needs a container. Hearth is
-now meant to run primarily on servers, with residents that hold different privileges
-over different folders, so the boundary is decided here. Warren is deprecated; nothing
+now meant to run primarily on servers — any Linux host with a container runtime, not
+one particular machine — with residents that hold different privileges over different
+folders, so the boundary is decided here. Warren is deprecated; nothing
 in this decision depends on it or talks to it.
 
 **Decision.** A run executes inside a container created for that run, and what a
@@ -95,7 +96,8 @@ resident may reach is exactly what its grant mounts into it.
 - The Mac stays a first-class development host on the `process` launcher. Production is
   the `container` launcher on Linux; the same store, moved by backup and restore (ADR
   0013's forward upgrades hold), runs on either.
-- Hearth itself is packaged as a container for the server, with the container runtime's
+- Hearth itself is packaged as a container for the server, deployable from one compose
+  file on any Linux host with nothing tied to the machine, with the container runtime's
   socket mounted so it can start sandboxes. That socket is root-equivalent on the host,
   which is why the sandboxes and the mounts they get are Hearth's decision alone and no
   resident's, and why nothing a resident says reaches the launcher unparsed.
