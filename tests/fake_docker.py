@@ -139,18 +139,22 @@ def _container(root: Path, identity: str) -> Path:
 
 
 def _translate(mounts: list[str], value: str) -> str:
-    """One path inside the container, as the host names it.
+    """One argument of the session's command, as the host has to spell it.
 
-    The fake has no namespace of its own, so a mount is applied by rewriting the paths
-    it maps: a session told to read `/hearth/login/auth.json` reads the host directory
-    that was mounted there. That is enough to drive an adapter that builds its command
-    out of container paths, and it is the one thing about a mount this fake can honour.
+    The fake has no namespace of its own, so a mount is applied by rewriting what it
+    maps: a session told to read `/hearth/login/auth.json` reads the host directory
+    mounted there. A real mount makes every path under the target resolve wherever it
+    appears -- inside a `-c key="/path"` setting as much as in an argument of its own --
+    so every occurrence is rewritten, longest target first, and this is the one thing
+    about a mount that the fake can honour at all.
     """
+    places = []
     for mount in mounts:
         fields = dict(part.split("=", 1) for part in mount.split(",") if "=" in part)
-        source, target = fields.get("source"), fields.get("target")
-        if source and target and (value == target or value.startswith(target + "/")):
-            return source + value[len(target) :]
+        if fields.get("source") and fields.get("target"):
+            places.append((fields["target"], fields["source"]))
+    for target, source in sorted(places, key=lambda place: -len(place[0])):
+        value = value.replace(target, source)
     return value
 
 

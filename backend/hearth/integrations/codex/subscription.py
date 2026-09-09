@@ -397,35 +397,32 @@ def worker(folder, inherited_fd=None):
             pin = db.execute(
                 "SELECT value FROM system_meta WHERE key='codex_live_binary'"
             ).fetchone()
-            image = db.execute("SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)).fetchone()
         if (
             pin is None
             or pin[0] != request["sha256"]
             or prompt_digest != request["binding"]["input_digest"]
         ):
             return
-        binary = Path(request["binary"])
-        if request.get("management") is not None:
-            from hearth.integrations.codex.management_runtime import worker as management_worker
-
-            management_worker(folder, request, execution)
-            return
         try:
             sandbox = Sandbox.of(request.get("sandbox"))
-            launcher = sandbox.open()
-            # What is about to run has to be what this run was admitted to run. A
-            # child of the worker executes the file on this host; a container executes
-            # the image's own copy, and what can change under it is the image this
-            # store is pinned to, so that is what is compared.
-            check_pin(sandbox, binary, request["sha256"], image[0] if image else None)
         except Refused:
             # Where this run was admitted to execute is Hearth's own writing, and a
             # request this worker cannot read is not a session to launch. Nothing has
             # started, exactly as for a changed pin above, and the run reads as
             # unknown rather than as something a later pass may retry.
             return
-        except OSError:
+        binary = Path(request["binary"])
+        if (
+            sandbox.launcher != CONTAINER
+            and hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]
+        ):
             return
+        if request.get("management") is not None:
+            from hearth.integrations.codex.management_runtime import worker as management_worker
+
+            management_worker(folder, request, execution)
+            return
+        launcher = sandbox.open()
         placement = sandbox.placement()
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)

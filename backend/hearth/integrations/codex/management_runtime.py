@@ -152,6 +152,17 @@ def pin_configuration(hearth, bound, binary):
     return pins
 
 
+def check_pin(sandbox, db) -> None:
+    """Refuse a sandboxed session whose image this store is no longer pinned to."""
+    from hearth.integrations.launcher import CONTAINER, IMAGE_PIN
+
+    if sandbox.launcher != CONTAINER:
+        return
+    pinned = db.execute("SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)).fetchone()
+    if pinned is None or pinned[0] != sandbox.digest:
+        raise Refused("sandbox_image_changed")
+
+
 def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
@@ -192,9 +203,14 @@ def worker(folder, request, execution):
         # Where this run was admitted to execute, read before anything is launched and
         # inside this guard, so a request document the worker cannot read leaves an
         # unlaunched receipt with its own reason rather than no receipt at all.
-        launcher = Sandbox.of(request.get("sandbox")).open()
+        sandbox = Sandbox.of(request.get("sandbox"))
+        launcher = sandbox.open()
         with hearth.database.transaction() as db:
             authority = authorize(db, bound, int(hearth.clock()))
+            # The pin a sandboxed session runs on is the image, whose own CLIs were
+            # hashed against this store's binary pin at start; an image this store is
+            # no longer configured for is refused here, before anything is launched.
+            check_pin(sandbox, db)
             row = db.execute(
                 "SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)
             ).fetchone()

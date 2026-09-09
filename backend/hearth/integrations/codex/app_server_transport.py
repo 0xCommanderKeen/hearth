@@ -21,7 +21,7 @@ from hearth.integrations.codex.events import (
     unique_object,
 )
 from hearth.integrations.codex.pricing import MODEL
-from hearth.integrations.launcher import ProcessLauncher
+from hearth.integrations.launcher import LOGIN, Placement, ProcessLauncher
 from hearth.residents.models import Refused
 
 PROTOCOL = "codex-app-server-0.153.4"
@@ -227,13 +227,22 @@ class _Pipe:
 
 
 @contextmanager
-def _process(binary, auth_home, workspace, settings, deadline, cancelled, launcher):
+def _process(program, home, workspace, settings, deadline, cancelled, launcher, mounts=()):
+    """One app-server session, wherever this run was admitted to execute.
+
+    `program` and `home` are already the paths the session itself names -- the image's
+    own CLI and the login mounted at the path `CODEX_HOME` will hold -- so the argv
+    below is the same on both launchers and only the strings differ. `workspace` stays
+    a host path: it is the client's own working directory, and what the session sees
+    of it is the empty tmpfs the launcher mounts.
+    """
     handle = launcher.start(
-        [str(binary), "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
-        env={"PATH": os.defpath, "CODEX_HOME": str(auth_home)},
+        [program, "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
+        env={"PATH": os.defpath, "CODEX_HOME": home},
         cwd=workspace,
         stdin=subprocess.PIPE,
         bufsize=0,
+        mounts=mounts,
     )
     # What was started, asked for outside Hearth's dispatch guard, which this process
     # is deliberately created before entering.
@@ -357,6 +366,10 @@ def run(
     # Where this session's processes are started. The default is the launcher Hearth
     # has always used, so a caller that names none is launched exactly as before.
     launcher = ProcessLauncher() if launcher is None else launcher
+    # And what its own paths are. On the process launcher every one of them is the
+    # host path it always was; in a container the CLI is the image's, the login and
+    # the generated settings are mounts, and the working directory is a tmpfs.
+    placement = Placement(launcher.kind)
     try:
         if not 0 < timeout <= 600 or type(max_calls) is not int or not 1 <= max_calls <= 64:
             raise Refused("app_server_limits_invalid")
@@ -380,19 +393,27 @@ def run(
             catalog_path = Path(temporary) / "models.json"
             catalog_path.write_bytes(catalog)
             catalog_path.chmod(0o600)
-            settings = config.settings() | {"model_catalog_json": str(catalog_path)}
+            # The three paths this session names, and the mounts that put them there.
+            # The catalog is generated here from the CLI this store is pinned to and
+            # read inside as a file the session may not change.
+            program = placement.binary(binary, "codex")
+            home = placement.directory(auth_home, LOGIN)
+            catalog_json = placement.same(temporary) + "/models.json"
+            inside = placement.workspace(workspace)
+            mounts = placement.mounts
+            settings = config.settings() | {"model_catalog_json": catalog_json}
             # Discovery never starts a thread/turn; a second isolated process starts
             # with every discovered skill disabled, then verifies the effective set.
             with _process(
-                binary, auth_home, workspace, settings, deadline, cancelled, launcher
+                program, home, workspace, settings, deadline, cancelled, launcher, mounts
             ) as discovery:
-                paths = config.skill_paths(_initialize(discovery, workspace, settings))
+                paths = config.skill_paths(_initialize(discovery, inside, settings))
             settings["skills.config"] = [{"path": path, "enabled": False} for path in paths]
             with _process(
-                binary, auth_home, workspace, settings, deadline, cancelled, launcher
+                program, home, workspace, settings, deadline, cancelled, launcher, mounts
             ) as process:
                 actual_paths = config.skill_paths(
-                    _initialize(process, workspace, settings), disabled=True
+                    _initialize(process, inside, settings), disabled=True
                 )
                 if actual_paths != paths:
                     raise Refused("app_server_skills_changed")
@@ -410,7 +431,8 @@ def run(
                     {
                         "model": MODEL,
                         "modelProvider": "openai",
-                        "cwd": str(workspace),
+                        # The session's own working directory, as the session names it.
+                        "cwd": inside,
                         "ephemeral": True,
                         "approvalPolicy": "never",
                         "permissions": "reader",

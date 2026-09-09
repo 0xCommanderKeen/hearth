@@ -170,6 +170,17 @@ class Placement:
             raise Refused("sandbox_mount_conflict")
         return target
 
+    def same(self, path) -> str:
+        """One host directory, mounted at the path it already has.
+
+        For files Hearth generates for a session and then hears named back to it --
+        the model catalog the CLI reports as its own effective configuration -- a path
+        that changed on the way in would be a disagreement Hearth reads as tampering.
+        Those are placed where they already are, which is what the bridge socket does
+        for the same reason (`docs/adr/0016-sandbox-per-run.md`).
+        """
+        return self.directory(path, str(path))
+
     def workspace(self, path) -> str:
         """The session's working directory, which in a sandbox is the empty tmpfs."""
         return WORKSPACE if self.contained else str(path)

@@ -125,11 +125,15 @@ def test_cancelling_a_sandboxed_claude_session_stops_it_and_is_never_free(tmp_pa
 # -- the Codex adapter ----------------------------------------------------
 
 
-def codex_cli(path: Path) -> Path:
-    """A `codex` that answers the version probe, reads its prompt and replays a turn."""
+def codex_cli(path: Path, pause: float = 0) -> Path:
+    """A `codex` that answers the version probe, reads its prompt and replays a turn.
+
+    With a pause it stops mid-stream, having already said something, which is what a
+    cancellation has to settle from.
+    """
     path.write_text(
         f"#!{sys.executable}\n"
-        "import json, sys\n"
+        "import json, sys, time\n"
         "if '--version' in sys.argv:\n print('codex-cli 0.153.4')\n sys.exit()\n"
         "prompt = sys.stdin.read()\n"
         "assert prompt, 'the session was launched with no prompt'\n"
@@ -137,13 +141,14 @@ def codex_cli(path: Path) -> Path:
         f"for event in {json.dumps(CODEX_EVENTS)}:\n"
         "    sys.stdout.write(json.dumps(event) + '\\n')\n"
         "    sys.stdout.flush()\n"
+        f"    time.sleep({float(pause)})\n"
         "open(final, 'w').write('A real-model summary.')\n"
     )
     path.chmod(0o700)
     return path
 
 
-def prepared_codex(tmp_path, sandbox, docker=None):
+def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
     """A store with one admitted Codex run, started, its worker left to be driven."""
     from unittest.mock import patch
 
@@ -161,7 +166,7 @@ def prepared_codex(tmp_path, sandbox, docker=None):
     (auth / "auth.json").write_text("synthetic-only")
     database = Database(data / "hearth.db")
     database.initialize()
-    binary = codex_cli(tmp_path / "codex")
+    binary = codex_cli(tmp_path / "codex", pause)
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth, sandbox=sandbox)
     if docker is not None:
         # The image carries the very CLI this store is pinned to -- which is what a
