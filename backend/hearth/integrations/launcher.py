@@ -29,6 +29,7 @@ Measured against Docker Desktop's Linux VM on 2026-09-09; what was measured, and
 two places it differs from what the ADR assumed, is `docs/sandbox.md`.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -63,6 +64,10 @@ IDENTITY = re.compile(r"[0-9a-f]{64}\Z")
 # The daemon a client is told to talk to, when it is not the client's own default.
 HOST = re.compile(r"(unix|tcp|ssh|npipe)://[A-Za-z0-9._:/@%-]{1,4095}\Z")
 VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
+# What a grant may call one of a resident's folders, and therefore what may become a
+# directory name inside the sandbox. The grant's own rule (`residents.models`), repeated
+# here because this is where a name turns into part of a path.
+NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}\Z")
 
 # The working directory a sandboxed session runs in: a fresh tmpfs, never a host path.
 WORKSPACE = "/workspace"
@@ -92,6 +97,14 @@ MOUNTS = "/mounts"
 # How much a directory of the run's own may hold. The CLIs write session state and
 # logs into their configuration directory; nothing a run keeps belongs there.
 SCRATCH = "64m"
+# How many folders one run may be granted. The grant refuses more than this
+# (`management/authority.py`); the worker refuses a request document that carries more,
+# because what reaches a container's argv is checked where it is turned into one.
+GRANTED = 16
+# How many entries of a granted folder Hearth walks when it asks whether a run wrote
+# into it. A folder larger than this is not walked twice per run: the answer becomes
+# "not known", which is what it is, rather than a "no" nobody measured.
+SURVEY_LIMIT = 20_000
 # One question to the container runtime -- a version, an inspect, a hash -- may take
 # this long. A daemon that cannot answer in half a minute is unavailable.
 CLIENT_TIMEOUT = 30
@@ -259,6 +272,119 @@ class Placement:
     def workspace(self, path) -> str:
         """The session's working directory, which in a sandbox is the empty tmpfs."""
         return WORKSPACE if self.contained else str(path)
+
+
+def granted(placement: Placement, mounts) -> list[dict]:
+    """The resident's own folders, placed where its session will find them.
+
+    What arrives here is Hearth's own writing -- the mounts admission resolved from the
+    grant, published into the run's request document -- but it is read after a crash, a
+    restore and an upgrade, so every field is checked again before it is part of a
+    command line. Nothing a resident said reaches this list at all
+    (`docs/adr/0016-sandbox-per-run.md`).
+
+    On the process launcher nothing is placed and the same checks still run: the session
+    reaches the host path itself, because that launcher confines nothing, and the run
+    still says what it was granted.
+    """
+    if not isinstance(mounts, list) or len(mounts) > GRANTED:
+        raise Refused("sandbox_mount_invalid")
+    entries = []
+    for mount in mounts:
+        if (
+            not isinstance(mount, dict)
+            or set(mount) != {"name", "host_path", "mode"}
+            or not isinstance(mount["name"], str)
+            or not NAME.match(mount["name"])
+            or mount["mode"] not in ("ro", "rw")
+            or not isinstance(mount["host_path"], str)
+        ):
+            raise Refused("sandbox_mount_invalid")
+        # Built on both launchers so a path is checked the same way whichever one this
+        # is, and placed only where placing means anything.
+        placed = Mount(mount["host_path"], mounted(mount["name"]), writable=mount["mode"] == "rw")
+        if placement.contained:
+            placement.place(placed)
+        entries.append(dict(mount))
+    return entries
+
+
+def survey(path: str) -> str | None:
+    """A fingerprint of what a granted folder holds: names, sizes, modification times.
+
+    Never the content -- Hearth does not read what a resident's folder holds -- and
+    never a claim about the host as opposed to the sandbox: a bind mount is the same
+    inodes on both sides of the boundary, so this is the session's own view of the very
+    files it was given, taken before it starts and again once it has ended.
+
+    `None` is "not known", and it is the answer for a folder that cannot be read and for
+    one too large to walk twice for this. A run is never said to have left a folder
+    alone on the strength of a look nobody took.
+    """
+    entries: list[tuple[str, int, int]] = []
+
+    def stop(error: OSError) -> None:
+        raise error
+
+    root = Path(path)
+    try:
+        if not root.exists():
+            return None
+        if not root.is_dir():
+            state = root.stat()
+            entries.append(("", state.st_size, state.st_mtime_ns))
+        for parent, directories, files in os.walk(root, onerror=stop):
+            for name in (*directories, *files):
+                item = Path(parent) / name
+                state = item.lstat()
+                entries.append((str(item.relative_to(root)), state.st_size, state.st_mtime_ns))
+                if len(entries) > SURVEY_LIMIT:
+                    return None
+    except OSError:
+        return None
+    return hashlib.sha256(json.dumps(sorted(entries), separators=(",", ":")).encode()).hexdigest()
+
+
+def surveyed(mounts: list[dict]) -> dict[str, str | None]:
+    """Every writable folder this run holds, as it stands right now.
+
+    Only the writable ones: a read-only mount cannot be written through the boundary,
+    and walking somebody's folder twice per run to say so of it would be work for an
+    answer nobody asked for.
+    """
+    return {mount["name"]: survey(mount["host_path"]) for mount in mounts if mount["mode"] == "rw"}
+
+
+def used(mounts: list[dict], before: dict, after: dict) -> list[dict]:
+    """What this run's folders came to: written, left alone, or not known either way.
+
+    A read-only mount is `None` because it was never surveyed. A writable one is a
+    comparison of two fingerprints, and `None` the moment either of them is unknown --
+    a folder that could not be read is not a folder that was left alone.
+    """
+    entries = []
+    for mount in mounts:
+        first, second = before.get(mount["name"]), after.get(mount["name"])
+        written = None
+        if mount["mode"] == "rw" and first is not None and second is not None:
+            written = first != second
+        entries.append({"name": mount["name"], "mode": mount["mode"], "written": written})
+    return entries
+
+
+def written_mounts(receipt) -> list[str]:
+    """The folders a receipt says its run wrote into, by name; nothing else is read."""
+    sandbox = receipt.get("sandbox") if isinstance(receipt, dict) else None
+    recorded = sandbox.get("mounts") if isinstance(sandbox, dict) else None
+    if not isinstance(recorded, list):
+        return []
+    return [
+        entry["name"]
+        for entry in recorded
+        if isinstance(entry, dict)
+        and entry.get("written") is True
+        and isinstance(entry.get("name"), str)
+    ]
 
 
 @dataclass
@@ -811,9 +937,16 @@ def sandboxed(value) -> bool:
         return True
     if (
         not isinstance(value, dict)
-        or set(value) != {"launcher", "container_id", "image"}
+        # The folders it reached are the one part a receipt may leave out entirely: a
+        # session that ran before this release said nothing about them, and its receipt
+        # is not made unreadable by a field that did not exist when it was written.
+        or set(value) - {"mounts"} != {"launcher", "container_id", "image"}
         or value["launcher"] not in KINDS
-        or not all(item is None or isinstance(item, str) for item in value.values())
+        or not all(
+            item is None or isinstance(item, str)
+            for item in (value["launcher"], value["container_id"], value["image"])
+        )
+        or not recorded(value.get("mounts"))
     ):
         return False
     if value["launcher"] != CONTAINER:
@@ -823,6 +956,28 @@ def sandboxed(value) -> bool:
     # A sandboxed run always knows which image it was admitted to, whether or not the
     # runtime ever named the container: the image is the whole point of recording it.
     return isinstance(value["image"], str)
+
+
+def recorded(value) -> bool:
+    """Whether a receipt's account of the folders its run held is one Hearth could write.
+
+    Each is a name, the mode it was granted with, and what became of it: written, left
+    alone, or not known. Nothing here is the resident's -- the names come from the grant
+    Hearth resolved and the verdict from a survey Hearth took.
+    """
+    if value is None:
+        return True
+    if not isinstance(value, list) or len(value) > GRANTED:
+        return False
+    return all(
+        isinstance(entry, dict)
+        and set(entry) == {"name", "mode", "written"}
+        and isinstance(entry["name"], str)
+        and NAME.match(entry["name"]) is not None
+        and entry["mode"] in ("ro", "rw")
+        and (entry["written"] is None or type(entry["written"]) is bool)
+        for entry in value
+    )
 
 
 def check_image(sandbox: Sandbox, image: str | None) -> None:

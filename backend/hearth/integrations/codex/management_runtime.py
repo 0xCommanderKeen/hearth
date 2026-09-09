@@ -14,12 +14,17 @@ from hearth.residents.models import Refused
 
 
 def encode(receipt, expected):
+    from hearth.integrations.launcher import sandboxed
+
     if (
         not isinstance(receipt, dict)
-        or set(receipt) != {"kind", "protocol", "binding", "binary", "terminal"}
+        # Where the session ran is the one field a management receipt may leave out:
+        # one written before the sandbox existed says nothing about it.
+        or set(receipt) - {"sandbox"} != {"kind", "protocol", "binding", "binary", "terminal"}
         or receipt["kind"] != "codex_subscription"
         or receipt["protocol"] != "management"
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
     ):
         raise Refused("run_usage_invalid")
     try:
@@ -168,7 +173,7 @@ def worker(folder, request, execution):
     from pathlib import Path
 
     from hearth.integrations.codex.usage import UsageBinding
-    from hearth.integrations.launcher import Sandbox, written_handle
+    from hearth.integrations.launcher import Sandbox, granted, surveyed, used, written_handle
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
     from hearth.work.letters import run_letter_scope
@@ -199,12 +204,18 @@ def worker(folder, request, execution):
             return True
         return False
 
+    box, reached, before = None, [], {}
     try:
         # Where this run was admitted to execute, read before anything is launched and
         # inside this guard, so a request document the worker cannot read leaves an
         # unlaunched receipt with its own reason rather than no receipt at all.
         sandbox = Sandbox.of(request.get("sandbox"))
         launcher = sandbox.open()
+        # And what it was admitted to reach on disk. Checked here, before anything is
+        # launched, and surveyed so this receipt can say which writable folder was used.
+        reached = granted(sandbox.placement(), request.get("mounts") or [])
+        before = surveyed(reached)
+        box = sandbox
         with hearth.database.transaction() as db:
             authority = authorize(db, bound, int(hearth.clock()))
             # The pin a sandboxed session runs on is the image, whose own CLIs were
@@ -241,6 +252,7 @@ def worker(folder, request, execution):
             # control plane published into the request; the worker's own environment
             # is a search path and carries nothing.
             launcher=launcher,
+            mounts=reached,
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],
@@ -267,5 +279,16 @@ def worker(folder, request, execution):
         "binary": request["sha256"],
         "terminal": terminal,
     }
+    if box is not None:
+        # Where this run's sessions ran, and what they held on disk. A management run
+        # starts two containers, one after the other, so no single id is the one it ran
+        # in; what each of them was is written down beside this receipt as it starts
+        # (`handle.json`), which is what a later observation reads.
+        receipt["sandbox"] = {
+            "launcher": box.launcher,
+            "container_id": None,
+            "image": box.digest,
+            "mounts": used(reached, before, surveyed(reached)),
+        }
     encode(receipt, UsageBinding(**request["binding"]))
     publish_receipt(folder / "receipt.json", receipt)

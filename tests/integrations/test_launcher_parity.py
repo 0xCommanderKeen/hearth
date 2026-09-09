@@ -121,9 +121,13 @@ def test_a_claude_session_settles_the_same_whichever_launcher_started_it(tmp_pat
         "launcher": "process",
         "container_id": None,
         "image": None,
+        # This resident holds no filesystem grant, so there is nothing to name -- said
+        # by both launchers in the same words.
+        "mounts": [],
     }
     assert receipts["container"]["sandbox"]["launcher"] == "container"
     assert receipts["container"]["sandbox"]["image"] == DIGEST
+    assert receipts["container"]["sandbox"]["mounts"] == []
     assert len(receipts["container"]["sandbox"]["container_id"]) == 64
 
 
@@ -155,11 +159,14 @@ def test_cancelling_a_sandboxed_claude_session_stops_it_and_is_never_free(tmp_pa
 # -- the Codex adapter ----------------------------------------------------
 
 
-def codex_cli(path: Path, pause: float = 0) -> Path:
+def codex_cli(path: Path, pause: float = 0, writes: bool = False) -> Path:
     """A `codex` that answers the version probe, reads its prompt and replays a turn.
 
     With a pause it stops mid-stream, having already said something, which is what a
-    cancellation has to settle from.
+    cancellation has to settle from. With `writes` it puts a file in every writable
+    folder its prompt says it was granted -- by the host path, because the fake daemon
+    runs the command it is given rather than mounting anything, so `/mounts/<name>`
+    exists in the argv and nowhere else.
     """
     path.write_text(
         f"#!{sys.executable}\n"
@@ -168,7 +175,14 @@ def codex_cli(path: Path, pause: float = 0) -> Path:
         "prompt = sys.stdin.read()\n"
         "assert prompt, 'the session was launched with no prompt'\n"
         "final = sys.argv[sys.argv.index('-o') + 1]\n"
-        f"for event in {json.dumps(CODEX_EVENTS)}:\n"
+        + (
+            "for mount in json.loads(prompt).get('mounts', []):\n"
+            "    if mount['mode'] == 'rw':\n"
+            "        open(mount['host_path'] + '/written-by-the-session.md', 'w').write('done')\n"
+            if writes
+            else ""
+        )
+        + f"for event in {json.dumps(CODEX_EVENTS)}:\n"
         "    sys.stdout.write(json.dumps(event) + '\\n')\n"
         "    sys.stdout.flush()\n"
         f"    time.sleep({float(pause)})\n"
@@ -178,8 +192,12 @@ def codex_cli(path: Path, pause: float = 0) -> Path:
     return path
 
 
-def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
-    """A store with one admitted Codex run, started, its worker left to be driven."""
+def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0, mounts=(), writes=False):
+    """A store with one admitted Codex run, started, its worker left to be driven.
+
+    `mounts` is the filesystem grant its resident holds when the run is admitted, in the
+    shape an operator writes (`docs/adr/0016-sandbox-per-run.md`).
+    """
     from unittest.mock import patch
 
     from hearth.execution.context import read_context
@@ -195,7 +213,7 @@ def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
     (auth / "auth.json").write_text("synthetic-only")
     database = Database(data / "hearth.db")
     database.initialize()
-    binary = codex_cli(tmp_path / "codex", pause)
+    binary = codex_cli(tmp_path / "codex", pause, writes)
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth, sandbox=sandbox)
     if docker is not None:
         pinned(database, sandbox, docker, "codex", binary)
@@ -203,6 +221,12 @@ def prepared_codex(tmp_path, sandbox, docker=None, pause: float = 0):
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
     )
+    if mounts:
+        from hearth.management.authority import Management
+
+        Management(hearth).save(
+            "reader", {"expected_revision": 0, "mounts": [dict(mount) for mount in mounts]}
+        )
     task = hearth.submit("live", "reader", "Summarize", expires_at=int(hearth.clock()) + 600)
     run = hearth.admit(task.task_id, reserve=100_000)
     Execution(hearth, Artifacts(data / "artifacts")).prepare_start(run.id, run.owner_token)
@@ -238,11 +262,13 @@ def test_a_codex_session_settles_the_same_whichever_launcher_started_it(tmp_path
         "launcher": "process",
         "container_id": None,
         "image": None,
+        "mounts": [],
     }
     assert receipts["container"]["sandbox"] == {
         "launcher": "container",
         "container_id": receipts["container"]["sandbox"]["container_id"],
         "image": DIGEST,
+        "mounts": [],
     }
     assert len(receipts["container"]["sandbox"]["container_id"]) == 64
     # The final message came back out of the sandbox, so both launchers corroborate

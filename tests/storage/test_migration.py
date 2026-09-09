@@ -1055,7 +1055,8 @@ def version_11_store(path, *, policy=None, sha256=None):
     )
     _lifecycle(db, "karen", 0, "ready")
     db.execute(
-        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, 86400, 5)"
+        "INSERT INTO household_policy VALUES "
+        "(1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, 86400, 5)"
     )
     db.execute(
         "INSERT INTO management_grant_revisions VALUES ('karen', 1, ?, ?)",
@@ -1110,9 +1111,7 @@ def test_the_version_11_store_gains_filesystem_grants_and_reaches_nothing_new(tm
     ]
     validate_management(db)
     assert json.loads(
-        db.execute(
-            "SELECT detail FROM audit WHERE kind='management.grants_rescoped'"
-        ).fetchone()[0]
+        db.execute("SELECT detail FROM audit WHERE kind='management.grants_rescoped'").fetchone()[0]
     ) == {"count": 1, "reason": "mounts_added"}
     # No run reached anything: the new table is there and empty.
     assert db.execute("SELECT COUNT(*) FROM run_mounts").fetchone()[0] == 0

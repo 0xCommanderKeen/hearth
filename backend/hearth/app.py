@@ -520,7 +520,7 @@ def create_app(
     return app
 
 
-def login_directories(adapters: Iterable[Runtime]) -> list[Path]:
+def login_directories(adapters: Iterable[object]) -> list[Path]:
     """Where each opened runtime keeps the credential it reads, if it keeps one here.
 
     Asked of every adapter in the same words, because nothing outside `integrations/`

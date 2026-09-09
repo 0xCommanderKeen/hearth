@@ -314,13 +314,27 @@ def run_mounts(db, run_id: str) -> list[dict]:
     ]
 
 
+def admitted_mounts(db, run_id: str) -> list[dict]:
+    """What a run's worker is told about its folders: the name, the path, the mode.
+
+    The one shape a request document carries, written here so both adapters publish the
+    same three fields and the worker checks exactly those (`integrations/launcher.py`).
+    """
+    return [
+        {key: entry[key] for key in ("name", "host_path", "mode")}
+        for entry in run_mounts(db, run_id)
+    ]
+
+
 def mount_summary(db, identity: str, *, run: bool = False) -> dict:
     """What an operator is shown about a filesystem grant, for a run or a resident."""
     if run:
-        return {"mounts": [
-            {key: entry[key] for key in ("name", "host_path", "mode", "path")}
-            for entry in run_mounts(db, identity)
-        ]}
+        return {
+            "mounts": [
+                {key: entry[key] for key in ("name", "host_path", "mode", "path")}
+                for entry in run_mounts(db, identity)
+            ]
+        }
     return {"mounts": read_grant(db, identity)["mounts"]}
 
 

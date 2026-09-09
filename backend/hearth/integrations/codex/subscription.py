@@ -28,9 +28,13 @@ from hearth.integrations.launcher import (
     Sandbox,
     check_image,
     discard,
+    granted,
     sandboxed,
+    surveyed,
+    used,
     written_handle,
 )
+from hearth.management.authority import admitted_mounts
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -250,6 +254,10 @@ class CodexLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='codex_live_binary'"
                     ).fetchone()[0],
                     "sandbox": self.sandbox.document(),
+                    # What this run was admitted to reach on disk, resolved from its
+                    # resident's grant at admission and never from anything a session
+                    # says (`docs/adr/0016-sandbox-per-run.md`).
+                    "mounts": admitted_mounts(db, run_id),
                 }
             from hearth.integrations.codex.management_runtime import pin_configuration
             from hearth.management.bridge import BoundRun
@@ -396,6 +404,17 @@ def worker(folder, inherited_fd=None):
             return
         launcher = sandbox.open()
         placement = sandbox.placement()
+        try:
+            # The folders this run was admitted with, checked again here and placed
+            # where the session will name them. Read outside the dispatch guard,
+            # because looking at what they hold is not something to do while holding
+            # the store's one write transaction.
+            reached = granted(placement, request.get("mounts") or [])
+        except Refused:
+            # A mount list this worker cannot read is not a session to launch, exactly
+            # as a sandbox document it cannot read is not one. Nothing has started.
+            return
+        before = surveyed(reached)
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         final = workspace / "final.md"
@@ -505,6 +524,9 @@ def worker(folder, inherited_fd=None):
                 "launcher": sandbox.launcher,
                 "container_id": handle.id if handle is not None and placement.contained else None,
                 "image": sandbox.digest,
+                # What this session held on disk and what became of the writable ones,
+                # surveyed before it started and again now that it has ended.
+                "mounts": used(reached, before, surveyed(reached)),
             },
             "stdout": output.decode("utf-8", errors="replace"),
             "final": final.read_text()

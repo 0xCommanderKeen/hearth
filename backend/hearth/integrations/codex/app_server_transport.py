@@ -22,7 +22,7 @@ from hearth.integrations.codex.events import (
 )
 from hearth.integrations.codex.pricing import MODEL
 from hearth.integrations.codex.subscription import AUTH
-from hearth.integrations.launcher import LOGIN, Placement, ProcessLauncher
+from hearth.integrations.launcher import LOGIN, Placement, ProcessLauncher, granted
 from hearth.residents.models import Refused
 
 PROTOCOL = "codex-app-server-0.153.4"
@@ -358,6 +358,11 @@ def run(
     max_calls: int = 64,
     expected_pins: dict | None = None,
     launcher=None,
+    # The folders this run was admitted to reach, as admission resolved them from its
+    # resident's grant. A management session is confined by the same boundary as any
+    # other (`docs/adr/0016-sandbox-per-run.md`); what it may write through Hearth's
+    # own tools is a different question and is the grant's other half.
+    mounts: list[dict] | tuple = (),
     # Told what each of this run's sessions started, so that the caller -- which is the
     # only thing here with a run folder to write in -- can record it. A container whose
     # worker dies is only findable by what was written down.
@@ -414,7 +419,8 @@ def run(
             home = placement.login(auth_home, AUTH, LOGIN)
             catalog_json = placement.same(temporary) + "/models.json"
             inside = placement.workspace(workspace)
-            mounts = placement.mounts
+            granted(placement, list(mounts))
+            placed = placement.mounts
             settings = config.settings() | {"model_catalog_json": catalog_json}
             # Discovery never starts a thread/turn; a second isolated process starts
             # with every discovered skill disabled, then verifies the effective set.
@@ -426,7 +432,7 @@ def run(
                 deadline,
                 cancelled,
                 launcher,
-                mounts,
+                placed,
                 on_session,
             ) as discovery:
                 paths = config.skill_paths(_initialize(discovery, inside, settings))
@@ -439,7 +445,7 @@ def run(
                 deadline,
                 cancelled,
                 launcher,
-                mounts,
+                placed,
                 on_session,
             ) as process:
                 actual_paths = config.skill_paths(

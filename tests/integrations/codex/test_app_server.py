@@ -584,3 +584,51 @@ def test_a_management_session_inside_a_sandbox_names_only_the_image_s_own_paths(
         # The workspace the session is told to work in is the runtime's own tmpfs.
         assert argv[argv.index("--workdir") + 1] == WORKSPACE
         assert not any(str(cli[2]) in part for part in command)
+
+
+def mkdir(path):
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_a_management_session_reaches_the_folders_its_grant_named(tmp_path):
+    """A resident with management authority is confined by the same boundary.
+
+    Both of the sessions this run starts get the grant's folders, with the mode the
+    grant said, at the one place a resident's folders live (`/mounts/<name>`).
+    """
+    from hearth.integrations.launcher import BINARIES, ContainerLauncher
+
+    from tests import fake_docker
+
+    digest = "sha256:" + "6" * 64
+    image, network = "ghcr.io/hearth/sandbox@" + digest, "hearth-sandbox"
+    daemon = tmp_path / "daemon"
+    daemon.mkdir()
+    docker = fake_docker.install(daemon)
+    fake_docker.hold(docker, image=image, network=network)
+    cli = fake_cli(tmp_path)
+    fake_docker.carry(docker, BINARIES["codex_live_binary"], cli[0].read_bytes())
+    shared, drafts = tmp_path / "shared", tmp_path / "drafts"
+    shared.mkdir()
+    drafts.mkdir()
+    result = run_fixture(
+        tmp_path,
+        cli=cli,
+        launcher=ContainerLauncher(image, network, docker=str(docker)),
+        mounts=[
+            {"name": "notes", "host_path": str(shared), "mode": "ro"},
+            {"name": "drafts", "host_path": str(drafts), "mode": "rw"},
+        ],
+    )
+    assert result["launched"] is True and result["error"] is None, result["error"]
+    started = [call for call in fake_docker.calls(docker) if call[:1] == ["run"]]
+    assert len(started) == 2
+    for argv in started:
+        assert f"type=bind,source={shared},target=/mounts/notes,readonly" in argv
+        assert f"type=bind,source={drafts},target=/mounts/drafts" in argv
+    # And a mount list this transport cannot read starts nothing at all.
+    refused = run_fixture(
+        tmp_path, cli=fake_cli(mkdir(tmp_path / "again")), mounts=[{"name": "notes"}]
+    )
+    assert refused["launched"] is False and refused["error"] == "sandbox_mount_invalid"

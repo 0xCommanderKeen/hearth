@@ -294,6 +294,7 @@ def test_an_image_that_changed_while_the_run_waited_refuses_before_it_launches(t
         "launcher": "container",
         "container_id": None,
         "image": DIGEST,
+        "mounts": [],
     }
     assert runtime.inspect(run.id, expected_digest=run.input_digest).cost == 0
     assert [call for call in fake_docker.calls(docker) if "--cidfile" in call] == []

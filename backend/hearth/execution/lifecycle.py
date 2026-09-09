@@ -10,6 +10,8 @@ from hearth.execution.context import read_context
 from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
+from hearth.integrations.launcher import written_mounts
+from hearth.management.authority import run_mounts
 from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
@@ -233,6 +235,28 @@ class Execution:
                         row["resident_id"],
                         now,
                         {"reason": "usage_unknown", "run_id": run_id},
+                    )
+            # A folder this run was granted `rw` and is seen to have written into is a
+            # change to the host, so it is recorded as its own fact, in this same
+            # transaction, before the run's ending. What the receipt says is only a
+            # name: which folder that name means, and whether this run really held it
+            # writable, is read from what admission pinned
+            # (`docs/adr/0016-sandbox-per-run.md`).
+            written = set(written_mounts(_usage_receipt))
+            for mount in run_mounts(db, run_id) if written else []:
+                if mount["name"] in written and mount["mode"] == "rw":
+                    _audit(
+                        db,
+                        "run.mount_rw_used",
+                        run_id,
+                        now,
+                        {
+                            "task_id": row["task_id"],
+                            "resident_id": row["resident_id"],
+                            "name": mount["name"],
+                            "host_path": mount["host_path"],
+                            "grant_revision": mount["grant_revision"],
+                        },
                     )
             _audit(
                 db,
