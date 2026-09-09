@@ -2,10 +2,67 @@
   "browser": "151.0.7922.34",
   "checks": [
     {
-      "name": "desktop-four",
-      "frames": 1314,
+      "name": "desktop-empty",
+      "frames": 426,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "05b75f22-16d9-4b32-af79-e191847bfbf3",
+      "orthographic": true,
+      "position": [
+        22.67238853149664,
+        53.31597120529068,
+        31.20586566864996
+      ],
+      "zoom": 1,
+      "corners": [
+        [
+          -0.20016322581344437,
+          0.7504560274958312,
+          -0.9849464852890902
+        ],
+        [
+          -0.6532928773495928,
+          -0.07358364293239239,
+          -0.9867763905632533
+        ],
+        [
+          -0.20016322581344437,
+          0.8928571428571422,
+          -0.9855228022713269
+        ],
+        [
+          -0.6532928773495928,
+          0.06881747242891859,
+          -0.98735270754549
+        ],
+        [
+          0.6532928773495928,
+          -0.06881747242891989,
+          -0.986765806557586
+        ],
+        [
+          0.20016322581344437,
+          -0.8928571428571435,
+          -0.988595711831749
+        ],
+        [
+          0.6532928773495928,
+          0.07358364293239109,
+          -0.9873421235398226
+        ],
+        [
+          0.20016322581344437,
+          -0.7504560274958325,
+          -0.9891720288139857
+        ]
+      ],
+      "width": 1174,
+      "height": 714
+    },
+    {
+      "name": "desktop-four",
+      "frames": 1095,
+      "renderers": 1,
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         23.191752919419514,
@@ -60,9 +117,9 @@
     },
     {
       "name": "desktop-twenty-four",
-      "frames": 21650,
+      "frames": 21431,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         36.59738456337963,
@@ -117,9 +174,9 @@
     },
     {
       "name": "phone-twenty-four",
-      "frames": 35090,
+      "frames": 34871,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         36.59738456337963,
@@ -174,9 +231,9 @@
     },
     {
       "name": "phone-empty",
-      "frames": 47641,
+      "frames": 47422,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         22.67238853149664,
@@ -231,9 +288,9 @@
     },
     {
       "name": "phone-four",
-      "frames": 48647,
+      "frames": 48499,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         23.191752919419514,
@@ -288,9 +345,9 @@
     },
     {
       "name": "desktop-four-resized",
-      "frames": 51275,
+      "frames": 51127,
       "renderers": 1,
-      "camera": "9884121e-5e17-4d9f-b22d-8f3580991c85",
+      "camera": "effb45a4-88a9-4a92-b4d2-00669d2fc396",
       "orthographic": true,
       "position": [
         23.191752919419514,

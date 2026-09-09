@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Box3, OrthographicCamera, Vector3 } from "three";
-import { createCamera } from "./camera";
+import { createCameraController } from "./camera";
 
 function setup() {
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
@@ -12,7 +12,7 @@ function setup() {
     },
     addEventListener() {},
   };
-  return { camera, controls, view: createCamera(camera, controls) };
+  return { camera, controls, view: createCameraController(camera, controls) };
 }
 for (const count of [0, 4, 24, 100]) {
   for (const ratio of [0.55, 1.9]) {

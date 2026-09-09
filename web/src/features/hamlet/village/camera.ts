@@ -5,8 +5,12 @@ type Controls = {
   addEventListener(type: "start", listener: () => void): void;
 };
 const ANGLE = Math.PI / 5;
+export const ZOOM_LIMITS = { min: 0.5, max: 5 };
 /** Fit model bounds in screen space, with margin and visible facades. */
-export function createCamera(camera: OrthographicCamera, controls: Controls) {
+export function createCameraController(
+  camera: OrthographicCamera,
+  controls: Controls,
+) {
   let settlement = new Box3();
   let aspect = 1;
   let height = 1;
@@ -69,7 +73,10 @@ export function createCamera(camera: OrthographicCamera, controls: Controls) {
     overview,
     zoom(factor: number) {
       atOverview = false;
-      camera.zoom = Math.min(5, Math.max(0.5, camera.zoom * factor));
+      camera.zoom = Math.min(
+        ZOOM_LIMITS.max,
+        Math.max(ZOOM_LIMITS.min, camera.zoom * factor),
+      );
       camera.updateProjectionMatrix();
       controls.update();
     },

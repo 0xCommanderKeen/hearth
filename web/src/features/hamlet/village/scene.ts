@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createArtKit } from "./art.js";
-import { createCamera } from "./camera";
+import { createCameraController, ZOOM_LIMITS } from "./camera";
 import { selectionGesture } from "./gesture";
 import type { LetterEvent, Resident } from "../../../shared/client";
 
@@ -47,12 +47,12 @@ export function createVillageScene(
   controls.enableDamping = false;
   controls.minPolarAngle = Math.PI / 6;
   controls.maxPolarAngle = Math.PI / 3;
-  controls.minZoom = 0.5;
-  controls.maxZoom = 5;
+  controls.minZoom = ZOOM_LIMITS.min;
+  controls.maxZoom = ZOOM_LIMITS.max;
   controls.screenSpacePanning = false;
   controls.touches.ONE = THREE.TOUCH.PAN;
   controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
-  const view = createCamera(camera, controls);
+  const view = createCameraController(camera, controls);
   const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let village = new THREE.Group();
   let targets: THREE.Object3D[] = [];

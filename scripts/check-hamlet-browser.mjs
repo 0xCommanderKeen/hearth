@@ -41,7 +41,7 @@ window.show = (count, connected = true) => {
  root.render(React.createElement(Hamlet, {snapshot:{residents, letters:[], cursor:Date.now()}, connected}));
 };
 window.disposeVillage = () => root.unmount();
-window.show(4);
+window.show(Number(new URLSearchParams(location.search).get('count') ?? 4));
 `;
 const server = await createServer({
   root: fileURLToPath(new URL("../web", import.meta.url)),
@@ -99,6 +99,9 @@ const fit = async (name) => {
   await page.screenshot({ path: output + name + ".png", fullPage: true });
 };
 try {
+  await page.goto("http://127.0.0.1:5193/__hamlet_check?count=0");
+  await ready();
+  await fit("desktop-empty");
   await page.goto("http://127.0.0.1:5193/__hamlet_check");
   await ready();
   await fit("desktop-four");
@@ -155,7 +158,8 @@ try {
     touchPoints: [],
   });
   await settled();
-  assert.notDeepEqual((await stats()).position, beforeTouch.position);
+  const afterPan = await stats();
+  assert.notDeepEqual(afterPan.position, beforeTouch.position);
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchStart",
     touchPoints: [
@@ -166,8 +170,8 @@ try {
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchMove",
     touchPoints: [
-      { x: center.x - 60, y: center.y - 20, id: 1 },
-      { x: center.x + 60, y: center.y + 20, id: 2 },
+      { x: center.x - 40, y: center.y - 5, id: 1 },
+      { x: center.x + 80, y: center.y + 35, id: 2 },
     ],
   });
   await touch.send("Input.dispatchTouchEvent", {
@@ -176,6 +180,7 @@ try {
   });
   await settled();
   assert((await stats()).zoom > beforeTouch.zoom);
+  assert.notDeepEqual((await stats()).position, afterPan.position);
   assert.equal(new URL(page.url()).hash, "");
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await settled();
