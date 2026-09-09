@@ -1,5 +1,7 @@
 """Authenticated operator controls for resident readiness and configuration."""
 
+from collections.abc import Iterable
+
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 
@@ -13,9 +15,10 @@ from hearth.residents.maintenance import (
 from hearth.work.service import Hearth
 
 
-def mount_maintenance(app: FastAPI, hearth: Hearth) -> None:
+def mount_maintenance(app: FastAPI, hearth: Hearth, protected: Iterable[str] = ()) -> None:
+    """`protected` is what this installation refuses to let an imported grant mount."""
     maintenance = Maintenance(hearth)
-    bundles = Bundles(hearth)
+    bundles = Bundles(hearth, protected)
 
     @app.post("/api/residents/import", status_code=201)
     def import_bundle(body: dict, idempotency_key: str = Header(min_length=1, max_length=128)):

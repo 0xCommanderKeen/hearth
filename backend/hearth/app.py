@@ -503,15 +503,15 @@ def create_app(
 
     from hearth.residents.maintenance_api import mount_maintenance
 
-    mount_maintenance(app, hearth)
-    mount_inputs(app, hearth)
     # What no grant on this installation may mount: Hearth's own data directory, the
     # login of every runtime that opened one, and the container runtime's socket
     # (`docs/adr/0016-sandbox-per-run.md`). Read once here, where the adapters and the
-    # sandbox configuration are both in hand.
-    mount_management(
-        app, hearth, protected_paths(data, login_directories(adapters), socket=sandbox.host)
-    )
+    # sandbox configuration are both in hand, and held to by a grant an operator writes
+    # and by one an imported bundle asks for alike.
+    protected = protected_paths(data, login_directories(adapters), socket=sandbox.host)
+    mount_maintenance(app, hearth, protected)
+    mount_inputs(app, hearth)
+    mount_management(app, hearth, protected)
     mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"

@@ -8,11 +8,21 @@ matches and creates the rest. A carried management grant is informational only a
 is never applied on import. Import is ordinary provisioning, so it keeps that path's
 capacity checks, savepoint rollback, durable receipt and retry semantics without any
 schema change.
+
+The one part of a grant that travels as more than information is what the resident
+reached on disk, and it travels as a name and a mode with no path at all
+(`docs/adr/0016-sandbox-per-run.md`): where a folder is, is the exporting household's
+business and would say nothing true about the importing one. An import resolves each
+name against a map the operator writes and grants exactly what the operator named --
+under this household's own rules, so a path it protects refuses the import. A name the
+operator said nothing about is left out, `mount_unresolved` in the resolution, and no
+authority beyond those folders is ever carried across.
 """
 
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from typing import Literal
 
 from pydantic import Field, ValidationError
@@ -70,6 +80,24 @@ class BundleInput(Strict):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class BundleMount(Strict):
+    """One folder as it travels: what it is called and how far into it a run may go.
+
+    No host path. A bundle that carried one would be describing the machine it was
+    exported from, and importing it would grant a folder on this one that nobody here
+    ever named.
+    """
+
+    name: str = Field(min_length=1, max_length=64)
+    mode: Literal["ro", "rw"] = "ro"
+
+
+class BundleGrant(GrantPolicy):
+    """The exported grant: every field as it was, with the folders stripped to names."""
+
+    mounts: list[BundleMount] = Field(default_factory=list, max_length=16)
+
+
 class ResidentBundle(Strict):
     bundle_version: Literal[1]
     source: BundleSource
@@ -77,7 +105,7 @@ class ResidentBundle(Strict):
     skills: list[BundleSkill] = Field(default_factory=list, max_length=8)
     input_sets: list[BundleInput] = Field(default_factory=list, max_length=4)
     routine: RoutineSetup | None = None
-    management: GrantPolicy | None = None
+    management: BundleGrant | None = None
 
 
 class ImportOverrides(Strict):
@@ -90,6 +118,9 @@ class ImportRequest(Strict):
     bundle: ResidentBundle
     overrides: ImportOverrides | None = None
     manager: str = "operator"
+    # Where this household keeps the folders the bundle names, written by the operator
+    # doing the import and by nobody else. A name that is not in here is not granted.
+    mount_paths: dict[str, str] = Field(default_factory=dict, max_length=16)
 
 
 def file_name(name: str) -> str:
@@ -143,8 +174,9 @@ def export_in_transaction(db, hearth: Hearth, resident_id: str) -> dict:
         else {key: routine[key] for key in ("instruction", "local_time", "timezone", "enabled")},
         "management": None
         if grant["revision"] == 0
-        else GrantPolicy.model_validate(
+        else BundleGrant.model_validate(
             {key: grant[key] for key in GrantPolicy.model_fields}
+            | {"mounts": [{"name": m["name"], "mode": m["mode"]} for m in grant["mounts"]]}
         ).model_dump(),
     }
     try:
@@ -175,7 +207,13 @@ def _existing_input(db, sha256: str):
 
 
 def import_in_transaction(
-    db, hearth: Hearth, command_id: str, request: dict, *, actor: str = "operator"
+    db,
+    hearth: Hearth,
+    command_id: str,
+    request: dict,
+    *,
+    actor: str = "operator",
+    protected: Iterable[str] = (),
 ) -> dict:
     """Materialise bundle content, then provision through the ordinary path."""
     identifier(command_id)
@@ -269,13 +307,56 @@ def import_in_transaction(
         "requested": resident.execution_profile,
         "used": configured,
     } | ({} if configured == resident.execution_profile else {"reason": "runtime_not_configured"})
+    # The grant itself is not applied -- no capability, limit or profile crosses -- and
+    # the folders are, but only the ones the operator gave a path of this household's.
     resolution["management_ignored"] = bundle.management is not None
+    resolution["mounts"] = _resolve_mounts(
+        db, hearth, receipt["resident_id"], bundle, body.mount_paths, protected
+    )
     return receipt | {"resolution": resolution}
 
 
+def _resolve_mounts(db, hearth: Hearth, resident_id: str, bundle, paths: dict, protected) -> list:
+    """Grant the folders this operator named, and say what became of every other one.
+
+    The names come from the bundle and the paths from the operator; the rules that
+    refuse a path are this household's own, so an import cannot reach anything a grant
+    written by hand could not. A bundle with no folders writes no grant at all, which is
+    exactly what an import did before this existed.
+    """
+    from hearth.management.authority import Management
+
+    carried = bundle.management.mounts if bundle.management is not None else []
+    resolution, mounts = [], []
+    for mount in carried:
+        where = paths.get(mount.name)
+        if where is None:
+            resolution.append(
+                {"name": mount.name, "mode": mount.mode, "outcome": "mount_unresolved"}
+            )
+            continue
+        mounts.append({"name": mount.name, "host_path": where, "mode": mount.mode})
+        resolution.append(
+            {
+                "name": mount.name,
+                "mode": mount.mode,
+                "host_path": where,
+                "outcome": "granted",
+            }
+        )
+    if mounts:
+        Management(hearth, protected).save_in_transaction(
+            db, resident_id, {"expected_revision": 0, "mounts": mounts}
+        )
+    return resolution
+
+
 class Bundles:
-    def __init__(self, hearth: Hearth):
+    def __init__(self, hearth: Hearth, protected: Iterable[str] = ()):
         self.hearth = hearth
+        # What this installation refuses to let any grant mount, so an imported folder
+        # is held to the same rules as one an operator writes by hand.
+        self.protected = tuple(protected)
 
     def export(self, resident_id: str) -> dict:
         with self.hearth.database.transaction() as db:
@@ -283,7 +364,9 @@ class Bundles:
 
     def import_(self, command_id: str, request: dict, *, actor: str = "operator") -> dict:
         with self.hearth.database.transaction(write=True) as db:
-            return import_in_transaction(db, self.hearth, command_id, request, actor=actor)
+            return import_in_transaction(
+                db, self.hearth, command_id, request, actor=actor, protected=self.protected
+            )
 
 
 def load_bundle_file(path) -> dict:

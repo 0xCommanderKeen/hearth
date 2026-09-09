@@ -38,9 +38,13 @@ def main() -> None:
     parser.add_argument("--command-id")
     args = parser.parse_args()
     if args.command in {"export-resident", "import-resident"}:
+        from hearth.management.authority import protected_paths
         from hearth.residents.bundle import Bundles, load_bundle_file
 
-        bundles = Bundles(Hearth(Database(args.data / "hearth.db")))
+        # This command has no adapters open, so what it protects is the store's own
+        # directory and the container runtime's socket; a login outside the data
+        # directory is refused when the grant reaches a running Hearth.
+        bundles = Bundles(Hearth(Database(args.data / "hearth.db")), protected_paths(args.data))
         try:
             if args.command == "export-resident":
                 if args.resident is None or args.destination is None:
