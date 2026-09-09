@@ -82,24 +82,25 @@ def snapshot(hearth: Hearth) -> dict:
             task["lineage"] = task_lineage(db, task["id"], names)
         runs = [
             dict(row)
-            for row in db.execute(f"""SELECT id, task_id, resident_id,
+            for row in db.execute(f"""SELECT runs.id AS id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
                    runtime_kind, runtime_version, input_digest,
-                   (SELECT model FROM run_pricing p WHERE p.run_id=runs.id) AS model,
-                   (SELECT schedule FROM run_pricing p WHERE p.run_id=runs.id)
-                   AS price_schedule,
+                   -- The run's own price pin, joined once: what a run was priced under
+                   -- is what the operator is shown beside its cost, and whether it was
+                   -- priced at all is what decides the usage source below.
+                   p.model AS model, p.schedule AS price_schedule,
                    created_at, actual_cost,
                    COALESCE((SELECT revision FROM run_memory m WHERE m.run_id=runs.id),0)
                    AS memory_revision,
                    usage_known, finished_at, artifact_id, cancellation_requested,
                    CASE WHEN EXISTS(SELECT 1 FROM usage_reconciliations u WHERE u.run_id=runs.id)
-                   THEN 'operator_reported' WHEN usage_known=1 AND EXISTS
-                   (SELECT 1 FROM run_pricing p WHERE p.run_id=runs.id)
+                   THEN 'operator_reported' WHEN usage_known=1 AND p.model IS NOT NULL
                    THEN CASE WHEN runtime_kind IN {LIVE_KINDS}
                    THEN 'api_equivalent_subscription' ELSE 'api_equivalent_mock' END
                    WHEN usage_known=1 THEN 'mock_runtime'
                    ELSE 'unknown' END AS usage_source
-                   FROM runs ORDER BY status IN {ACTIVE_RUNS} DESC,
+                   FROM runs LEFT JOIN run_pricing p ON p.run_id=runs.id
+                   ORDER BY status IN {ACTIVE_RUNS} DESC,
                    (usage_known=0 AND finished_at IS NOT NULL) DESC,
                    created_at DESC, id DESC LIMIT 100""")
         ]

@@ -107,12 +107,17 @@ def create_app(
         if not restored:
             with database.transaction(write=True) as db:
                 for missing in declared_runtimes(db) - {adapter.kind for adapter in adapters}:
+                    # A runtime nothing here was pointed at is not in `unavailable`
+                    # yet, because saying so of every provider a household does not
+                    # use would say nothing. A resident declaring it makes it this
+                    # household's own missing brain, so the health answer says so too.
+                    unavailable.setdefault(missing, "runtime_not_configured")
                     _audit(
                         db,
                         "runtime.unavailable",
                         missing,
                         int(hearth.clock()),
-                        {"reason": unavailable.get(missing, "runtime_not_configured")},
+                        {"reason": unavailable[missing]},
                     )
     executor = Executor(execution, adapters)
     inbox = Inbox(hearth)

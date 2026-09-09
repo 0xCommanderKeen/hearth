@@ -411,3 +411,14 @@ def test_a_runtime_nothing_here_is_configured_for_is_recorded_at_start(tmp_path)
             (CLAUDE_KIND,),
         ).fetchone()[0]
     assert '"reason": "runtime_not_configured"' in detail
+    # The scribe's runs will wait, and the operator's own health answer says why --
+    # a runtime a resident declares is this household's missing brain, not one of
+    # the providers it simply does not use.
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+    assert health["unavailable"] == [{"kind": CLAUDE_KIND, "reason": "runtime_not_configured"}]

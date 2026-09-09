@@ -28,8 +28,8 @@ function fixture() {
   vi.spyOn(client, "managementCatalog").mockResolvedValue({
     residents: [{ id: "karen", name: "Karen", grant }],
     profiles: [
-      { id: "codex_subscription", name: "Configured Codex subscription" },
-      { id: "claude_subscription", name: "Configured Claude subscription" },
+      { id: "codex_subscription", name: "Codex subscription" },
+      { id: "claude_subscription", name: "Claude subscription" },
     ],
     input_sets: [],
     operations: [],

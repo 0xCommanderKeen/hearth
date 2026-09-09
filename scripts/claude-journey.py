@@ -194,10 +194,20 @@ def main() -> None:
         "data_directory": "fresh, outside the repository, discarded after recording",
     }
     try:
-        record["health"] = wait_for(instance.health, "the instance to open", timeout=180)
+
+        def alive():
+            if server.poll() is not None:
+                raise SystemExit(f"the server exited; see {args.data / 'server.log'}")
+            return instance.health()
+
+        record["health"] = wait_for(alive, "the instance to open", timeout=180)
         print("health:", json.dumps(record["health"]))
         if "claude_subscription" not in {row["kind"] for row in record["health"]["runtimes"]}:
-            raise SystemExit("the Claude runtime did not open here; the health answer says why")
+            # Why it did not open is behind the operator's token, which this script holds.
+            record["health"] = instance.call("/api/health")
+            raise SystemExit(
+                "the Claude runtime did not open here: " + json.dumps(record["health"])
+            )
 
         record["provisioning"] = instance.call(
             "/api/residents/provision",
@@ -286,23 +296,41 @@ def main() -> None:
             if row["artifact_id"]
         }
     finally:
+        # Whatever happened, this journey has already spent real money, so what it
+        # did is written down before anything is torn down. A session Hearth is still
+        # working is ended through the instance itself: the worker is detached and
+        # would go on billing with nobody left to settle it.
+        try:
+            if server.poll() is None:
+                for row in instance.call("/api/state")["runs"]:
+                    if row["status"] in ("starting", "running", "interrupted"):
+                        print("cancelling in-flight run", row["id"])
+                        instance.call(f"/api/runs/{row['id']}/cancel", {})
+                        wait_for(
+                            settled(instance, row["task_id"]), "that run to settle", timeout=300
+                        )
+        except (SystemExit, OSError) as error:
+            # Nothing here may hide the failure that brought us into `finally`, and
+            # the operator still gets the record and the folder to look in.
+            print("could not end an in-flight run:", error)
         server.terminate()
         try:
             server.wait(timeout=30)
         except subprocess.TimeoutExpired:
             server.kill()
-    record["cli"] = cli_numbers(args.data)
-    record["total_cost_microdollars"] = sum(
-        row["actual_cost"] or 0 for row in record.get("runs", [])
-    )
-    record["limits"] = (
-        "Three bounded runs on fictional notes. This records that a resident declared onto "
-        "the Claude subscription completed real work, wrote its own journal over the bridge, "
-        "was read back by its next run, and settled against the CLI's own reported cost. It "
-        "is not evidence of model quality, daily adoption or anything about real sources."
-    )
-    args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
-    print("wrote", args.out)
+        record["cli"] = cli_numbers(args.data)
+        record["total_cost_microdollars"] = sum(
+            row["actual_cost"] or 0 for row in record.get("runs", [])
+        )
+        record["limits"] = (
+            "Three bounded runs on fictional notes. This records that a resident declared "
+            "onto the Claude subscription completed real work, wrote its own journal over "
+            "the bridge, was read back by its next run, and settled against the CLI's own "
+            "reported cost. It is not evidence of model quality, daily adoption or anything "
+            "about real sources."
+        )
+        args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+        print("wrote", args.out)
 
 
 if __name__ == "__main__":
