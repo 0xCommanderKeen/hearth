@@ -71,13 +71,25 @@ def test_a_runtime_that_cannot_price_its_work_admits_none(tmp_path, monkeypatch)
         assert db.execute("SELECT status FROM tasks WHERE id=?", (task,)).fetchone()[0] == "queued"
 
 
-def test_a_run_that_needs_hearth_s_tools_is_refused_before_a_session_is_paid_for(tmp_path):
-    """The Claude runtime carries no management tools until #147.
+def test_a_run_that_needs_hearth_s_tools_is_refused_before_a_session_is_paid_for(
+    tmp_path, monkeypatch
+):
+    """A runtime that cannot carry Hearth's own tools admits no run that needs them.
 
-    A run pinned to reach them could still be launched and really billed, and would
-    then hold a receipt no settlement accepts -- so it is refused at admission, where
-    nothing has been spent, rather than after the money is gone.
+    Such a run could still be launched and really billed, and would then hold a
+    receipt no settlement accepts -- so it is refused at admission, where nothing has
+    been spent, rather than after the money is gone. Both live runtimes carry the
+    tools today, so the guarantee is checked against a kind that says it does not.
     """
+    from dataclasses import replace
+
+    from hearth.integrations import interface
+
+    monkeypatch.setitem(
+        interface.RUNTIMES,
+        "claude_subscription",
+        replace(interface.RUNTIMES["claude_subscription"], management=False),
+    )
     database = opened(tmp_path, "claude_subscription")
     hearth = Hearth(database)
     hearth.save_resident(
@@ -96,6 +108,25 @@ def test_a_run_that_needs_hearth_s_tools_is_refused_before_a_session_is_paid_for
         assert db.execute("SELECT status FROM tasks WHERE id=?", (task,)).fetchone()[0] == "queued"
     # A resident that reaches no tools at all still runs on the same store.
     assert hearth.admit(submitted(hearth), reserve=10_000).runtime_kind == "claude_subscription"
+
+
+def test_a_writable_resident_is_admitted_on_the_claude_store_and_pinned_to_its_tools(tmp_path):
+    """What #147 changed: the bridge exists, so the run that needs it is admitted."""
+    database = opened(tmp_path, "claude_subscription")
+    hearth = Hearth(database)
+    hearth.save_resident(
+        "writer",
+        Declaration("Writer", "Synthetic", 1_000_000, memory_writable=True),
+        expected_revision=0,
+    )
+    task = hearth.submit(
+        "note", "writer", "Synthetic", expires_at=int(hearth.clock()) + 600
+    ).task_id
+    run = hearth.admit(task, reserve=10_000)
+    with database.transaction() as db:
+        pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+    # Admitted for its own memory and journal alone: no grant, and so no management.
+    assert pin is not None and pin["grant_revision"] is None
 
 
 def test_the_same_resident_is_admitted_on_the_runtime_that_does_carry_the_tools(tmp_path):

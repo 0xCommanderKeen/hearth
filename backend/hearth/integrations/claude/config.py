@@ -11,13 +11,14 @@ shaped this file and are worth repeating where they are used:
   permission-mode override off the session.
 - `--tools` decides which tools exist; it does not approve them. Under
   `--permission-prompts none` a tool that is listed but not pre-approved is denied
-  automatically. The tool list and its `--allowedTools` twin land with the bridge
-  (#147), which is why they are not in `SESSION_FLAGS` yet.
+  automatically. So `session_command` writes both flags, from the same list of
+  `mcp__hearth__*` names the run's grant allows.
 """
 
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 KIND = "claude_subscription"
@@ -37,8 +38,8 @@ PROBE_TIMEOUT = 30
 RUN_TIMEOUT = 600
 
 # The bounded session every run is launched with. The run's own arguments -- model,
-# effort, tool list and budget fence -- are added by `session_command` below; the
-# prompt is delivered on stdin, and the MCP configuration arrives with the bridge (#147).
+# effort, MCP configuration, tool list and budget fence -- are added by
+# `session_command` below, and the prompt is delivered on stdin.
 SESSION_FLAGS: tuple[str, ...] = (
     "--print",
     # The stream is the receipt: every API response's usage block is kept.
@@ -58,31 +59,35 @@ SESSION_FLAGS: tuple[str, ...] = (
 )
 
 
-def session_command(binary: Path, *, budget_usd: str) -> list[str]:
+def session_command(
+    binary: Path,
+    *,
+    budget_usd: str,
+    tools: Sequence[str] = (),
+    mcp_config: Path | None = None,
+) -> list[str]:
     """The whole argv of one bounded headless run. The prompt is delivered on stdin.
 
-    `--tools ""` is here rather than in `SESSION_FLAGS` because it is exactly what
-    #147 replaces with the granted `mcp__hearth__*` list; until then a run has no
-    tools at all, which was measured to report `"tools": []` in the session's own
-    `init` event.
+    `tools` are the `mcp__hearth__*` names of the run's own grant, carried into the
+    session by the bridge (`mcp_bridge.py`) that `mcp_config` names. A run that
+    reaches no Hearth tool is launched with `--tools ""`, which was measured to report
+    `"tools": []` in the session's own `init` event.
+
+    Both tool flags are written, because they were measured to do different things:
+    `--tools` decides which tools exist, and under `--permission-prompts none` a tool
+    that is not also named to `--allowedTools` is denied on every call.
 
     `--max-budget-usd` is a second fence, not a ceiling: it was measured to stop the
     session only *after* a request has already been billed past it, so Hearth's own
     admission hold stays the authority and the receipt records that the CLI stopped
     on the fence.
     """
-    return [
-        str(binary),
-        *SESSION_FLAGS,
-        "--model",
-        MODEL,
-        "--effort",
-        EFFORT,
-        "--tools",
-        "",
-        "--max-budget-usd",
-        budget_usd,
-    ]
+    command = [str(binary), *SESSION_FLAGS, "--model", MODEL, "--effort", EFFORT]
+    if mcp_config is not None:
+        command += ["--mcp-config", str(mcp_config)]
+    names = ",".join(tools)
+    command += ["--tools", names] + (["--allowedTools", names] if names else [])
+    return command + ["--max-budget-usd", budget_usd]
 
 
 def budget(microdollars: int) -> str:

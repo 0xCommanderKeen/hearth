@@ -45,18 +45,38 @@ def validate_receipt_pins(kind: str, receipt, pins: dict, *, cancelled: bool) ->
         raise Refused("run_usage_required")
     if kind != KIND:
         return False
-    if pins.get("management") is not None:
-        # A run pinned to the management protocol was admitted expecting tools over
-        # Hearth's own bridge, which this runtime does not have until #147. A native
-        # receipt cannot settle it.
-        raise Refused("management_native_receipt_required")
     if (
         pins.get(BINARY_PIN) is None
         or receipt.get("binary") != pins[BINARY_PIN]
         or receipt.get("kind") != kind
     ):
         raise Refused("run_usage_required")
+    validate_management_pins(receipt, pins.get("management"))
     return cancelled and receipt.get("launched") is False and receipt.get("cancelled") is True
+
+
+def validate_management_pins(receipt: dict, pin) -> None:
+    """A session that carried Hearth's own tools settles under the pins it was given.
+
+    The two digests are written at admission and again into the receipt by the worker
+    that launched the session, so a run whose tool list or pinned build changed
+    underneath it cannot settle as though it had not. A session that was never
+    launched carries no envelope, because there was nothing to be configured with;
+    one carrying an envelope it was never pinned for is authority nobody granted.
+    """
+    envelope = receipt.get("management")
+    if pin is None:
+        if envelope is not None:
+            raise Refused("management_not_granted_at_admission")
+        return
+    if receipt.get("launched") is False:
+        # Nothing ran, so there is nothing to have been misconfigured.
+        return
+    if not isinstance(envelope, dict):
+        raise Refused("management_native_receipt_required")
+    for key in ("catalog_sha256", "tools_sha256"):
+        if pin[key] is None or envelope.get(key) != pin[key]:
+            raise Refused("management_configuration_changed")
 
 
 def cancellation_receipt(kind: str, binding, pins: dict) -> dict:

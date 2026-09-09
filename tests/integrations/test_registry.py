@@ -81,8 +81,9 @@ def test_only_a_runtime_that_carries_hearth_s_tools_says_so():
     from hearth.integrations.interface import manages_tools
 
     assert manages_tools("codex_subscription") is True
-    # The Claude bridge is #147; until then the kind admits no run pinned to it.
-    assert manages_tools("claude_subscription") is False
+    # Both live kinds carry Hearth's own tools: Codex over the app server's dynamic
+    # tools, Claude over the MCP shim and the worker's socket.
+    assert manages_tools("claude_subscription") is True
     assert manages_tools("nothing_hearth_ships") is False
 
 

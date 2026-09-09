@@ -43,7 +43,10 @@ MAX_RECORD = 1024 * 1024
 MAX_STREAM = 4 * 1024 * 1024
 MAX_OUTPUT = 512 * 1024
 MAX_EVENTS = 10_000
-MAX_MESSAGES = 128
+# Assistant messages one session may carry. A run that reaches Hearth's own tools
+# writes at least one per call and may answer after each, so the bound has to sit well
+# above the 64 calls a grant allows rather than just above a single turn.
+MAX_MESSAGES = 512
 MAX_MODELS = 8
 MAX_TOKENS = 1_000_000_000
 # One session cannot plausibly bill more than this; a larger number is not evidence.
@@ -248,7 +251,13 @@ class ClaudeEvents:
         """
         self.messages += 1
         if self.messages > MAX_MESSAGES:
-            self.error = "too_many_events"
+            # Past the bound this stops reading messages, but it does not throw the
+            # session away: the answer is in the `result` event and survives, while
+            # the split those messages carried is gone and nothing is priced. A
+            # session that reaches Hearth's own tools writes a message per call, so
+            # this bound is one a real run can meet -- and meeting it must cost the
+            # price, never the work.
+            self.unsplit.add(None)
             return
         message = event.get("message")
         if not isinstance(message, dict):
@@ -396,11 +405,17 @@ class ClaudeEvents:
         return (), None
 
     def _requests(self, model, result, total, tiers) -> list[TokenUsage] | None:
-        """The pinned model's individual requests, when the CLI reported them.
+        """The pinned model's individual requests, when the CLI reported them all.
 
         `usage.iterations` was present on every recorded success and empty on the
-        budget stop. When it is there it must add up to the model's own total, or the
-        stream is contradicting itself and nothing is priced.
+        budget stop. Measured again on 2026-09-09 against a session that called a
+        tool: it held **one** row, the session's last request, while `modelUsage`
+        totalled both requests. So it is a partial view rather than a complete one,
+        and rows that do not add up to the model's total are not a contradiction --
+        they are simply not the whole session. The per-model total is priced instead,
+        which is sound here for the same reason it is on the budget stop: this
+        schedule has no long-context tier, so a total costs what its requests cost.
+        The CLI's own `costUSD` is still what any of it is checked against.
         """
         given, produced, read, written = total
         usage = result.get("usage")
@@ -420,7 +435,7 @@ class ClaudeEvents:
             for index, count in enumerate(row):
                 summed[index] += count
         if summed != [given, produced, read, tiers[0], tiers[1]]:
-            return None
+            return [TokenUsage(model, given, read, tiers[0], tiers[1], produced)]
         return rows
 
     def _reported(self, result: dict):

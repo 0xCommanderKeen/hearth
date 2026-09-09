@@ -104,6 +104,18 @@ usage once, separately from provider charges. Missing or invalid usage remains a
 visible hold. Current-data backup validates immutable grant history, admission
 bindings and runtime receipts; restore stays held and does not copy credentials.
 
+The second live runtime carries the same tools over a different transport. On
+`claude_subscription` the session is the Claude Code CLI, and Hearth's tools reach it as
+one MCP server named by a per-run `--mcp-config`: a Hearth-owned stdio shim that holds no
+credential and forwards every `tools/list` and `tools/call` over a unix socket in the
+run's own folder, answered by the trusted worker through this same bridge, with the same
+`BoundRun` authority, the same ten minutes and 64 calls, and the same one transaction per
+call. `--tools` and `--allowedTools` name exactly the `mcp__hearth__*` tools the run was
+pinned to, the session's own `init` event has to report exactly those before any call is
+answered, and the pins travel as `catalog_sha256` (the pinned build and model) and
+`tools_sha256` (the same digest of the same tool list). What was measured, and what it
+changed, is in [the Claude runtime record](claude-runtime.md).
+
 Deterministic management tests exercise real temporary SQLite authority, concurrent
 count limits, exact retries, refused escalation, revocation, ownership corruption,
 audit rollback, reuse and held backup. The worker callback test uses synthetic

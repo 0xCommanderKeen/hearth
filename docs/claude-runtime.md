@@ -6,9 +6,9 @@ what came back, and what did not measure the way the plan assumed. A later slice
 needs a fact not in here measures it and adds it.
 
 Measured on **2026-09-08**, macOS (Darwin 25.5.0, arm64), by the slice that introduced
-the runtime (#145), and extended on **2026-09-09** by the headless run (#146), which
-recorded real sessions and read their numbers. Where the two disagree, the later
-measurement says so in place and wins.
+the runtime (#145), and extended on **2026-09-09** by the headless run (#146) and the
+tool bridge (#147), both of which recorded real sessions and read their numbers. Where
+two measurements disagree, the later one says so in place and wins.
 
 | Pin | Value |
 | --- | --- |
@@ -166,7 +166,11 @@ The transcripts behind it are committed, scrubbed, under
   requests on every success and nothing at all on the budget stop. Hearth prices the
   individual rows where the CLI reports them and the per-model total where it does not,
   which is sound here only because this schedule has no long-context tier (below):
-  a total costs exactly what the requests behind it cost.
+  a total costs exactly what the requests behind it cost. **Amended 2026-09-09 by #147:
+  they are not only sometimes absent, they are sometimes partial** — a session that
+  called a tool billed two requests and reported one row — so rows that do not add up
+  to the model's total are a partial view rather than a contradiction, and the total is
+  priced. See "The bridge" below.
 - **A session spends more than one model.** `modelUsage` named both `claude-opus-5` (the
   turn) and `claude-haiku-4-5-20251001` (the CLI's own housekeeping, ~900 input tokens) in
   every recording, and `total_cost_usd` is the sum of both. The pinned-model check is
@@ -260,13 +264,89 @@ and never again, keeps the CLI's original stream-json as the receipt, and settle
 it under the pinned schedule above. Cancellation signals the worker's own process group
 and claims zero usage only when the launch provably never happened.
 
-**What a Claude store cannot run yet.** Every session runs with `--tools ""`, because
-the bridge that carries Hearth's own `mcp__hearth__*` tools into one is #147. A run that
-was pinned to reach those tools — its resident holds an enabled grant, declares
-`memory_writable`, works a letter or holds post — is therefore refused
-`run_management_unsupported` **at admission**, before anything is launched or billed.
-Launching it anyway would spend the resident's allowance on a session holding none of
-the authority its declaration promised, and leave a receipt no settlement could accept.
-So on a Claude store today: residents that only read and answer run; residents that
-write memory, hold a grant or exchange letters wait for #147. Karen holds a grant, so a
-household bootstrapped on Claude cannot run Karen until then.
+**What a Claude store runs.** Everything a Codex store does. A run pinned to reach
+Hearth's own tools — its resident holds an enabled grant, declares `memory_writable`,
+works a letter or holds post — is admitted, and the tools reach the session over the
+bridge measured below. Karen holds a grant, so a household bootstrapped on Claude can
+run Karen.
+
+## The bridge — Hearth's own tools inside a session
+
+Measured **2026-09-09** by the slice that built it (#147), with one real session of
+about $0.046 against the pinned CLI. The shim was the real one
+(`hearth.integrations.claude.mcp_bridge`); the trusted half was a throwaway socket
+server, so no store was touched. The session ran from `$WORK` with the bounded flags
+above plus:
+
+```sh
+--mcp-config <file> --tools mcp__hearth__hearth_journal_write \
+  --allowedTools mcp__hearth__hearth_journal_write --max-budget-usd 0.200000
+```
+
+| Question | Observed |
+| --- | --- |
+| does the CLI launch and speak to a plain stdio MCP server of ours | yes: `initialize` (protocol `2025-06-18`), the `notifications/initialized` notification, then `tools/list`, all as newline-delimited JSON-RPC on stdin/stdout |
+| what the session's `init` event says about it | `"mcp_servers": [{"name": "hearth", "status": "connected"}]` and `"tools": ["mcp__hearth__hearth_journal_write"]` — exactly the offered names, nothing else, and **before** the first model turn |
+| is the tool really called through the shim | yes: an `assistant` message with a `tool_use` block naming `mcp__hearth__hearth_journal_write`, the shim's forwarded frame on the socket, a `user` event carrying the `tool_result` back, then the answer. `permission_denials: []` |
+| what identifies one call | the JSON-RPC request id of the `tools/call` (`"2"` in this session), unique within the session; Hearth uses it as the call id `management_calls` records |
+| `claude mcp list --mcp-config <file>` as a cheaper health check | **not usable**: `mcp list` does not accept `--mcp-config`, and with the flag before the subcommand it silently health-checked the *machine's* own servers instead |
+
+The stream of that session is committed, scrubbed, as
+`tests/integrations/claude/fixtures/management.jsonl`, and the checks in
+`mcp_bridge.check_session` are written against it.
+
+### The one measurement that changed a settled number
+
+**`usage.iterations` is a partial view of the requests, not the list of them.** This
+session billed two requests — the turn that called the tool, and the turn that answered
+after it — and reported **one** row:
+
+| Account | input | output | cache read | cache write (1h) |
+| --- | --- | --- | --- | --- |
+| `usage.iterations` (one row) | 2 | 3 | 3,947 | 133 |
+| `modelUsage["claude-opus-5"]` | 4 | 69 | 3,947 | 4,080 |
+| the two `assistant` messages' own `usage` | 2 + 2 | 33 + 1 | 0 + 3,947 | 3,947 + 133 |
+
+#146 read a mismatch between the rows and the model's total as the stream
+contradicting itself, and priced nothing. On these numbers that rule would have left
+**every** session that calls a tool — which is every management run — with unknown
+usage and its resident on hold. So rows that do not add up are now treated as what they
+are, a partial view, and the model's own total is priced instead. That is sound for the
+same reason the budget stop's total is: this schedule has no long-context tier, so a
+total costs exactly what the requests behind it cost. The cross-check is unchanged and
+is what actually guards the money — Hearth's own arithmetic over `modelUsage` came to
+44,519 µ$ for `claude-opus-5` and 995 µ$ for `claude-haiku-4-5`, against the CLI's own
+`costUSD` of $0.0445185 and $0.000995 and a `total_cost_usd` of $0.0455135.
+
+The assistant messages remain the only place the five-minute/one-hour cache-write split
+appears, and here they accounted for the model's whole 4,080 written tokens.
+
+### How the bridge is built on that
+
+- **The shim carries nothing.** `python -I -m hearth.integrations.claude.mcp_bridge
+  <socket>` with an environment of `PATH` alone. No database, no owner token, no
+  configuration directory, no credential — it forwards `tools/list` and `tools/call`
+  over a unix socket in the run's own folder and hands back the reply, one connection
+  per call.
+- **The socket is the run's.** `<run folder>/bridge.sock`, created 0600 inside a 0700
+  folder, with every connection's peer uid checked from the kernel (`SO_PEERCRED` on
+  Linux, `LOCAL_PEERCRED` on macOS) before a byte is read. A run folder under a deep
+  temporary path exceeds `sun_path` (104 bytes on macOS), so a long address is bound
+  and connected relative to its own directory — the same file, named more briefly.
+- **The trusted half answers in the worker.** `management.bridge` authenticates with
+  `BoundRun` and mutates and audits in one transaction, exactly as
+  `codex/management_runtime.py` does over the app server's `dynamicTools`. The socket
+  is watched in the worker's own read loop, so nothing runs concurrently with the
+  transaction a call opens.
+- **The session is checked before it is trusted.** The `init` event has to name
+  Hearth's server as connected, exactly the offered tools, the pinned model and the
+  pinned build, or the session is stopped — `claude_tools_changed` or
+  `claude_session_unpinned` — before its first turn can reach a tool. Until that check
+  passes, a call is refused `management_session_untrusted`.
+- **The pins.** `catalog_sha256` digests the pinned build and model, `tools_sha256` the
+  run's own tool list under the same function Codex digests it with; both are written
+  into `run_management` at `start` and into the receipt by the worker, and settlement
+  refuses `management_configuration_changed` if they disagree.
+- **A bridge that fails ends the session.** `mcp_bridge_failed` is recorded in the
+  receipt and the session settles as failed with whatever it spent — never as unknown
+  with a relaunch.
