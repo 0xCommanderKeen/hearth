@@ -105,6 +105,46 @@ def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
     return (row[0] if row is not None else None) or default_runtime(db)
 
 
+def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
+    """The most one run may spend, in microdollars, for a provider that enforces a stop.
+
+    A reservation is an admission hold, not a cap. A run that costs more than it
+    reserved still settles at what it really cost, and what actually bounds spending is
+    the resident's day: admission refuses new work once the day is committed, and a run
+    that overspends leaves its resident held. Every path in Hearth reserves a cent,
+    while one real session costs several, so a provider fence built from the
+    reservation would stop **every** run after its first billed request -- charging the
+    household for work it then threw away. The fence is therefore what the resident may
+    still spend today, this run's own reservation included, and never less than the
+    reservation admission already promised it before anything was launched.
+
+    Read from the run's own pins -- its resident's declaration at the revision it was
+    admitted under, and its own budget day and timezone -- so a resident edited or
+    moved between runs cannot change the fence of work already admitted.
+    """
+    declaration = db.execute(
+        "SELECT daily_limit FROM declarations WHERE resident_id=? AND revision=?",
+        (run["resident_id"], run["resident_revision"]),
+    ).fetchone()
+    if declaration is None:
+        return run["reserved"]
+    start = datetime.fromisoformat(run["budget_day"]).replace(
+        tzinfo=ZoneInfo(run["budget_timezone"]), fold=0
+    )
+    end = (start + timedelta(days=1)).replace(fold=0)
+    spent = db.execute(
+        "SELECT COALESCE(SUM(actual_cost), 0) FROM runs WHERE resident_id=? "
+        "AND created_at >= ? AND created_at < ? AND usage_known = 1",
+        (run["resident_id"], int(start.timestamp()), int(end.timestamp())),
+    ).fetchone()[0]
+    outstanding = db.execute(
+        "SELECT COALESCE(SUM(reserved), 0) FROM runs WHERE resident_id=? AND id != ? "
+        f"AND status IN {ACTIVE_RUNS}",
+        (run["resident_id"], run["id"]),
+    ).fetchone()[0]
+    return max(declaration["daily_limit"] - spent - outstanding, run["reserved"])
+
+
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
     db.execute(
         "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",

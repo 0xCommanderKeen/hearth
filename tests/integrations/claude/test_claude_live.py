@@ -242,13 +242,50 @@ def test_a_run_launches_once_and_a_second_start_observes_the_same_worker(tmp_pat
         runtime.start(run.id, prompt + " ")
 
 
-def test_the_launched_session_is_the_bounded_one_carrying_the_run_s_own_budget(tmp_path):
-    runtime, _, run, prompt = prepared(tmp_path, reserve=250_000)
+def test_the_launched_session_is_the_bounded_one_fenced_at_the_resident_s_day(tmp_path):
+    """The fence is the resident's remaining day, never the admission hold.
+
+    A reservation is a hold, not a cap: every run here reserves a cent while a real
+    session costs several, so a fence built from the reservation would have stopped
+    every one of them after the first billed request.
+    """
+    runtime, _, run, prompt = prepared(tmp_path, reserve=10_000)
     worker(runtime.folder(run.id))
     argv = json.loads((tmp_path / "argv.json").read_text())
-    assert argv[argv.index("--max-budget-usd") + 1] == "0.250000"
+    assert argv[argv.index("--max-budget-usd") + 1] == "10.000000"  # the daily limit
     assert argv[argv.index("--model") + 1] == MODEL
     assert "--verbose" in argv and argv[argv.index("--output-format") + 1] == "stream-json"
+
+
+def test_the_fence_is_what_the_resident_may_still_spend_today(tmp_path):
+    from hearth.work.service import spend_fence
+
+    runtime, hearth, run, _ = prepared(tmp_path, reserve=250_000)
+    with hearth.database.transaction(write=True) as db:
+        row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
+        assert spend_fence(db, row) == 10_000_000
+        # A day already half spent leaves half a day of fence, this run's own
+        # reservation included: nothing admission allowed is stopped by it.
+        db.execute(
+            "INSERT INTO runs (id,task_id,resident_id,resident_revision,owner_token,status,"
+            "reserved,budget_day,budget_timezone,runtime_kind,runtime_version,created_at,"
+            "input_digest,actual_cost,usage_known,launch_attempted) "
+            "VALUES ('earlier',?,?,?,'token','succeeded',0,?,?,?,1,?,'digest',5000000,1,1)",
+            (
+                row["task_id"],
+                row["resident_id"],
+                row["resident_revision"],
+                row["budget_day"],
+                row["budget_timezone"],
+                row["runtime_kind"],
+                row["created_at"],
+            ),
+        )
+        assert spend_fence(db, row) == 5_000_000
+        # And a day already overspent still leaves the run what it was admitted for,
+        # because that promise was made before anything was launched.
+        db.execute("UPDATE runs SET actual_cost=9_990_000 WHERE id='earlier'")
+        assert spend_fence(db, row) == 250_000
 
 
 @pytest.mark.parametrize("field", ["prompt", "sha256"])

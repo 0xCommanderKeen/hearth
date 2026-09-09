@@ -50,7 +50,7 @@ from hearth.integrations.durable import (
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
-from hearth.work.service import Hearth, _audit
+from hearth.work.service import Hearth, _audit, spend_fence
 
 # The whole of one native receipt. There is no separate final-message file: the
 # session's answer is inside the stream, in the CLI's own `result` event.
@@ -258,9 +258,12 @@ class ClaudeLiveRuntime:
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key=?", (BINARY_PIN,)
                     ).fetchone()[0],
-                    # The provider's own fence, from the money this run was admitted
-                    # for. Hearth's hold stays authoritative; this only stops sooner.
-                    "budget_usd": budget(row["reserved"]),
+                    # The provider's own fence: what this run's resident may still
+                    # spend today, never the admission hold, which is a cent on every
+                    # path here and would stop each session after one billed request.
+                    # Hearth's own accounting stays the authority; this only stops a
+                    # session that has run away from it.
+                    "budget_usd": budget(spend_fence(db, row)),
                 }
             from hearth.integrations.claude.mcp_bridge import pin_configuration
             from hearth.management.bridge import BoundRun

@@ -17,7 +17,11 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   granted run's management protocol is its own runtime's transport
   (`codex_app_server`, `claude_mcp_bridge`) rather than one word for both. The Claude
   runtime's own document is finished with the operator's setup and login procedure,
-  the refusal matrix and what the operator sees.
+  the refusal matrix and what the operator sees. And the Claude session's
+  `--max-budget-usd` fence is the resident's remaining day rather than the run's
+  reservation: every path in Hearth reserves a cent, a reservation is a hold and not a
+  cap, and a one-cent provider stop would have ended every real session after its
+  first billed request and settled it as failed.
 - Which runtime a resident runs on is a declaration fact. `declarations.runtime`
   (schema 11, null = the store's default) is pinned onto every run at admission, and
   `system_meta.runtime_kind` becomes that default rather than the household's only

@@ -211,7 +211,7 @@ builds:
 | Question | Observed |
 | --- | --- |
 | the prompt on stdin instead of in argv | accepted; identical stream and result. Hearth uses stdin, so a large pinned context can never meet an argv limit |
-| `--max-budget-usd 0.25` | accepted as decimal dollars; Hearth writes the run's reserved microdollars as `f"{n / 1_000_000:.6f}"`, which is exact |
+| `--max-budget-usd 0.25` | accepted as decimal dollars; Hearth writes microdollars as `f"{n / 1_000_000:.6f}"`, which is exact. **The number is the resident's remaining day, not the run's reservation** — see below |
 | `--tools ""` with no `--mcp-config` | `init` reports `"tools": []`; a run has no tools at all until the bridge grants some (#147) |
 | event types beyond `system` / `assistant` / `result` | `rate_limit_event` appeared in every session. The parser counts and skips what it does not know, and settles only on the one `result` event |
 
@@ -227,6 +227,16 @@ builds:
 3. **`--max-budget-usd` is a second fence, not a ceiling.** It stops the session after a
    request has already been billed past it, so Hearth's admission hold stays the
    authority and the receipt records that the CLI stopped on the fence.
+   **The fence is the resident's remaining day, and it cannot be the run's
+   reservation** — found by the real journey (#149) and corrected there. Every path in
+   Hearth reserves 10,000 µ$: the operator's start, a routine, a letter. A reservation
+   is an admission *hold*, not a cap — a run settles at what it really cost and the
+   resident's day is what bounds spending — so a fence of one cent would have stopped
+   every real session after its first billed request, at around four cents each, and
+   settled it as failed. `work.service.spend_fence` answers with what the resident may
+   still spend today (its own reservation included, and never less than what admission
+   promised it), read from the run's own pins so a resident edited between runs cannot
+   change the fence of work already admitted.
 4. **The configuration directory is written to even in a bounded session.** It must be a
    directory Hearth owns and the operator seeded, never the machine's own `~/.claude`.
 
