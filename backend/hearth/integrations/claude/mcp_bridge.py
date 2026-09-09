@@ -40,7 +40,11 @@ from pathlib import Path
 
 # The MCP server name the CLI knows Hearth by, and the prefix it gives every tool of
 # that server. `--tools` and `--allowedTools` are written in these names; the wire and
-# the database only ever see Hearth's own `hearth_*` names.
+# the database only ever see Hearth's own `hearth_*` names. A tool keeps that name
+# unchanged rather than being stripped for the prefix's sake -- `hearth_journal_write`
+# is `mcp__hearth__hearth_journal_write` to the CLI -- so the name in the argv, in the
+# session's `init` event, on the socket, in `management_calls` and in the audit is one
+# name, mapped by nothing that could map it wrongly.
 SERVER_NAME = "hearth"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
 # Named rather than taken from `__name__`: the shim runs this file as `__main__`.
