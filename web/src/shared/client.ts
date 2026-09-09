@@ -108,7 +108,7 @@ export type ImportReceipt = ProvisionReceipt & {
       revision: number;
       outcome: string;
     }[];
-    execution_profile: { requested: string; used: string };
+    execution_profile: { requested: string; used: string; reason?: string };
     management_ignored: boolean;
   };
 };

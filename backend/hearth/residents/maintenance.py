@@ -13,7 +13,7 @@ from hearth.residents.models import Declaration, Refused, identifier
 from hearth.residents.provisioning import InputRef, RoutineSetup, SkillRef
 from hearth.skills.assignments import read_assignments, save_assignments
 from hearth.work.routines import Routines
-from hearth.work.service import Hearth, _audit
+from hearth.work.service import Hearth, _audit, resident_runtime
 
 
 class LifecycleChange(BaseModel):
@@ -148,9 +148,7 @@ class Maintenance:
                     (resident_id,),
                 )
             ],
-            "execution_profile": db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0],
+            "execution_profile": resident_runtime(db, resident_id),
         }
 
     def configure(self, command_id: str, resident_id: str, body: ConfigurationChange) -> dict:
@@ -207,6 +205,9 @@ class Maintenance:
                     # The letters door is operator authority alone; a reconfiguration
                     # carries it forward rather than quietly closing it.
                     letters_accept=self.hearth.declared_letters_accept(db, resident_id),
+                    # So is which runtime the resident runs on: reconfiguring what a
+                    # resident does never moves it to another brain.
+                    runtime=self.hearth.declared_runtime(db, resident_id),
                 ),
                 expected_revision=change.expected_revision,
             )

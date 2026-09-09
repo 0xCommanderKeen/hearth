@@ -38,6 +38,10 @@ class DeclarationPost(BaseModel):
     memory_writable: bool | None = None
     # Omitted keeps the resident's current letters.accept door.
     letters_accept: bool | None = None
+    # Which runtime this resident's work is admitted to. Omitted keeps the brain the
+    # resident declares now; an explicit null is the operator saying "the store's
+    # default", which is a different statement from not mentioning it at all.
+    runtime: str | None = Field(default=None, max_length=100)
     expected_revision: int = Field(ge=0)
 
 

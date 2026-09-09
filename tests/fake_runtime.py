@@ -1,4 +1,4 @@
-"""The one fake runtime, for tests only. It never ships: `tests/` is not packaged.
+"""The fake runtimes, for tests only. They never ship: `tests/` is not packaged.
 
 CI has no Codex subscription, so the suite needs a runtime it can drive. This fake
 claims the real kind, `codex_subscription`, and publishes real provider-shaped
@@ -16,6 +16,12 @@ Scenarios are test knobs over the receipt a provider would have left behind:
 A stopped run is cancelled with unknown usage, because a killed provider proves no
 turn. Only a run cancelled before its launch settles at zero, and the executor
 builds that receipt itself.
+
+`FakeClaudeRuntime` is the same idea for the second live kind, so a store can be
+configured for both at once and a test can watch each run reach the runtime its own
+declaration pinned (`docs/adr/0015-runtime-per-resident.md`). Its receipt is the
+recorded stream #146 committed, replayed rather than re-derived: the settlement path
+it goes through is the production one, down to the CLI's own reported cost.
 """
 
 import hashlib
@@ -24,6 +30,10 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.integrations.claude.config import BINARY_PIN
+from hearth.integrations.claude.config import KIND as CLAUDE_KIND
+from hearth.integrations.claude.pricing import MODEL as CLAUDE_MODEL
+from hearth.integrations.claude.subscription import encode as claude_encode
 from hearth.integrations.codex.pricing import MODEL
 from hearth.integrations.codex.subscription import KIND, encode
 from hearth.integrations.codex.usage import UsageBinding, publish, read
@@ -197,6 +207,134 @@ class FakeRuntime:
             UsageBinding(**request["binding"]),
             stdout="",
             final=None,
+            exit_code=None,
+            cancelled=True,
+        )
+
+
+# The recorded Claude session #146 committed, whose stream settles at 36,580
+# microdollars under the pinned schedule. Replaying it keeps the fake honest: the
+# numbers are a real session's, not a fixture written to agree with the code.
+CLAUDE_STREAM = Path(__file__).parent / "integrations/claude/fixtures/success.jsonl"
+CLAUDE_ANSWER_COST = 36_580
+# Stands in for the sha256 of a real Claude binary; pinned in system_meta like one.
+CLAUDE_BINARY = "cd" * 32
+
+
+def fake_runtimes():
+    """Both live kinds at once, for a store whose residents do not share a brain."""
+    return lambda data: (FakeRuntime(data), FakeClaudeRuntime(data))
+
+
+class FakeClaudeRuntime:
+    """The Claude subscription's shape, replaying a recorded stream as its receipt.
+
+    `success` settles the recorded session; `hold` leaves the run running until it is
+    stopped, so a test can watch a launched run that nothing has settled yet.
+    """
+
+    kind = CLAUDE_KIND
+    version = 1
+
+    def __init__(self, data: Path, *, scenario: str = "success"):
+        if scenario not in ("success", "hold"):
+            raise ValueError("Unknown fake runtime scenario")
+        self.scenario = scenario
+        self.data = data.resolve()
+        self.database = Database(self.data / "hearth.db")
+        self.root = self.data / "fake-claude-runtime"
+        if self.database.restored():
+            return
+        with self.database.transaction(write=True) as db:
+            previous = db.execute(
+                "SELECT value FROM system_meta WHERE key=?", (BINARY_PIN,)
+            ).fetchone()
+            if previous is None:
+                db.execute("INSERT INTO system_meta VALUES (?,?)", (BINARY_PIN, CLAUDE_BINARY))
+                _audit(
+                    db,
+                    "runtime.claude_subscription_configured",
+                    CLAUDE_KIND,
+                    int(time.time()),
+                    {"binary": CLAUDE_BINARY, "version": "fake-runtime", "model": CLAUDE_MODEL},
+                )
+            elif previous[0] != CLAUDE_BINARY:
+                raise Refused("claude_subscription_binary_changed")
+        self.root.mkdir(mode=0o700, exist_ok=True)
+
+    def folder(self, run_id: str) -> Path:
+        identifier(run_id)
+        return self.root / run_id
+
+    def start(self, run_id: str, instruction: str) -> None:
+        from hearth.execution.usage import binding
+
+        if self.database.restored():
+            raise Refused("restored_copy_read_only")
+        digest = hashlib.sha256(instruction.encode()).hexdigest()
+        folder = self.folder(run_id)
+        if folder.exists():
+            if read(folder / "request.json")["binding"]["input_digest"] != digest:
+                raise Refused("runtime_identity_conflict")
+            return
+        with self.database.transaction() as db:
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            bound = binding(db, row)
+            if (
+                row["runtime_kind"] != CLAUDE_KIND
+                or not row["launch_attempted"]
+                or bound.input_digest != digest
+            ):
+                raise Refused("runtime_identity_conflict")
+        folder.mkdir(mode=0o700)
+        publish(folder / "request.json", {"binding": asdict(bound)})
+        if self.scenario == "hold":
+            return
+        self._publish(folder, bound, stdout=CLAUDE_STREAM.read_text(), exit_code=0, cancelled=False)
+
+    def _publish(self, folder: Path, bound, **evidence) -> None:
+        publish(
+            folder / "receipt.json",
+            {
+                "kind": CLAUDE_KIND,
+                "binding": asdict(bound),
+                "binary": CLAUDE_BINARY,
+                "launched": True,
+            }
+            | evidence,
+        )
+
+    def receipt(self, run_id: str) -> dict:
+        return read(self.folder(run_id) / "receipt.json")
+
+    def inspect(self, run_id: str, *, expected_digest: str | None = None) -> Evidence:
+        folder = self.folder(run_id)
+        if not folder.exists():
+            return Evidence("absent")
+        try:
+            bound = UsageBinding(**read(folder / "request.json")["binding"])
+            if expected_digest is not None and bound.input_digest != expected_digest:
+                return Evidence("unknown")
+            if not (folder / "receipt.json").exists():
+                return Evidence("running")
+            return claude_encode(self.receipt(run_id), bound)[2]
+        except OSError, ValueError, KeyError, TypeError, Refused:
+            return Evidence("unknown")
+
+    def stop(self, run_id: str) -> None:
+        if self.database.restored():
+            raise Refused("restored_copy_read_only")
+        folder = self.folder(run_id)
+        if not folder.exists() or (folder / "receipt.json").exists():
+            return
+        try:
+            request = read(folder / "request.json")
+        except OSError, ValueError:
+            return  # Without its launch record there is nothing to stop or to settle.
+        self._publish(
+            folder,
+            UsageBinding(**request["binding"]),
+            stdout="",
             exit_code=None,
             cancelled=True,
         )

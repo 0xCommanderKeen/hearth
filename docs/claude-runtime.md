@@ -251,8 +251,11 @@ HEARTH_OPERATOR_TOKEN=... \
 uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 ```
 
-Hearth builds the adapter its own store records. On a store whose `runtime_kind` is
-`claude_subscription` it checks the version, checks the login, pins the binary's sha256
+Hearth builds the adapter its own store records, and beside it every other live runtime
+whose configuration is present -- so a store whose default is Codex can still hold a
+resident that declares `claude_subscription`
+(`docs/adr/0015-runtime-per-resident.md`). Whenever the Claude adapter is built it
+checks the version, checks the login, pins the binary's sha256
 into `system_meta.claude_live_binary` with a `runtime.claude_subscription_configured`
 audit fact, and refuses by name — `claude_subscription_configuration_required`,
 `claude_subscription_version_unsupported`, `claude_subscription_login_required`,

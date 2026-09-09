@@ -165,10 +165,52 @@ def test_the_application_builds_the_adapter_its_own_store_records(tmp_path):
         claude_binary=binary,
         claude_config_dir=config_dir,
     )
-    assert app.state.executor.runtime.kind == KIND
+    assert set(app.state.executor.runtimes) == {KIND}
     # Unconfigured, it refuses by name rather than falling back to the other runtime.
     with pytest.raises(Refused, match="claude_subscription_configuration_required"):
         create_app(data, "operator-token-16+", supervise=False)
+
+
+def synthetic_codex(tmp_path):
+    """The Codex half of a host configured for both providers at once."""
+    from hearth.integrations.codex.subscription import VERSION as CODEX_VERSION
+
+    binary = tmp_path / "synthetic-codex"
+    binary.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"if '--version' in sys.argv:\n print({CODEX_VERSION!r})\n sys.exit()\n"
+        "sys.exit(1)\n"
+    )
+    binary.chmod(0o700)
+    auth = tmp_path / "synthetic-auth"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}")
+    return binary, auth
+
+
+def test_a_host_configured_for_both_providers_builds_both_beside_the_default(tmp_path):
+    """The store's default is one of them; the other is there for its own residents."""
+    from hearth.integrations.codex.subscription import KIND as CODEX_KIND
+
+    data, database, binary, config_dir = configured(tmp_path)
+    with database.transaction(write=True) as db:
+        db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (CODEX_KIND,))
+    codex_binary, auth = synthetic_codex(tmp_path)
+    both = dict(
+        codex_binary=codex_binary,
+        codex_auth_home=auth,
+        claude_binary=binary,
+        claude_config_dir=config_dir,
+    )
+    app = create_app(data, "operator-token-16+", supervise=False, **both)
+    assert set(app.state.executor.runtimes) == {CODEX_KIND, KIND}
+
+    # A host with no Claude configuration simply has no Claude runtime; the store
+    # still opens, and a run pinned to Claude waits rather than launching here.
+    app = create_app(
+        data, "operator-token-16+", supervise=False, codex_binary=codex_binary, codex_auth_home=auth
+    )
+    assert set(app.state.executor.runtimes) == {CODEX_KIND}
 
 
 def test_a_store_on_a_live_kind_with_no_adapter_refuses_rather_than_opening_on_another(

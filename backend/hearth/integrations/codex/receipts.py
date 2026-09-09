@@ -57,7 +57,10 @@ def validate_receipt_pins(kind: str, receipt, pins: dict, *, cancelled: bool) ->
 
 
 def cancellation_receipt(kind: str, binding, pins: dict) -> dict:
-    if kind == "codex_subscription":
+    # Without the pin this store wrote when the runtime was configured there is no
+    # receipt to build: settlement would refuse it, so refuse to invent it. The
+    # executor reads that refusal as a run it cannot settle here, not as an error.
+    if kind == "codex_subscription" and pins.get("codex_live_binary") is not None:
         return {
             "kind": kind,
             "binding": asdict(binding),

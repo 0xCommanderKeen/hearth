@@ -80,7 +80,9 @@ def validate_management_pins(receipt: dict, pin) -> None:
 
 
 def cancellation_receipt(kind: str, binding, pins: dict) -> dict:
-    if kind != KIND:
+    if kind != KIND or pins.get(BINARY_PIN) is None:
+        # Without the pin this store wrote when the runtime was configured there is no
+        # receipt to build: settlement would refuse it, so refuse to invent it.
         raise Refused("run_pricing_required")
     return {
         "kind": kind,

@@ -6,6 +6,12 @@ live ones this release can start work on, and the three simulated kinds Hearth u
 ship. The simulated ones are history a forward-upgraded store may still carry, and a
 run's own pin is the honest record of where its work happened.
 See `database.HISTORICAL_RUNTIME_KINDS`.
+
+`declarations.runtime` is the runtime one resident's work is admitted to, null for a
+resident that follows the store's default (`system_meta.runtime_kind`). It carries no
+CHECK: a store upgraded forward may hold a kind a later release retired, and refusing
+to open it would lose the resident rather than the runtime
+(`docs/adr/0015-runtime-per-resident.md`).
 """
 
 SCHEMA = (
@@ -208,6 +214,7 @@ SCHEMA = (
         skill_text TEXT NOT NULL DEFAULT '',
         memory_writable INTEGER NOT NULL DEFAULT 0 CHECK (memory_writable IN (0,1)),
         letters_accept INTEGER NOT NULL DEFAULT 0 CHECK (letters_accept IN (0,1)),
+        runtime TEXT,
         PRIMARY KEY (resident_id, revision)
     )""",
     # A letter is an ordinary task with an address: who sent it, from which run and task,

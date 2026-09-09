@@ -16,7 +16,7 @@ from hearth.skills.evaluation import (
     result_for_case,
 )
 from hearth.storage.artifacts import Artifacts
-from hearth.work.service import _audit, _queue_task
+from hearth.work.service import _audit, _queue_task, resident_runtime
 
 
 def read_validation(db, validation_id):
@@ -74,7 +74,9 @@ def request_validation(
         if reserve > authority["grant"]["max_reserve"]:
             raise Refused("management_reservation_limit")
         # Admission rechecks this; refusing here says so before the request is durable.
-        runtime = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+        # An example runs as the resident that asked for it, so the runtime that has to
+        # be granted is that resident's own.
+        runtime = resident_runtime(db, actor)
         if runtime not in authority["grant"]["profiles"]:
             raise Refused("management_profile_not_permitted")
     candidate = exact_skill(db, skill_id, revision)

@@ -45,7 +45,7 @@ def validate_skill_text(value: str) -> None:
 
 @dataclass(frozen=True)
 class Declaration:
-    """Initial resident shape. Source grants and runtime arrive with their owning slice."""
+    """Initial resident shape. Source grants arrive with their owning slice."""
 
     name: str
     purpose: str
@@ -57,6 +57,10 @@ class Declaration:
     # The declared letters.accept door: may another resident's letter be queued here?
     # A sender's grant cannot open it and this door grants no one the right to send.
     letters_accept: bool = False
+    # Which runtime this resident's work is admitted to. `None` follows the store's own
+    # default, so a household that never chose runs where it has always run; a named
+    # kind is this resident's own and outlives any change to that default.
+    runtime: str | None = None
 
     def validate(self) -> None:
         bounded_text(self.name, 100, "invalid_name")
@@ -67,6 +71,13 @@ class Declaration:
             raise Refused("invalid_memory_capability")
         if type(self.letters_accept) is not bool:
             raise Refused("invalid_letters_capability")
+        # Only the shape of the runtime is a value question. Whether Hearth can still
+        # start work on that kind, and whether this store was ever configured for it,
+        # are answered where the save happens -- so that a resident carrying a kind a
+        # later release retired can still be paused, renamed and reconfigured instead
+        # of becoming unsavable (`docs/adr/0015-runtime-per-resident.md`).
+        if self.runtime is not None:
+            bounded_text(self.runtime, 100, "runtime_not_configured")
         bounded_text(self.budget_timezone, 100, "invalid_budget_timezone")
         try:
             ZoneInfo(self.budget_timezone)

@@ -48,6 +48,63 @@ ADMISSION_WAITS = frozenset(
 )
 
 
+def default_runtime(db: sqlite3.Connection) -> str:
+    """The runtime a resident that declares none of its own is admitted to."""
+    return db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+
+
+def configured_runtime(db: sqlite3.Connection, kind: str) -> bool:
+    """Has this store ever been configured for that runtime?
+
+    Its own default always answers yes: that is the store's own record of what it runs,
+    and it is written before any provider is reached. For any other runtime the answer
+    is the binary pin that runtime writes the first time it is configured, which is the
+    store's record that the provider was really there -- binary, version and login were
+    all checked before it was written. Nothing else in the database says so, and asking
+    the process instead would make the answer depend on which instance happens to be
+    open at the time.
+    """
+    from hearth.integrations.interface import binary_pin
+
+    if kind == default_runtime(db):
+        return True
+    pin = binary_pin(kind)
+    return pin is not None and (
+        db.execute("SELECT 1 FROM system_meta WHERE key=?", (pin,)).fetchone() is not None
+    )
+
+
+def declared_runtimes(db: sqlite3.Connection) -> set[str]:
+    """Every runtime the store's residents name for themselves, as they stand now.
+
+    The store's default is not in here: it is not a resident's choice, and it is the
+    one runtime an instance is always built for.
+    """
+    return {
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE d.runtime IS NOT NULL"
+        )
+    }
+
+
+def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
+    """The runtime one resident's work is admitted to: its own, or the store's default.
+
+    Read wherever a resident's brain decides something -- admission, its management
+    profile, what an operator is shown -- so those answers cannot drift apart. A
+    resident with no declaration at all is answered with the default: it has not
+    chosen, and nothing of its will run until it exists anyway.
+    """
+    row = db.execute(
+        "SELECT d.runtime FROM declarations d JOIN residents r "
+        "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+        (resident_id,),
+    ).fetchone()
+    return (row[0] if row is not None else None) or default_runtime(db)
+
+
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
     db.execute(
         "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
@@ -101,6 +158,7 @@ class Hearth:
             row["skill_text"],
             bool(row["memory_writable"]),
             bool(row["letters_accept"]),
+            row["runtime"],
         )
 
     def declared_memory_writable(self, db, resident_id: str) -> bool:
@@ -111,6 +169,19 @@ class Hearth:
             (resident_id,),
         ).fetchone()
         return bool(row[0]) if row else False
+
+    def declared_runtime(self, db, resident_id: str) -> str | None:
+        """The current declared runtime, so an omitted one keeps the brain that stands.
+
+        `None` is a resident that follows the store's default, which is what most of
+        them do; `resident_runtime` is the same question with the default resolved.
+        """
+        row = db.execute(
+            "SELECT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return row[0] if row else None
 
     def declared_letters_accept(self, db, resident_id: str) -> bool:
         """The current declared letters.accept, so an omitted door keeps what is open."""
@@ -195,6 +266,8 @@ class Hearth:
         declaration.validate()
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_revision")
+        # Read before the revision moves: the runtime this resident declares now.
+        standing = self.declared_runtime(db, resident_id)
         now = int(self.clock())
         row = db.execute("SELECT revision FROM residents WHERE id = ?", (resident_id,)).fetchone()
         current = row[0] if row else 0
@@ -224,10 +297,20 @@ class Hearth:
                 originating_run_id=None,
                 now=now,
             )
+        if declaration.runtime is not None and declaration.runtime != standing:
+            # Moving a resident to another runtime is bounded twice: the kind has to be
+            # one this release can still start work on, and one this store has really
+            # been configured for -- otherwise the move only admits runs nothing can
+            # ever launch. Keeping the runtime that already stands is always allowed,
+            # so a resident whose kind a later release retires stays editable.
+            from hearth.integrations.interface import live
+
+            if not live(declaration.runtime) or not configured_runtime(db, declaration.runtime):
+                raise Refused("runtime_not_configured")
         writable = declaration.memory_writable
         accepts = declaration.letters_accept
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -239,6 +322,7 @@ class Hearth:
                 declaration.skill_text,
                 int(writable),
                 int(accepts),
+                declaration.runtime,
             ),
         )
         _audit(
@@ -246,7 +330,12 @@ class Hearth:
             "resident.saved",
             resident_id,
             now,
-            {"revision": revision, "memory_writable": writable, "letters_accept": accepts},
+            {
+                "revision": revision,
+                "memory_writable": writable,
+                "letters_accept": accepts,
+                "runtime": declaration.runtime,
+            },
         )
         return Resident(resident_id, revision, declaration)
 
@@ -295,6 +384,7 @@ class Hearth:
                     row["skill_text"],
                     bool(row["memory_writable"]),
                     bool(row["letters_accept"]),
+                    row["runtime"],
                 ),
             )
 
@@ -455,9 +545,10 @@ class Hearth:
             day,
             now,
             budget_timezone=declaration["budget_timezone"],
-            runtime_kind=db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0],
+            # Where this run happens is the resident's own declaration, and the store's
+            # default only where the declaration says nothing. The pin is written once,
+            # here, and a finished run keeps it whatever either of them becomes later.
+            runtime_kind=declaration["runtime"] or default_runtime(db),
         )
         db.execute(
             "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

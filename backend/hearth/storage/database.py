@@ -15,9 +15,11 @@ from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 10
-# The kind a new store records. Hearth now knows a second live runtime, and a store
-# configured for one of the others keeps it; this is the default, not the only answer.
+SCHEMA_VERSION = 11
+# The kind a new store records as its default: the runtime a resident that declares
+# none of its own runs on. Hearth knows a second live runtime, and a declaration may
+# name it (`docs/adr/0015-runtime-per-resident.md`); this is the default, not the only
+# answer, and a store configured for another live kind keeps it.
 RUNTIME_KIND = "codex_subscription"
 # Kinds Hearth used to ship. A store that recorded one is moved to the one runtime on
 # start; its finished runs keep their own pin, because that is where the work happened.
