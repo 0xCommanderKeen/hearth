@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
 import { ContextPanel } from "./Panels";
+import { Room } from "./Room";
 import type { Snapshot } from "../../shared/client";
 
 // Original Warren miniature models, shared here without its operational layer.
@@ -15,6 +16,7 @@ export function Hamlet({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [inside, setInside] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const origin = useRef<HTMLElement | null>(null);
   const selection = useRef(selected);
@@ -24,7 +26,14 @@ export function Hamlet({
     setSelected(identity);
     scene.current?.select(identity);
   };
+  const back = () => {
+    setInside(false);
+  };
   const close = () => {
+    if (inside) {
+      back();
+      return;
+    }
     setSelected(null);
     scene.current?.select(null);
     const target = origin.current?.isConnected ? origin.current : host.current;
@@ -40,7 +49,7 @@ export function Hamlet({
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [active, selected]);
+  }, [active, selected, inside]);
   const letters = snapshot.letters ?? [];
   // The operator stands at Townhall and has no resident row; everyone else is named.
   const name = (id: string | null) =>
@@ -86,130 +95,147 @@ export function Hamlet({
   }, [snapshot]);
   useEffect(() => {
     setSelected(null);
+    setInside(false);
   }, [snapshot.epoch]);
   useEffect(() => {
-    scene.current?.active(active);
-  }, [active]);
+    scene.current?.active(active && !inside);
+  }, [active, inside]);
   return (
     <section
       hidden={!active}
       className="hamlet-scene"
       aria-label="Hamlet village"
     >
-      <div className="scene-toolbar">
-        <span>HAMLET · 3D VILLAGE</span>
-        <span>
-          Drag to orbit · Two fingers to zoom / rotate · Select a home
-        </span>
-      </div>
-      <div className="scene-controls" role="group" aria-label="Village camera">
-        <button
-          disabled={unavailable}
-          onClick={() => scene.current?.overview()}
+      <div hidden={inside}>
+        <div className="scene-toolbar">
+          <span>HAMLET · 3D VILLAGE</span>
+          <span>
+            Drag to orbit · Two fingers to zoom / rotate · Select a home
+          </span>
+        </div>
+        <div
+          className="scene-controls"
+          role="group"
+          aria-label="Village camera"
         >
-          Overview
-        </button>
-        <button
-          disabled={unavailable}
-          aria-label="Zoom in"
-          onClick={() => scene.current?.zoom(1.25)}
-        >
-          ＋
-        </button>
-        <button
-          disabled={unavailable}
-          aria-label="Zoom out"
-          onClick={() => scene.current?.zoom(0.8)}
-        >
-          −
-        </button>
-        <button
-          disabled={unavailable}
-          aria-label="Rotate left"
-          onClick={() => scene.current?.rotate(-1)}
-        >
-          ↶
-        </button>
-        <button
-          disabled={unavailable}
-          aria-label="Rotate right"
-          onClick={() => scene.current?.rotate(1)}
-        >
-          ↷
-        </button>
-        <span>Shift-drag or one finger to pan · Scroll to zoom</span>
-      </div>
-      <div
-        tabIndex={-1}
-        ref={host}
-        className="scene-canvas"
-        role="group"
-        aria-label={`${villageResidents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a building here or in the directory below.`}
-      />
-      {unavailable && (
-        <p className="notice">
-          3D is unavailable in this browser. Resident profiles remain available
-          below.
-        </p>
-      )}
-      {/* The same events the walk is drawn from, in words. A letter whose two ends are
+          <button
+            disabled={unavailable}
+            onClick={() => scene.current?.overview()}
+          >
+            Overview
+          </button>
+          <button
+            disabled={unavailable}
+            aria-label="Zoom in"
+            onClick={() => scene.current?.zoom(1.25)}
+          >
+            ＋
+          </button>
+          <button
+            disabled={unavailable}
+            aria-label="Zoom out"
+            onClick={() => scene.current?.zoom(0.8)}
+          >
+            −
+          </button>
+          <button
+            disabled={unavailable}
+            aria-label="Rotate left"
+            onClick={() => scene.current?.rotate(-1)}
+          >
+            ↶
+          </button>
+          <button
+            disabled={unavailable}
+            aria-label="Rotate right"
+            onClick={() => scene.current?.rotate(1)}
+          >
+            ↷
+          </button>
+          <span>Shift-drag or one finger to pan · Scroll to zoom</span>
+        </div>
+        <div
+          tabIndex={-1}
+          ref={host}
+          className="scene-canvas"
+          role="group"
+          aria-label={`${villageResidents.map((r) => `${r.name}'s home`).join(", ") || "Empty village"}. Select a building here or in the directory below.`}
+        />
+        {unavailable && (
+          <p className="notice">
+            3D is unavailable in this browser. Resident profiles remain
+            available below.
+          </p>
+        )}
+        {/* The same events the walk is drawn from, in words. A letter whose two ends are
           not both homes in this village is listed here and not drawn, because there is
           no door to walk to; it is never dropped from the record. */}
-      {!!letters.length && (
-        <ol className="scene-post" aria-label="Recent post">
-          {letters.map((event) => (
-            <li key={`${event.kind}:${event.task_id}`}>
-              <strong>{name(event.from_resident_id)}</strong>
-              <span aria-hidden="true">→</span>
-              <strong>{name(event.to_resident_id)}</strong>
-              <span>
-                {event.kind === "letter_sent"
-                  ? "carried a letter"
-                  : "carried the answer"}{" "}
-                · {event.title}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {archivedUnresolved.map((r) => (
-        <p className="notice" key={r.id}>
-          <a href={`#residents/${encodeURIComponent(r.id)}`}>{r.name}</a> is
-          archived with {r.unresolved_runs} unresolved run(s). Accounting holds
-          remain.
-        </p>
-      ))}
-      <div
-        className="scene-directory"
-        role="group"
-        aria-label="Building directory"
-      >
-        <button
-          aria-pressed={selected === "#townhall"}
-          onClick={() => select("#townhall")}
+        {!!letters.length && (
+          <ol className="scene-post" aria-label="Recent post">
+            {letters.map((event) => (
+              <li key={`${event.kind}:${event.task_id}`}>
+                <strong>{name(event.from_resident_id)}</strong>
+                <span aria-hidden="true">→</span>
+                <strong>{name(event.to_resident_id)}</strong>
+                <span>
+                  {event.kind === "letter_sent"
+                    ? "carried a letter"
+                    : "carried the answer"}{" "}
+                  · {event.title}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {archivedUnresolved.map((r) => (
+          <p className="notice" key={r.id}>
+            <a href={`#residents/${encodeURIComponent(r.id)}`}>{r.name}</a> is
+            archived with {r.unresolved_runs} unresolved run(s). Accounting
+            holds remain.
+          </p>
+        ))}
+        <div
+          className="scene-directory"
+          role="group"
+          aria-label="Building directory"
         >
-          Select Townhall
-        </button>
-        {snapshot.residents.map((r) => {
-          const identity = `#residents/${encodeURIComponent(r.id)}`;
-          return (
-            <button
-              key={r.id}
-              aria-pressed={selected === identity}
-              onClick={() => select(identity)}
-            >
-              Select {r.name}
-              <small>
-                {connected
-                  ? r.presence
-                  : `disconnected · last known: ${r.presence}`}
-                {r.lifecycle?.state === "archived" ? " · archived" : ""}
-              </small>
-            </button>
-          );
-        })}
+          <button
+            aria-pressed={selected === "#townhall"}
+            onClick={() => select("#townhall")}
+          >
+            Select Townhall
+          </button>
+          {snapshot.residents.map((r) => {
+            const identity = `#residents/${encodeURIComponent(r.id)}`;
+            return (
+              <button
+                key={r.id}
+                aria-pressed={selected === identity}
+                onClick={() => select(identity)}
+              >
+                Select {r.name}
+                <small>
+                  {connected
+                    ? r.presence
+                    : `disconnected · last known: ${r.presence}`}
+                  {r.lifecycle?.state === "archived" ? " · archived" : ""}
+                </small>
+              </button>
+            );
+          })}
+        </div>
       </div>
-      {selected && (
+      {inside && selected && (
+        <Room
+          key={`${snapshot.epoch}:${selected}`}
+          identity={selected}
+          snapshot={snapshot}
+          connected={connected}
+          active={active}
+          onBack={back}
+        />
+      )}
+      {!inside && selected && (
         <ContextPanel
           key={`${snapshot.epoch}:${selected}`}
           identity={selected}
@@ -217,6 +243,7 @@ export function Hamlet({
           connected={connected}
           active={active}
           onClose={close}
+          onEnter={() => setInside(true)}
         />
       )}
       <div className="scene-residents">

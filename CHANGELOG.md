@@ -2,6 +2,11 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet homes and Townhall open furnished cutaway rooms whose desks, shelves and
+  letter cabinets reach existing records, with equivalent keyboard links. Room and
+  village context survive record visits and snapshot updates; archive and graphics
+  failure retain history and return paths. Rooms imply no physical occupancy.
+
 - Hamlet homes and Townhall open contextual panels with recorded work, bounded-history
   limits and on-demand record links. A mobile bottom sheet, archived-selection holds,
   keyboard return and retained camera/renderer keep the village context through

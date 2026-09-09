@@ -8,6 +8,8 @@ import {
   screen,
 } from "@testing-library/react";
 import { Hamlet } from "./Hamlet";
+import { createRoomScene } from "./village/room";
+vi.mock("./village/room", () => ({ createRoomScene: vi.fn() }));
 import { createVillageScene } from "./village/scene";
 import type { Resident, Snapshot } from "../../shared/client";
 vi.mock("./village/scene", () => ({ createVillageScene: vi.fn() }));
@@ -166,3 +168,145 @@ it("keeps the initial opener through mesh selection and Escape from camera contr
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(opener);
 });
+
+it("keeps the exterior paused and selection intact through rooms, record visits and updates", () => {
+  const exterior = {
+    active: vi.fn(),
+    update: vi.fn(),
+    select: vi.fn(),
+    dispose: vi.fn(),
+    zoom: vi.fn(),
+    rotate: vi.fn(),
+    overview: vi.fn(),
+  };
+  vi.mocked(createVillageScene).mockReturnValue(exterior);
+  const room = { active: vi.fn(), dispose: vi.fn() };
+  vi.mocked(createRoomScene).mockReturnValue(room);
+  const { rerender } = render(<Hamlet snapshot={snapshot} connected />);
+  fireEvent.click(screen.getByRole("button", { name: /Select Reader/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Enter home/ }));
+  expect(exterior.active).toHaveBeenLastCalledWith(false);
+  expect(screen.getByRole("heading", { name: "Reader’s home" })).toBe(
+    document.activeElement,
+  );
+  expect(
+    screen
+      .getByRole("link", { name: "Desk · recorded work" })
+      .getAttribute("href"),
+  ).toBe("#residents/reader?panel=work");
+  expect(
+    screen
+      .getByRole("link", { name: "Journal shelf · journal" })
+      .getAttribute("href"),
+  ).toBe("#residents/reader?panel=journal");
+  expect(
+    screen
+      .getByRole("link", { name: "Letter cabinet · letters" })
+      .getAttribute("href"),
+  ).toBe("#residents/reader?panel=letters");
+  rerender(<Hamlet snapshot={snapshot} connected active={false} />);
+  expect(room.active).toHaveBeenLastCalledWith(false);
+  rerender(
+    <Hamlet
+      snapshot={{
+        ...snapshot,
+        residents: [{ ...resident, name: "Renamed", presence: "interrupted" }],
+      }}
+      connected={false}
+    />,
+  );
+  expect(createRoomScene).toHaveBeenCalledTimes(1);
+  expect(
+    screen.getByText(/Disconnected · showing last known records/).textContent,
+  ).toContain("Outcome unknown");
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(room.dispose).toHaveBeenCalledOnce();
+  expect(exterior.active).toHaveBeenLastCalledWith(true);
+  expect(exterior.select).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("dialog", { name: "Renamed at home" })).toBe(
+    document.activeElement,
+  );
+});
+
+it("closes an archived or missing room with history and exit, never substitutes another resident", () => {
+  const room = { active: vi.fn(), dispose: vi.fn() };
+  vi.mocked(createRoomScene).mockReturnValue(room);
+  const { rerender } = render(<Hamlet snapshot={snapshot} connected />);
+  fireEvent.click(screen.getByRole("button", { name: /Select Reader/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Enter home/ }));
+  rerender(
+    <Hamlet
+      snapshot={{
+        ...snapshot,
+        residents: [
+          {
+            ...resident,
+            lifecycle: { state: "archived" },
+            unresolved_runs: 2,
+          } as Resident,
+        ],
+      }}
+      connected
+    />,
+  );
+  expect(room.dispose).toHaveBeenCalledOnce();
+  expect(screen.getByText(/Their room is closed/)).toBeTruthy();
+  expect(screen.getAllByText(/2 unresolved run/)).toHaveLength(2);
+  expect(
+    screen
+      .getByRole("link", { name: /Open resident history/ })
+      .getAttribute("href"),
+  ).toBe("#residents/reader");
+  rerender(
+    <Hamlet
+      snapshot={{ ...snapshot, residents: [{ ...resident, id: "other" }] }}
+      connected
+    />,
+  );
+  expect(
+    screen.getByText(/No other resident has taken their place/),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: /Open resident history/ })
+      .getAttribute("href"),
+  ).toBe("#residents-archived");
+  fireEvent.click(screen.getByRole("button", { name: "Back to village" }));
+  expect(
+    screen.getByRole("dialog", { name: "Unavailable resident at home" }),
+  ).toBeTruthy();
+});
+
+it.each(["initial", "context loss"])(
+  "keeps Townhall records and return usable after %s graphics failure",
+  (failure) => {
+    if (failure === "initial")
+      vi.mocked(createRoomScene).mockImplementation(() => {
+        throw Error("no WebGL");
+      });
+    else
+      vi.mocked(createRoomScene).mockReturnValue({
+        active: vi.fn(),
+        dispose: vi.fn(),
+      });
+    render(<Hamlet snapshot={snapshot} connected />);
+    fireEvent.click(screen.getByRole("button", { name: "Select Townhall" }));
+    fireEvent.click(screen.getByRole("button", { name: /Enter Townhall/ }));
+    if (failure === "context loss")
+      act(() => vi.mocked(createRoomScene).mock.calls[0][3]());
+    expect(screen.getByText(/Room graphics are unavailable/)).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Work table/ }).getAttribute("href"),
+    ).toBe("#tasks");
+    expect(
+      screen.getByRole("link", { name: /Ledger shelf/ }).getAttribute("href"),
+    ).toBe("#townhall");
+    expect(
+      screen.getByRole("link", { name: /Letter cabinet/ }).getAttribute("href"),
+    ).toBe("#inbox");
+    fireEvent.click(screen.getByRole("button", { name: "Back to village" }));
+    expect(
+      screen.getByRole("dialog", { name: "Townhall household" }),
+    ).toBeTruthy();
+  },
+);

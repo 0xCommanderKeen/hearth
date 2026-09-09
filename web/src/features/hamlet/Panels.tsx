@@ -12,12 +12,14 @@ export function ContextPanel({
   connected,
   active,
   onClose,
+  onEnter,
 }: {
   identity: string;
   snapshot: Snapshot;
   connected: boolean;
   active: boolean;
   onClose(): void;
+  onEnter?(): void;
 }) {
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -78,6 +80,13 @@ export function ContextPanel({
       <h2>
         {townhall ? "Townhall" : (resident?.name ?? "Resident unavailable")}
       </h2>
+      {onEnter &&
+        (townhall ||
+          (resident && resident.lifecycle?.state !== "archived")) && (
+          <button className="room-enter" onClick={onEnter}>
+            {townhall ? "Enter Townhall" : "Enter home"} →
+          </button>
+        )}
       {!connected && (
         <p className="notice">
           Disconnected · showing last known records. Reconnecting does not
