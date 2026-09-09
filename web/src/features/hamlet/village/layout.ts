@@ -95,7 +95,8 @@ export function createPlotAllocator(epoch: string, storage?: Storage) {
 export type Street = { x: number; z: number; width: number; depth: number };
 export type Point = { x: number; z: number };
 export function streetNetwork(plots: Plot[]) {
-  const all = [{ id: "square", x: 0, z: 0 }, ...plots];
+  const homes = [{ id: null, x: 0, z: -6 }, ...plots];
+  const all = [{ id: "square", x: 0, z: 0 }, ...homes];
   const minX = Math.min(...all.map((p) => p.x)) - 5;
   const maxX = Math.max(...all.map((p) => p.x)) + 5;
   const minZ = Math.min(...all.map((p) => p.z)) - 5;
@@ -113,8 +114,8 @@ export function streetNetwork(plots: Plot[]) {
     depth: maxZ - minZ - 2,
   });
   const doors = new Map<string | null, Point>();
-  for (const p of plots) {
-    doors.set(p.id === "townhall" ? null : p.id, { x: p.x, z: p.z + 2.2 });
+  for (const p of homes) {
+    doors.set(p.id, { x: p.x, z: p.z + 2.2 });
     streets.push({ x: p.x, z: p.z + 2.35, width: 0.8, depth: 1.3 });
   }
   return {

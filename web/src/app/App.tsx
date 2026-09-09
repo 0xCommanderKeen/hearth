@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
   streamBaseline,
+  inheritStreamBaseline,
   RequestError,
   StateFormatError,
   type PendingTask,
@@ -153,12 +154,16 @@ export function App() {
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
 
+  const lastStream = useRef<ReturnType<typeof streamBaseline>>(undefined);
   function publish(next: Snapshot) {
+    const delivery = streamBaseline(next);
+    const newStream = delivery && delivery !== lastStream.current;
+    if (delivery) lastStream.current = delivery;
+    else inheritStreamBaseline(next, lastStream.current);
     setSnapshot((previous) =>
       previous?.epoch === next.epoch &&
       previous.cursor > next.cursor &&
-      (!streamBaseline(next) ||
-        streamBaseline(next) === streamBaseline(previous))
+      !newStream
         ? previous
         : next,
     );

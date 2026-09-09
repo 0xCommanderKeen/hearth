@@ -489,6 +489,15 @@ const streamBaselines = new WeakMap<Snapshot, StreamBaseline>();
 export function streamBaseline(snapshot: Snapshot) {
   return streamBaselines.get(snapshot);
 }
+// A command refresh can be the last publication in a React batch containing a
+// reconnect. Keep that connection context on the snapshot the view actually sees.
+export function inheritStreamBaseline(
+  snapshot: Snapshot,
+  baseline?: StreamBaseline,
+) {
+  if (baseline && !streamBaselines.has(snapshot))
+    streamBaselines.set(snapshot, baseline);
+}
 export type Task = {
   id: string;
   resident_id: string;

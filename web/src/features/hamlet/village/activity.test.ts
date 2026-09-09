@@ -94,7 +94,7 @@ it("bounds queue and dedup without replaying overflow or resurfaced older histor
 });
 it("routes actual doors through rendered streets, including Townhall and remote rows", () => {
   const network = streetNetwork([
-    { id: "townhall", x: 0, z: -6 },
+    { id: "townhall", x: -12, z: 0 },
     { id: "reader", x: -6, z: 6 },
     { id: "keeper", x: 12, z: -12 },
   ]);
@@ -116,6 +116,7 @@ it("routes actual doors through rendered streets, including Townhall and remote 
       ).toBe(true);
     }
   }
+  expect(network.route("townhall", "reader")?.[0]).toEqual({ x: -12, z: 2.2 });
   expect(network.route("missing", "reader")).toBeNull();
   expect(network.route("reader", "reader")).toBeNull();
   expect(network.route(null, "reader")?.[0]).toEqual({ x: 0, z: -3.8 });
@@ -124,9 +125,11 @@ it.each(["unknown", "failed", "paused", "interrupted", "running", "ready"])(
   "keeps recorded %s in text and connection context",
   (presence) => {
     const r = { presence } as Resident;
-    expect(residentStatus(r, true).text).toBe(presence);
+    const label =
+      presence === "interrupted" ? "Outcome unknown (interrupted)" : presence;
+    expect(residentStatus(r, true).text).toBe(label);
     expect(residentStatus(r, false).text).toBe(
-      `disconnected · last known: ${presence}`,
+      `disconnected · last known: ${label}`,
     );
   },
 );
@@ -143,4 +146,16 @@ it("admits live events after a batched explicit reset baseline", () => {
     reset,
   );
   expect(drain(model)).toEqual(["after"]);
+});
+
+it("keeps stream dedup across an ordinary command refresh", () => {
+  const model = createActivity();
+  const initial = snapshot([event("old")]);
+  model.observe(initial, true, true, false, initial);
+  const next = snapshot([event("fresh", 101), ...initial.letters], 2);
+  model.observe(next, true, true, false, initial);
+  expect(drain(model)).toEqual(["fresh"]);
+  model.observe(next, true, true, false); // App.act -> client.state()
+  model.observe({ ...next, cursor: 3 }, true, true, false, initial);
+  expect(drain(model)).toEqual([]);
 });

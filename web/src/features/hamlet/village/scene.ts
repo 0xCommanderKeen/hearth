@@ -145,7 +145,7 @@ export function createVillageScene(
       path.receiveShadow = true;
       village.add(path);
     }
-    network = streetNetwork([{ id: "townhall", x: 0, z: -6 }, ...plots]);
+    network = streetNetwork(plots);
     network.streets.forEach(({ x, z, width, depth }) =>
       street(x, z, width, depth),
     );

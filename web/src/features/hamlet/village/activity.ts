@@ -60,7 +60,8 @@ export function createActivity() {
       consume(snapshot.letters ?? [], online && visible && !reduced);
       epoch = snapshot.epoch;
       cursor = snapshot.cursor;
-      baseline = delivery;
+      // Ordinary client.state refreshes do not replace the active stream identity.
+      if (delivery) baseline = delivery;
       connected = online;
       return reset || reconnect || !online || !visible || reduced;
     },
@@ -75,7 +76,9 @@ export function createActivity() {
 
 export function residentStatus(resident: Resident, connected: boolean) {
   const presence = resident.presence || "unknown";
-  const text = connected ? presence : `disconnected · last known: ${presence}`;
+  const label =
+    presence === "interrupted" ? "Outcome unknown (interrupted)" : presence;
+  const text = connected ? label : `disconnected · last known: ${label}`;
   const tone = !connected
     ? "unknown"
     : ["running", "starting", "claimed"].includes(presence)
