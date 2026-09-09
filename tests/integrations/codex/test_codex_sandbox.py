@@ -243,6 +243,10 @@ def test_a_receipt_may_not_claim_a_sandbox_hearth_could_not_have_written(tmp_pat
         {"launcher": "somewhere else", "container_id": None, "image": None},
         {"launcher": "container", "container_id": 1, "image": None},
         {"launcher": "container", "container_id": None},
+        # A run that was a child of its worker never ran in a container, and a receipt
+        # that named one would be saying this run happened somewhere it did not.
+        {"launcher": "process", "container_id": "a" * 64, "image": None},
+        {"launcher": "process", "container_id": None, "image": DIGEST},
         "container",
     ):
         with pytest.raises(Refused, match="run_usage_invalid"):

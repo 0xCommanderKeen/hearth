@@ -579,7 +579,7 @@ class ContainerLauncher:
         Only the id Hearth recorded for this run is touched. Sweeping by Hearth's own
         label would find every other resident's live session on the same burrow.
         """
-        if identity is None or not IDENTITY.match(identity):
+        if not isinstance(identity, str) or not IDENTITY.match(identity):
             return False
         try:
             self.client("inspect", "--type", "container", "--format", "{{.State.Status}}", identity)

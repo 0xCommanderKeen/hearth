@@ -7,15 +7,20 @@ and nothing else. That is enough for every runtime test to run under the contain
 launcher as well as the process one: the same fake CLI is started, the same stream
 comes back through the same pipe, and the same signals end it.
 
-What it deliberately does not do is confine anything. A mount is recorded, never
-applied; a read-only root, a tmpfs and a uid are recorded, never enforced. The fake
-proves the launcher's argv and the worker's handling of it, and the real container
-semantics are measured against a real daemon instead (`docs/sandbox.md`).
+What it deliberately does not do is confine anything. A read-only root, a tmpfs and a
+uid are recorded, never enforced; a mount is *translated* rather than applied, because
+the fake has no namespace of its own -- a command that names a mounted path runs against
+the host directory mounted there, and a command that names a file the image carries runs
+the image's copy. That is enough to drive an adapter whose whole command is written in
+paths that only exist inside a container. The fake proves the launcher's argv and the
+worker's handling of it; the real container semantics are measured against a real daemon
+instead (`docs/sandbox.md`).
 
 The daemon's own contents are the state directory beside the installed executable:
 `images/<digest>` and `networks/<name>` are what it holds, `image-files/<path>` is the
-image's filesystem for `sha256sum`, `containers/<id>.json` is what is running, and
-`calls.jsonl` is every invocation, for a test that wants to read the argv back.
+image's own filesystem -- what `sha256sum` hashes and what a session executes --
+`containers/<id>.json` is what is running, and `calls.jsonl` is every invocation, for a
+test that wants to read the argv back.
 """
 
 import hashlib

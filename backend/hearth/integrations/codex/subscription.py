@@ -78,12 +78,16 @@ def sandboxed(value) -> bool:
     """
     if value is None:
         return True
-    return (
-        isinstance(value, dict)
-        and set(value) == {"launcher", "container_id", "image"}
-        and value["launcher"] in KINDS
-        and all(item is None or isinstance(item, str) for item in value.values())
-    )
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"launcher", "container_id", "image"}
+        or value["launcher"] not in KINDS
+        or not all(item is None or isinstance(item, str) for item in value.values())
+    ):
+        return False
+    # A run that was a child of its worker has no container and no image to name, and
+    # a receipt that named one would be saying this run happened somewhere it did not.
+    return value["launcher"] == CONTAINER or (value["container_id"], value["image"]) == (None, None)
 
 
 def encode(receipt, expected):
@@ -459,7 +463,7 @@ def worker(folder, inherited_fd=None):
         # reads and the one directory it writes into. Inside a container each is a
         # mount and nothing else on this host exists; on the process launcher each is
         # itself and the command below is byte for byte the one Hearth always built.
-        output = placement.directory(workspace, OUTPUT, writable=True)
+        written = placement.directory(workspace, OUTPUT, writable=True)
         cmd = [
             placement.binary(binary, "codex"),
             "exec",
@@ -474,7 +478,7 @@ def worker(folder, inherited_fd=None):
             "--model",
             MODEL,
             "-o",
-            output + "/final.md",
+            written + "/final.md",
         ]
         for key, value in CONFIG.items():
             cmd += ["-c", key + "=" + json.dumps(value)]
