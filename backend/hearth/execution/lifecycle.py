@@ -266,8 +266,8 @@ class Execution:
         A run that was already launched is left exactly as unknown as it is:
         interrupted, never retried, never settled at a number nobody can produce
         evidence for -- a priced run settles from its own provider's receipt, and there
-        is no receipt for a session this instance cannot see. It settles once the
-        runtime is configured again, or when the operator reconciles it.
+        is no receipt for a session this instance cannot see. It settles when the
+        runtime is configured again and the run can be observed where it really is.
         """
         with self.hearth.database.transaction(write=True) as db:
             row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()

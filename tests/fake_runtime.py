@@ -221,11 +221,6 @@ CLAUDE_ANSWER_COST = 36_580
 CLAUDE_BINARY = "cd" * 32
 
 
-def fake_claude_runtime(scenario: str = "success"):
-    """A `claude_subscription` runtime factory for `create_app(runtime=...)`."""
-    return lambda data: FakeClaudeRuntime(data, scenario=scenario)
-
-
 def fake_runtimes():
     """Both live kinds at once, for a store whose residents do not share a brain."""
     return lambda data: (FakeRuntime(data), FakeClaudeRuntime(data))

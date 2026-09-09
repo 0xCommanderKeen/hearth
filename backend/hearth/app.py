@@ -436,7 +436,7 @@ def configured_runtimes(data: Path, kind: str, configuration: dict[str, dict]) -
     no longer ship; it is opened to be read and starts nothing either way, so it opens
     on the default adapter. Every other live runtime joins the map only when its whole
     configuration is present -- a host with no Claude login simply has no Claude
-    runtime, and a run pinned to one settles as unknown rather than launching here.
+    runtime, and a run pinned to one waits rather than launching on another provider.
     """
     default = kind if live(kind) else CODEX_KIND
     if configuration.get(default) is None:
