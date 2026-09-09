@@ -136,9 +136,18 @@ def test_a_budget_stop_settles_as_failed_with_the_cost_the_cli_already_billed():
     assert transcript.budget_exhausted and transcript.subtype == "error_max_budget_usd"
 
 
-def test_a_session_that_never_reached_the_api_fails_without_claiming_a_price():
+def test_a_session_that_never_reached_the_api_settles_at_zero_and_holds_nothing(tmp_path):
+    """A lapsed login must not hold a resident's allowance for work never done."""
     evidence = encode(receipt("not-logged-in"), BINDING)[2]
-    assert evidence.status == "failed" and evidence.cost is None
+    assert evidence.status == "failed" and evidence.cost == 0
+
+    runtime, hearth, run, _ = prepared(tmp_path, fixture="not-logged-in")
+    worker(runtime.folder(run.id))
+    result = settled(runtime, hearth, run, runtime.receipt(run.id), tmp_path / "data")
+    assert (result.status, result.actual_cost, result.usage_known) == ("failed", 0, True)
+    # The resident is not paused, so the next task is still admitted.
+    task = hearth.submit("next", "reader", "Next", expires_at=int(hearth.clock()) + 600)
+    assert hearth.admit(task.task_id, reserve=10_000).id != run.id
 
 
 def test_a_receipt_cannot_settle_another_run_or_another_price_schedule():
@@ -387,6 +396,24 @@ def test_usage_the_stream_contradicts_keeps_the_answer_and_holds_the_resident(tm
         hearth.admit(task.task_id, reserve=10_000)
 
 
+def test_the_whole_read_bound_is_used_so_the_terminal_event_survives(tmp_path, monkeypatch):
+    """Half the bound would cut this session before its `result` event.
+
+    Cutting a stream early takes the CLI's own ending with it, and a session that was
+    really billed would then have no readable ending and settle at unknown.
+    """
+    from hearth.integrations.claude import subscription
+
+    recorded = len(stream("success").encode())
+    monkeypatch.setattr(subscription, "MAX_STREAM", int(recorded * 1.5))
+    runtime, _, run, _ = prepared(tmp_path)
+    worker(runtime.folder(run.id))
+    published = runtime.receipt(run.id)
+    assert published["stdout"] == stream("success")
+    evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+    assert evidence.status == "succeeded" and evidence.cost == 36_580
+
+
 def test_a_stream_too_large_to_commit_still_leaves_a_receipt_to_settle_on(tmp_path, monkeypatch):
     """A run with no receipt could never settle, so the tail is dropped, not the run."""
     from hearth.integrations.claude import subscription
@@ -401,6 +428,41 @@ def test_a_stream_too_large_to_commit_still_leaves_a_receipt_to_settle_on(tmp_pa
     evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
     # A transcript nobody can read settles nothing and claims nothing.
     assert evidence.status == "failed" and evidence.cost is None
+
+
+def test_a_login_that_has_lapsed_is_named_as_a_login_and_not_as_a_broken_install(tmp_path):
+    """`auth status --json` prints its answer and exits 1 when there is no login.
+
+    Measured on the pinned 2.1.263 and on 2.1.265. Reading the exit code instead of the
+    answer would send an operator whose login expired to go and check the binary path.
+    """
+    from hearth.storage.database import Database
+
+    data = tmp_path / "data"
+    config_dir = tmp_path / "private-claude-config"
+    config_dir.mkdir()
+    binary = tmp_path / "claude"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        f"if '--version' in sys.argv:\n print({VERSION!r})\n sys.exit()\n"
+        "print(json.dumps({'loggedIn': False, 'authMethod': 'none'}))\n"
+        "sys.exit(1)\n"
+    )
+    binary.chmod(0o700)
+    database = Database(data / "hearth.db")
+    database.initialize()
+    with database.transaction(write=True) as db:
+        db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (KIND,))
+    with pytest.raises(Refused, match="claude_subscription_login_required"):
+        ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir)
+    with database.transaction() as db:
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM system_meta WHERE key='claude_live_binary'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_the_probe_never_lets_the_cli_speak_on_hearth_s_own_error_stream(tmp_path, capfd):

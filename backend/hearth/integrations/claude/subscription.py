@@ -77,6 +77,11 @@ def settled_cost(transcript: Transcript, expected) -> int | None:
         or expected.schedule != PRICE_SCHEDULE
     ):
         return None
+    if not transcript.usage:
+        # A session the stream proves billed nothing. It settles at zero rather than
+        # at unknown, so a lapsed login does not hold a resident's allowance for work
+        # that never reached the provider. `events._nothing_billed` owns the proof.
+        return 0 if transcript.reported == () and transcript.reported_total == 0 else None
     if {model for model, _ in transcript.reported} != {row.model for row in transcript.usage}:
         # A model billed something the price schedule never saw, or priced something
         # the CLI never billed. Either way the two accounts are not of one session.
@@ -173,18 +178,26 @@ class ClaudeLiveRuntime:
         self.root.mkdir(mode=0o700, exist_ok=True)
 
     def _probe(self, *arguments: str) -> str:
-        """Ask the pinned CLI one question. A CLI that cannot answer is not configured."""
+        """Ask the pinned CLI one question. A CLI that cannot answer is not configured.
+
+        The exit code is deliberately not read. `auth status --json` prints its answer
+        and **exits 1** when the configured directory holds no login (measured on the
+        pinned 2.1.263 and on 2.1.265), so treating a non-zero exit as a broken
+        installation would tell an operator whose login has lapsed to go and check the
+        binary path. What the CLI says is the answer; whether it was happy is not.
+        """
         try:
-            return subprocess.check_output(
+            return subprocess.run(
                 [str(self.binary), *arguments],
                 env=environment(self.config_dir),
+                capture_output=True,
                 # The login answer names the account. Nothing the CLI says on either
                 # stream is kept, logged or passed on, so its diagnostics are discarded
                 # rather than inherited onto Hearth's own stderr.
-                stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=PROBE_TIMEOUT,
-            )
+                check=False,
+            ).stdout
         except OSError, subprocess.SubprocessError:
             # A missing, unrunnable or unanswering binary is an operator's configuration
             # to fix, and no answer of any kind is evidence of a version or a login.
@@ -373,7 +386,11 @@ def worker(folder, inherited_fd=None):
                         eof = True
                         break
                     output.extend(chunk)
-                    if len(output) > MAX_STREAM // 2:
+                    # The whole bound, not half of it: cutting the stream early takes
+                    # the terminal `result` event with it, and a session that was
+                    # really billed would then have no readable ending at all. The
+                    # receipt's own size is bounded below, after the stream is read.
+                    if len(output) > MAX_STREAM:
                         break
         except Refused:
             cancelled = True

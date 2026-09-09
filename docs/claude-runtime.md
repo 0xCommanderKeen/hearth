@@ -61,8 +61,14 @@ default one, so the operator's seeding step cannot be skipped by pointing Hearth
 always sets `CLAUDE_CONFIG_DIR`, so every session it launches is on the private login
 or on none.
 
-`auth status` **exits 0 whether or not there is a login**, so the exit code proves
-nothing and the JSON has to be read.
+**Corrected 2026-09-09: `auth status --json` prints its answer and then exits `1` when
+the configured directory holds no login.** Re-measured on the pinned 2.1.263 and on
+2.1.265, both with an empty `$CFG`: exit `1`, `{"loggedIn": false, "authMethod": "none"}`
+on stdout. The row above recorded exit 0 and was wrong. So the exit code still proves
+nothing about a login -- only now it is a *non-zero* exit that must not be read as one.
+Hearth's probe runs the CLI with `check=False` and reads what it said: treating a
+non-zero exit as a broken installation would tell an operator whose login has lapsed to
+go and check the binary path.
 
 **Not measured: the operator step that seeds the private login.** `claude auth login`
 inside `$CFG` needs a browser and the account holder, so it was not run here. Whether it
@@ -141,6 +147,12 @@ The transcripts behind it are committed, scrubbed, under
 | `result.total_cost_usd` | truthful | truthful |
 | an `assistant` message's `message.usage` | **`output_tokens: 1` where the request billed 4** | same |
 
+- **A session can bill nothing, and the stream can prove it.** The not-logged-in run
+  reported `modelUsage: {}`, `total_cost_usd: 0`, no `iterations`, and one assistant
+  message the CLI flagged as its own error. That whole conjunction -- and only that --
+  settles at zero rather than at unknown usage, so a login that lapses mid-week fails
+  its runs without holding every resident's allowance behind a manual reconciliation.
+  The flag sits on the **event**, not on the message inside it.
 - **`result.usage` cannot be trusted as usage.** #145 saw it zeroed; #146 saw it
   truthful on a success and zeroed again on the budget stop. Neither reading is safe to
   build on, so Hearth never reads it as usage — only `usage.iterations` and `modelUsage`.
