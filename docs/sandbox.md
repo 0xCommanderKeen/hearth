@@ -288,7 +288,9 @@ and it is the one file in a run folder that is *replaced* rather than published:
   write the name into. Asking for the id waits, and a worker killed while waiting would
   otherwise leave a live container that nothing on disk names; the cidfile is usually
   there a tenth of a second later, and reading it is how such a container is still
-  found.
+  found. Giving up on reading the id is not evidence that no container exists, so that
+  file is kept for exactly as long as there is no id: otherwise the write that follows
+  a failed reading would clear the pointer the write before it had just made.
 - **again once the id is known**, and once more for each further session -- a management
   run starts two containers, one after the other, and whichever it is holding is the one
   that has to be findable.

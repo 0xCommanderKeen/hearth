@@ -262,7 +262,8 @@ class Handle:
         down: the file it is going to name it in. A worker that dies while waiting for
         that name leaves a live container, and this is the only thing anyone can find
         it by -- `stray` will not sweep by label, because a label finds every other
-        resident's session too.
+        resident's session too. The file is kept for exactly as long as there is no id,
+        so this never stops answering while it is the only answer there is.
         """
         return {
             "launcher": self.launcher,
@@ -517,29 +518,44 @@ class ContainerLauncher:
 
         A client that ended without ever naming one leaves `None`: the session's
         identity was never observed, and no later observation may guess at it.
+
+        What is *not* left is nothing at all. Until an id is in hand the file it will
+        arrive in is kept, and the handle goes on naming it, because a container that
+        was created and never named is the one stray nothing can find -- and this
+        method giving up is not evidence that no container exists.
         """
         if handle.id is not None or handle.identity is None:
             return handle.id
+        identity = handle.identity
+
+        def written() -> str | None:
+            try:
+                value = identity.read_text().strip()
+            except OSError:
+                return None
+            return value if IDENTITY.match(value) else None
+
         deadline = time.monotonic() + IDENTITY_TIMEOUT
         while True:
-            try:
-                value = handle.identity.read_text().strip()
-            except OSError:
-                value = ""
-            if IDENTITY.match(value):
-                handle.id = value
-                break
+            handle.id = written()
             # The file is read before the client is asked whether it is still running,
             # and never the other way round: a client that wrote the id and exited in
             # between the two would otherwise leave a container Hearth created and
-            # cannot name -- which is a session nobody can end, and exactly the stray
-            # this launcher is supposed to be able to find.
+            # cannot name.
+            if handle.id is not None:
+                break
             if handle.process.poll() is not None or time.monotonic() >= deadline:
+                # One last look, for the moment between the read above and the answer
+                # that ended this loop. A client that has ended cannot write it now.
+                handle.id = written()
                 break
             time.sleep(0.02)
-        if handle.directory is not None:
+        if handle.id is not None:
+            # The id is the durable answer and the file was only ever how it arrived,
+            # so the private directory of this launch's own goes with it. When there
+            # is no id the file stays, and so does the handle's name for it.
             shutil.rmtree(handle.directory, ignore_errors=True)
-        handle.identity, handle.directory = None, None
+            handle.identity, handle.directory = None, None
         return handle.id
 
     def inspect(self, handle):

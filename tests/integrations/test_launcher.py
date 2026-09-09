@@ -246,10 +246,17 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
         "cidfile": str(handle.identity),
     }
     assert launcher.identify(handle) is None
-    # Afterwards there is nothing left at all: the file is gone with the private
-    # directory that held it, and this session was never named.
+    # Afterwards it is still the answer. Giving up on reading the id is not evidence
+    # that no container exists, so the file the runtime would have written it in is
+    # kept and the handle goes on naming it -- otherwise the one way to find a
+    # container that was created and never named would be cleared by the very pass
+    # that failed to name it.
     assert handle.id is None
-    assert handle.document() == {"launcher": "container", "id": None, "cidfile": None}
+    assert handle.document() == {
+        "launcher": "container",
+        "id": None,
+        "cidfile": str(handle.identity),
+    }
     assert launcher.inspect(handle) == "unknown"
     launcher.stop(handle, signal.SIGKILL)
     assert launcher.wait(handle, 30) is not None

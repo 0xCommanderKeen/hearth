@@ -197,6 +197,42 @@ def test_a_worker_that_died_before_the_id_was_read_still_names_its_container(tmp
     assert launcher.wait(handle, 30) is not None
 
 
+def test_giving_up_on_the_id_does_not_erase_the_only_way_to_find_the_container(
+    tmp_path, monkeypatch
+):
+    """The handle is written twice, and the second write must not disarm the first.
+
+    A worker records the file the runtime will name the container in, then asks for
+    the name, then records what it got. If asking gave up while a container existed
+    and threw that file away, the second record would overwrite the pointer the first
+    one had just made with nothing at all -- the unfindable stray, reintroduced by the
+    recovery path's own success path.
+    """
+    runtime, run, sandbox, docker = sandboxed(tmp_path)
+    launcher = sandbox.open()
+    folder = runtime.folder(run.id)
+    handle = launcher.start(["sleep", "60"], env={"PATH": os.defpath}, cwd=folder, stdin=None)
+    written_handle(folder, handle)
+    pointer = json.loads((folder / "handle.json").read_text())["cidfile"]
+    assert pointer
+
+    # The runtime never answered in time -- and a container is running all the same.
+    monkeypatch.setattr("hearth.integrations.launcher.IDENTITY_TIMEOUT", 0)
+    launcher.identify(handle)
+    assert handle.id is None
+    written_handle(folder, handle)
+    assert json.loads((folder / "handle.json").read_text())["cidfile"] == pointer
+
+    deadline = time.monotonic() + 30
+    while not Path(pointer).is_file() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    started = json.loads((folder / "handle.json").read_text())
+    (folder / "handle.json").write_text(json.dumps(started | {"worker": departed()}))
+    assert runtime.inspect(run.id, expected_digest=run.input_digest).status == "unknown"
+    assert len(facts(runtime, "sandbox.stray_removed")) == 1
+    assert launcher.wait(handle, 30) is not None
+
+
 def test_a_session_the_runtime_never_named_leaves_nothing_to_remove(tmp_path):
     """An execution nobody can name is never guessed at, and never invented."""
     runtime, run, sandbox, _ = sandboxed(tmp_path)
