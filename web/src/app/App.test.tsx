@@ -106,7 +106,7 @@ async function login(profile = true) {
     target: { value: "synthetic-operator-token-for-tests" },
   });
   fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
-  await screen.findByText("Connected to Codex");
+  await screen.findByText("Connected · Codex");
   if (profile && state.residents.length && !window.location.hash) {
     fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
     await screen.findByLabelText("Resident information");
@@ -301,7 +301,7 @@ it("credits a result to the provider that produced it, on either brain", async (
   });
   fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
   // Both brains are named where the household is named, its own default first.
-  await screen.findByText("Connected to Codex and Claude");
+  await screen.findByText("Connected · Codex and Claude");
   expect(
     screen.getByText("Codex subscription · Claude subscription"),
   ).toBeTruthy();
@@ -432,7 +432,7 @@ it("does not restore an artifact response that arrives after locking", async () 
     target: { value: "synthetic-second-token" },
   });
   fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
-  await screen.findByText("Connected to Codex");
+  await screen.findByText("Connected · Codex");
   expect(screen.queryByText("late private output")).toBeNull();
 });
 
@@ -648,7 +648,7 @@ it("keeps an authenticated tab unlocked after refresh and clears it on Lock", as
   await login(false);
   cleanup();
   render(<App />);
-  await screen.findByText("Connected to Codex");
+  await screen.findByText("Connected · Codex");
   expect(screen.queryByLabelText("Operator token")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   cleanup();

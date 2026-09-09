@@ -526,8 +526,12 @@ export function App() {
         <div className="rail-foot">
           {snapshot && (
             <span className={`chip ${connected ? "live" : "off"}`}>
+              {/* The chip is about this browser's own connection to Hearth; the
+                  runtimes beside it are what the household is configured for, which
+                  is not a claim that each provider is up right now. `GET /health`
+                  answers that, and only it can. */}
               {connected
-                ? `Connected to ${runtimeNames(snapshot.runtimes).join(" and ")}`
+                ? `Connected · ${runtimeNames(snapshot.runtimes).join(" and ")}`
                 : "Reconnecting · state may be stale"}
             </span>
           )}
