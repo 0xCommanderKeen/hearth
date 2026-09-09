@@ -2,6 +2,22 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Which runtime a resident runs on is a declaration fact. `declarations.runtime`
+  (schema 11, null = the store's default) is pinned onto every run at admission, and
+  `system_meta.runtime_kind` becomes that default rather than the household's only
+  answer: Karen can stay on `codex_subscription` while another resident on the same
+  store runs on `claude_subscription`. One instance builds every live runtime it is
+  configured for -- each through the registry's own module and class, so the two
+  adapters are named in one place -- and the executor works each run with the runtime
+  its own pin names. A run pinned to a runtime this instance is not configured for is
+  never handed to another provider: one that never launched is asked to stop and
+  settles at zero, one already launched waits, interrupted, with a `runtime_unavailable`
+  audit fact, because there is no receipt for a session nobody here can see. A
+  declaration may only name a runtime this store has really been configured for
+  (`runtime_not_configured`), the execution profile an operator, Karen or a bundle names
+  is that resident's runtime, and a bundle whose runtime the importing instance lacks
+  keeps the resident on the default with the reason recorded. Recorded in
+  `docs/adr/0015-runtime-per-resident.md`.
 - Hearth's own tools reach a Claude run. `--mcp-config` names a Hearth-owned stdio shim
   (`python -I -m hearth.integrations.claude.mcp_bridge`) that carries no credential, no
   owner token and no database — it forwards `tools/list` and `tools/call` over a unix

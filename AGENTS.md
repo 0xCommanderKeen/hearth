@@ -28,8 +28,12 @@ for the current acceptance gate.
   Codex subscription, which every new store records, and the Claude subscription, which
   a store may be configured for. A store recorded against a removed runtime adopts the
   default on start, and finished runs keep their own pin because that is where the work
-  happened. Tests and the installed-wheel smoke inject `tests/fake_runtime.py`; it is
-  never packaged.
+  happened. Which runtime a resident runs on is its own declaration
+  (`docs/adr/0015-runtime-per-resident.md`): `system_meta.runtime_kind` is the default
+  for residents that declare none, admission pins the resident's runtime onto the run,
+  and one instance may be configured for several at once. Nothing in `execution/`,
+  `work/` or `management/` names a provider. Tests and the installed-wheel smoke inject
+  `tests/fake_runtime.py`; it is never packaged.
 - Live data and credentials stay outside the repository. Use synthetic notes until
   real testing is explicitly selected; obtain concrete runtime/source decisions first.
 - Record decisions that change scope, persistence or authority in an ADR and add a
