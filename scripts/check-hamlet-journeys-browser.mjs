@@ -65,162 +65,171 @@ const server = await createServer({
     },
   ],
 });
-await server.listen();
-// Ordinary Playwright pages force focus emulation, making background tabs report
-// visible even after a separate CDP client disables it. Connect without those
-// defaults to an isolated Chromium profile so this is a real visibility transition.
-const profile = await mkdtemp(join(tmpdir(), "hearth-journeys-browser-"));
-const processBrowser = spawn(
-  chromium.executablePath(),
-  [
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profile}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-component-update",
-    "--use-mock-keychain",
-    "about:blank",
-  ],
-  { stdio: "ignore" },
-);
-let endpoint;
-for (let attempt = 0; attempt < 100; attempt++) {
-  try {
-    const [port] = (
-      await readFile(join(profile, "DevToolsActivePort"), "utf8")
-    ).split("\n");
-    endpoint = `http://127.0.0.1:${port}`;
-    break;
-  } catch {
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
-if (!endpoint) {
-  processBrowser.kill();
-  throw Error("Isolated Chromium did not start");
-}
-const browser = await chromium.connectOverCDP(endpoint, { noDefaults: true });
-const context = browser.contexts()[0];
-const page = context.pages()[0];
-await page.setViewportSize({ width: 1440, height: 1050 });
-const errors = [];
-const measurements = [];
-const matrix = [];
-let hardware;
-page.on("pageerror", (e) => errors.push(e.message));
-const stats = () => page.evaluate(() => window.stats());
-const settle = () =>
-  page.evaluate(
-    () =>
-      new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
-  );
-const directory = (name) =>
-  page
-    .getByRole("group", { name: "Building directory", exact: true })
-    .getByRole("button", { name: new RegExp("Select " + name) });
-
-const enter = async (name) => {
-  await directory(name).click();
-  await page
-    .getByRole("button", {
-      name: name === "Townhall" ? /Enter Townhall/ : /Enter home/,
-    })
-    .click();
-  await page.locator(".room-canvas canvas").waitFor();
-  await settle();
-};
-const back = async () => {
-  await page.getByRole("button", { name: "Back to village" }).click();
-  await settle();
-};
-const returnRoom = async () => {
-  await page.getByRole("link", { name: "← Return to village" }).click();
-  await page.getByRole("region", { name: "Building interior" }).waitFor();
-  await settle();
-};
-const furniture = async (label, expected) => {
-  await page.locator(".room-canvas canvas").scrollIntoViewIfNeeded();
-  const point = await page.evaluate((label) => {
-    const { scene, camera } = window.measure,
-      THREE = window.THREE;
-    const canvas = document.querySelector(".room-canvas canvas"),
-      b = canvas.getBoundingClientRect();
-    const meshes = scene.children.filter((o) =>
-      o.userData.label?.startsWith(label),
-    );
-    const targets = scene.children.filter((o) => o.userData.href);
-    for (const mesh of meshes.reverse()) {
-      const p = mesh.getWorldPosition(new THREE.Vector3()).project(camera);
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(p.x, p.y), camera);
-      if (
-        ray
-          .intersectObjects(targets, false)[0]
-          ?.object.userData.label?.startsWith(label)
-      )
-        return {
-          x: b.left + ((p.x + 1) * b.width) / 2,
-          y: b.top + ((1 - p.y) * b.height) / 2,
-        };
-    }
-    throw Error("No reachable furniture " + label);
-  }, label);
-  await page.mouse.click(point.x, point.y);
-  await page.waitForFunction(
-    (expected) => location.hash === expected,
-    expected,
-  );
-  if (expected.endsWith("panel=work")) {
-    await page.locator("#resident-work").waitFor();
-    assert(
-      await page
-        .locator("#resident-work")
-        .evaluate((el) => el === document.activeElement),
-    );
-  }
-  await returnRoom();
-};
-const buildingPoint = async (p, identity) =>
-  p.evaluate((identity) => {
-    const { scene, camera } = window.measure,
-      THREE = window.THREE;
-    const canvas = document.querySelector(".scene-canvas canvas"),
-      b = canvas.getBoundingClientRect();
-    const targets = [];
-    scene.traverse((o) => {
-      if (o.userData.identity) targets.push(o);
-    });
-    const root = targets.find((o) => o.userData.identity === identity);
-    const meshes = [];
-    root.traverse((o) => {
-      if (o.isMesh) meshes.push(o);
-    });
-    for (const mesh of meshes) {
-      const point = mesh.getWorldPosition(new THREE.Vector3()).project(camera);
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
-      let hit = ray.intersectObjects(targets, true)[0]?.object;
-      while (hit && !hit.userData.identity) hit = hit.parent;
-      if (hit === root) {
-        const x = b.left + ((point.x + 1) * b.width) / 2,
-          y = b.top + ((1 - point.y) * b.height) / 2;
-        if (document.elementFromPoint(x, y) === canvas) return { x, y };
-      }
-    }
-    throw Error("No uncovered building point " + identity);
-  }, identity);
-const keyboardActivate = async (p, locator) => {
-  for (let i = 0; i < 400; i++) {
-    if (await locator.evaluate((el) => el === document.activeElement)) {
-      await p.keyboard.press("Enter");
-      return;
-    }
-    await p.keyboard.press("Tab");
-  }
-  throw Error("Keyboard cannot reach " + (await locator.textContent()));
-};
+let profile, processBrowser, browser;
 try {
+  await server.listen();
+  // Ordinary Playwright pages force focus emulation, making background tabs report
+  // visible even after a separate CDP client disables it. Connect without those
+  // defaults to an isolated Chromium profile so this is a real visibility transition.
+  profile = await mkdtemp(join(tmpdir(), "hearth-journeys-browser-"));
+  processBrowser = spawn(
+    chromium.executablePath(),
+    [
+      "--remote-debugging-port=0",
+      `--user-data-dir=${profile}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--use-mock-keychain",
+      "about:blank",
+    ],
+    { stdio: "ignore" },
+  );
+  let launchError;
+  processBrowser.on("error", (error) => {
+    launchError = error;
+  });
+  let endpoint;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (launchError) throw launchError;
+    try {
+      const [port] = (
+        await readFile(join(profile, "DevToolsActivePort"), "utf8")
+      ).split("\n");
+      endpoint = `http://127.0.0.1:${port}`;
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  if (!endpoint) {
+    throw Error("Isolated Chromium did not start");
+  }
+  browser = await chromium.connectOverCDP(endpoint, { noDefaults: true });
+  const context = browser.contexts()[0];
+  const page = context.pages()[0];
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const errors = [];
+  const measurements = [];
+  const matrix = [];
+  let hardware;
+  page.on("pageerror", (e) => errors.push(e.message));
+  const stats = () => page.evaluate(() => window.stats());
+  const settle = () =>
+    page.evaluate(
+      () =>
+        new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        ),
+    );
+  const directory = (name) =>
+    page
+      .getByRole("group", { name: "Building directory", exact: true })
+      .getByRole("button", { name: new RegExp("Select " + name) });
+
+  const enter = async (name) => {
+    await directory(name).click();
+    await page
+      .getByRole("button", {
+        name: name === "Townhall" ? /Enter Townhall/ : /Enter home/,
+      })
+      .click();
+    await page.locator(".room-canvas canvas").waitFor();
+    await settle();
+  };
+  const back = async () => {
+    await page.getByRole("button", { name: "Back to village" }).click();
+    await settle();
+  };
+  const returnRoom = async () => {
+    await page.getByRole("link", { name: "← Return to village" }).click();
+    await page.getByRole("region", { name: "Building interior" }).waitFor();
+    await settle();
+  };
+  const furniture = async (label, expected) => {
+    await page.locator(".room-canvas canvas").scrollIntoViewIfNeeded();
+    const point = await page.evaluate((label) => {
+      const { scene, camera } = window.measure,
+        THREE = window.THREE;
+      const canvas = document.querySelector(".room-canvas canvas"),
+        b = canvas.getBoundingClientRect();
+      const meshes = scene.children.filter((o) =>
+        o.userData.label?.startsWith(label),
+      );
+      const targets = scene.children.filter((o) => o.userData.href);
+      for (const mesh of meshes.reverse()) {
+        const p = mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(p.x, p.y), camera);
+        if (
+          ray
+            .intersectObjects(targets, false)[0]
+            ?.object.userData.label?.startsWith(label)
+        )
+          return {
+            x: b.left + ((p.x + 1) * b.width) / 2,
+            y: b.top + ((1 - p.y) * b.height) / 2,
+          };
+      }
+      throw Error("No reachable furniture " + label);
+    }, label);
+    await page.mouse.click(point.x, point.y);
+    await page.waitForFunction(
+      (expected) => location.hash === expected,
+      expected,
+    );
+    if (expected.endsWith("panel=work")) {
+      await page.locator("#resident-work").waitFor();
+      assert(
+        await page
+          .locator("#resident-work")
+          .evaluate((el) => el === document.activeElement),
+      );
+    }
+    await returnRoom();
+  };
+  const buildingPoint = async (p, identity) =>
+    p.evaluate((identity) => {
+      const { scene, camera } = window.measure,
+        THREE = window.THREE;
+      const canvas = document.querySelector(".scene-canvas canvas"),
+        b = canvas.getBoundingClientRect();
+      const targets = [];
+      scene.traverse((o) => {
+        if (o.userData.identity) targets.push(o);
+      });
+      const root = targets.find((o) => o.userData.identity === identity);
+      const meshes = [];
+      root.traverse((o) => {
+        if (o.isMesh) meshes.push(o);
+      });
+      for (const mesh of meshes) {
+        const point = mesh
+          .getWorldPosition(new THREE.Vector3())
+          .project(camera);
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
+        let hit = ray.intersectObjects(targets, true)[0]?.object;
+        while (hit && !hit.userData.identity) hit = hit.parent;
+        if (hit === root) {
+          const x = b.left + ((point.x + 1) * b.width) / 2,
+            y = b.top + ((1 - point.y) * b.height) / 2;
+          if (document.elementFromPoint(x, y) === canvas) return { x, y };
+        }
+      }
+      throw Error("No uncovered building point " + identity);
+    }, identity);
+  const keyboardActivate = async (p, locator) => {
+    for (let i = 0; i < 400; i++) {
+      if (await locator.evaluate((el) => el === document.activeElement)) {
+        await p.keyboard.press("Enter");
+        return;
+      }
+      await p.keyboard.press("Tab");
+    }
+    throw Error("Keyboard cannot reach " + (await locator.textContent()));
+  };
   await page.goto("http://127.0.0.1:5198/__panels");
   await page.waitForFunction(() => window.stats().camera);
   await page.getByText(/Connected · Synthetic/).waitFor();
@@ -727,8 +736,28 @@ try {
   );
   console.log("Integrated Hamlet browser checks passed");
 } finally {
-  await browser.close();
-  processBrowser.kill();
-  await rm(profile, { recursive: true, force: true, maxRetries: 3 });
-  await server.close();
+  const cleanup = await Promise.allSettled([
+    (async () => {
+      try {
+        await browser?.close();
+      } finally {
+        if (
+          processBrowser?.pid &&
+          processBrowser.exitCode === null &&
+          processBrowser.signalCode === null
+        ) {
+          const exited = new Promise((resolve) =>
+            processBrowser.once("exit", resolve),
+          );
+          processBrowser.kill();
+          await exited;
+        }
+      }
+    })(),
+    server.close(),
+  ]);
+  if (profile)
+    await rm(profile, { recursive: true, force: true, maxRetries: 3 });
+  const failed = cleanup.find((result) => result.status === "rejected");
+  if (failed) throw failed.reason;
 }

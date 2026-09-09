@@ -79,14 +79,14 @@ not a claim that every device can sustain 60 fps.
 
 | Residents | Mode    | CPU submission ms, median / p95 | Frame interval ms, median / p95 | Median draw calls |
 | --------- | ------- | ------------------------------- | ------------------------------- | ----------------- |
-| 0         | Normal  | 0.5 / 1.0                       | 16.6 / 18.6                     | 122               |
-| 0         | Lighter | 0.4 / 0.8                       | 16.7 / 18.6                     | 64                |
-| 5         | Normal  | 0.9 / 1.3                       | 16.7 / 18.4                     | 496               |
-| 5         | Lighter | 0.6 / 0.7                       | 16.7 / 18.3                     | 255               |
-| 25        | Normal  | 1.7 / 1.8                       | 16.7 / 18.4                     | 1824              |
-| 25        | Lighter | 1.2 / 1.7                       | 16.7 / 18.3                     | 1018              |
-| 100       | Normal  | 5.4 / 5.9                       | 16.7 / 18.7                     | 5012              |
-| 100       | Lighter | 4.4 / 4.7                       | 16.7 / 18.4                     | 3872              |
+| 0         | Normal  | 0.4 / 1.0                       | 16.7 / 17.7                     | 122               |
+| 0         | Lighter | 0.3 / 0.8                       | 16.6 / 18.5                     | 64                |
+| 5         | Normal  | 1.0 / 1.2                       | 16.6 / 18.6                     | 496               |
+| 5         | Lighter | 0.7 / 1.4                       | 16.7 / 18.5                     | 255               |
+| 25        | Normal  | 2.4 / 2.6                       | 16.7 / 17.7                     | 1824              |
+| 25        | Lighter | 1.5 / 2.0                       | 16.7 / 18.2                     | 1018              |
+| 100       | Normal  | 5.4 / 5.8                       | 16.7 / 17.6                     | 5012              |
+| 100       | Lighter | 4.4 / 4.8                       | 16.7 / 17.7                     | 3872              |
 
 Lighter graphics removes village shadows and caps pixel ratio at 1 (normal caps at 2),
 without changing identity, plots, camera, furniture targets, records or authority.
