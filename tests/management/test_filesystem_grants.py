@@ -222,8 +222,8 @@ def test_a_grant_with_no_writable_folder_records_no_writable_fact(tmp_path):
 
 
 def test_a_login_directory_and_the_runtime_socket_are_protected(tmp_path):
-    from hearth.management.authority import check_mounts, protected_paths
     from hearth.management.authority import Mount as GrantMount
+    from hearth.management.authority import check_mounts, protected_paths
     from hearth.residents.models import Refused
 
     login = tmp_path / "login"
