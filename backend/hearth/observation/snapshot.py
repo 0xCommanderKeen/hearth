@@ -6,7 +6,7 @@ from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
 from hearth.integrations.interface import RUNTIMES, live_kinds
 from hearth.integrations.interface import label as runtime_label
-from hearth.management.authority import management_summary
+from hearth.management.authority import management_summary, mount_summary
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
 from hearth.residents.memory import run_memory_writes
@@ -112,6 +112,10 @@ def snapshot(hearth: Hearth) -> dict:
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
             run["management"] = management_summary(db, run["id"], run=True)
+            # What this run could reach on disk, as it was admitted: an operator reads
+            # a resident's reach off a finished run, not off configuration that has
+            # moved on since (`docs/adr/0016-sandbox-per-run.md`).
+            run.update(mount_summary(db, run["id"], run=True))
             # What the run opened with and what it wrote, never who claimed to.
             run.update(run_journal_summary(db, run["id"]))
             run["memory_written"] = run_memory_writes(db, run["id"])

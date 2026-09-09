@@ -178,3 +178,67 @@ def test_a_granted_folder_that_is_not_there_makes_the_run_wait(tmp_path):
         assert hearth.task(receipt.task_id).status == "queued"
         shared.mkdir()
         assert hearth.admit(receipt.task_id, reserve=3000).status == "starting"
+
+
+def test_an_operator_reads_a_run_s_reach_off_the_run_itself(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(client, who, [{"name": "notes", "host_path": str(shared), "mode": "rw"}])
+        run = admit(client, who)
+        entry = {"name": "notes", "host_path": str(shared), "mode": "rw", "path": "/mounts/notes"}
+        state = client.get("/api/state", headers=AUTH).json()
+        row = next(item for item in state["runs"] if item["id"] == run.id)
+        assert row["mounts"] == [entry]
+        # And the resident's own grant is where an operator edits it.
+        who_row = next(item for item in state["residents"] if item["id"] == who)
+        assert who_row["management"]["mounts"] == [
+            {"name": "notes", "host_path": str(shared), "mode": "rw"}
+        ]
+        assert client.get(f"/api/runs/{run.id}", headers=AUTH).json()["mounts"] == [entry]
+        # Granting a writable folder is a fact of its own, beside the grant itself.
+        facts = [
+            fact
+            for fact in client.app.state.hearth.audit()
+            if fact["kind"] == "grant.mount_rw_granted"
+        ]
+        assert [fact["detail"]["mounts"] for fact in facts] == [
+            [{"name": "notes", "host_path": str(shared)}]
+        ]
+
+
+def test_a_grant_with_no_writable_folder_records_no_writable_fact(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(client, who, [{"name": "notes", "host_path": str(shared)}])
+        assert not [
+            fact
+            for fact in client.app.state.hearth.audit()
+            if fact["kind"] == "grant.mount_rw_granted"
+        ]
+
+
+def test_a_login_directory_and_the_runtime_socket_are_protected(tmp_path):
+    from hearth.management.authority import check_mounts, protected_paths
+    from hearth.management.authority import Mount as GrantMount
+    from hearth.residents.models import Refused
+
+    login = tmp_path / "login"
+    login.mkdir()
+    protected = protected_paths(
+        tmp_path / "data", [login], socket="unix:///var/lib/podman/podman.sock"
+    )
+    for path in (
+        login,
+        login / "inner",
+        tmp_path,
+        "/var/lib/podman/podman.sock",
+        "/run/docker.sock",
+    ):
+        with pytest.raises(Refused, match="grant_mount_forbidden"):
+            check_mounts([GrantMount(name="x", host_path=str(path))], protected)
+    # A folder beside them is nobody's business but the operator's.
+    check_mounts([GrantMount(name="x", host_path=str(tmp_path / "elsewhere"))], protected)

@@ -948,6 +948,26 @@ export function App() {
                               </small>
                             )}
                             {run && <RunInputs run={run} />}
+                            {!!run?.mounts?.length && (
+                              <div aria-label="Folders reached by run">
+                                <small>
+                                  Folders reached · as this run was admitted
+                                </small>
+                                <ul>
+                                  {run.mounts.map((mount) => (
+                                    <li key={mount.name}>
+                                      {mount.name} ·{" "}
+                                      {mount.mode === "rw"
+                                        ? "writable"
+                                        : "read only"}
+                                      <small>
+                                        {mount.path} → {mount.host_path}
+                                      </small>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                             {run?.management && (
                               <p aria-label="Management authority used by run">
                                 Management grant revision{" "}

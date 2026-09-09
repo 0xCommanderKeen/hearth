@@ -669,6 +669,51 @@ it("forgets a saved token when the server rejects it after refresh", async () =>
   expect(sessionStorage.length).toBe(0);
 });
 
+it("says what a finished run could reach on disk and how far", async () => {
+  window.location.hash = "#tasks";
+  addReader();
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "Read the folder",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: "result",
+      actual_cost: 2000,
+      usage_known: 1,
+      cancellation_requested: 0,
+      mounts: [
+        {
+          name: "notes",
+          host_path: "/srv/notes",
+          mode: "ro",
+          path: "/mounts/notes",
+        },
+        {
+          name: "drafts",
+          host_path: "/srv/drafts",
+          mode: "rw",
+          path: "/mounts/drafts",
+        },
+      ],
+    },
+  ];
+  await login(false);
+  const reached = screen.getByLabelText("Folders reached by run");
+  expect(reached.textContent).toContain("notes · read only");
+  expect(reached.textContent).toContain("/mounts/notes → /srv/notes");
+  expect(reached.textContent).toContain("drafts · writable");
+});
+
 it("reports damaged historical skill provenance without inventing an execution hold", async () => {
   window.location.hash = "#tasks";
   addReader();

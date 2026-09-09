@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
+  type GrantMount,
   type ManagementCatalog,
   type ManagementChange,
   type ManagementGrant,
@@ -189,6 +190,98 @@ export function ManagementPanel({
     </section>
   );
 }
+/** How many folders one grant may name; the server refuses a seventeenth. */
+const MOUNT_LIMIT = 16;
+/** The filesystem half of a grant: which folders, where, and how far into them.
+ *
+ * A path is typed rather than picked, because it is a path on the machine Hearth runs
+ * on and this view runs in a browser somewhere else. What may not be named at all --
+ * Hearth's own data directory, a login, the container runtime's socket -- is the
+ * server's answer, and it comes back as `grant_mount_forbidden` on save.
+ */
+function MountsEditor({
+  mounts,
+  onChange,
+}: {
+  mounts: GrantMount[];
+  onChange: (mounts: GrantMount[]) => void;
+}) {
+  const edit = (place: number, change: Partial<GrantMount>) =>
+    onChange(
+      mounts.map((mount, index) =>
+        index === place ? { ...mount, ...change } : mount,
+      ),
+    );
+  return (
+    <div className="management-mounts">
+      <h4>Folders this resident reaches</h4>
+      {mounts.length === 0 && (
+        <p className="muted">
+          No folders. A resident with none reaches nothing of this machine.
+        </p>
+      )}
+      {mounts.map((mount, place) => (
+        <div className="management-mount" key={place}>
+          <label>
+            Folder name
+            <input
+              required
+              value={mount.name}
+              aria-label={`Folder ${place + 1} name`}
+              onChange={(e) => edit(place, { name: e.target.value })}
+            />
+          </label>
+          <label>
+            Path on the Hearth machine
+            <input
+              required
+              value={mount.host_path}
+              aria-label={`Folder ${place + 1} path`}
+              onChange={(e) => edit(place, { host_path: e.target.value })}
+            />
+          </label>
+          <label>
+            Access
+            <select
+              value={mount.mode}
+              aria-label={`Folder ${place + 1} access`}
+              onChange={(e) =>
+                edit(place, { mode: e.target.value === "rw" ? "rw" : "ro" })
+              }
+            >
+              <option value="ro">Read only</option>
+              <option value="rw">Writable · audited</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            aria-label={`Remove folder ${place + 1}`}
+            onClick={() => onChange(mounts.filter((_, i) => i !== place))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      {mounts.length < MOUNT_LIMIT && (
+        <button
+          type="button"
+          onClick={() =>
+            onChange([...mounts, { name: "", host_path: "", mode: "ro" }])
+          }
+        >
+          Add folder
+        </button>
+      )}
+      <p className="muted">
+        Each folder is mounted at <code>/mounts/&lt;name&gt;</code> inside the
+        run, read-only unless it is writable, and the run's own context names
+        it. A writable folder is recorded when it is granted and again when a
+        run is seen to have written into it. Memory, journal, letters and work
+        are never written this way.
+      </p>
+    </div>
+  );
+}
 const capabilityLabels: Record<ManagementCapability, string> = {
   create_residents: "Create residents",
   assign_work: "Assign and start managed work",
@@ -363,6 +456,10 @@ function GrantEditor({
             </p>
           </div>
         </div>
+        <MountsEditor
+          mounts={draft.mounts}
+          onChange={(mounts) => update("mounts", mounts)}
+        />
         <div className="management-limits">
           <label>
             Maximum managed residents

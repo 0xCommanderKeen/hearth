@@ -442,9 +442,13 @@ def create_app(
             from hearth.inputs.selection import input_summary
 
             used_inputs = input_summary(db, run_id, run=True)
+            from hearth.management.authority import mount_summary
+
+            reached = mount_summary(db, run_id, run=True)
         return {
             **used_skills,
             **used_inputs,
+            **reached,
             "accounting": accounting,
             "id": run.id,
             "status": run.status,
