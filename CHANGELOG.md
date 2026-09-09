@@ -2,6 +2,31 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hearth's own tools reach a Claude run. `--mcp-config` names a Hearth-owned stdio shim
+  (`python -I -m hearth.integrations.claude.mcp_bridge`) that carries no credential, no
+  owner token and no database — it forwards `tools/list` and `tools/call` over a unix
+  socket in the run's own folder, one connection per call, and hands back the reply. The
+  trusted worker answers on the other end through `management.bridge`, authenticating
+  with `BoundRun` and mutating and auditing in one transaction, exactly as the Codex
+  adapter does over the app server's dynamic tools. The socket is 0600 inside the run's
+  0700 folder and every connection's peer uid is checked from the kernel. `--tools` and
+  `--allowedTools` name exactly the `mcp__hearth__*` tools the run's grant allows — both
+  flags, because one grants existence and the other permission — and the session's own
+  `init` event has to report Hearth's server as connected with exactly those tools, the
+  pinned model and the pinned build, or the session is stopped before its first turn
+  (`claude_tools_changed`, `claude_session_unpinned`). The launch pins travel into
+  `run_management` and into the receipt, and settlement refuses
+  `management_configuration_changed` when they disagree; a failed bridge is recorded as
+  `mcp_bridge_failed` and settles as failed, never as unknown with a relaunch. So a
+  resident that writes its own memory and journal, holds a grant, works a letter or holds
+  post is now admitted on a Claude store — Karen included — and a memory-writable
+  resident's journal entry travels through `hearth_journal_write` over the bridge under
+  the grantless-pin rules of ADR 0012. One real session was recorded against the pinned
+  CLI to check the design rather than assume it, and it corrected a #146 reading:
+  `usage.iterations` is a partial view of a session's requests, not the list of them, so
+  rows that do not add up to the model's total are priced from that total instead of
+  leaving the run unpriced — without which every management run on Claude would have
+  settled with unknown usage. `docs/claude-runtime.md` carries the measurements.
 - A resident's work runs on Claude. A run pinned to `claude_subscription` launches the
   pinned CLI exactly once, from a detached worker that holds its own folder's lock, with
   the prompt on stdin and the bounded flag set; the CLI's original `stream-json` output

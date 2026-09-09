@@ -424,9 +424,14 @@ def worker(folder, inherited_fd=None):
                 # changed since admission is refused with nothing spent on it.
                 server = open_bridge(folder, request, Hearth(database))
             except Refused as error:
+                publish(folder / "receipt.json", unlaunched(request, management, error.code))
+                return
+            except OSError, ValueError, KeyError, TypeError:
+                # A socket that cannot be bound or a configuration that cannot be
+                # written is Hearth's own failure, and it leaves a receipt rather than
+                # a run nobody can ever settle.
                 publish(
-                    folder / "receipt.json",
-                    unlaunched(request, management, error.code),
+                    folder / "receipt.json", unlaunched(request, management, "mcp_bridge_failed")
                 )
                 return
         command = session_command(

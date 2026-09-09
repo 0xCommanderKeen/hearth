@@ -393,6 +393,9 @@ class BridgeServer:
         self.bridge = Bridge(hearth, bound)
         self.max_calls = max_calls
         self.seen: dict[str, tuple[str, dict]] = {}
+        # Refused calls are counted so that a session asking for tools it does not have
+        # cannot write audit rows without end. The bound is the run's own call limit.
+        self.refusals = 0
         self.trusted = False
         self.thread_id: str | None = None
         self.turn_id: str | None = None
@@ -564,7 +567,9 @@ class BridgeServer:
         if tool not in self.names:
             # A tool this run was never offered. The refusal is recorded where every
             # other management decision about this run is.
-            self.record_refusal(call_id, tool)
+            if self.refusals < self.max_calls:
+                self.refusals += 1
+                self.record_refusal(call_id, tool)
             return refusal("management_tool_not_offered")
         fingerprint = digest([tool, arguments])
         previous = self.seen.get(call_id)

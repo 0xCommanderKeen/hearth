@@ -536,3 +536,36 @@ def test_settlement_refuses_a_receipt_configured_differently_from_the_pin(tmp_pa
             pins | {"management": pin},
             cancelled=False,
         )
+
+
+def test_a_bridge_that_cannot_be_opened_leaves_a_receipt_rather_than_a_run(tmp_path):
+    """Hearth's own failure still settles: a run with no receipt could never close."""
+    store = Store(tmp_path)
+    store.script([])
+    run = store.run()
+    # Something is already where the per-run configuration has to be written.
+    (store.runtime.folder(run.id) / "mcp.json").write_text("{}")
+    published = store.work(run)
+    assert published["launched"] is False and published["cancelled"] is True
+    assert published["management"]["error"] == "mcp_bridge_failed"
+    assert not store.record_path.exists()
+    assert store.runtime.inspect(run.id).status == "cancelled"
+
+
+def test_a_session_asking_for_tools_it_has_not_got_cannot_fill_the_audit(tmp_path):
+    """A refusal is recorded, but only as many times as the run may call at all."""
+    store = Store(
+        tmp_path,
+        grant={
+            "enabled": True,
+            "capabilities": ["assign_work"],
+            "profiles": [KIND],
+            "max_calls": 2,
+        },
+    )
+    store.script([{"tool": "hearth_nonsense", "arguments": {}} for _ in range(4)])
+    run = store.run()
+    store.work(run)
+    replies = [answer(call["reply"]) for call in store.record()["calls"]]
+    assert all(reply["error"] == "management_tool_not_offered" for reply in replies)
+    assert len(store.rows("SELECT * FROM audit WHERE kind='management.tool_refused'")) == 2
