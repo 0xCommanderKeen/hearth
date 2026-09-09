@@ -449,7 +449,14 @@ def worker(folder, inherited_fd=None):
         binary = Path(request["binary"])
         if binary_digest(binary) != request["sha256"]:
             return
-        launcher = Sandbox.of(request.get("sandbox")).open()
+        try:
+            launcher = Sandbox.of(request.get("sandbox")).open()
+        except Refused:
+            # Where this run was admitted to execute is Hearth's own writing, and a
+            # request this worker cannot read is not a session to launch. Nothing has
+            # started, exactly as for a changed pin above, and the run reads as
+            # unknown rather than as something a later pass may retry.
+            return
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         management = request.get("management")
@@ -515,6 +522,10 @@ def worker(folder, inherited_fd=None):
                     )
             # What was started, named where the worker's own pid is named: a process
             # group on the process launcher and a container id on the container one.
+            # Asked for after the dispatch guard has closed, because a container
+            # runtime names what it created a moment later and the guard is one write
+            # transaction over the whole store.
+            launcher.identify(handle)
             publish(folder / "handle.json", handle.document())
             assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT

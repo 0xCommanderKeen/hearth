@@ -235,6 +235,9 @@ def _process(binary, auth_home, workspace, settings, deadline, cancelled, launch
         stdin=subprocess.PIPE,
         bufsize=0,
     )
+    # What was started, asked for outside Hearth's dispatch guard, which this process
+    # is deliberately created before entering.
+    launcher.identify(handle)
     child = handle.process
     try:
         yield _Pipe(child, deadline, cancelled)

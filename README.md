@@ -79,7 +79,9 @@ its own residents' runs waiting.
 Where those sessions execute is `HEARTH_SANDBOX`: `process` (the default) runs the CLI
 as a child of Hearth's worker, which is what a development host does, and `container`
 runs it inside a container created for that run, from the image
-`HEARTH_SANDBOX_IMAGE` pins by digest on the network `HEARTH_SANDBOX_NETWORK`. See
+`HEARTH_SANDBOX_IMAGE` pins by digest on the network `HEARTH_SANDBOX_NETWORK`, reached
+through the client `HEARTH_SANDBOX_DOCKER` names and, where the daemon is not the
+client's own default, `HEARTH_SANDBOX_DOCKER_HOST`. See
 [the sandbox](docs/sandbox.md) for what it pins, what it refuses and what a real
 container runtime was measured to do with it.
 

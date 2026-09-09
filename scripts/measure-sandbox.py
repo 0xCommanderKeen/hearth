@@ -19,9 +19,11 @@ What it measures:
    from a host path, and from a volume the daemon owns, which is the shape Hearth runs
    in on a server.
 
-It writes into a temporary directory of its own, starts only containers it labels, and
-removes every one of them. It never touches a Hearth data directory and it never needs
-a credential. `--image` names the image the measurements run in: any image with
+It writes into a temporary directory of its own, and removes every container it started
+by id -- never by label, because Hearth stamps that label on every production sandbox
+and this script may be run on a host that is serving work. It never touches a Hearth
+data directory and it never needs a credential. `--image` names the image to run in: any
+image with
 `python3` will do, and the default is a small one, because what is measured is the
 runtime's behaviour and not the CLI's.
 """
@@ -45,6 +47,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 from hearth.integrations.launcher import LABEL, ContainerLauncher, Mount  # noqa: E402
 
 DEFAULT_IMAGE = "python:3.14-slim"
+# Every container this script started, so cleanup removes those and nothing else. The
+# label the launcher stamps is on every production sandbox too, and a run of this
+# script against a burrow that is serving work must not touch any of them.
+STARTED: list[str] = []
+
+
+def begin(launcher: ContainerLauncher, command, **options):
+    """Start one measured session, and remember the container it created."""
+    handle = launcher.start(command, **options)
+    if launcher.identify(handle):
+        STARTED.append(str(handle.id))
+    return handle
 
 
 def client(docker: str, *arguments: str, timeout: float = 60) -> str:
@@ -77,7 +91,8 @@ def latency(launcher: ContainerLauncher, workspace: Path, rounds: int = 5) -> di
     container, process = [], []
     for _ in range(rounds):
         started = time.monotonic()
-        handle = launcher.start(
+        handle = begin(
+            launcher,
             ["python3", "-c", "print('up', flush=True)"],
             env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
             cwd=workspace,
@@ -120,7 +135,8 @@ def streaming(launcher: ContainerLauncher, workspace: Path) -> dict:
         "    sys.stdout.flush()\n"
         "    time.sleep(0.3)\n"
     )
-    handle = launcher.start(
+    handle = begin(
+        launcher,
         ["python3", "-c", program],
         env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
         cwd=workspace,
@@ -165,7 +181,8 @@ def stopping(launcher: ContainerLauncher, workspace: Path, evidence: Path) -> di
         "sys.stdout.write('parent up %d\\n' % child.pid); sys.stdout.flush()\n"
         "time.sleep(60)\n"
     )
-    handle = launcher.start(
+    handle = begin(
+        launcher,
         ["python3", "-u", "-c", program],
         env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
         cwd=workspace,
@@ -198,7 +215,8 @@ def stopping(launcher: ContainerLauncher, workspace: Path, evidence: Path) -> di
     # The same stop against a session that does not handle the signal, because that
     # is what a receipt records for an ordinary cancellation and it is the one number
     # the two launchers disagree on.
-    unhandled = launcher.start(
+    unhandled = begin(
+        launcher,
         ["python3", "-u", "-c", "import time; print('up', flush=True); time.sleep(60)"],
         env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
         cwd=workspace,
@@ -218,7 +236,8 @@ def orphaned(launcher: ContainerLauncher, workspace: Path) -> dict:
     whether killing the attached client stops the container, and whether `--rm` ever
     removes it.
     """
-    handle = launcher.start(
+    handle = begin(
+        launcher,
         ["python3", "-u", "-c", "import time; print('up', flush=True); time.sleep(30)"],
         env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
         cwd=workspace,
@@ -410,9 +429,15 @@ def main() -> int:
         report["bridge_socket"] = socket_reachable(launcher, workspace, directory)
         report["image_binary_hash"] = binary_hashing(launcher)
     finally:
-        stray = client(arguments.docker, "ps", "-aq", "--filter", "label=" + LABEL)
-        if stray:
-            client(arguments.docker, "rm", "--force", *stray.split())
+        if STARTED:
+            # By id, never by label: a container carrying Hearth's label on this host
+            # may be somebody's live session.
+            subprocess.run(
+                [arguments.docker, "rm", "--force", *STARTED],
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
         shutil.rmtree(directory, ignore_errors=True)
     arguments.report.parent.mkdir(parents=True, exist_ok=True)
     arguments.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

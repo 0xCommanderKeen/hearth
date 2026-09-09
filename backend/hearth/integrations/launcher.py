@@ -58,6 +58,8 @@ NETWORK = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 # absolute path. `podman` is a drop-in and is spelled here the same way.
 CLIENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z|/[A-Za-z0-9._/-]{1,4095}\Z")
 IDENTITY = re.compile(r"[0-9a-f]{64}\Z")
+# The daemon a client is told to talk to, when it is not the client's own default.
+HOST = re.compile(r"(unix|tcp|ssh|npipe)://[A-Za-z0-9._:/@%-]{1,4095}\Z")
 VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
 # The working directory a sandboxed session runs in: a fresh tmpfs, never a host path.
@@ -115,14 +117,20 @@ class Handle:
     """One started session: which launcher started it, its identity, and its stream.
 
     `id` is the worker's own process group on `process` and the container id on
-    `container` -- the thing a later observation asks about. It is `None` only when
-    the container runtime never told Hearth what it created, which is an execution
-    nobody can name and never evidence that a retry is safe.
+    `container` -- the thing a later observation asks about. On the container launcher
+    it is not known the instant the session starts, because the runtime writes it to a
+    file of its own; `identify` reads it, and it stays `None` when the runtime never
+    named one, which is an execution nobody can name and never evidence that a retry
+    is safe.
     """
 
     launcher: str
     id: str | None
     process: subprocess.Popen
+    # Where the container runtime was told to write the id of what it created, and the
+    # private directory holding it. Both are gone once `identify` has read them.
+    identity: Path | None = None
+    directory: str | None = None
 
     @property
     def stdout(self) -> IO[bytes] | None:
@@ -150,6 +158,8 @@ class Launcher(Protocol):
         socket: Path | None = None,
         bufsize: int = -1,
     ) -> Handle: ...
+
+    def identify(self, handle: Handle) -> str | None: ...
 
     def inspect(self, handle: Handle) -> str: ...
 
@@ -191,6 +201,10 @@ class ProcessLauncher:
         )
         return Handle(self.kind, str(child.pid), child)
 
+    def identify(self, handle):
+        """A child names itself the moment it exists; there is nothing to wait for."""
+        return handle.id
+
     def inspect(self, handle):
         if handle.process.poll() is None:
             return "running"
@@ -225,24 +239,39 @@ class ContainerLauncher:
 
     kind = CONTAINER
 
-    def __init__(self, image: str, network: str, *, docker: str = "docker"):
+    def __init__(
+        self, image: str, network: str, *, docker: str = "docker", host: str | None = None
+    ):
         self.image = image
         self.network = network
         self.docker = docker
+        self.host = host
+
+    def argv(self, *arguments: str) -> list[str]:
+        """The client, the daemon it is told to talk to, and the rest.
+
+        The client is run with a search path and nothing else in its environment, as
+        the worker itself is, so `DOCKER_HOST` cannot be inherited from whoever
+        started Hearth. A daemon that is not on the client's default socket -- a
+        rootless installation, a remote host -- is named by configuration instead and
+        travels with the rest of the sandbox.
+        """
+        return [self.docker, *(("--host", self.host) if self.host else ()), *arguments]
+
+    def attempt(self, *arguments: str, timeout: float) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            self.argv(*arguments),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env={"PATH": os.defpath},
+        )
 
     def client(self, *arguments: str, timeout: float = CLIENT_TIMEOUT) -> str:
         """One question to the container runtime. No answer at all is unavailable."""
         try:
-            result = subprocess.run(
-                [self.docker, *arguments],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-                # The client is given a search path and nothing else, exactly as the
-                # worker is. A default socket is the daemon it talks to.
-                env={"PATH": os.defpath},
-            )
+            result = self.attempt(*arguments, timeout=timeout)
         except OSError, subprocess.SubprocessError:
             raise Refused("sandbox_runtime_unavailable") from None
         if result.returncode:
@@ -265,8 +294,7 @@ class ContainerLauncher:
             # configuration names, so the shim inside the container connects to the
             # string Hearth already wrote and no translation layer exists to disagree.
             mounts = (*mounts, Mount(str(socket), str(socket), writable=True))
-        return [
-            self.docker,
+        return self.argv(
             "run",
             # One container, one session, removed by the runtime when it ends. Hearth
             # never reuses one and never adopts a stray.
@@ -302,9 +330,15 @@ class ContainerLauncher:
             LABEL + "=1",
             *[part for name, value in sorted(env.items()) for part in ("--env", f"{name}={value}")],
             *[part for mount in mounts for part in ("--mount", mount.argument())],
-        ]
+        )
 
     def start(self, command, *, env, cwd, stdin, mounts=(), socket=None, bufsize=-1):
+        """Start the session and return at once. `identify` reads what was created.
+
+        Nothing is waited for here. The caller holds Hearth's dispatch guard -- one
+        write transaction over the whole store -- around this call, so the only thing
+        that may happen inside it is the launch itself.
+        """
         argv = self.arguments(command, env=env, mounts=mounts, socket=socket)
         # The runtime refuses to overwrite a cidfile, so it is written into a private
         # directory of this launch's own and read once. The durable record of what was
@@ -312,9 +346,9 @@ class ContainerLauncher:
         # deliberately not the session's working directory, which a provider's own
         # adapter may require to be empty.
         directory = tempfile.mkdtemp(prefix="hearth-sandbox-")
+        identity = Path(directory) / "container-id"
+        argv += ["--cidfile", str(identity), self.image, *command]
         try:
-            identity = Path(directory) / "container-id"
-            argv += ["--cidfile", str(identity), self.image, *command]
             child = subprocess.Popen(
                 argv,
                 cwd=cwd,
@@ -325,29 +359,43 @@ class ContainerLauncher:
                 bufsize=bufsize,
                 start_new_session=True,
             )
-            return Handle(self.kind, self._identify(identity, child), child)
-        finally:
+        except OSError:
+            # A client that cannot even be executed is this host's configuration, and
+            # it refuses by the same name as a daemon that will not answer -- so the
+            # worker settles the run rather than dying with an exception nobody wrote
+            # a receipt for.
             shutil.rmtree(directory, ignore_errors=True)
+            raise Refused("sandbox_runtime_unavailable") from None
+        return Handle(self.kind, None, child, identity=identity, directory=directory)
 
-    @staticmethod
-    def _identify(path: Path, child: subprocess.Popen) -> str | None:
-        """The id of the container the client created, as soon as it has written it.
+    def identify(self, handle):
+        """The id of the container the client created, once it has written it.
+
+        Read after the dispatch guard has closed, because it waits: the client writes
+        the cidfile when the container is created, which is ordinarily a tenth of a
+        second away and is not something to hold the store's write lock for.
 
         A client that ended without ever naming one leaves `None`: the session's
         identity was never observed, and no later observation may guess at it.
         """
+        if handle.id is not None or handle.identity is None:
+            return handle.id
         deadline = time.monotonic() + IDENTITY_TIMEOUT
         while time.monotonic() < deadline:
             try:
-                value = path.read_text().strip()
+                value = handle.identity.read_text().strip()
             except OSError:
                 value = ""
             if IDENTITY.match(value):
-                return value
-            if child.poll() is not None:
+                handle.id = value
+                break
+            if handle.process.poll() is not None:
                 break
             time.sleep(0.02)
-        return None
+        if handle.directory is not None:
+            shutil.rmtree(handle.directory, ignore_errors=True)
+        handle.identity, handle.directory = None, None
+        return handle.id
 
     def inspect(self, handle):
         """What the container runtime says about the container, or that it is gone."""
@@ -364,21 +412,29 @@ class ContainerLauncher:
         return "running" if status == "running" else "exited"
 
     def stop(self, handle, signal):
-        if handle.id is None:
-            # The runtime never named a container, so there is nothing to signal by
-            # name. The client itself is ended instead: a worker that cannot stop
-            # what it started would wait on it forever, and an unnamed execution is
-            # already `unknown` rather than something a later pass may retry.
+        """End the session. Whatever else happens, the client does not outlive this.
+
+        Signalling the container by name is the ordinary path and the only one that
+        really ends the session, because killing the attached client does *not* stop
+        the container (measured, `docs/sandbox.md`). But a stop that did nothing at
+        all -- the runtime never named a container, or the daemon will not answer --
+        would leave the worker waiting on a client forever and the run would never
+        settle. So the client's own process group is signalled as the fallback: the
+        worker gets its receipt, and the container, if there is one, is a stray with
+        Hearth's label on it for the runtime's own cleanup to find.
+        """
+        if handle.id is not None:
             try:
-                os.killpg(handle.process.pid, signal)
-            except ProcessLookupError:
+                self.client("kill", "--signal", str(int(signal)), handle.id)
+                return
+            except Refused:
+                # A container that has already ended cannot be signalled; the client
+                # this launcher is attached to has already reported the ending, and
+                # the fallback below is a no-op on a process that is gone.
                 pass
-            return
         try:
-            self.client("kill", "--signal", str(int(signal)), handle.id)
-        except Refused:
-            # A container that has already ended cannot be signalled, and the client
-            # this launcher is attached to is what reports the ending anyway.
+            os.killpg(handle.process.pid, signal)
+        except ProcessLookupError:
             pass
 
     def wait(self, handle, timeout):
@@ -403,9 +459,16 @@ class Sandbox:
     image: str | None = None
     network: str | None = None
     docker: str = "docker"
+    # The daemon the client talks to, when it is not the one the client finds on its
+    # own: a rootless installation's own socket, or a remote host. It is configuration
+    # rather than an inherited `DOCKER_HOST`, because the detached worker is launched
+    # with a search path and nothing else in its environment.
+    host: str | None = None
 
     def __post_init__(self):
         if self.launcher not in KINDS or not CLIENT.match(self.docker):
+            raise Refused("sandbox_configuration_invalid")
+        if self.host is not None and (not isinstance(self.host, str) or not HOST.match(self.host)):
             raise Refused("sandbox_configuration_invalid")
         if self.launcher == PROCESS:
             if self.image is not None or self.network is not None:
@@ -435,6 +498,7 @@ class Sandbox:
             "image": self.image,
             "network": self.network,
             "docker": self.docker,
+            "host": self.host,
         }
 
     @classmethod
@@ -452,6 +516,7 @@ class Sandbox:
             "image",
             "network",
             "docker",
+            "host",
         }:
             raise Refused("sandbox_configuration_invalid")
         if not isinstance(value["docker"], str):
@@ -461,19 +526,23 @@ class Sandbox:
             image=value["image"],
             network=value["network"],
             docker=value["docker"],
+            host=value["host"],
         )
 
     @classmethod
     def from_environment(cls, environment: dict[str, str] | None = None) -> Sandbox:
         values = os.environ if environment is None else environment
         launcher = values.get("HEARTH_SANDBOX") or PROCESS
+        client = values.get("HEARTH_SANDBOX_DOCKER") or "docker"
+        host = values.get("HEARTH_SANDBOX_DOCKER_HOST") or None
         if launcher == PROCESS:
-            return cls(docker=values.get("HEARTH_SANDBOX_DOCKER") or "docker")
+            return cls(docker=client, host=host)
         return cls(
             launcher=launcher,
             image=values.get("HEARTH_SANDBOX_IMAGE"),
             network=values.get("HEARTH_SANDBOX_NETWORK"),
-            docker=values.get("HEARTH_SANDBOX_DOCKER") or "docker",
+            docker=client,
+            host=host,
         )
 
     def open(self) -> Launcher:
@@ -481,7 +550,7 @@ class Sandbox:
         if self.launcher == PROCESS:
             return ProcessLauncher()
         assert self.image is not None and self.network is not None
-        return ContainerLauncher(self.image, self.network, docker=self.docker)
+        return ContainerLauncher(self.image, self.network, docker=self.docker, host=self.host)
 
 
 def configure(database, sandbox: Sandbox, clock=time.time) -> dict:
@@ -558,13 +627,16 @@ def hashed(launcher: ContainerLauncher, path: str) -> str:
     `sha256sum` is the image's own, run with no network and nothing mounted, so what
     is hashed is the file the session would execute and not a copy of it on the host.
 
-    An image that cannot produce the hash -- because it does not carry that CLI at
-    all -- is the same refusal as one carrying different bytes. The daemon has
-    already answered for its version, the image and the network by the time this
-    runs, so what fails here is the image's own contents.
+    A failure to hash is not automatically a mismatch, because the two would send an
+    operator to opposite places. The client's own exit code separates them: 125 is
+    the client or the daemon refusing to run the container at all, as is a timeout or
+    a client that cannot be executed, and those are `sandbox_runtime_unavailable`.
+    Anything else -- `sha256sum` reporting no such file, an entrypoint that cannot be
+    executed, an answer that is not a digest -- is the image not carrying the CLI this
+    store is pinned to, which is what `sandbox_binary_mismatch` means.
     """
     try:
-        answer = launcher.client(
+        result = launcher.attempt(
             "run",
             "--rm",
             "--network",
@@ -574,10 +646,13 @@ def hashed(launcher: ContainerLauncher, path: str) -> str:
             "sha256sum",
             launcher.image,
             path,
+            timeout=CLIENT_TIMEOUT,
         )
-    except Refused:
-        raise Refused("sandbox_binary_mismatch") from None
-    value = answer.split(" ")[0] if answer else ""
-    if not re.fullmatch("[0-9a-f]{64}", value):
+    except OSError, subprocess.SubprocessError:
+        raise Refused("sandbox_runtime_unavailable") from None
+    if result.returncode == 125:
+        raise Refused("sandbox_runtime_unavailable")
+    value = result.stdout.strip().split(" ")[0] if result.stdout else ""
+    if result.returncode or not re.fullmatch("[0-9a-f]{64}", value):
         raise Refused("sandbox_binary_mismatch")
     return value

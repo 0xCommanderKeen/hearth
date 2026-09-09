@@ -189,6 +189,10 @@ def worker(folder, request, execution):
         return False
 
     try:
+        # Where this run was admitted to execute, read before anything is launched and
+        # inside this guard, so a request document the worker cannot read leaves an
+        # unlaunched receipt with its own reason rather than no receipt at all.
+        launcher = Sandbox.of(request.get("sandbox")).open()
         with hearth.database.transaction() as db:
             authority = authorize(db, bound, int(hearth.clock()))
             row = db.execute(
@@ -216,7 +220,7 @@ def worker(folder, request, execution):
             # The session executes where this run was admitted to execute, which the
             # control plane published into the request; the worker's own environment
             # is a search path and carries nothing.
-            launcher=Sandbox.of(request.get("sandbox")).open(),
+            launcher=launcher,
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],

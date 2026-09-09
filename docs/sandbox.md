@@ -24,24 +24,40 @@ session, and there are exactly two answers.
 
 Both hand back one `Handle`, so the worker's read loop, its cancellation and its
 timeout do not know which launcher they are talking to, and the receipt is the CLI's
-own stream either way. `tests/integrations/test_launcher_parity.py` runs a real Codex
-session and a real Claude session through both and holds the evidence identical.
+own stream either way. `start` returns the instant the session is launched and
+`identify` reads what was created afterwards, because the worker holds Hearth's
+dispatch guard -- one write transaction over the whole store -- around the launch and
+nothing that waits may happen inside it.
+`tests/integrations/test_launcher_parity.py` runs a real Codex session and a real
+Claude session through both and holds the evidence identical.
 
 ## Configuration
 
-Three environment variables, read once in the control plane:
+Read once in the control plane:
 
 ```sh
 HEARTH_SANDBOX=process|container       # default: process
 HEARTH_SANDBOX_IMAGE=<repo>@sha256:... # required for container; a tag alone is refused
 HEARTH_SANDBOX_NETWORK=<name>          # required for container; the operator creates it
 HEARTH_SANDBOX_DOCKER=<docker|podman|/absolute/path>   # optional, default `docker`
+HEARTH_SANDBOX_DOCKER_HOST=unix:///…   # optional; the daemon, when it is not the default
 ```
 
 The launcher runs the container client with a search path and nothing else in its
-environment, so on a host where the client is not on `/bin:/usr/bin` -- a Mac with
-Docker Desktop, where it lives in `/usr/local/bin` -- `HEARTH_SANDBOX_DOCKER` has to
-name it by absolute path.
+environment. Two consequences, and both are why the last two variables exist rather
+than being read from the ambient environment:
+
+- a client that is not on `/bin:/usr/bin` -- a Mac with Docker Desktop, where it lives
+  in `/usr/local/bin` -- has to be named by absolute path in `HEARTH_SANDBOX_DOCKER`;
+- `DOCKER_HOST` is *not* inherited, so a daemon that is not on the client's own default
+  socket -- a rootless installation at `unix:///run/user/<uid>/docker.sock`, or a remote
+  host -- has to be named in `HEARTH_SANDBOX_DOCKER_HOST`. Without it such a host
+  refuses `sandbox_runtime_unavailable` at start even though `docker` works perfectly
+  for the operator who set it up.
+
+Neither could be an inherited variable: the detached worker that starts a session is
+launched with `PATH` and nothing else, so everything the client needs travels in the
+run's own request document with the rest of the sandbox.
 
 The choice is *not* read by the worker: the worker is detached with `PATH` alone, so
 the sandbox travels in the run's own request document and is validated again there. A
@@ -60,6 +76,11 @@ At start, on the `container` launcher, in this order:
 | `sandbox_network_missing` | the operator has not created that network |
 | `sandbox_image_changed` | this store is pinned to a different image digest |
 | `sandbox_binary_mismatch` | a CLI inside the image is not the one this store's binary pin names |
+
+A failure to hash is not automatically a mismatch: the client's exit code 125 (and a
+client that cannot be run, and a timeout) is the daemon refusing to run the container
+at all and refuses as `sandbox_runtime_unavailable`, because sending an operator to
+rebuild an image over a daemon that went away helps nobody.
 
 The image digest is written to `system_meta.sandbox_image` on the first start that
 sees it, with an audit fact `sandbox.configured`, and every later start compares
@@ -104,12 +125,12 @@ Host: Docker Desktop 27.3.1 on macOS, server `linux/arm64`, kernel `6.10.14-linu
 overlay2. That Linux VM is a Linux Docker host; nothing was run on any other machine.
 
 **1. A container start costs about a tenth of a second.** First byte out of the
-session: 0.127 s median through the container launcher against 0.023 s for a plain
+session: 0.139 s median through the container launcher against 0.022 s for a plain
 child -- roughly 0.10 s of overhead, on sessions the ADR measures in five to sixty
 seconds. As assumed.
 
 **2. The stream is not buffered.** Five lines written 0.3 s apart inside the container
-arrived 0.30 s apart at the attached worker (spread 1.215 s). The worker can price and
+arrived 0.30 s apart at the attached worker (spread 1.2 s). The worker can price and
 cancel a session mid-turn under the container launcher exactly as it does today.
 
 **3. Stopping the container ends the whole session, but not by signalling it.**
@@ -118,7 +139,7 @@ processes, the session's own process was signalled and its *child* was not: the 
 died with the container, never having run its handler. That differs from the process
 launcher, which signals the whole process group and reaches every one of them. It is
 the same outcome -- nothing survives -- but a CLI that cleans up on SIGTERM in a
-subprocess will not get to. The container was gone 0.075 s after the signal, and `--rm`
+subprocess will not get to. The container was gone 0.155 s after the signal, and `--rm`
 had removed it.
 
 **4. A signalled session's exit code is 128 + the signal, not its negative.** A session
@@ -136,7 +157,10 @@ naive reading of `--rm` in the ADR**: a worker that dies mid-session leaves a li
 container spending real money, and the stray cleanup slice (#185) has to kill it, not
 merely reap it. After an explicit `docker kill` the container ended and `--rm` removed
 it with no trace. This is why the launcher labels every container it starts
-(`org.hearth.sandbox`): a stray has to be findable without guessing.
+(`org.hearth.sandbox`): a stray has to be findable without guessing. It is also why
+`stop` falls back to signalling the client itself when the runtime named no container
+or will not answer -- that leaves a labelled stray, but the worker gets its receipt
+instead of waiting on a session it cannot end.
 
 **6. The bridge socket cannot be a bind-mounted host path on Docker Desktop.**
 Mounting the unix socket itself into the container failed before the container started:

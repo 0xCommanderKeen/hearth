@@ -1,6 +1,6 @@
 {
   "bridge_socket": {
-    "host_bind_mount": "docker: Error response from daemon: invalid mount config for type \"bind\": stat /host_mnt/private/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-measure-j354b4f3/bridge.sock: operation not supported.\nSee 'docker run --help'.",
+    "host_bind_mount": "docker: Error response from daemon: invalid mount config for type \"bind\": stat /host_mnt/private/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-measure-o05d612y/bridge.sock: operation not supported.\nSee 'docker run --help'.",
     "host_bind_mount_exit_code": 125,
     "host_socket_was_connected_to": false,
     "volume_shared_between_containers": "connected pong"
@@ -18,11 +18,11 @@
   "image": "python:3.14-slim",
   "image_binary_hash": {
     "path": "/usr/local/bin/python3.14",
-    "seconds": 0.1,
+    "seconds": 0.141,
     "sha256": "c73c526e9bfa0d217b548ce27c576f1628a55fa0f4b65b1f6f0a142e2cd530a1"
   },
   "image_id": "sha256:19fe7a28429c4e92086fe53d7ec56f5801f158ff069faf8283931031249985da",
-  "measured_at": "2026-09-09T14:30:19Z",
+  "measured_at": "2026-09-09T14:56:44Z",
   "network": "none",
   "orphaned": {
     "after_an_explicit_kill": "absent",
@@ -32,21 +32,21 @@
   },
   "start_latency": {
     "container_first_byte_seconds": [
-      0.1995,
-      0.1604,
-      0.1272,
-      0.1134,
-      0.1145
+      0.217,
+      0.1173,
+      0.1439,
+      0.1392,
+      0.1015
     ],
-    "container_median": 0.1272,
+    "container_median": 0.1392,
     "process_first_byte_seconds": [
-      0.0192,
-      0.0262,
-      0.0222,
-      0.0293,
-      0.0233
+      0.0154,
+      0.0221,
+      0.03,
+      0.0151,
+      0.027
     ],
-    "process_median": 0.0233,
+    "process_median": 0.0221,
     "rounds": 5
   },
   "stopping": {
@@ -54,7 +54,7 @@
     "exit_code_of_a_session_that_did_not_handle_the_signal": 143,
     "exit_code_seen_by_the_attached_client": 0,
     "processes_in_container": 4,
-    "seconds_to_exit": 0.075,
+    "seconds_to_exit": 0.155,
     "sigterm_reached_pid_1": true,
     "sigterm_reached_the_child_process": false
   },
@@ -62,26 +62,26 @@
     "arrivals": [
       [
         "line 0",
-        0.094
+        0.087
       ],
       [
         "line 1",
-        0.399
+        0.393
       ],
       [
         "line 2",
-        0.702
+        0.695
       ],
       [
         "line 3",
-        1.008
+        1.0
       ],
       [
         "line 4",
-        1.309
+        1.3
       ]
     ],
-    "spread_seconds": 1.215,
+    "spread_seconds": 1.213,
     "unbuffered": true
   }
 }

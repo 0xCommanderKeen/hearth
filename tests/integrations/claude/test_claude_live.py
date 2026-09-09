@@ -316,8 +316,13 @@ def test_the_worker_refuses_a_changed_persisted_launch_input(tmp_path, monkeypat
     value[field] = "changed"
     path.write_text(json.dumps(value))
     launched = []
-    # The session is started through the launcher, whichever one this run was admitted
-    # under, so that is the launch the refusal has to happen before.
+    # Both spawns: the adapter's own detach of the worker, and -- through whichever
+    # launcher this run was admitted under -- the session itself, which is the launch
+    # the refusal has to happen before.
+    monkeypatch.setattr(
+        "hearth.integrations.claude.subscription.subprocess.Popen",
+        lambda *a, **kw: launched.append(a),
+    )
     monkeypatch.setattr(
         "hearth.integrations.launcher.subprocess.Popen",
         lambda *a, **kw: launched.append(a),

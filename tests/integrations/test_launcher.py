@@ -181,6 +181,10 @@ def test_a_sandboxed_session_streams_back_and_is_named_by_its_container(tmp_path
     program = script(tmp_path / "cli", "import sys\nprint('hello', flush=True)\nsys.exit(0)\n")
     handle = launcher.start([str(program)], env={"PATH": os.defpath}, cwd=workspace, stdin=None)
     assert handle.launcher == "container"
+    # The id is not known the instant the session starts: the runtime writes it to a
+    # file, and the worker asks for it once its dispatch guard has closed.
+    assert handle.id is None
+    assert launcher.identify(handle) == handle.id
     assert handle.id is not None and len(handle.id) == 64
     assert launcher.wait(handle, 30) == 0
     assert handle.stdout is not None and handle.stdout.read() == b"hello\n"
@@ -209,6 +213,7 @@ def test_stopping_a_sandbox_goes_through_the_runtime_and_reports_the_signal(tmp_
         cwd=workspace,
         stdin=None,
     )
+    launcher.identify(handle)
     assert launcher.inspect(handle) == "running"
     launcher.stop(handle, signal.SIGKILL)
     assert launcher.wait(handle, 30) == 128 + int(signal.SIGKILL)
@@ -223,6 +228,7 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
     # nobody can name is never observed or adopted.
     monkeypatch.setattr(launcher, "docker", sys.executable)
     handle = launcher.start(["-c", "raise SystemExit(1)"], env={}, cwd=workspace, stdin=None)
+    assert launcher.identify(handle) is None
     assert handle.id is None and handle.document() == {"launcher": "container", "id": None}
     assert launcher.inspect(handle) == "unknown"
     launcher.stop(handle, signal.SIGKILL)
@@ -233,9 +239,59 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
     handle = launcher.start(
         ["-c", "import time; time.sleep(60)"], env={}, cwd=workspace, stdin=None
     )
-    assert handle.id is None
+    assert launcher.identify(handle) is None
     launcher.stop(handle, signal.SIGKILL)
     assert launcher.wait(handle, 30) is not None
+
+
+def test_a_client_that_cannot_be_executed_refuses_rather_than_escaping(tmp_path):
+    """A worker that dies on an exception writes no receipt; a refusal settles."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    launcher = ContainerLauncher(IMAGE, NETWORK, docker="/nonexistent/docker")
+    with pytest.raises(Refused, match="sandbox_runtime_unavailable"):
+        launcher.start([sys.executable, "-c", "pass"], env={}, cwd=workspace, stdin=None)
+
+
+def test_a_daemon_that_will_not_run_the_image_is_not_called_a_wrong_binary(tmp_path):
+    """The two send an operator to opposite places, so they are told apart.
+
+    The client answers 125 when it or the daemon could not run the container at all;
+    anything else is the image's own contents, which is what a mismatch means.
+    """
+    from hearth.integrations.launcher import hashed
+
+    refusing = script(tmp_path / "docker-125", "import sys\nsys.exit(125)\n")
+    with pytest.raises(Refused, match="sandbox_runtime_unavailable"):
+        hashed(ContainerLauncher(IMAGE, NETWORK, docker=str(refusing)), "/usr/local/bin/codex")
+    absent = script(tmp_path / "docker-1", "import sys\nsys.exit(1)\n")
+    with pytest.raises(Refused, match="sandbox_binary_mismatch"):
+        hashed(ContainerLauncher(IMAGE, NETWORK, docker=str(absent)), "/usr/local/bin/codex")
+    with pytest.raises(Refused, match="sandbox_runtime_unavailable"):
+        hashed(
+            ContainerLauncher(IMAGE, NETWORK, docker="/nonexistent/docker"), "/usr/local/bin/codex"
+        )
+
+
+def test_the_daemon_the_client_talks_to_is_configuration_not_an_inherited_variable():
+    """The detached worker has a search path and nothing else, so `DOCKER_HOST` is
+    named by the sandbox and travels with it."""
+    sandbox = Sandbox(
+        "container", image=IMAGE, network=NETWORK, host="unix:///run/user/1000/docker.sock"
+    )
+    assert Sandbox.of(sandbox.document()) == sandbox
+    launcher = sandbox.open()
+    assert isinstance(launcher, ContainerLauncher)
+    argv = launcher.arguments(["/bin/true"], env={}, mounts=(), socket=None)
+    assert argv[1:3] == ["--host", "unix:///run/user/1000/docker.sock"] and argv[3] == "run"
+    assert launcher.argv("version")[1:] == [
+        "--host",
+        "unix:///run/user/1000/docker.sock",
+        "version",
+    ]
+    assert Sandbox.from_environment(
+        {"HEARTH_SANDBOX_DOCKER_HOST": "tcp://10.0.0.2:2376"}
+    ) == Sandbox(host="tcp://10.0.0.2:2376")
 
 
 # -- the configuration that names one of them -----------------------------
@@ -245,6 +301,8 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
     "values",
     [
         {"launcher": "podman"},
+        {"host": "not-a-daemon"},
+        {"host": "unix://a b"},
         {"launcher": "process", "image": IMAGE},
         {"launcher": "process", "network": NETWORK},
         {"launcher": "container", "network": NETWORK},
