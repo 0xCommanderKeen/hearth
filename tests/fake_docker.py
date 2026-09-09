@@ -177,7 +177,9 @@ def _run(root: Path, argv) -> int:
     environment = {
         name: _translate(mounts, value)
         for name, value in (
-            item.split("=", 1) for item in flags.get("--env", []) + flags.get("-e", []) if "=" in item
+            item.split("=", 1)
+            for item in flags.get("--env", []) + flags.get("-e", [])
+            if "=" in item
         )
     }
     # A command that names a file the image carries runs the image's copy of it: the

@@ -20,7 +20,7 @@ from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
 from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
-from hearth.integrations.launcher import Sandbox
+from hearth.integrations.launcher import CONTAINER, IMAGE_PIN, KINDS, LOGIN, OUTPUT, Sandbox
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -29,6 +29,10 @@ from hearth.work.service import Hearth, _audit
 KIND = "codex_subscription"
 VERSION = "codex-cli 0.153.4"
 RUN_TIMEOUT = 120
+# What a settled exec receipt says, whichever launcher started the session. `sandbox`
+# joins them where a run has one to name, and is absent from every receipt written
+# before this seam existed (`docs/adr/0016-sandbox-per-run.md`).
+FIELDS = {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
 CONFIG = {
     "forced_login_method": "chatgpt",
     "cli_auth_credentials_store": "file",
@@ -62,6 +66,24 @@ CONFIG = {
 }
 
 
+def sandboxed(value) -> bool:
+    """Whether a receipt's account of where its session ran is one Hearth could write.
+
+    Every field is answerable: which launcher started the session, the container it
+    ran in, and the image that container came from. A container the runtime never
+    named leaves the id `None`, which is an execution nobody can name -- never a
+    reason to call it something else.
+    """
+    if value is None:
+        return True
+    return (
+        isinstance(value, dict)
+        and set(value) == {"launcher", "container_id", "image"}
+        and value["launcher"] in KINDS
+        and all(item is None or isinstance(item, str) for item in value.values())
+    )
+
+
 def encode(receipt, expected):
     if isinstance(receipt, dict) and receipt.get("protocol") == "management":
         from hearth.integrations.codex.management_runtime import encode as encode_management
@@ -69,10 +91,13 @@ def encode(receipt, expected):
         return encode_management(receipt, expected)
     if (
         not isinstance(receipt, dict)
-        or set(receipt)
-        != {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
+        # A receipt written before a run had a sandbox to name says nothing about one,
+        # and it settles exactly as it always did: that run was a child of its worker.
+        or not FIELDS <= set(receipt)
+        or not set(receipt) <= FIELDS | {"sandbox"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
     ):
         raise Refused("run_usage_invalid")
     raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
@@ -285,9 +310,42 @@ class CodexLiveRuntime:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return Evidence("running")
+            # The lock is free and no receipt was written: the worker that held this
+            # run's stream is gone, and whatever it started may not be.
+            self.discard(run_id, request)
             return Evidence("unknown")
         except OSError, ValueError, KeyError, TypeError, Refused:
             return Evidence("unknown")
+
+    def discard(self, run_id, request) -> None:
+        """End and remove the session a dead worker left behind, and record that.
+
+        A container outlives the client that was attached to it, so a worker that
+        died mid-session leaves one running and spending real money (measured,
+        `docs/sandbox.md`). It is stopped and removed, and it is never adopted: the
+        stream that was being priced died with the worker, so this run settles from
+        what was written down or not at all -- unknown, never zero (ADR 0008) -- and
+        nothing anywhere relaunches a session.
+
+        Only the container this run's own worker named is touched. A copy opened for
+        reading touches nothing at all: the containers its store names are another
+        instance's, still running its work.
+        """
+        handle = self.folder(run_id) / "handle.json"
+        if self.database.restored() or not handle.is_file():
+            return
+        started = read(handle)
+        launcher = Sandbox.of(request.get("sandbox")).open()
+        if not launcher.stray(started.get("id")):
+            return
+        with self.database.transaction(write=True) as db:
+            _audit(
+                db,
+                "sandbox.stray_removed",
+                run_id,
+                int(time.time()),
+                {"launcher": started.get("launcher"), "container": started.get("id")},
+            )
 
     def stop(self, run_id):
         if self.database.restored():
@@ -295,6 +353,25 @@ class CodexLiveRuntime:
         folder = self.folder(run_id)
         if folder.exists() and not (folder / "cancel.json").exists():
             publish(folder / "cancel.json", {"cancelled": True})
+
+
+def check_pin(sandbox, binary: Path, expected: str, image: str | None) -> None:
+    """Refuse unless what is about to execute is what this run was admitted with.
+
+    Two launchers, two things to compare. A child of the worker executes the file at
+    `binary` on this host, so its bytes are hashed, exactly as they always were. A
+    container executes the image's own copy of the CLI, which every start hashes
+    against this store's binary pin before a resident is admitted (`configure`), so
+    hashing a host file the session will never open would be a check of nothing;
+    what can still change under a waiting run is the image this store is pinned to,
+    and that is what is compared.
+    """
+    if sandbox.launcher == CONTAINER:
+        if image is None or sandbox.digest != image:
+            raise Refused("sandbox_image_changed")
+        return
+    if hashlib.sha256(binary.read_bytes()).hexdigest() != expected:
+        raise Refused("codex_subscription_binary_changed")
 
 
 @contextmanager
@@ -320,6 +397,7 @@ def worker(folder, inherited_fd=None):
             pin = db.execute(
                 "SELECT value FROM system_meta WHERE key='codex_live_binary'"
             ).fetchone()
+            image = db.execute("SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)).fetchone()
         if (
             pin is None
             or pin[0] != request["sha256"]
@@ -327,26 +405,38 @@ def worker(folder, inherited_fd=None):
         ):
             return
         binary = Path(request["binary"])
-        if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
-            return
         if request.get("management") is not None:
             from hearth.integrations.codex.management_runtime import worker as management_worker
 
             management_worker(folder, request, execution)
             return
         try:
-            launcher = Sandbox.of(request.get("sandbox")).open()
+            sandbox = Sandbox.of(request.get("sandbox"))
+            launcher = sandbox.open()
+            # What is about to run has to be what this run was admitted to run. A
+            # child of the worker executes the file on this host; a container executes
+            # the image's own copy, and what can change under it is the image this
+            # store is pinned to, so that is what is compared.
+            check_pin(sandbox, binary, request["sha256"], image[0] if image else None)
         except Refused:
             # Where this run was admitted to execute is Hearth's own writing, and a
             # request this worker cannot read is not a session to launch. Nothing has
             # started, exactly as for a changed pin above, and the run reads as
             # unknown rather than as something a later pass may retry.
             return
+        except OSError:
+            return
+        placement = sandbox.placement()
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         final = workspace / "final.md"
+        # The session's own view of three host paths: the CLI it runs, the login it
+        # reads and the one directory it writes into. Inside a container each is a
+        # mount and nothing else on this host exists; on the process launcher each is
+        # itself and the command below is byte for byte the one Hearth always built.
+        output = placement.directory(workspace, OUTPUT, writable=True)
         cmd = [
-            str(binary),
+            placement.binary(binary, "codex"),
             "exec",
             "--ignore-user-config",
             "--ignore-rules",
@@ -359,7 +449,7 @@ def worker(folder, inherited_fd=None):
             "--model",
             MODEL,
             "-o",
-            str(final),
+            output + "/final.md",
         ]
         for key, value in CONFIG.items():
             cmd += ["-c", key + "=" + json.dumps(value)]
@@ -374,18 +464,28 @@ def worker(folder, inherited_fd=None):
                 request["owner"],
                 epoch=request["epoch"],
                 input_digest=prompt_digest,
-            ):
-                if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
-                    raise Refused("codex_subscription_binary_changed")
+            ) as db:
+                # Read inside the guard, which is already this store's one write
+                # transaction: a pin that changed while this run waited is refused
+                # here, before anything is launched, and never afterwards -- a
+                # session already running is priced from what it really said.
+                current = db.execute(
+                    "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
+                ).fetchone()
+                check_pin(sandbox, binary, request["sha256"], current[0] if current else None)
                 # A regular file cannot block prompt delivery when the CLI stalls.
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
                     handle = launcher.start(
                         cmd,
-                        env={"PATH": os.defpath, "CODEX_HOME": request["auth_home"]},
+                        env={
+                            "PATH": os.defpath,
+                            "CODEX_HOME": placement.directory(request["auth_home"], LOGIN),
+                        },
                         cwd=workspace,
                         stdin=prompt,
+                        mounts=placement.mounts,
                     )
             # What was started, named where the worker's own pid is named: a process
             # group on the process launcher and a container id on the container one.
@@ -425,6 +525,13 @@ def worker(folder, inherited_fd=None):
             "kind": KIND,
             "binding": request["binding"],
             "binary": request["sha256"],
+            # Where this session ran, so a finished run says it rather than leaving a
+            # reader to infer it from configuration that has moved on since.
+            "sandbox": {
+                "launcher": sandbox.launcher,
+                "container_id": handle.id if handle is not None and placement.contained else None,
+                "image": sandbox.digest,
+            },
             "stdout": output.decode("utf-8", errors="replace"),
             "final": final.read_text()
             if final.exists() and final.stat().st_size <= 512 * 1024

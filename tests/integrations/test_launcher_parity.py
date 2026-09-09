@@ -18,7 +18,7 @@ from hearth.integrations.codex.subscription import CodexLiveRuntime
 from hearth.integrations.codex.subscription import encode as codex_encode
 from hearth.integrations.codex.subscription import worker as codex_worker
 from hearth.integrations.codex.usage import UsageBinding
-from hearth.integrations.launcher import Sandbox
+from hearth.integrations.launcher import LOGIN, OUTPUT, Sandbox
 from hearth.residents.models import Declaration
 
 from tests import fake_docker
@@ -52,15 +52,24 @@ CODEX_EVENTS = [
 ]
 
 
+def daemon(tmp_path) -> Path:
+    """A fake daemon holding the image and the network an operator would have made."""
+    directory = tmp_path / "daemon"
+    directory.mkdir(parents=True)
+    docker = fake_docker.install(directory)
+    fake_docker.hold(docker, image=IMAGE, network=NETWORK)
+    return docker
+
+
 def sandboxes(tmp_path):
     """Today's launcher, and the container launcher over a fake daemon."""
-    daemon = tmp_path / "daemon"
-    daemon.mkdir(parents=True)
-    docker = fake_docker.install(daemon)
-    fake_docker.hold(docker, image=IMAGE, network=NETWORK)
+    docker = daemon(tmp_path)
     return {
-        "process": Sandbox(),
-        "container": Sandbox("container", image=IMAGE, network=NETWORK, docker=str(docker)),
+        "process": (Sandbox(), None),
+        "container": (
+            Sandbox("container", image=IMAGE, network=NETWORK, docker=str(docker)),
+            docker,
+        ),
     }
 
 
@@ -71,7 +80,7 @@ def test_a_claude_session_settles_the_same_whichever_launcher_started_it(tmp_pat
     from hearth.integrations.claude.subscription import worker as claude_worker
 
     receipts, evidence = {}, {}
-    for name, sandbox in sandboxes(tmp_path).items():
+    for name, (sandbox, _) in sandboxes(tmp_path).items():
         (tmp_path / name).mkdir()
         runtime, _, run, _ = claude_prepared(tmp_path / name, sandbox=sandbox)
         claude_worker(runtime.folder(run.id))
@@ -91,7 +100,7 @@ def test_cancelling_a_sandboxed_claude_session_stops_it_and_is_never_free(tmp_pa
     from hearth.integrations.claude.subscription import worker as claude_worker
 
     endings = {}
-    for name, sandbox in sandboxes(tmp_path).items():
+    for name, (sandbox, _) in sandboxes(tmp_path).items():
         (tmp_path / name).mkdir()
         runtime, _, run, _ = claude_prepared(tmp_path / name, pause=5, sandbox=sandbox)
         timer = threading.Timer(0.5, runtime.stop, args=(run.id,))
@@ -134,12 +143,13 @@ def codex_cli(path: Path) -> Path:
     return path
 
 
-def prepared_codex(tmp_path, sandbox):
+def prepared_codex(tmp_path, sandbox, docker=None):
     """A store with one admitted Codex run, started, its worker left to be driven."""
     from unittest.mock import patch
 
     from hearth.execution.context import read_context
     from hearth.execution.lifecycle import Execution
+    from hearth.integrations.launcher import BINARIES, configure
     from hearth.residents.memory import Memory
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
@@ -151,9 +161,14 @@ def prepared_codex(tmp_path, sandbox):
     (auth / "auth.json").write_text("synthetic-only")
     database = Database(data / "hearth.db")
     database.initialize()
-    runtime = CodexLiveRuntime(
-        data, binary=codex_cli(tmp_path / "codex"), auth_home=auth, sandbox=sandbox
-    )
+    binary = codex_cli(tmp_path / "codex")
+    runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth, sandbox=sandbox)
+    if docker is not None:
+        # The image carries the very CLI this store is pinned to -- which is what a
+        # start checks before any resident is admitted, and what the container then
+        # executes instead of anything on the host.
+        fake_docker.carry(docker, BINARIES["codex_live_binary"], binary.read_bytes())
+        configure(database, sandbox)
     hearth = Hearth(database)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
@@ -172,8 +187,8 @@ def prepared_codex(tmp_path, sandbox):
 
 def test_a_codex_session_settles_the_same_whichever_launcher_started_it(tmp_path):
     receipts, evidence = {}, {}
-    for name, sandbox in sandboxes(tmp_path).items():
-        runtime, run = prepared_codex(tmp_path / name, sandbox)
+    for name, (sandbox, docker) in sandboxes(tmp_path).items():
+        runtime, run = prepared_codex(tmp_path / name, sandbox, docker)
         codex_worker(runtime.folder(run.id))
         receipts[name] = runtime.receipt(run.id)
         bound = UsageBinding(**receipts[name]["binding"])
@@ -186,23 +201,52 @@ def test_a_codex_session_settles_the_same_whichever_launcher_started_it(tmp_path
     assert evidence["process"] == evidence["container"]
     assert evidence["process"].status == "succeeded" and evidence["process"].cost == 43_482
     assert evidence["process"].output == "A real-model summary."
+    # The one thing the two receipts do not share: where the session ran. A run that
+    # was a child of its worker names no container and no image; a sandboxed one names
+    # both, so a finished run says where it happened whatever configuration says now.
+    assert receipts["process"]["sandbox"] == {
+        "launcher": "process",
+        "container_id": None,
+        "image": None,
+    }
+    assert receipts["container"]["sandbox"] == {
+        "launcher": "container",
+        "container_id": receipts["container"]["sandbox"]["container_id"],
+        "image": DIGEST,
+    }
+    assert len(receipts["container"]["sandbox"]["container_id"]) == 64
+    # The final message came back out of the sandbox, so both launchers corroborate
+    # the stream's own answer with the file the CLI wrote.
+    assert receipts["container"]["final"] == "A real-model summary."
 
 
 def test_a_sandboxed_session_is_the_bounded_command_the_adapter_built(tmp_path):
     """The argv inside the container is the CLI's own, unchanged by the launcher."""
-    daemon = tmp_path / "daemon"
-    daemon.mkdir()
-    docker = fake_docker.install(daemon)
-    fake_docker.hold(docker, image=IMAGE, network=NETWORK)
+    docker = daemon(tmp_path)
     sandbox = Sandbox("container", image=IMAGE, network=NETWORK, docker=str(docker))
-    runtime, run = prepared_codex(tmp_path / "store", sandbox)
+    runtime, run = prepared_codex(tmp_path / "store", sandbox, docker)
     codex_worker(runtime.folder(run.id))
-    started = [call for call in fake_docker.calls(docker) if call[0] == "run"]
+    # The session's own container, told apart from the one that hashed the image.
+    started = [
+        call for call in fake_docker.calls(docker) if call[:1] == ["run"] and "--cidfile" in call
+    ]
     assert len(started) == 1
     argv = started[0]
     command = argv[argv.index(IMAGE) + 1 :]
     assert command[1] == "exec" and command[-1] == "-"
     assert "--ignore-user-config" in command and "--json" in command
+    # Every path in it is a path inside the image: the CLI is the image's own copy,
+    # the login is the read-only mount, the final message is written into the one
+    # directory this session may write to, and nothing names a directory on the host.
+    assert command[0] == "/usr/local/bin/codex"
+    assert command[command.index("-o") + 1] == OUTPUT + "/final.md"
+    assert "CODEX_HOME=" + LOGIN in argv
+    folder = runtime.folder(run.id)
+    assert f"type=bind,source={runtime.auth_home},target={LOGIN},readonly" in argv
+    assert f"type=bind,source={folder / 'workspace'},target={OUTPUT}" in argv
+    assert not any(str(folder) in part for part in command)
+    # And it really wrote through that mount: the file the worker reads is on the host.
+    assert (folder / "workspace" / "final.md").read_text() == "A real-model summary."
     # And the run's evidence knows the container it ran in, by the id the runtime gave.
     handle = json.loads((runtime.folder(run.id) / "handle.json").read_text())
     assert handle == {"launcher": "container", "id": handle["id"]}
