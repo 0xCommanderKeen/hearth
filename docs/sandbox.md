@@ -220,6 +220,7 @@ translation, and it collects the mounts the launcher is then handed.
 | generated settings | the file Hearth wrote | the same path, mounted where it already is |
 | the bridge shim's interpreter | the one this worker is running | `/usr/local/bin/python3`, the image's own |
 | the bridge socket and its configuration | the two files in the run folder | the same two paths, mounted where they already are |
+| a folder the grant names | the host path itself, unconfined | `/mounts/<name>`, one bind mount, `readonly` unless the grant says `rw` |
 
 Three of those are worth saying why.
 
@@ -264,6 +265,81 @@ make (measurement 6).
 reports its own effective configuration back and Hearth compares it to what it sent, so
 a path that changed on the way in would read as tampering. That is the same reason the
 bridge socket is mounted at its own path.
+
+## What a resident reaches on disk
+
+A management grant carries `mounts`: at most sixteen entries of
+`{name, host_path, mode}`, read-only unless the mode says `rw`
+(`management/authority.py`, `docs/management.md`). It is not gated by the grant's
+`enabled`: reaching a folder is not a management tool, and a resident with no
+management authority at all may still be given one to read.
+
+**What is refused, and when.** At write time, never at admission -- a run waiting on a
+grant nobody will fix is a resident that never works again. `grant_mount_forbidden`
+answers a relative or unnormalised path, `/`, `/etc`, `/proc`, `/sys`, this
+installation's own protected paths, and a name or a path two mounts share. The
+protected set is Hearth's data directory, the login directory of every runtime this
+instance opened, and the container runtime's socket -- and containment counts both
+ways: a mount *under* a protected path reaches part of it and a mount *above* one
+reaches all of it, so both are refused. The root is the one exception to that rule,
+because everything is under `/`; what `/` protects is itself.
+
+**What admission does.** `run_mounts` is written in the same transaction as the
+admission that pinned it, from the grant as it stands at that moment, with the grant's
+revision on every row. A revision that removes a folder removes it from the *next* run;
+a run already admitted keeps what it was admitted with. A granted folder the host does
+not have refuses `mount_unavailable` before any money is reserved, and the task stays
+queued until an operator puts the folder back or takes it out of the grant (ADR 0015's
+wait rule). The run's own context, version 10, lists each folder by name, by the path it
+has inside a sandbox, by the host path a run that is not sandboxed reaches, and by mode.
+
+**What the launcher does.** The worker reads the list out of the request document
+Hearth wrote, checks every field again -- nothing a resident says reaches a container's
+argv -- and places each at `/mounts/<name>`. The process launcher places nothing,
+because it confines nothing, and the run still records what it was granted: a run on a
+laptop says honestly what it *would* have had. A management session gets the same
+folders through the app-server transport, in both of the containers it starts.
+
+**How a writable folder is known to have been used.** The worker surveys each writable
+folder before the session starts and again once it has ended -- names, sizes and
+modification times, never content -- and the receipt says of each mount whether it was
+written, left alone, or not known. A folder too large to walk twice (`SURVEY_LIMIT`) or
+one that cannot be read is `null`, never "untouched". Settlement turns a `true` into
+`run.mount_rw_used`, in the transaction that ends the run, with the folder read from
+what admission pinned rather than from the receipt: a receipt naming a folder this run
+was not granted names nothing. Granting one is `grant.mount_rw_granted`, written where
+the grant is.
+
+**In a bundle** (ADR 0010) a folder travels as `{name, mode}` and never as a path: where
+a folder is describes the machine the bundle was exported from. An import resolves each
+name against a map the operator writes, grants exactly those, and leaves the rest out as
+`mount_unresolved` in the resolution. The import goes through the same grant path, so
+this household's protected paths refuse an import as they refuse an edit.
+
+## Measured, 2026-09-09, a granted folder against the real daemon
+
+`scripts/measure-mounts.py` -> `docs/evidence/sandbox-mounts-2026-09-09.json`. Docker
+Desktop 27.3.1, server `linux/arm64`, kernel `6.10.14-linuxkit`. The image is the
+sandbox image's own pinned base with the same user entry and no provider CLI in it:
+what is measured is the runtime's treatment of a bind mount and the uid the session runs
+as, and neither of those is the CLI's. The mounts come out of Hearth's own `granted()`
+and the argv out of `ContainerLauncher`.
+
+14. **A read-only mount is read-only to the kernel, not by convention.** The session
+    read the file in `/mounts/notes` and its write into that folder failed
+    `OSError: Read-only file system`. The mount argument Hearth built for it ends in
+    `,readonly`.
+15. **A writable mount takes the write, and the file is on the host.** The session
+    wrote `/mounts/drafts/written-inside.md`; afterwards the host folder holds it, owned
+    by uid 501 -- the uid Hearth itself runs as, which is the uid the launcher passes to
+    `--user`.
+16. **`/mounts` holds the grant and nothing else**, and the directory those two folders
+    were carved out of does not exist inside the container at all.
+17. **The survey answers what the receipt says.** Taken before and after, it reports the
+    writable folder changed and the read-only one unchanged, and `used()` turns that into
+    the receipt's `[{notes, ro, written: null}, {drafts, rw, written: true}]` -- `null`
+    for the read-only one because the worker never surveys one, not because it was
+    looked at and found untouched.
 
 ## Measured, 2026-09-09, with the real pinned CLI
 
@@ -453,11 +529,15 @@ session now that the adapter speaks in placements.
 
 ## Not yet true
 
+- No resident has run against a real model with a granted folder: the mount itself is
+  measured against the real daemon above, and the sessions that used one were the fake
+  CLI's. The journeys in this page predate the grant.
+- A management session's folders have the fake daemon's coverage and the transport's own
+  test; its receipt names no container id, because such a run starts two, and what each
+  of them was is in `handle.json` beside it.
 - No Claude session has run in a sandbox against the real model: the CLI, the login
   mount and the bridge are each measured, and the paid three-run journey waits on the
   Linux login above.
-- Nothing resolves a grant into a mount list yet: `Launcher.start` takes one and the
-  argv is built from it, but no caller passes one. That is #187.
 - The network the sandbox is on is the operator's own, and Hearth does not yet measure
   from inside it that Hearth's API and the LAN are unreachable (#189). The journey above
   used an ordinary bridge network, so it proves the provider is reachable and nothing

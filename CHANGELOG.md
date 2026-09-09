@@ -2,6 +2,28 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- What a resident may reach on disk is part of its management grant. `mounts` names at
+  most sixteen folders with a mode, read-only unless the grant says `rw`, refused at
+  write time (`grant_mount_forbidden`) for a relative path, for `/`, `/etc`, `/proc`,
+  `/sys`, for anything containing or contained by Hearth's data directory, a runtime
+  login or the container runtime's socket, and for a name or path two mounts share.
+  Admission resolves the list into the run's own `run_mounts` at the grant's revision
+  (schema 12; a folder the host lacks makes the run wait, `mount_unavailable`), the run's
+  context lists what it reaches and where, and the launcher turns each into a bind mount
+  at `/mounts/<name>` -- read-only unless writable, and nothing else of the host in the
+  container. A run on the process launcher records the same list and reaches the host
+  paths, so a laptop run says honestly what it would have had. A writable folder is
+  surveyed before and after the session (names, sizes, times -- never content), the
+  receipt says written, untouched or not known, and settlement audits
+  `run.mount_rw_used` from what admission pinned; granting one audits
+  `grant.mount_rw_granted`. Bundles carry a folder as a name and a mode with no path,
+  and an import grants only what the operator's own map resolves. Townhall edits the
+  folders in the grant and lists them on a finished run. Measured against Docker
+  Desktop's Linux VM (`docs/evidence/sandbox-mounts-2026-09-09.json`): a read-only mount
+  refuses a write with `Read-only file system`, a writable one takes it and the file is
+  on the host owned by Hearth's uid, `/mounts` holds the grant and nothing else, and the
+  folder they were carved out of does not exist inside the container.
+
 - A Claude run executes inside the sandbox, and Hearth's own tools reach it there. The
   adapter names the CLI, the login and its `--mcp-config` by the paths the *session*
   sees: the image's own `claude`, a configuration directory of the run's own with the
