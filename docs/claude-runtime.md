@@ -446,6 +446,11 @@ run writes a journal entry through `hearth_journal_write` over the bridge. A sec
 run then opens with that entry, and a third is cancelled mid-session to show that a
 launched run never claims zero usage.
 
+`scripts/claude-journey.py` drives exactly that, on a data directory and port it is
+given, and writes the evidence file. It is opt-in and never part of `make check`,
+because it spends real subscription money -- about four cents a run against the
+sessions measured here.
+
 **It has not been run, and no evidence file is committed for it.** The one thing
 missing is the private login of spike 1: `claude auth login` inside the private
 `CLAUDE_CONFIG_DIR` opens a browser and needs the account holder, and there is no
