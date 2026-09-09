@@ -11,8 +11,12 @@ Hearth is a home for persistent agents doing useful work under human supervision
 Hamlet is the village view; Townhall is the operator view in the same browser.
 Start with a new read-only daily-summary Reader, one operator and one execution
 machine. The user has now selected a bounded real Codex subscription demo on this Mac,
-reusing the existing login with synthetic notes. The Codex subscription is the only
-runtime Hearth ships (2026-09-08, [ADR 0014](adr/0014-one-runtime-and-no-mocks.md)).
+reusing the existing login with synthetic notes. Hearth ships real runtimes only, and no
+mocks (2026-09-08, [ADR 0014](adr/0014-one-runtime-and-no-mocks.md)): the Codex
+subscription, which every new store records as its default, and the Claude subscription
+beside it (#145). Which of them a resident runs on is its own declaration, so one
+household can hold both (2026-09-09,
+[ADR 0015](adr/0015-runtime-per-resident.md)).
 
 Miha selected Codex Astra for the runtime/model, synthetic example notes,
 and confirmed this Mac for development with a $10 per-day allowance. Fresh
