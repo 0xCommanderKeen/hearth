@@ -64,7 +64,7 @@
     "creator": "operator",
     "manager": "operator",
     "originating_run_id": null,
-    "created_at": 1788969740,
+    "created_at": 1788970185,
     "routine_id": null,
     "task_id": null
   },
@@ -98,27 +98,27 @@
   },
   "runs": [
     {
-      "id": "7152947a-ac7a-453a-a686-9925f89bab56",
-      "task_id": "09b54005-649d-4f03-8c67-586d6f1168f4",
+      "id": "cc68e3b8-b4a1-4226-9434-9eac3d118c0c",
+      "task_id": "9aa3cbe1-62ac-46d8-adf7-5ab27479ea7e",
       "resident_id": "9c426f77-13c1-5886-a77c-3d7217295264",
       "resident_revision": 1,
-      "status": "failed",
+      "status": "succeeded",
       "reserved": 10000,
       "budget_day": "2026-09-09",
       "budget_timezone": "Europe/Ljubljana",
       "runtime_kind": "codex_subscription",
       "runtime_version": 1,
-      "input_digest": "bdd6ce11f49b8d376cf38f43a65bff54b070ec5760ce65817983485013e37ac4",
+      "input_digest": "79d148b057f160277b1a96a81c13f3b3a15c83cfab3bb8ac162a0f0c4b1564f6",
       "model": "gpt-6-astra",
       "price_schedule": "gpt-6-astra-api-equivalent-2026-09-06",
-      "created_at": 1788969741,
-      "actual_cost": null,
+      "created_at": 1788970185,
+      "actual_cost": 29812,
       "memory_revision": 1,
-      "usage_known": 0,
-      "finished_at": 1788969742,
-      "artifact_id": null,
+      "usage_known": 1,
+      "finished_at": 1788970191,
+      "artifact_id": "cc68e3b8-b4a1-4226-9434-9eac3d118c0c",
       "cancellation_requested": 0,
-      "usage_source": "unknown",
+      "usage_source": "api_equivalent_subscription",
       "letters_refused": [],
       "skills": [],
       "skills_error": null,
@@ -134,7 +134,7 @@
     }
   ],
   "accounting": {
-    "7152947a-ac7a-453a-a686-9925f89bab56": {
+    "cc68e3b8-b4a1-4226-9434-9eac3d118c0c": {
       "skills": [],
       "skills_error": null,
       "assignment_revision": null,
@@ -147,55 +147,57 @@
         "mode": "standard",
         "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
         "basis": "api_equivalent_estimate",
-        "receipt_sha256": "b5884984c44a6b7cd752e97673aa20841a7f373495d92d6669df9f939f75d530",
+        "receipt_sha256": "8a4730b43676e71e291dadca4f9676085b976b448b58605654c477e669ac11f7",
         "requests": []
       },
-      "id": "7152947a-ac7a-453a-a686-9925f89bab56",
-      "status": "failed",
-      "artifact_id": null,
+      "id": "cc68e3b8-b4a1-4226-9434-9eac3d118c0c",
+      "status": "succeeded",
+      "artifact_id": "cc68e3b8-b4a1-4226-9434-9eac3d118c0c",
       "runtime_kind": "codex_subscription",
       "runtime_version": 1,
-      "input_digest": "bdd6ce11f49b8d376cf38f43a65bff54b070ec5760ce65817983485013e37ac4"
+      "input_digest": "79d148b057f160277b1a96a81c13f3b3a15c83cfab3bb8ac162a0f0c4b1564f6"
     }
   },
-  "answers": {},
+  "answers": {
+    "cc68e3b8-b4a1-4226-9434-9eac3d118c0c": "Today’s fictional orchard report: 12 pears were harvested Monday, and 3 trees were planted Tuesday."
+  },
   "sandbox_audit": [
     {
       "sequence": 2,
       "kind": "sandbox.configured",
       "resource_id": "container",
-      "at": 1788969739,
+      "at": 1788970184,
       "detail": "{\"binaries\": [\"codex_live_binary\"], \"image\": \"sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce\", \"network\": \"hearth-sandbox-185\"}"
-    },
-    {
-      "sequence": 12,
-      "kind": "sandbox.stray_removed",
-      "resource_id": "7152947a-ac7a-453a-a686-9925f89bab56",
-      "at": 1788969742,
-      "detail": "{\"container\": \"b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43\", \"launcher\": \"container\"}"
     }
   ],
   "sessions": {
-    "7152947a-ac7a-453a-a686-9925f89bab56": {
+    "cc68e3b8-b4a1-4226-9434-9eac3d118c0c": {
       "sandbox": {
-        "container_id": "b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43",
+        "container_id": "6a49e62b30ea5bd08861e9bac32683791d7139920af62a954587519d5f9154af",
         "image": "sha256:5a769ff04dc437b288883ebaeeb13428ccd35fcc185cdb4c0be75c18928d7fce",
         "launcher": "container"
       },
       "handle": {
-        "id": "b7242d5af31d17506f9f6c87aac093b6996549e924823bc4cb15f44224012c43",
-        "launcher": "container"
+        "id": "6a49e62b30ea5bd08861e9bac32683791d7139920af62a954587519d5f9154af",
+        "launcher": "container",
+        "worker": 69
       },
-      "exit_code": 137,
+      "exit_code": 0,
       "cancelled": false,
       "launched": true,
       "binary_sha256": "4d76e542c222ea8c75861d8c4ade60a1a332a63255ce1c60bdaebf7c2a2869e6",
-      "cli_reported_usage": null
+      "cli_reported_usage": {
+        "input_tokens": 9077,
+        "cached_input_tokens": 6912,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 25,
+        "reasoning_output_tokens": 0
+      }
     }
   },
   "containers_afterwards": {
-    "7152947a-ac7a-453a-a686-9925f89bab56": "absent"
+    "cc68e3b8-b4a1-4226-9434-9eac3d118c0c": "absent"
   },
-  "total_cost_microdollars": 0,
+  "total_cost_microdollars": 29812,
   "limits": "One bounded run on fictional notes. This records that a resident's session executed inside a per-run container from the pinned image, that the receipt is the CLI's own stream out of that container, and that the run settled from the usage the CLI reported there. It is not evidence of model quality, of the network fence (#189), of filesystem grants (#187) or of anything about real sources."
 }

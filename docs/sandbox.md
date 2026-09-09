@@ -108,12 +108,17 @@ non-root user at the uid the build was given. The CLIs are copied in from the bu
 context, never downloaded: an image that fetches its own tools cannot be the same image
 twice, and the whole point of the pin is that it can.
 
+Codex also needs the executables its own package ships beside it -- `bwrap` for its own
+filesystem sandbox and the code-mode host it looks for by name -- and the image keeps
+them in the same shape that package does (measurement 8). They are covered by the
+image's digest; the binary pin is still the CLI itself.
+
 It is not built in continuous integration, because no CI host has the pinned provider
-CLIs, and nothing Hearth ships downloads them. It was built once by hand on 2026-09-09
-with two stand-in binaries in place of them, to prove the file itself: the build
-succeeded, and the image it produced runs as uid 1000, has no `apt` and no `pip`, and
-imports the bridge shim under `python3 -I` -- which is how the shim is started and why
-Hearth's package sits in the interpreter's own site directory rather than anywhere
+CLIs, and nothing Hearth ships downloads them. It was built by hand on 2026-09-09: once
+with two stand-in binaries to prove the file itself, and then with the real pinned Codex
+CLI for the journey below. The image runs as the build's uid, has no `apt` and no `pip`,
+and imports the bridge shim under `python3 -I` -- which is how the shim is started and
+why Hearth's package sits in the interpreter's own site directory rather than anywhere
 `PYTHONPATH` would have to name.
 
 ## Measured, 2026-09-09
@@ -200,19 +205,136 @@ and the same store, restarted pointed at a different image, refused
 `sandbox_image_changed`; at a network nobody created, `sandbox_network_missing`; at an
 image the daemon does not hold, `sandbox_image_unavailable`.
 
+## What a session sees of the host
+
+One adapter builds one command and either launcher starts it, so everything that
+differs between them is a path. `Placement` (`integrations/launcher.py`) is that
+translation, and it collects the mounts the launcher is then handed.
+
+| what | `process` | `container` |
+| --- | --- | --- |
+| the CLI | the host's binary, at the path the pin names | `/usr/local/bin/codex`, the image's own |
+| the login | the configuration directory itself | `/hearth/login`, below |
+| the final message | `<run>/workspace/final.md` | `/hearth/output/final.md`, one writable mount |
+| the working directory | `<run>/workspace` | `/workspace`, the runtime's empty tmpfs |
+| generated settings | the file Hearth wrote | the same path, mounted where it already is |
+
+Two of those are worth saying why.
+
+**The login is a directory of the run's own with one file it may not change.** ADR 0016
+said a login is a directory mounted read-only at the CLI's config path. Measured: the
+pinned Codex CLI does not run that way. It initializes its own app-server client inside
+`CODEX_HOME` and refuses --
+`failed to initialize in-process app-server client: Read-only file system (os error 30)`
+-- because that directory is where it keeps session state, logs and a model cache. So a
+sandboxed session gets a tmpfs at `/hearth/login`, which is nothing of the host's and is
+gone when the run ends, and the household's `auth.json` is bind-mounted read-only inside
+it. What the ADR wanted from read-only holds and holds more narrowly: a run cannot
+change the login it was given, and what it does write neither outlives it nor is visible
+to the next resident. The credential has to be valid when the run starts, because a
+session that needs to refresh it cannot write it back; keeping it fresh stays outside
+the sandbox, where it always was.
+
+**The generated model catalog is mounted where it already is.** The app-server session
+reports its own effective configuration back and Hearth compares it to what it sent, so
+a path that changed on the way in would read as tampering. That is the same reason the
+bridge socket is mounted at its own path.
+
+## Measured, 2026-09-09, with the real pinned CLI
+
+The first slice measured the launcher against a stand-in image. This one built
+`deploy/Dockerfile.sandbox` with the real pinned Codex CLI -- the Linux build of the
+same version, `codex-cli 0.153.4` -- and ran a resident's session in it. Three things
+came out of that, and every one of them failed every run it touched.
+
+**8. Codex on Linux is not one file.** Its own package ships three more things beside
+the executable and the CLI finds them by their place in that layout:
+
+- without `codex-resources/bwrap` the session ends before its first turn --
+  `bubblewrap is unavailable` -- because Hearth's read-only permission profile turns
+  the CLI's *own* filesystem sandbox on, and that runs through bubblewrap;
+- without `codex-code-mode-host` the CLI reports `failed to spawn ... host executable
+  was not found` where it otherwise reports `code-mode host is disabled`. Hearth knows
+  the second and steps over it; the first it reads as a stream error, and the run
+  settles failed.
+
+So the image carries them in the same shape the package does, one directory above the
+executable. They are pinned by the image's digest; the binary pin is still the CLI
+itself.
+
+**9. `flock` does not exclude on a Docker Desktop bind mount from macOS.** Two
+processes took the same lock on a file under a bind-mounted Mac directory and both
+succeeded; on the container's own filesystem the second was refused, as it must be.
+Hearth's whole launch-once discipline rests on that lock (ADR 0008), so a store on such
+a share is not a store Hearth can hold its guarantees on -- but the sharp edge this
+slice added is that a free lock was about to *authorise killing a container*. It no
+longer does on its own: the worker records its own pid beside the container it started,
+and a session whose worker is still here is never called a stray. A lock that is wrong
+now leaves a labelled container for the operator instead of ending somebody's work.
+
+**10. A stray really is killed and removed.** Seen against the real daemon, by way of
+the finding above: the observation decided a container had no worker, `docker kill` and
+`docker rm --force` ended it, the run settled as unknown rather than at zero, and
+`sandbox.stray_removed` was recorded with the container's id.
+
+## The Codex journey, on a Linux Docker host
+
+`scripts/codex-sandbox-journey.py` drives one resident through one run and records the
+container it ran in, the image digest, Hearth's settlement and the usage the CLI itself
+reported inside that container. Evidence:
+`docs/evidence/sandbox-codex-journey-2026-09-09.json` -- one run, `succeeded`, 29,812
+µ$ settled from the CLI's own numbers, in container `6a49e62b…`, from image
+`sha256:5a769ff0…`, and the container is gone afterwards.
+
+It must run on a Linux Docker host, and it means it: the store's Codex pin is the
+sha256 of the CLI Hearth was configured with, the image's own copy of that CLI is
+hashed against it at start, and a macOS build and a Linux build are never the same
+bytes. On a Mac, Docker Desktop's Linux VM *is* a Linux Docker host, and Hearth can run
+on it in a container of its own with the daemon's socket. That is how the evidence above
+was recorded, and it is worth writing down because two details of it are not obvious:
+
+- **The repository, the login and the data directory are mounted at the paths they have
+  outside**, because a path Hearth hands the daemon is resolved by the daemon, not by
+  Hearth's own filesystem. A path that means one thing inside Hearth's container and
+  another to the daemon is a mount of the wrong directory.
+- **The store goes on a Linux filesystem**, not on a bind-mounted Mac directory --
+  measurement 9. A docker volume mounted at its own path under
+  `/var/lib/docker/volumes/<name>/_data` is both at once: a real filesystem for Hearth,
+  and a path the daemon can bind-mount subdirectories of into each sandbox.
+- **A locally built image has no digest to pin.** `HEARTH_SANDBOX_IMAGE` wants
+  `<repo>@sha256:…`, which is a *repository* digest and only exists once an image has
+  been pushed somewhere. A `registry:2` container on the loopback address is enough, and
+  nothing leaves the machine.
+
+On a Linux server none of that applies: Hearth is a process on the host, its data
+directory is a directory, and the journey is the command in its own docstring. On the
+Mac it was this, with `$REPO` the checkout's own path and the data directory a volume:
+
+```sh
+docker run --rm --user "$(id -u):0" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v hearth-journey:/var/lib/docker/volumes/hearth-journey/_data \
+    -v "$REPO:$REPO" -v "$LOGIN:$LOGIN" -w "$REPO" \
+    -e HEARTH_SANDBOX=container -e HEARTH_SANDBOX_IMAGE=localhost:5555/hearth/sandbox@sha256:… \
+    -e HEARTH_SANDBOX_NETWORK=hearth-sandbox -e HEARTH_SANDBOX_DOCKER=/usr/local/bin/docker \
+    <a python:3.14-slim with fastapi, uvicorn, the docker client and $REPO/backend on its path> \
+    python scripts/codex-sandbox-journey.py --codex-binary … --codex-auth-home "$LOGIN" \
+        --data /var/lib/docker/volumes/hearth-journey/_data/journey --out docs/evidence/…json
+```
+
+`gid 0` because Docker Desktop's socket is `root:root` inside a container; `$REPO/backend`
+on the interpreter's own path (a `.pth` file, not `PYTHONPATH`) because the detached
+worker is started with `python -I`.
+
 ## Not yet true
 
-This slice is the seam, the pins and the measurements. No run executes in a container
-yet beyond the measurement script:
-
-- The command the adapters build still names the CLI by its **host** path. Inside the
-  image the CLIs are at `/usr/local/bin/{codex,claude}`; translating the command, the
-  login directory and the workspace is #185 (Codex) and #186 (Claude).
+- The Claude adapter still names its CLI by its host path; #186 moves it, and the
+  bridge socket it needs is the one measurement 6 says is Linux-only.
 - Nothing resolves a grant into a mount list yet: `Launcher.start` takes one and the
   argv is built from it, but no caller passes one. That is #187.
-- `inspect` after a restart, and removing a stray container whose worker is gone, are
-  #185 -- measurement 5 above is what that slice has to handle.
-
-Until then, setting `HEARTH_SANDBOX=container` pins the image and starts the instance;
-the runs it launches are expected to fail, because the paths inside the image are not
-the paths on the host.
+- The network the sandbox is on is the operator's own, and Hearth does not yet measure
+  from inside it that Hearth's API and the LAN are unreachable (#189). The journey above
+  used an ordinary bridge network, so it proves the provider is reachable and nothing
+  about what else is.
+- Hearth itself is not packaged (#189). The container the journey ran in is a harness,
+  not `deploy/compose.yaml`.

@@ -2,6 +2,24 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A Codex run executes inside the sandbox, for real. The adapter names the CLI, the
+  login and the file it writes its final message to by the paths the *session* sees:
+  the image's own CLI, a login mounted at the path `CODEX_HOME` names, and one writable
+  mount, so the receipt is still the CLI's own stream and the final message still
+  reaches the worker that reads it. On the process launcher the command is unchanged,
+  byte for byte. The pin a sandboxed run is held to is the image digest -- read inside
+  the dispatch guard, refused before the launch and never after it -- and a finished run
+  says where it happened: `sandbox: {launcher, container_id, image}` on the receipt. A
+  container whose worker is gone is now stopped, removed and audited
+  `sandbox.stray_removed` rather than left spending, and it is never adopted: the stream
+  that was being priced died with the worker, so the run is unknown, never zero. One
+  real run on a Linux Docker host, `docs/evidence/sandbox-codex-journey-2026-09-09.json`.
+  Three things it measured are in `docs/sandbox.md` and each of them failed every run it
+  touched: the CLI cannot run with a read-only `CODEX_HOME` (it gets a tmpfs of its own
+  now, with the household's credential read-only inside it), Codex on Linux needs the
+  `bwrap` and code-mode-host executables its own package ships beside it, and `flock`
+  does not exclude on a Docker Desktop bind mount from macOS -- so a lock alone no
+  longer authorises killing a container, and the worker records its own pid beside it.
 - There is one seam under the worker for starting a session, and a sandbox it can be
   pointed at. Neither live adapter calls `subprocess.Popen` on a provider CLI any more:
   `process` is byte for byte what Hearth has always done, and `container` starts the
