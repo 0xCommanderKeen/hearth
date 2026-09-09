@@ -305,24 +305,24 @@ function GrantEditor({
             )}
             <h4>Execution profiles</h4>
             {catalog.profiles.map((profile) => (
-              <label key={profile} className="management-choice">
+              <label key={profile.id} className="management-choice">
                 <input
                   type="checkbox"
-                  checked={draft.profiles.includes(profile)}
+                  checked={draft.profiles.includes(profile.id)}
                   onChange={(e) =>
                     update(
                       "profiles",
                       e.target.checked
-                        ? [...draft.profiles, profile]
-                        : draft.profiles.filter((value) => value !== profile),
+                        ? [...draft.profiles, profile.id]
+                        : draft.profiles.filter(
+                            (value) => value !== profile.id,
+                          ),
                     )
                   }
                 />
-                <span>
-                  {profile === "codex_subscription"
-                    ? "Codex Astra · subscription"
-                    : profile.replaceAll("_", " ")}
-                </span>
+                {/* Named by the server's own registry: this view knows what runtimes
+                    a household has, never what any one of them is called. */}
+                <span>{profile.name}</span>
               </label>
             ))}
           </div>

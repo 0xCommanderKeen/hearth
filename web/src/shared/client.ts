@@ -494,12 +494,19 @@ export type Run = InputProvenance & {
     grant_revision: number;
     expires_at: number;
     calls: number;
+    /** The transport Hearth's own tools reached the session on, per runtime. */
+    protocol?: string;
   } | null;
   id: string;
   task_id: string;
   resident_id: string;
   status: string;
   artifact_id: string | null;
+  /** The runtime this run was admitted to, pinned at admission and never rewritten. */
+  runtime_kind?: string;
+  /** The model and price schedule that pin names, where the run was priced. */
+  model?: string | null;
+  price_schedule?: string | null;
   actual_cost: number | null;
   usage_known: number;
   usage_source?: string;
@@ -516,10 +523,21 @@ export type Run = InputProvenance & {
     details: Record<string, unknown>;
   }[];
 };
+/** Which brains this household has, and what every kind a run may carry is called.
+ *
+ * Hearth's own registry answers both, so no view here has a provider's name written
+ * into it: a run is labelled by the kind it was pinned to and nothing else.
+ */
+export type Runtimes = {
+  default: string;
+  configured: string[];
+  kinds: Record<string, { label: string; live: boolean }>;
+};
 export type Snapshot = {
   provisioning?: (Omit<ProvisionReceipt, "setup"> & { name: string })[];
   household?: HouseholdPolicy;
   restore_hold?: boolean;
+  runtimes: Runtimes;
   schema_version: 1;
   epoch: string;
   cursor: number;
@@ -589,7 +607,14 @@ export function decodeSnapshot(value: unknown): Snapshot {
     !Array.isArray(s.residents) ||
     !Array.isArray(s.tasks) ||
     !Array.isArray(s.runs) ||
-    !Array.isArray(s.activity)
+    !Array.isArray(s.activity) ||
+    // Without the runtime table this interface would have to guess which provider
+    // worked a run, and a wrong provider on a result is worse than no result.
+    !s.runtimes ||
+    typeof s.runtimes.default !== "string" ||
+    !Array.isArray(s.runtimes.configured) ||
+    !s.runtimes.kinds ||
+    typeof s.runtimes.kinds !== "object"
   ) {
     throw new StateFormatError(
       "This interface cannot read the server’s state format.",
@@ -625,7 +650,7 @@ export type ManagementChange = Omit<
 > & { expected_revision: number };
 export type ManagementCatalog = {
   residents: { id: string; name: string; grant: ManagementGrant }[];
-  profiles: string[];
+  profiles: { id: string; name: string }[];
   input_sets: {
     input_set_id: string;
     name: string;
@@ -1062,6 +1087,7 @@ export class Client {
       id: string;
       status: string;
       artifact_id: string | null;
+      runtime_kind?: string;
     }>(`/api/runs/${encodeURIComponent(id)}`);
   }
   cancel(id: string) {

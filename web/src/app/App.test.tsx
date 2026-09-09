@@ -15,6 +15,18 @@ import { Client, RequestError, type Snapshot } from "../shared/client";
 let state: Snapshot;
 let publish: (snapshot: Snapshot) => void;
 
+/** A household on one brain, which is what a new store is. Tests that need the
+ *  second one configure it themselves, the way an operator would. */
+const RUNTIMES: Snapshot["runtimes"] = {
+  default: "codex_subscription",
+  configured: ["codex_subscription"],
+  kinds: {
+    codex_subscription: { label: "Codex subscription", live: true },
+    claude_subscription: { label: "Claude subscription", live: true },
+    codex_mock: { label: "retired Codex mock", live: false },
+  },
+};
+
 beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState(null, "", "/");
@@ -26,6 +38,7 @@ beforeEach(() => {
     tasks: [],
     runs: [],
     activity: [],
+    runtimes: RUNTIMES,
   };
   vi.spyOn(Client.prototype, "configuration").mockImplementation(
     async (id) => ({
@@ -234,6 +247,140 @@ it("displays run output and clears it when the operator locks the session", asyn
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
   expect(screen.queryByLabelText("Summary output")).toBeNull();
+});
+
+it("credits a result to the provider that produced it, on either brain", async () => {
+  // The household has two brains and the Reader declares the second one, which is
+  // exactly the shape the operator has to be able to tell apart at a glance.
+  state.runtimes = {
+    ...RUNTIMES,
+    configured: ["codex_subscription", "claude_subscription"],
+  };
+  addReader();
+  state.residents[0].profile = {
+    command_id: null,
+    creator: "operator",
+    manager: "operator",
+    created_at: 1,
+    creation_reason: "Explicit resident setup",
+    originating_run_id: null,
+    execution_profile: "claude_subscription",
+    input_sets: [],
+    setup_status: "ready",
+  };
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "A summary",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: "artifact",
+      runtime_kind: "claude_subscription",
+      model: "claude-opus-5",
+      price_schedule: "claude-opus-5-api-equivalent-2026-09-07",
+      actual_cost: 2000,
+      usage_known: 1,
+      cancellation_requested: 0,
+    },
+  ];
+  vi.spyOn(Client.prototype, "artifact").mockResolvedValue({
+    content: "# Synthetic summary\nNo model was called.",
+  });
+  render(<App />);
+  fireEvent.change(screen.getByLabelText("Operator token"), {
+    target: { value: "synthetic-operator-token-for-tests" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
+  // Both brains are named where the household is named, its own default first.
+  await screen.findByText("Connected to Codex and Claude");
+  expect(
+    screen.getByText("Codex subscription · Claude subscription"),
+  ).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
+  await screen.findByLabelText("Resident information");
+  // The resident runs on the brain it declared, not on the household's default.
+  expect(
+    within(screen.getByLabelText("Resident information")).getByText(
+      "Claude subscription",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByLabelText("Resident setup profile")).getByText(
+      "Claude subscription",
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText(/Uses your Claude subscription\./)).toBeTruthy();
+  // And the run says which brain worked it, under which pinned price schedule.
+  expect(
+    screen.getByLabelText("Runtime this run was worked by").textContent,
+  ).toBe(
+    "Claude subscription · claude-opus-5 · claude-opus-5-api-equivalent-2026-09-07",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  await screen.findByLabelText("Summary output");
+  expect(screen.getByText("CLAUDE RESULT")).toBeTruthy();
+
+  // The same panel over a run the other brain worked names that one instead.
+  fireEvent.click(screen.getByRole("button", { name: /Close/ }));
+  state.runs[0] = {
+    ...state.runs[0],
+    runtime_kind: "codex_subscription",
+    model: "gpt-6-astra",
+    price_schedule: "gpt-6-astra-api-equivalent-2026-09-06",
+  };
+  await act(async () => publish(structuredClone(state)));
+  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  await screen.findByLabelText("Summary output");
+  expect(screen.getByText("CODEX RESULT")).toBeTruthy();
+});
+
+it("never presents a run from a retired runtime as a provider's result", async () => {
+  addReader();
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "A summary",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: "artifact",
+      runtime_kind: "codex_mock",
+      model: null,
+      price_schedule: null,
+      actual_cost: 2000,
+      usage_known: 1,
+      cancellation_requested: 0,
+    },
+  ];
+  vi.spyOn(Client.prototype, "artifact").mockResolvedValue({
+    content: "Nothing was called.",
+  });
+  await login();
+  expect(
+    screen.getByLabelText("Runtime this run was worked by").textContent,
+  ).toBe("retired Codex mock");
+  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  await screen.findByLabelText("Summary output");
+  expect(screen.getByText("SIMULATED ARTIFACT")).toBeTruthy();
 });
 
 it("does not leave a rejected credential signed in", async () => {

@@ -275,8 +275,15 @@ export function ResidentMaintenance({
       {base && (
         <>
           <p>
-            Execution profile: {base.execution_profile}. Changes apply to future
-            work; run context already recorded stays intact.
+            {/* Named from the options this store offers, which the server names
+                from its own runtime registry. A resident on a runtime this
+                release no longer offers keeps its own kind for a name. */}
+            Execution profile:{" "}
+            {options?.execution_profiles.find(
+              (profile) => profile.id === base.execution_profile,
+            )?.name ?? base.execution_profile}
+            . Changes apply to future work; run context already recorded stays
+            intact.
           </p>
           <label>
             Manager

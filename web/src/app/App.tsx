@@ -25,6 +25,12 @@ import { ImportResident } from "../features/residents/ImportResident";
 import { Letters } from "../features/letters/Letters";
 import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
+import {
+  configuredKinds,
+  resultEyebrow,
+  runtimeLabel,
+  runtimeNames,
+} from "../shared/runtimes";
 
 const SESSION_KEY = "hearth.operator-token";
 function savedToken(): string | null {
@@ -77,9 +83,11 @@ function Emblem() {
 
 function SummaryOutput({
   content,
+  eyebrow,
   onClose,
 }: {
   content: string;
+  eyebrow: string;
   onClose: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
@@ -95,7 +103,7 @@ function SummaryOutput({
       aria-label="Summary output"
     >
       <div className="section-title">
-        <span className="eyebrow">CODEX RESULT</span>
+        <span className="eyebrow">{eyebrow}</span>
         <button className="quiet" onClick={onClose}>
           Close ×
         </button>
@@ -135,6 +143,9 @@ export function App() {
   const [output, setOutput] = useState<{
     content: string;
     residentId?: string;
+    // The runtime the run was pinned to, so the result is credited to the provider
+    // that actually produced it rather than to whatever the household runs on today.
+    runtimeKind?: string;
   } | null>(null);
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
@@ -315,7 +326,8 @@ export function App() {
           const content = run.artifact_id
             ? (await client.artifact(run.artifact_id)).content
             : `Run ${run.status}`;
-          if (currentSession.current === client) setOutput({ content });
+          if (currentSession.current === client)
+            setOutput({ content, runtimeKind: run.runtime_kind });
         });
       }
     };
@@ -515,12 +527,16 @@ export function App() {
           {snapshot && (
             <span className={`chip ${connected ? "live" : "off"}`}>
               {connected
-                ? "Connected to Codex"
+                ? `Connected to ${runtimeNames(snapshot.runtimes).join(" and ")}`
                 : "Reconnecting · state may be stale"}
             </span>
           )}
           <span>
-            {snapshot ? "Codex subscription" : "Local operator console"}
+            {snapshot
+              ? configuredKinds(snapshot.runtimes)
+                  .map((kind) => runtimeLabel(snapshot.runtimes, kind))
+                  .join(" · ")
+              : "Local operator console"}
           </span>
           {client && (
             <button className="quiet" onClick={lock}>
@@ -787,6 +803,17 @@ export function App() {
                     </dd>
                     <dt>Budget timezone</dt>
                     <dd>{current.budget_timezone ?? "UTC"}</dd>
+                    <dt>Runtime</dt>
+                    <dd>
+                      {runtimeLabel(
+                        snapshot.runtimes,
+                        current.profile?.execution_profile,
+                      )}
+                      {current.profile?.execution_profile ===
+                      snapshot.runtimes.default
+                        ? " · the household default"
+                        : ""}
+                    </dd>
                     <dt>Declaration</dt>
                     <dd>Revision {current.revision}</dd>
                     <dt>Memory</dt>
@@ -850,8 +877,12 @@ export function App() {
                         <span>↗</span>
                       </button>
                       <small>
-                        Uses your Codex subscription. Dollar amounts are
-                        API-equivalent estimates.
+                        Uses your{" "}
+                        {runtimeLabel(
+                          snapshot.runtimes,
+                          current.profile?.execution_profile,
+                        )}
+                        . Dollar amounts are API-equivalent estimates.
                       </small>
                     </form>
                     <small>
@@ -1009,6 +1040,7 @@ export function App() {
                                         setOutput({
                                           content: result.content,
                                           residentId: task.resident_id,
+                                          runtimeKind: run.runtime_kind,
                                         });
                                     })
                                   }
@@ -1021,6 +1053,18 @@ export function App() {
                                   {run.usage_known
                                     ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported" ? " · operator reported" : ""}`
                                     : "Usage not yet known"}
+                                </small>
+                              )}
+                              {run && (
+                                <small aria-label="Runtime this run was worked by">
+                                  {runtimeLabel(
+                                    snapshot.runtimes,
+                                    run.runtime_kind,
+                                  )}
+                                  {run.model ? ` · ${run.model}` : ""}
+                                  {run.price_schedule
+                                    ? ` · ${run.price_schedule}`
+                                    : ""}
                                 </small>
                               )}
                             </div>
@@ -1058,6 +1102,7 @@ export function App() {
                 <SummaryOutput
                   key={output.content}
                   content={output.content}
+                  eyebrow={resultEyebrow(snapshot.runtimes, output.runtimeKind)}
                   onClose={() => setOutput(null)}
                 />
               )}
@@ -1104,7 +1149,10 @@ export function App() {
                   openable={openableRun}
                 />
                 {current.profile && (
-                  <ProfileProvenance profile={current.profile} />
+                  <ProfileProvenance
+                    profile={current.profile}
+                    runtimes={snapshot.runtimes}
+                  />
                 )}
                 {current.management && (
                   <section
