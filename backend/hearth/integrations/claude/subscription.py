@@ -38,11 +38,14 @@ from hearth.integrations.claude.config import (
 from hearth.integrations.claude.events import MAX_STREAM, ClaudeEvents, Transcript
 from hearth.integrations.claude.pricing import PRICE_SCHEDULE, estimate_api_equivalent
 from hearth.integrations.durable import (
+    finite_float,
     folder_lock,
     publish,
     read,
+    reject_constant,
     short_string,
     transferable_lock,
+    unique_object,
 )
 from hearth.integrations.interface import Evidence
 from hearth.residents.models import Refused, identifier
@@ -363,7 +366,14 @@ def trust_session(server, output: bytearray, scanned: int) -> int:
             return scanned
         line, scanned = bytes(output[scanned:end]), end + 1
         try:
-            event = json.loads(line)
+            # Read exactly as the settled receipt will be read, so the event this
+            # trusts is the event the evidence holds.
+            event = json.loads(
+                line,
+                object_pairs_hook=unique_object,
+                parse_constant=reject_constant,
+                parse_float=finite_float,
+            )
         except ValueError, RecursionError:
             continue
         if isinstance(event, dict) and (event.get("type"), event.get("subtype")) == (

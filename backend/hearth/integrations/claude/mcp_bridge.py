@@ -60,6 +60,9 @@ CALL_TIMEOUT = 600.0
 # temporary path does not fit, so a long address is bound and connected relative to
 # its own directory instead: the same socket file, named more briefly.
 SUN_PATH_LIMIT = 100
+# How many connections the trusted half will hold at once. The shim uses one per call
+# and closes it, so this is only ever reached by something that stopped speaking.
+MAX_CONNECTIONS = 16
 # What one tool call may raise out of Hearth's own writer. None of them is the model's
 # doing, and each one ends the session rather than being answered as a refusal.
 BRIDGE_FAILURES = (OSError, ValueError, TypeError, KeyError, RecursionError, sqlite3.Error)
@@ -228,28 +231,33 @@ def _write(output, message: dict) -> None:
 
 def serve_stdio(path, stream, output) -> int:
     """Read line-delimited JSON-RPC until the client stops speaking."""
-    while True:
-        line = stream.readline(MAX_FRAME + 1)
-        if not line:
-            return 0
-        if not line.endswith(b"\n"):
-            if len(line) <= MAX_FRAME:
-                # End of input without a newline: answer what is there, then stop.
-                answered = respond(path, line)
-                if answered is not None:
-                    _write(output, answered)
+    try:
+        while True:
+            line = stream.readline(MAX_FRAME + 1)
+            if not line:
                 return 0
-            # Drop the rest of an oversized frame rather than the session: the next
-            # well-formed request still gets its answer.
-            while True:
-                rest = stream.readline(MAX_FRAME + 1)
-                if not rest or rest.endswith(b"\n"):
-                    break
-            _write(output, _failure(None, -32600, "request too large"))
-            continue
-        answered = respond(path, line)
-        if answered is not None:
-            _write(output, answered)
+            if not line.endswith(b"\n"):
+                if len(line) <= MAX_FRAME:
+                    # End of input without a newline: answer what is there, then stop.
+                    answered = respond(path, line)
+                    if answered is not None:
+                        _write(output, answered)
+                    return 0
+                # Drop the rest of an oversized frame rather than the session: the next
+                # well-formed request still gets its answer.
+                while True:
+                    rest = stream.readline(MAX_FRAME + 1)
+                    if not rest or rest.endswith(b"\n"):
+                        break
+                _write(output, _failure(None, -32600, "request too large"))
+                continue
+            answered = respond(path, line)
+            if answered is not None:
+                _write(output, answered)
+    except OSError:
+        # The session went away mid-answer. That is the CLI's ending, not an error
+        # of this shim's, and it says nothing about it on the way out.
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +468,11 @@ class BridgeServer:
             connection, _ = self.listener.accept()
         except OSError:
             return
+        if len(self.pending) >= MAX_CONNECTIONS:
+            # The shim opens one connection per call and closes it either way, so a
+            # queue this long is something that stopped speaking. The oldest goes,
+            # which bounds the worker's descriptors without ever wedging the bridge.
+            self._drop(next(iter(self.pending)))
         if peer_uid(connection) != os.getuid():
             # Only the user that owns the run reaches its tools, whatever the
             # permissions elsewhere on the host happen to allow.
