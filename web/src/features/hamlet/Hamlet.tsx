@@ -18,6 +18,7 @@ export function Hamlet({
   const host = useRef<HTMLDivElement>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [inside, setInside] = useState(false);
+  const [lighter, setLighter] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const origin = useRef<HTMLElement | null>(null);
   const selection = useRef(selected);
@@ -101,12 +102,23 @@ export function Hamlet({
   useEffect(() => {
     scene.current?.active(active && !inside);
   }, [active, inside]);
+  useEffect(() => {
+    scene.current?.lighter(lighter);
+  }, [lighter]);
   return (
     <section
       hidden={!active}
       className="hamlet-scene"
       aria-label="Hamlet village"
     >
+      <label className="scene-rendering">
+        <input
+          type="checkbox"
+          checked={lighter}
+          onChange={(event) => setLighter(event.target.checked)}
+        />
+        Lighter graphics <small>Lower resolution, no village shadows</small>
+      </label>
       <div hidden={inside}>
         <div className="scene-toolbar">
           <span>HAMLET · 3D VILLAGE</span>
@@ -246,6 +258,7 @@ export function Hamlet({
           snapshot={snapshot}
           connected={connected}
           active={active}
+          lighter={lighter}
           onBack={back}
         />
       )}

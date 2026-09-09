@@ -2,6 +2,12 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet offers reversible lighter graphics, draws changed scenes and repaints resizing
+  immediately, suspends hidden tabs/views and releases closed room contexts. Integrated
+  keyboard/touch, graphics-failure and 0–100 resident browser journeys now have retained
+  screenshots and measured desktop frame intervals/draw calls; no phone-GPU or deployment
+  acceptance is claimed.
+
 - Hamlet labels show recorded status and disconnection in text and colour. Finite
   letter journeys follow the rendered streets from actual doors; initial, reset and
   reconnect history stays in timestamped Recent post, with bounded deduplication and

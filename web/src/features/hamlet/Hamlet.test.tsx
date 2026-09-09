@@ -26,6 +26,7 @@ const snapshot = { residents: [resident], letters: [] } as unknown as Snapshot;
 it("updates records and roster without recreating the renderer and disposes on unmount", () => {
   const scene = {
     active: vi.fn(),
+    lighter: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
     dispose: vi.fn(),
@@ -75,6 +76,7 @@ it("graphics failure leaves Townhall and truthful resident navigation available"
 it("shares selection between buildings and directory and retains an archived selection and clears a different store", () => {
   const scene = {
     active: vi.fn(),
+    lighter: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
     dispose: vi.fn(),
@@ -124,6 +126,7 @@ it("shares selection between buildings and directory and retains an archived sel
 it("pauses a retained scene while records are open and restores keyboard focus on Escape", () => {
   const scene = {
     active: vi.fn(),
+    lighter: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
     dispose: vi.fn(),
@@ -148,6 +151,7 @@ it("pauses a retained scene while records are open and restores keyboard focus o
 it("keeps the initial opener through mesh selection and Escape from camera controls", () => {
   const scene = {
     active: vi.fn(),
+    lighter: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
     dispose: vi.fn(),
@@ -172,6 +176,7 @@ it("keeps the initial opener through mesh selection and Escape from camera contr
 it("keeps the exterior paused and selection intact through rooms, record visits and updates", () => {
   const exterior = {
     active: vi.fn(),
+    lighter: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
     dispose: vi.fn(),
@@ -180,7 +185,7 @@ it("keeps the exterior paused and selection intact through rooms, record visits 
     overview: vi.fn(),
   };
   vi.mocked(createVillageScene).mockReturnValue(exterior);
-  const room = { active: vi.fn(), dispose: vi.fn() };
+  const room = { active: vi.fn(), lighter: vi.fn(), dispose: vi.fn() };
   vi.mocked(createRoomScene).mockReturnValue(room);
   const { rerender } = render(<Hamlet snapshot={snapshot} connected />);
   fireEvent.click(screen.getByRole("button", { name: /Select Reader/ }));
@@ -229,7 +234,7 @@ it("keeps the exterior paused and selection intact through rooms, record visits 
 });
 
 it("closes an archived or missing room with history and exit, never substitutes another resident", () => {
-  const room = { active: vi.fn(), dispose: vi.fn() };
+  const room = { active: vi.fn(), lighter: vi.fn(), dispose: vi.fn() };
   vi.mocked(createRoomScene).mockReturnValue(room);
   const { rerender } = render(<Hamlet snapshot={snapshot} connected />);
   fireEvent.click(screen.getByRole("button", { name: /Select Reader/ }));
@@ -287,6 +292,7 @@ it.each(["initial", "context loss"])(
     else
       vi.mocked(createRoomScene).mockReturnValue({
         active: vi.fn(),
+        lighter: vi.fn(),
         dispose: vi.fn(),
       });
     render(<Hamlet snapshot={snapshot} connected />);
@@ -314,6 +320,7 @@ it.each(["initial", "context loss"])(
 it("keeps Townhall unknown usage and archived unresolved work visible with no active runs", () => {
   vi.mocked(createRoomScene).mockReturnValue({
     active: vi.fn(),
+    lighter: vi.fn(),
     dispose: vi.fn(),
   });
   render(

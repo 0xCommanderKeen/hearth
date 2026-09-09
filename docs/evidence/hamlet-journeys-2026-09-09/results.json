@@ -1,0 +1,320 @@
+{
+  "hardware": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    "vendor": "Google Inc. (Apple)",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+    "webgl": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+    "devicePixelRatio": 1,
+    "browserVersion": "151.0.7922.34",
+    "host": {
+      "platform": "darwin",
+      "release": "25.5.0",
+      "cpu": "Apple M3 Max",
+      "memoryBytes": 38654705664
+    }
+  },
+  "renderingSetup": "Isolated headed Chromium, default context via connectOverCDP(noDefaults:true); actual tab visibility without forced focus or CDP freezing",
+  "performanceMethod": "1440x1050 viewport, DPR1; 70 visible camera rotations per population/mode, first 10 excluded; 60 rendered samples. CPU time wraps renderer.render, intervals are consecutive actual render start timestamps; neither is GPU execution time. Draw calls include shadows. No idle samples.",
+  "measurements": [
+    {
+      "count": 0,
+      "lighter": false,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 0.5,
+        "p95": 1
+      },
+      "frameIntervalMs": {
+        "median": 16.600000023841858,
+        "p95": 18.599999994039536
+      },
+      "drawCalls": {
+        "median": 122,
+        "p95": 122
+      },
+      "triangles": {
+        "median": 4268,
+        "p95": 4268
+      }
+    },
+    {
+      "count": 0,
+      "lighter": true,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 0.4000000059604645,
+        "p95": 0.800000011920929
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.599999994039536
+      },
+      "drawCalls": {
+        "median": 64,
+        "p95": 64
+      },
+      "triangles": {
+        "median": 2244,
+        "p95": 2244
+      }
+    },
+    {
+      "count": 5,
+      "lighter": false,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 0.9000000059604645,
+        "p95": 1.300000011920929
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.400000005960464
+      },
+      "drawCalls": {
+        "median": 496,
+        "p95": 496
+      },
+      "triangles": {
+        "median": 17084,
+        "p95": 17084
+      }
+    },
+    {
+      "count": 5,
+      "lighter": true,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 0.5999999940395355,
+        "p95": 0.7000000178813934
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.30000001192093
+      },
+      "drawCalls": {
+        "median": 255,
+        "p95": 255
+      },
+      "triangles": {
+        "median": 8848,
+        "p95": 8848
+      }
+    },
+    {
+      "count": 25,
+      "lighter": false,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 1.699999988079071,
+        "p95": 1.800000011920929
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.399999976158142
+      },
+      "drawCalls": {
+        "median": 1824,
+        "p95": 1824
+      },
+      "triangles": {
+        "median": 62168,
+        "p95": 62168
+      }
+    },
+    {
+      "count": 25,
+      "lighter": true,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 1.2000000178813934,
+        "p95": 1.699999988079071
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.30000001192093
+      },
+      "drawCalls": {
+        "median": 1018,
+        "p95": 1018
+      },
+      "triangles": {
+        "median": 34904,
+        "p95": 34904
+      }
+    },
+    {
+      "count": 100,
+      "lighter": false,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 5.4000000059604645,
+        "p95": 5.9000000059604645
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.69999998807907
+      },
+      "drawCalls": {
+        "median": 5012,
+        "p95": 5012
+      },
+      "triangles": {
+        "median": 170456,
+        "p95": 170456
+      }
+    },
+    {
+      "count": 100,
+      "lighter": true,
+      "samples": 60,
+      "cpuRenderMs": {
+        "median": 4.4000000059604645,
+        "p95": 4.699999988079071
+      },
+      "frameIntervalMs": {
+        "median": 16.69999998807907,
+        "p95": 18.400000005960464
+      },
+      "drawCalls": {
+        "median": 3872,
+        "p95": 3872
+      },
+      "triangles": {
+        "median": 132464,
+        "p95": 132464
+      }
+    }
+  ],
+  "matrix": [
+    {
+      "count": 0,
+      "width": 320,
+      "overflow": false,
+      "groundPixels": 17743
+    },
+    {
+      "count": 0,
+      "width": 390,
+      "overflow": false,
+      "groundPixels": 28556
+    },
+    {
+      "count": 0,
+      "width": 768,
+      "overflow": false,
+      "groundPixels": 53900
+    },
+    {
+      "count": 0,
+      "width": 1440,
+      "overflow": false,
+      "groundPixels": 125429
+    },
+    {
+      "count": 5,
+      "width": 320,
+      "overflow": false,
+      "groundPixels": 12015
+    },
+    {
+      "count": 5,
+      "width": 390,
+      "overflow": false,
+      "groundPixels": 19351
+    },
+    {
+      "count": 5,
+      "width": 768,
+      "overflow": false,
+      "groundPixels": 38938
+    },
+    {
+      "count": 5,
+      "width": 1440,
+      "overflow": false,
+      "groundPixels": 136499
+    },
+    {
+      "count": 25,
+      "width": 320,
+      "overflow": false,
+      "groundPixels": 11353
+    },
+    {
+      "count": 25,
+      "width": 390,
+      "overflow": false,
+      "groundPixels": 17226
+    },
+    {
+      "count": 25,
+      "width": 768,
+      "overflow": false,
+      "groundPixels": 28560
+    },
+    {
+      "count": 25,
+      "width": 1440,
+      "overflow": false,
+      "groundPixels": 110847
+    },
+    {
+      "count": 100,
+      "width": 320,
+      "overflow": false,
+      "groundPixels": 5506
+    },
+    {
+      "count": 100,
+      "width": 390,
+      "overflow": false,
+      "groundPixels": 9547
+    },
+    {
+      "count": 100,
+      "width": 768,
+      "overflow": false,
+      "groundPixels": 18256
+    },
+    {
+      "count": 100,
+      "width": 1440,
+      "overflow": false,
+      "groundPixels": 79005
+    }
+  ],
+  "fixture": "Synthetic full App, real Client/watch; no runtime or live data",
+  "desktop": [
+    1440,
+    1050
+  ],
+  "mobile": [
+    390,
+    844
+  ],
+  "checks": [
+    "16 population/viewport combinations: 0/5/25/100 by 320/390/768/1440",
+    "101 buildings reachable by Tab/Enter, Escape restores each opener",
+    "actual exterior canvas picking and mode/camera preservation",
+    "keyboard home to work records to room journey",
+    "real touch at 320/390 DPR2 with reduced motion, records and overview return",
+    "actual background tabs stop exterior loop and room redraws, foreground resumes",
+    "static exterior draws no idle frames",
+    "mid-journey reduced-motion change clears courier pixels",
+    "eight room/record/view cycles dispose renderers, contexts and handlers without canvas accumulation",
+    "exterior WebGL context loss retains contextual records and navigation",
+    "home and Townhall real furniture picking",
+    "six furniture record routes",
+    "room identity/camera across records and snapshot rename",
+    "disconnect/reconnect retains room",
+    "household total update",
+    "exterior camera and selection restored",
+    "mobile furniture picking",
+    "archive history and return",
+    "WebGL context loss with records and return",
+    "initial WebGL failure both rooms",
+    "no horizontal mobile overflow",
+    "no page errors"
+  ],
+  "limits": "No real-host, deployment, daily-observation or native accessibility acceptance."
+}

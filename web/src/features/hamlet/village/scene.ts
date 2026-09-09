@@ -20,6 +20,7 @@ export type VillageScene = {
   update(snapshot: Snapshot, connected: boolean, visible: boolean): void;
   select(id: string | null): void;
   active(visible: boolean): void;
+  lighter(enabled: boolean): void;
   overview(): void;
   zoom(factor: number): void;
   rotate(direction: number): void;
@@ -71,6 +72,11 @@ export function createVillageScene(
   const activity = createActivity();
   let network = streetNetwork([]);
   let visible = true;
+  let dirty = true;
+  const invalidate = () => {
+    dirty = true;
+  };
+  controls.addEventListener("change", invalidate);
   let identities: string | undefined;
   let epoch: string | undefined;
   let allocate = createPlotAllocator("");
@@ -83,6 +89,7 @@ export function createVillageScene(
     [];
   let outlines: { id: string; mesh: THREE.Mesh }[] = [];
   function highlight() {
+    invalidate();
     outlines.forEach(({ id, mesh }) => {
       mesh.visible = id === selected || id === hovered;
     });
@@ -291,17 +298,22 @@ export function createVillageScene(
     const height = Math.max(1, element.clientHeight);
     view.resize(width / height);
     renderer.setSize(width, height);
+    invalidate();
+    // Sizing clears the backing buffer after RAF; repaint before the next paint.
+    draw();
   });
   resize.observe(element);
   const walks: { person: THREE.Group; path: Point[]; started: number }[] = [];
   function clearWalks() {
+    if (walks.length) invalidate();
     walks.forEach((walk) => scene.remove(walk.person));
     walks.length = 0;
     activity.clear();
   }
   const animate = () => {
     const at = performance.now();
-    if (motion.matches || !visible) clearWalks();
+    if (document.hidden || !visible) return;
+    if (motion.matches) clearWalks();
     else
       while (walks.length < WALKS_AT_ONCE) {
         const event = activity.take();
@@ -317,6 +329,7 @@ export function createVillageScene(
         scene.add(person);
         walks.push({ person, path, started: at });
       }
+    if (walks.length) invalidate();
     for (let index = walks.length - 1; index >= 0; index--) {
       const walk = walks[index];
       const travelled = (at - walk.started) / WALK_MS;
@@ -331,6 +344,11 @@ export function createVillageScene(
       walk.person.lookAt(ahead.x, 0, ahead.z);
     }
     controls.update();
+    draw();
+  };
+  function draw() {
+    if (disposed || !visible || document.hidden || !dirty) return;
+    dirty = false;
     renderer.render(scene, camera);
     const width = element.clientWidth,
       height = element.clientHeight;
@@ -364,8 +382,15 @@ export function createVillageScene(
       node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       if (visible) occupied.push({ x, y, w, h });
     }
-  };
-  renderer.setAnimationLoop(animate);
+  }
+  function visibility() {
+    if (document.hidden || !visible) clearWalks();
+    invalidate();
+    if (!disposed)
+      renderer.setAnimationLoop(visible && !document.hidden ? animate : null);
+  }
+  document.addEventListener("visibilitychange", visibility);
+  renderer.setAnimationLoop(document.hidden ? null : animate);
 
   let disposed = false;
   function dispose() {
@@ -373,6 +398,8 @@ export function createVillageScene(
     disposed = true;
     renderer.setAnimationLoop(null);
     resize.disconnect();
+    document.removeEventListener("visibilitychange", visibility);
+    controls.removeEventListener("change", invalidate);
     controls.dispose();
     canvas.removeEventListener("pointerdown", pointerDown);
     canvas.removeEventListener("pointermove", pointerMove);
@@ -384,6 +411,7 @@ export function createVillageScene(
     releaseModels();
     sun.shadow.dispose();
     renderer.dispose();
+    if (!renderer.getContext().isContextLost()) renderer.forceContextLoss();
     canvas.remove();
     labels.remove();
   }
@@ -401,6 +429,7 @@ export function createVillageScene(
       );
       const storeEpoch = snapshot.epoch;
       visible = isVisible;
+      invalidate();
       if (epoch !== storeEpoch) {
         epoch = storeEpoch;
         let storage: Storage | undefined;
@@ -446,7 +475,7 @@ export function createVillageScene(
         activity.observe(
           snapshot,
           connected,
-          visible,
+          visible && !document.hidden,
           motion.matches,
           streamBaseline(snapshot),
         )
@@ -458,12 +487,38 @@ export function createVillageScene(
     select,
     active(isVisible) {
       visible = isVisible;
-      if (!visible) clearWalks();
-      if (!disposed) renderer.setAnimationLoop(visible ? animate : null);
+      visibility();
     },
-    overview: view.overview,
-    zoom: view.zoom,
-    rotate: view.rotate,
+    lighter(enabled) {
+      if (disposed) return;
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, enabled ? 1 : 2),
+      );
+      renderer.shadowMap.enabled = !enabled;
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          const materials = Array.isArray(object.material)
+            ? object.material
+            : [object.material];
+          materials.forEach((material) => {
+            material.needsUpdate = true;
+          });
+        }
+      });
+      invalidate();
+    },
+    overview: () => {
+      view.overview();
+      invalidate();
+    },
+    zoom: (factor) => {
+      view.zoom(factor);
+      invalidate();
+    },
+    rotate: (direction) => {
+      view.rotate(direction);
+      invalidate();
+    },
     dispose,
   };
 }

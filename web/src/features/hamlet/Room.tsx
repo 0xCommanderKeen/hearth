@@ -11,12 +11,14 @@ export function Room({
   snapshot,
   connected,
   active,
+  lighter,
   onBack,
 }: {
   identity: string;
   snapshot: Snapshot;
   connected: boolean;
   active: boolean;
+  lighter: boolean;
   onBack(): void;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -72,6 +74,9 @@ export function Room({
     scene.current?.active(active);
     if (active) heading.current?.focus({ preventScroll: true });
   }, [active, available]);
+  useEffect(() => {
+    scene.current?.lighter(lighter);
+  }, [lighter, identity, available]);
   return (
     <section className="hamlet-room" aria-label="Building interior">
       <nav className="room-breadcrumb" aria-label="Room breadcrumb">
