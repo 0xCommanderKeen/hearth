@@ -56,13 +56,18 @@ def default_runtime(db: sqlite3.Connection) -> str:
 def configured_runtime(db: sqlite3.Connection, kind: str) -> bool:
     """Has this store ever been configured for that runtime?
 
-    The pin a runtime writes the first time it is configured is the store's own record
-    that its provider was really there: the binary, the version and the login were all
-    checked before it was written. Nothing else in the database says so, and asking the
-    process instead would make the answer depend on which instance happens to be open.
+    Its own default always answers yes: that is the store's own record of what it runs,
+    and it is written before any provider is reached. For any other runtime the answer
+    is the binary pin that runtime writes the first time it is configured, which is the
+    store's record that the provider was really there -- binary, version and login were
+    all checked before it was written. Nothing else in the database says so, and asking
+    the process instead would make the answer depend on which instance happens to be
+    open at the time.
     """
     from hearth.integrations.interface import binary_pin
 
+    if kind == default_runtime(db):
+        return True
     pin = binary_pin(kind)
     return pin is not None and (
         db.execute("SELECT 1 FROM system_meta WHERE key=?", (pin,)).fetchone() is not None

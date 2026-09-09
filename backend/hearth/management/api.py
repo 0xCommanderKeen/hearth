@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from hearth.inputs.catalog import list_inputs
 from hearth.management.authority import GrantPut, Management, read_grant
 from hearth.management.bootstrap import bootstrap
+from hearth.residents.provisioning import execution_profiles
 from hearth.work.service import Hearth
 
 
@@ -25,11 +26,7 @@ def mount_management(app: FastAPI, hearth: Hearth) -> None:
             ]
             return {
                 "residents": residents,
-                "profiles": [
-                    db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[
-                        0
-                    ]
-                ],
+                "profiles": [profile["id"] for profile in execution_profiles(db)],
                 "input_sets": [
                     {key: item[key] for key in ("input_set_id", "name", "revision", "synthetic")}
                     for item in list_inputs(db)

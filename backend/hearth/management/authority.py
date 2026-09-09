@@ -89,10 +89,11 @@ class Management:
         previous = read_grant(db, resident_id)
         if previous["revision"] != body.expected_revision:
             raise Refused("revision_conflict")
-        configured = db.execute(
-            "SELECT value FROM system_meta WHERE key='runtime_kind'"
-        ).fetchone()[0]
-        if any(profile != configured for profile in body.profiles):
+        from hearth.work.service import configured_runtime
+
+        # A grant names the runtimes it reaches, and a store may be configured for
+        # several of them. One this store was never configured for reaches nothing.
+        if any(not configured_runtime(db, profile) for profile in body.profiles):
             raise Refused("management_profile_unavailable")
         for item in body.input_set_ids:
             read_input(db, item)

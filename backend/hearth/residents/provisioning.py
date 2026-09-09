@@ -9,11 +9,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from hearth.inputs.catalog import list_inputs
 from hearth.inputs.selection import input_summary, save_selection
 from hearth.integrations.interface import label as runtime_label
+from hearth.integrations.interface import live_kinds
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused, bounded_text, identifier
 from hearth.skills.assignments import save_assignments
 from hearth.work.routines import Routines
-from hearth.work.service import Hearth, _audit, _queue_task
+from hearth.work.service import (
+    Hearth,
+    _audit,
+    _queue_task,
+    configured_runtime,
+    default_runtime,
+    resident_runtime,
+)
 
 
 class Strict(BaseModel):
@@ -79,12 +87,13 @@ def profile_summary(db, resident_id: str) -> dict | None:
             originating_run_id=None,
             created_at=initial[0],
             creation_reason="Explicit resident setup",
-            execution_profile=db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0],
+            execution_profile=None,
         )
     else:
         profile = dict(row)
+    # The stored profile is a creation record; which runtime the resident runs on now
+    # is its own declaration, or the store's default where it declares none.
+    profile["execution_profile"] = resident_runtime(db, resident_id)
     from hearth.residents.lifecycle import lifecycle_summary
 
     lifecycle = lifecycle_summary(db, resident_id)
@@ -103,6 +112,16 @@ def profile_summary(db, resident_id: str) -> dict | None:
     if profile["manager_error"]:
         labels["manager_name"] = "Unavailable"
     return profile | input_summary(db, resident_id) | {"setup_status": "ready", **labels}
+
+
+def execution_profiles(db) -> list[dict]:
+    """The runtimes a new resident may be put on: every one this store is configured
+    for, its own default first. A store configured for one provider offers one."""
+    default = default_runtime(db)
+    kinds = [default] + [
+        kind for kind in live_kinds() if kind != default and configured_runtime(db, kind)
+    ]
+    return [{"id": kind, "name": f"Configured {runtime_label(kind)}"} for kind in kinds]
 
 
 def _with_journal_etiquette(db, body) -> list[dict]:
@@ -159,13 +178,8 @@ class Provisioning:
 
     def options(self) -> dict:
         with self.hearth.database.transaction() as db:
-            runtime = db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0]
             return {
-                "execution_profiles": [
-                    {"id": runtime, "name": f"Configured {runtime_label(runtime)}"}
-                ],
+                "execution_profiles": execution_profiles(db),
                 "input_sets": list_inputs(db),
                 "managers": [{"id": "operator", "name": "Operator"}]
                 + [
@@ -280,10 +294,8 @@ class Provisioning:
         now = int(self.hearth.clock())
         db.execute("SAVEPOINT provision_setup")
         try:
-            configured = db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0]
-            if body.execution_profile != configured:
+            default = default_runtime(db)
+            if not configured_runtime(db, body.execution_profile):
                 raise Refused("execution_profile_unavailable")
             if (
                 body.manager != "operator"
@@ -301,6 +313,10 @@ class Provisioning:
                     body.budget_timezone,
                     body.instructions,
                     body.memory_writable,
+                    # A resident asked for the store's own runtime declares none, so a
+                    # household that later moves its default takes it along; one asked
+                    # for another runtime says so and keeps it.
+                    runtime=None if body.execution_profile == default else body.execution_profile,
                 ),
                 expected_revision=0,
             )

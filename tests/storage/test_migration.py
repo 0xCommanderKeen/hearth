@@ -56,6 +56,9 @@ def test_pre_memory_store_upgrades_with_rows_preserved(tmp_path):
     assert schema_matches(db)
     assert db.execute("SELECT name FROM declarations").fetchone() == ("Karen",)
     assert db.execute("SELECT memory_writable FROM declarations").fetchone() == (0,)
+    # Karen predates runtime-per-resident, so she follows the store's own default:
+    # exactly the runtime she has always run on.
+    assert db.execute("SELECT runtime FROM declarations").fetchone() == (None,)
     assert db.execute("SELECT author FROM memory_revisions").fetchone() == ("operator",)
     assert db.execute("SELECT journal_limit FROM household_policy").fetchone() == (30,)
     assert db.execute("SELECT count(*) FROM journal_entries").fetchone() == (0,)
@@ -111,6 +114,19 @@ def simulated_store(path, *, unfinished=False):
         db.execute("UPDATE tasks SET status='running' WHERE id='t'")
     db.commit()
     db.close()
+
+
+def test_an_upgraded_store_keeps_every_run_on_the_runtime_it_was_admitted_to(tmp_path):
+    """A finished run's own pin is where its work happened; an upgrade never moves it."""
+    path = tmp_path / "hearth.db"
+    simulated_store(path)
+    with sqlite3.connect(path, isolation_level=None) as before:
+        pins = before.execute("SELECT id, runtime_kind FROM runs ORDER BY id").fetchall()
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    assert db.execute("SELECT id, runtime_kind FROM runs ORDER BY id").fetchall() == pins
+    assert db.execute("SELECT runtime FROM declarations").fetchall() == [(None,)]
+    assert (tmp_path / "hearth.db.before-v1").exists()
 
 
 def test_a_simulated_store_adopts_the_one_runtime_and_keeps_its_history(tmp_path):

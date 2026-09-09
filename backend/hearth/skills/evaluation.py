@@ -9,6 +9,7 @@ from hearth.management.authority import read_grant
 from hearth.residents.models import Refused
 from hearth.skills.authoring import digest, manifest, structure
 from hearth.storage.artifacts import Artifact, Artifacts
+from hearth.work.service import resident_runtime
 
 
 def request_context(db, resident_id):
@@ -115,7 +116,7 @@ def check_request_authority(db, validation, now):
         raise Refused("skill_validation_expired")
     if validation["actor"] != "operator":
         grant = read_grant(db, validation["actor"])
-        runtime = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+        runtime = resident_runtime(db, validation["actor"])
         if (
             not grant["enabled"]
             or grant["revision"] != validation["grant_revision"]
