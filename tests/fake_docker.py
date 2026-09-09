@@ -138,6 +138,22 @@ def _container(root: Path, identity: str) -> Path:
     return root / "containers" / (identity + ".json")
 
 
+def _translate(mounts: list[str], value: str) -> str:
+    """One path inside the container, as the host names it.
+
+    The fake has no namespace of its own, so a mount is applied by rewriting the paths
+    it maps: a session told to read `/hearth/login/auth.json` reads the host directory
+    that was mounted there. That is enough to drive an adapter that builds its command
+    out of container paths, and it is the one thing about a mount this fake can honour.
+    """
+    for mount in mounts:
+        fields = dict(part.split("=", 1) for part in mount.split(",") if "=" in part)
+        source, target = fields.get("source"), fields.get("target")
+        if source and target and (value == target or value.startswith(target + "/")):
+            return source + value[len(target) :]
+    return value
+
+
 def _run(root: Path, argv) -> int:
     flags, positional = _parse(argv)
     if not positional:
@@ -156,9 +172,20 @@ def _run(root: Path, argv) -> int:
         return 0
     identity = os.urandom(32).hex()
     cidfile = _one(flags, "--cidfile")
-    environment = dict(
-        item.split("=", 1) for item in flags.get("--env", []) + flags.get("-e", []) if "=" in item
-    )
+    mounts = flags.get("--mount", [])
+    command = [_translate(mounts, part) for part in command]
+    environment = {
+        name: _translate(mounts, value)
+        for name, value in (
+            item.split("=", 1) for item in flags.get("--env", []) + flags.get("-e", []) if "=" in item
+        )
+    }
+    # A command that names a file the image carries runs the image's copy of it: the
+    # session executes what the image holds, never what the host happens to have.
+    carried = root / "image-files" / command[0].lstrip("/")
+    if carried.is_file():
+        carried.chmod(0o700)
+        command = [str(carried), *command[1:]]
     child = subprocess.Popen(command, env=environment, start_new_session=True)
     _container(root, identity).parent.mkdir(parents=True, exist_ok=True)
     _container(root, identity).write_text(json.dumps({"pid": child.pid, "status": "running"}))
@@ -202,6 +229,18 @@ def _kill(root: Path, argv) -> int:
     return 0
 
 
+def _remove(root: Path, argv) -> int:
+    """Take a container away, as `--rm` does when one ends and Hearth does to a stray."""
+    _, positional = _parse(argv)
+    if not positional:
+        return 1
+    path = _container(root, positional[0])
+    if not path.is_file():
+        return 1
+    path.unlink()
+    return 0
+
+
 def _wait(root: Path, argv) -> int:
     flags, positional = _parse(argv)
     if not positional:
@@ -229,6 +268,8 @@ def main(argv) -> int:
         return _inspect(root, argv[1:])
     if argv[0] == "kill":
         return _kill(root, argv[1:])
+    if argv[0] == "rm":
+        return _remove(root, argv[1:])
     if argv[0] == "wait":
         return _wait(root, argv[1:])
     if argv[:2] == ["image", "inspect"]:

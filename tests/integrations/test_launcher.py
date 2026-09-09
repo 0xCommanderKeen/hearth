@@ -16,9 +16,15 @@ from pathlib import Path
 import pytest
 from hearth.integrations.launcher import (
     BINARIES,
+    CLI,
+    CONTAINER,
     IMAGE_PIN,
+    LOGIN,
+    OUTPUT,
+    WORKSPACE,
     ContainerLauncher,
     Mount,
+    Placement,
     ProcessLauncher,
     Sandbox,
     configure,
@@ -439,3 +445,76 @@ def test_the_clis_inside_the_image_have_to_be_the_ones_this_store_is_pinned_to(t
             store(tmp_path / "fourth", codex_live_binary=pin),
             Sandbox("container", image=IMAGE, network=NETWORK, docker=str(docker)),
         )
+
+
+# -- what a session sees of the host --------------------------------------
+
+
+def test_a_process_sees_the_host_and_a_sandbox_sees_only_what_is_placed_in_it():
+    """One adapter, one command, two launchers: the difference is only ever a path."""
+    here = Placement()
+    assert here.binary("/opt/codex/bin/codex", "codex") == "/opt/codex/bin/codex"
+    assert here.directory("/home/hearth/codex-home", LOGIN) == "/home/hearth/codex-home"
+    assert here.workspace("/data/codex-live/run/workspace") == "/data/codex-live/run/workspace"
+    # Nothing is mounted, because nothing has to be: the session is a process on this
+    # host, and the process launcher refuses a mount list it could not enforce anyway.
+    assert here.mounts == ()
+
+    inside = Placement(CONTAINER)
+    # A container runs the image's own CLI, which `configure` hashed against this
+    # store's binary pin before any resident was admitted.
+    assert inside.binary("/opt/codex/bin/codex", "codex") == CLI["codex"]
+    assert inside.directory("/home/hearth/codex-home", LOGIN) == LOGIN
+    assert inside.directory("/data/codex-live/run/workspace", OUTPUT, writable=True) == OUTPUT
+    # The working directory is the runtime's own empty tmpfs, never a host path.
+    assert inside.workspace("/data/codex-live/run/workspace") == WORKSPACE
+    assert inside.mounts == (
+        Mount("/home/hearth/codex-home", LOGIN),
+        Mount("/data/codex-live/run/workspace", OUTPUT, writable=True),
+    )
+
+
+def test_two_host_paths_never_land_on_one_path_inside_the_sandbox():
+    """The second would hide the first, and the session would read the wrong login."""
+    inside = Placement(CONTAINER)
+    assert inside.directory("/one", LOGIN) == LOGIN
+    assert inside.directory("/one", LOGIN) == LOGIN
+    with pytest.raises(Refused, match="sandbox_mount_conflict"):
+        inside.directory("/another", LOGIN)
+    with pytest.raises(Refused, match="sandbox_mount_conflict"):
+        inside.directory("/one", LOGIN, writable=True)
+    with pytest.raises(Refused, match="sandbox_binary_unknown"):
+        inside.binary("/opt/something/bin/something", "something")
+
+
+# -- the session a worker left behind -------------------------------------
+
+
+def test_a_container_whose_worker_is_gone_is_killed_and_removed(tmp_path):
+    """`--rm` does not end a session whose client died; Hearth has to (measured)."""
+    launcher, docker = container(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    handle = launcher.start(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        env={"PATH": os.defpath},
+        cwd=workspace,
+        stdin=None,
+    )
+    identity = launcher.identify(handle)
+    assert identity is not None and launcher.inspect(handle) == "running"
+    # The worker that held this session's stream is gone, and all that is left of it
+    # is the id the runtime wrote down. The session is ended, never adopted.
+    assert launcher.stray(identity) is True
+    assert launcher.inspect(handle) == "absent"
+    killed = [call for call in fake_docker.calls(docker) if call[0] == "kill"]
+    assert killed and killed[-1][-1] == identity
+    # Asked again there is nothing left to remove, and nothing is invented.
+    assert launcher.stray(identity) is False
+    assert launcher.stray(None) is False
+    assert launcher.stray("not-a-container-id") is False
+
+
+def test_the_process_launcher_never_signals_a_pid_it_cannot_prove_is_its_own():
+    """A pid outlives the process it named; a container id names one session only."""
+    assert ProcessLauncher().stray(str(os.getpid())) is False

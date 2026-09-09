@@ -35,7 +35,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -70,10 +70,15 @@ LABEL = "org.hearth.sandbox"
 # Where the sandbox image keeps each provider's pinned CLI. The image is built to put
 # them here (`deploy/Dockerfile.sandbox`), and these are the files whose sha256 has to
 # equal the binary pin the store already holds.
-BINARIES = {
-    "codex_live_binary": "/usr/local/bin/codex",
-    "claude_live_binary": "/usr/local/bin/claude",
-}
+CLI = {"codex": "/usr/local/bin/codex", "claude": "/usr/local/bin/claude"}
+BINARIES = {name + "_live_binary": path for name, path in CLI.items()}
+# Where Hearth's own files are placed inside a sandbox. A session needs three of them
+# and no more: the login directory the CLI reads, the directory it writes its final
+# message into, and the settings Hearth generated for this session alone. A resident's
+# own folders are its grant's business and are named by the grant (slice #187).
+LOGIN = "/hearth/login"
+OUTPUT = "/hearth/output"
+SETTINGS = "/hearth/settings"
 # One question to the container runtime -- a version, an inspect, a hash -- may take
 # this long. A daemon that cannot answer in half a minute is unavailable.
 CLIENT_TIMEOUT = 30
@@ -110,6 +115,64 @@ class Mount:
     def argument(self) -> str:
         value = f"type=bind,source={self.source},target={self.target}"
         return value if self.writable else value + ",readonly"
+
+
+@dataclass
+class Placement:
+    """Where the host's files are, as the session itself names them.
+
+    One adapter builds one command for two launchers, and the difference between them
+    is only ever a path. On `process` a path is itself and nothing is mounted: the
+    session is a process on this host and already reaches every file Hearth can. In a
+    container nothing on the host exists unless it is mounted, the CLI is the image's
+    own copy at a path the image decides, and the working directory is a tmpfs. So an
+    adapter asks this for every path it is about to put in a command, an environment
+    or a request to the CLI, and hands `start` the mounts it collected on the way.
+
+    Nothing here decides *whether* a path may be reached -- Hearth's own login,
+    output and settings are the only ones it is asked about, and a resident's folders
+    come from its grant (slice #187). What it does hold is that two different host
+    paths never quietly land on one path inside the sandbox, where the second would
+    hide the first.
+    """
+
+    launcher: str = PROCESS
+    placed: dict[str, Mount] = field(default_factory=dict)
+
+    @property
+    def contained(self) -> bool:
+        return self.launcher == CONTAINER
+
+    @property
+    def mounts(self) -> tuple[Mount, ...]:
+        return tuple(self.placed[target] for target in sorted(self.placed))
+
+    def binary(self, path, name: str) -> str:
+        """The CLI this session runs: the host's copy, or the image's own.
+
+        A container runs what the image carries, never what the host has. That is
+        only sound because the image's own CLIs are hashed against this store's
+        binary pins before any resident is admitted (`configure`), so the receipt
+        still names the bytes that ran.
+        """
+        if not self.contained:
+            return str(path)
+        if name not in CLI:
+            raise Refused("sandbox_binary_unknown")
+        return CLI[name]
+
+    def directory(self, path, target: str, *, writable: bool = False) -> str:
+        """One host directory, at the path the session will name it by."""
+        if not self.contained:
+            return str(path)
+        mount = Mount(str(path), target, writable=writable)
+        if self.placed.setdefault(target, mount) != mount:
+            raise Refused("sandbox_mount_conflict")
+        return target
+
+    def workspace(self, path) -> str:
+        """The session's working directory, which in a sandbox is the empty tmpfs."""
+        return WORKSPACE if self.contained else str(path)
 
 
 @dataclass
@@ -167,6 +230,8 @@ class Launcher(Protocol):
 
     def wait(self, handle: Handle, timeout: float | None) -> int | None: ...
 
+    def stray(self, identity: str | None) -> bool: ...
+
 
 class ProcessLauncher:
     """Today's launcher: the CLI as a child of the worker, in its own session.
@@ -221,6 +286,17 @@ class ProcessLauncher:
             return handle.process.wait(timeout)
         except subprocess.TimeoutExpired:
             return None
+
+    def stray(self, identity):
+        """Nothing. A pid this launcher no longer holds is not provably its own.
+
+        The session a dead worker left behind is a process group on this host, and a
+        process group is a number the kernel reuses. Signalling one on the strength
+        of a file written before the worker died could end somebody else's work, so
+        this launcher leaves it to the operator and says it did nothing. A container
+        id cannot be confused with anything: it is what the runtime named once.
+        """
+        return False
 
 
 class ContainerLauncher:
@@ -443,6 +519,37 @@ class ContainerLauncher:
         except subprocess.TimeoutExpired:
             return None
 
+    def stray(self, identity):
+        """End and remove a container whose worker is gone. True if there was one.
+
+        `--rm` removes a container when it *ends*; it does not end one whose attached
+        client died, and a session nobody is reading is a session still spending
+        money (measured, `docs/sandbox.md`). So a stray is killed by the id the
+        runtime wrote down and then removed, and it is never adopted: the worker that
+        held its stream is gone, so nothing can price what it said, and relaunching
+        anything is refused by ADR 0008 whatever this answers.
+
+        Only the id Hearth recorded for this run is touched. Sweeping by Hearth's own
+        label would find every other resident's live session on the same burrow.
+        """
+        if identity is None or not IDENTITY.match(identity):
+            return False
+        try:
+            self.client("inspect", "--type", "container", "--format", "{{.State.Status}}", identity)
+        except Refused:
+            # Either it ended and `--rm` removed it, or the daemon is not answering.
+            # Both are "there is nothing here for Hearth to remove"; a daemon that
+            # comes back is asked again by the next observation.
+            return False
+        for question in (("kill", identity), ("rm", "--force", identity)):
+            try:
+                self.client(*question)
+            except Refused:
+                # It ended between the two questions and `--rm` took it away, which
+                # is the ending this was for.
+                pass
+        return True
+
 
 @dataclass(frozen=True)
 class Sandbox:
@@ -544,6 +651,10 @@ class Sandbox:
             docker=client,
             host=host,
         )
+
+    def placement(self) -> Placement:
+        """Where this run's files will be, as its own session names them."""
+        return Placement(self.launcher)
 
     def open(self) -> Launcher:
         """The launcher this configuration names, ready to start one session."""
