@@ -117,12 +117,37 @@ def environment(config_dir: Path) -> dict[str, str]:
     `DISABLE_AUTOUPDATER` keeps the pinned binary from being replaced under its own
     pin. The installer keeps versioned files and moves a symlink, so Hearth pins the
     versioned file itself and an update cannot change the bytes behind the hash.
+
+    `USER` is the one machine fact that travels: on macOS the CLI keeps the login in
+    the Keychain under the account name, and without `USER` in its environment it
+    answers `loggedIn: false` for a directory that is logged in (measured on 2.1.263,
+    2026-09-09: `env -i PATH=… CLAUDE_CONFIG_DIR=$CFG` is not logged in, adding
+    `USER=$USER` alone is). It names nobody's secret; the login itself stays in the
+    Keychain.
     """
-    return {
+    env = {
         "PATH": os.defpath,
         "CLAUDE_CONFIG_DIR": str(config_dir),
         "DISABLE_AUTOUPDATER": "1",
     }
+    user = account_name()
+    if user:
+        env["USER"] = user
+    return env
+
+
+def account_name() -> str | None:
+    """The account the process runs as, from the system, not from its environment.
+
+    The detached worker is launched with a search path and nothing else, so `USER`
+    cannot be inherited; the uid can always be asked.
+    """
+    try:
+        import pwd
+
+        return pwd.getpwuid(os.getuid()).pw_name
+    except ImportError, KeyError, OSError:
+        return os.environ.get("USER")
 
 
 def logged_in(status: str) -> bool:

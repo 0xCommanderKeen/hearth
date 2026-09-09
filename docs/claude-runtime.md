@@ -61,6 +61,23 @@ default one, so the operator's seeding step cannot be skipped by pointing Hearth
 always sets `CLAUDE_CONFIG_DIR`, so every session it launches is on the private login
 or on none.
 
+One stripped variable does hide a login, measured 2026-09-09 on 2.1.263 against a
+directory seeded with `auth login`:
+
+| Environment (`env -i`, `CLAUDE_CONFIG_DIR=$CFG` throughout) | `auth status --json` |
+| --- | --- |
+| `PATH` only | `loggedIn: false`, exit 1 |
+| `PATH` + `HOME` | `loggedIn: false`, exit 1 |
+| `PATH` + `USER` | `loggedIn: true` |
+
+The macOS Keychain files the item under the account name, and the CLI reads `USER` to
+find it. Hearth's session environment therefore carries `USER` beside `PATH`,
+`CLAUDE_CONFIG_DIR` and `DISABLE_AUTOUPDATER`; it is the account name, not a secret,
+and it is read from the process uid rather than inherited, because the detached worker
+that launches every session is itself started with a search path and nothing else.
+The first journey attempt after the login was seeded ended every run with the CLI's own
+`Not logged in · Please run /login` at `total_cost_usd: 0` for exactly that reason.
+
 **Corrected 2026-09-09: `auth status --json` prints its answer and then exits `1` when
 the configured directory holds no login.** Re-measured on the pinned 2.1.263 and on
 2.1.265, both with an empty `$CFG`: exit `1`, `{"loggedIn": false, "authMethod": "none"}`
@@ -473,14 +490,23 @@ given, and writes the evidence file. It is opt-in and never part of `make check`
 because it spends real subscription money -- about four cents a run against the
 sessions measured here.
 
-**It has not been run, and no evidence file is committed for it.** The one thing
-missing is the private login of spike 1: `claude auth login` inside the private
-`CLAUDE_CONFIG_DIR` opens a browser and needs the account holder, and there is no
-supported path from the machine's own login into that directory. Until an operator
-runs the two commands under "Configuring Hearth for it", any instance pointed at
-Claude simply leaves that runtime out with `claude_subscription_login_required` —
-which `GET /health` says in as many words. Recording a journey from anything else
-would be recording a fiction, so nothing is recorded.
+**It was run on 2026-09-09; the evidence is `docs/evidence/claude-journey-2026-09-09.json`.**
+The operator seeded the private login (`claude auth login` under the private
+`CLAUDE_CONFIG_DIR` — a browser, and the account holder's hand), and the script ran on
+port 8788 against a fresh data directory, discarded afterwards. Three runs succeeded on
+`claude_subscription` beside a Codex default; each settled from `modelUsage` under the
+pinned schedule to exactly the CLI's own `total_cost_usd` (50,213 / 54,665 / 57,549 µ$,
+162,427 µ$ in all); run 1 wrote its journal entry over the bridge, run 2 opened with it
+and quoted it, run 3 opened with both. The cancel of run 3 arrived after the session
+had already completed — these sessions finish in under ten seconds — so the recorded
+ending is a success, not a mid-session cancellation.
+
+Two attempts before it ended every run at zero, and both taught something now fixed:
+the detached worker had no `USER` to hand the CLI, so every session answered
+`Not logged in` (see spike 1 above); and one API response that carried a thinking
+block and a tool call arrived as two assistant events with the same message id and
+usage, whose cache-write split the parser summed twice and then refused to price
+(`cache_write_tier_unknown`). The parser now counts a response's split once.
 
 The store's own default is `codex_subscription` on every fresh store, and no
 supported path changes it, so the demo instance is configured for **both** providers:
