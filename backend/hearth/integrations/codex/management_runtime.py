@@ -167,6 +167,7 @@ def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
 
+    from hearth.integrations.codex.subscription import written_handle
     from hearth.integrations.codex.usage import UsageBinding
     from hearth.integrations.launcher import Sandbox
     from hearth.management.bridge import BoundRun, Bridge, authorize
@@ -233,6 +234,10 @@ def worker(folder, request, execution):
     else:
         terminal = app_server.run(
             binary=Path(request["binary"]),
+            # Each session this run starts, written down where a later observation
+            # looks: a management run starts two containers, one after the other, and
+            # a worker that dies leaves whichever it was holding still running.
+            on_session=lambda handle: written_handle(folder, handle),
             # The session executes where this run was admitted to execute, which the
             # control plane published into the request; the worker's own environment
             # is a search path and carries nothing.

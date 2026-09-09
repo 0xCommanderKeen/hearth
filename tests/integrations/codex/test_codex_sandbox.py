@@ -13,9 +13,11 @@ import json
 import os
 import signal
 import threading
+import time
+from pathlib import Path
 
 import pytest
-from hearth.integrations.codex.subscription import CodexLiveRuntime
+from hearth.integrations.codex.subscription import CodexLiveRuntime, written_handle
 from hearth.integrations.codex.subscription import worker as codex_worker
 from hearth.integrations.launcher import IMAGE_PIN, ContainerLauncher, Sandbox
 from hearth.residents.models import Refused
@@ -36,6 +38,16 @@ def facts(runtime, kind: str) -> list[dict]:
     with runtime.database.transaction() as db:
         rows = db.execute("SELECT * FROM audit WHERE kind=?", (kind,)).fetchall()
     return [dict(row) for row in rows]
+
+
+def departed() -> int:
+    """The pid of a process that has certainly ended: one dead worker, to order."""
+    import subprocess
+    import sys
+
+    child = subprocess.Popen([sys.executable, "-c", ""])
+    child.wait()
+    return child.pid
 
 
 def sessions(docker) -> list[list[str]]:
@@ -148,6 +160,41 @@ def test_a_session_whose_worker_is_still_here_is_never_removed_by_a_lock_alone(t
     assert facts(runtime, "sandbox.stray_removed") == []
     launcher.stop(handle, signal.SIGKILL)
     launcher.wait(handle, 30)
+
+
+def test_a_worker_that_died_before_the_id_was_read_still_names_its_container(tmp_path):
+    """The file the runtime writes the id into is written down before it is read.
+
+    A worker killed while waiting for that name would otherwise leave a live container
+    that nothing on disk names -- and `stray` will not sweep by label, because a label
+    finds every other resident's session too.
+    """
+    runtime, run, sandbox, docker = sandboxed(tmp_path)
+    launcher = sandbox.open()
+    handle = launcher.start(
+        ["sleep", "60"], env={"PATH": os.defpath}, cwd=runtime.folder(run.id), stdin=None
+    )
+    # Exactly what the worker writes before it asks: no id yet, and the file it will
+    # be written into. The runtime has already written the id there.
+    written_handle(runtime.folder(run.id), handle)
+    started = json.loads((runtime.folder(run.id) / "handle.json").read_text())
+    assert started["id"] is None and started["cidfile"] == str(handle.identity)
+    assert handle.identity is not None
+    deadline = time.monotonic() + 30
+    while not handle.identity.is_file() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    # ...and then that worker died, before it ever read the file it had written down.
+    (runtime.folder(run.id) / "handle.json").write_text(
+        json.dumps(started | {"worker": departed()})
+    )
+
+    evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+    assert evidence.status == "unknown" and evidence.cost is None
+    identity = Path(started["cidfile"]).read_text().strip()
+    removed = facts(runtime, "sandbox.stray_removed")
+    assert len(removed) == 1
+    assert json.loads(removed[0]["detail"])["container"] == identity
+    assert launcher.wait(handle, 30) is not None
 
 
 def test_a_session_the_runtime_never_named_leaves_nothing_to_remove(tmp_path):

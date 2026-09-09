@@ -260,7 +260,12 @@ def test_a_sandboxed_session_is_the_bounded_command_the_adapter_built(tmp_path):
     handle = json.loads((runtime.folder(run.id) / "handle.json").read_text())
     # What was started, and who was holding it: the two things a later observation
     # asks before it decides a session has been left behind.
-    assert handle == {"launcher": "container", "id": handle["id"], "worker": handle["worker"]}
+    assert handle == {
+        "launcher": "container",
+        "id": handle["id"],
+        "cidfile": None,
+        "worker": handle["worker"],
+    }
     assert len(handle["id"]) == 64 and handle["worker"] > 0
     assert (
         hashlib.sha256(runtime.receipt(run.id)["stdout"].encode()).hexdigest()

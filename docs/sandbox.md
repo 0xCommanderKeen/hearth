@@ -277,6 +277,28 @@ the finding above: the observation decided a container had no worker, `docker ki
 `docker rm --force` ended it, the run settled as unknown rather than at zero, and
 `sandbox.stray_removed` was recorded with the container's id.
 
+## What a run writes down about what it started
+
+`handle.json` beside the receipt is the only thing that can find a container after the
+worker that started it is gone -- `stray` will not sweep by Hearth's label, because the
+label finds every other resident's live session too. So it is written more than once,
+and it is the one file in a run folder that is *replaced* rather than published:
+
+- **before the runtime has named the container**, carrying the file the runtime will
+  write the name into. Asking for the id waits, and a worker killed while waiting would
+  otherwise leave a live container that nothing on disk names; the cidfile is usually
+  there a tenth of a second later, and reading it is how such a container is still
+  found.
+- **again once the id is known**, and once more for each further session -- a management
+  run starts two containers, one after the other, and whichever it is holding is the one
+  that has to be findable.
+- **with the worker's own pid**, which is the second reason required before anything is
+  killed (measurement 9).
+
+A container Hearth removes is only audited as removed when the runtime no longer has it:
+a kill the daemon refused, or a removal already under way, is a container the next
+observation finds again, and an audit fact is a claim about the world.
+
 ## The Codex journey, on a Linux Docker host
 
 `scripts/codex-sandbox-journey.py` drives one resident through one run and records the
@@ -338,3 +360,12 @@ worker is started with `python -I`.
   about what else is.
 - Hearth itself is not packaged (#189). The container the journey ran in is a harness,
   not `deploy/compose.yaml`.
+- A **management** session in a container has the fake daemon's coverage and not a real
+  daemon's: the journey is one `codex exec` run. One thing in it is worth measuring when
+  #186 or #189 next has a real host — the model catalog Hearth generates goes in a
+  temporary directory, which on Linux is under `/tmp`, and `/tmp` inside the sandbox is
+  a tmpfs the launcher mounts over. Nested that way it is the same shape as the login
+  mount, which a real daemon does handle. It is also a *host* path, so a Hearth that is
+  itself in a container hands the daemon a path from its own filesystem, which the daemon
+  resolves in the host's — that is #189's problem, and the same one the journey harness
+  works around by mounting everything at the paths it has outside.

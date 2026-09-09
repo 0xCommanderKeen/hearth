@@ -17,10 +17,18 @@ from pathlib import Path
 from hearth.integrations.codex.container import container_lock
 from hearth.integrations.codex.events import MAX_STREAM, CodexEvents
 from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
-from hearth.integrations.codex.usage import UsageBinding, publish, read
+from hearth.integrations.codex.usage import UsageBinding, publish, read, sync_directory
 from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
-from hearth.integrations.launcher import CONTAINER, IMAGE_PIN, KINDS, LOGIN, OUTPUT, Sandbox
+from hearth.integrations.launcher import (
+    CONTAINER,
+    IDENTITY,
+    IMAGE_PIN,
+    KINDS,
+    LOGIN,
+    OUTPUT,
+    Sandbox,
+)
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -85,9 +93,13 @@ def sandboxed(value) -> bool:
         or not all(item is None or isinstance(item, str) for item in value.values())
     ):
         return False
-    # A run that was a child of its worker has no container and no image to name, and
-    # a receipt that named one would be saying this run happened somewhere it did not.
-    return value["launcher"] == CONTAINER or (value["container_id"], value["image"]) == (None, None)
+    if value["launcher"] != CONTAINER:
+        # A run that was a child of its worker has no container and no image to name,
+        # and a receipt naming one would say this run happened where it did not.
+        return (value["container_id"], value["image"]) == (None, None)
+    # A sandboxed run always knows which image it was admitted to, whether or not the
+    # runtime ever named the container: the image is the whole point of recording it.
+    return isinstance(value["image"], str)
 
 
 def encode(receipt, expected):
@@ -349,8 +361,9 @@ class CodexLiveRuntime:
             # Docker Desktop bind mount from macOS `flock` does not exclude at all and
             # says free while a worker holds it (`docs/sandbox.md`).
             return
+        identity = named(started)
         launcher = Sandbox.of(request.get("sandbox")).open()
-        if not launcher.stray(started.get("id")):
+        if not launcher.stray(identity):
             return
         with self.database.transaction(write=True) as db:
             _audit(
@@ -358,7 +371,7 @@ class CodexLiveRuntime:
                 "sandbox.stray_removed",
                 run_id,
                 int(time.time()),
-                {"launcher": started.get("launcher"), "container": started.get("id")},
+                {"launcher": started.get("launcher"), "container": identity},
             )
 
     def stop(self, run_id):
@@ -367,6 +380,51 @@ class CodexLiveRuntime:
         folder = self.folder(run_id)
         if folder.exists() and not (folder / "cancel.json").exists():
             publish(folder / "cancel.json", {"cancelled": True})
+
+
+def written_handle(folder: Path, handle) -> None:
+    """What this run started, as best its worker knows at this moment.
+
+    Twice for one session -- before the runtime has named the container and again
+    after -- and once more for each further session a management run starts. It is
+    the only thing a later observation can find a container by, so unlike everything
+    else a run writes down it is *replaced* rather than published once: each of those
+    facts changes, and a worker that died holding an older answer still left the best
+    one it had. The write is atomic, so a reader sees one document or the other and
+    never half of either.
+    """
+    document = handle.document() | {"worker": os.getpid()}
+    raw = json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    path = folder / "handle.json"
+    writing = path.with_name(path.name + ".writing")
+    fd = os.open(writing, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(writing, path)
+    sync_directory(folder)
+
+
+def named(started: dict) -> str | None:
+    """The container this run started, by the id or by the file it was written to.
+
+    A worker killed while waiting for the runtime to name what it created leaves the
+    file it was waiting on, and the runtime has usually written it by then. Reading it
+    is how that container is still findable; nothing else on disk names it, and a
+    sweep by Hearth's own label would find every other resident's live session.
+    """
+    identity = started.get("id")
+    if isinstance(identity, str):
+        return identity
+    cidfile = started.get("cidfile")
+    if not isinstance(cidfile, str):
+        return None
+    try:
+        value = Path(cidfile).read_text().strip()
+    except OSError:
+        return None
+    return value if IDENTITY.match(value) else None
 
 
 def alive(pid) -> bool:
@@ -502,29 +560,32 @@ def worker(folder, inherited_fd=None):
                     "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
                 ).fetchone()
                 check_pin(sandbox, binary, request["sha256"], current[0] if current else None)
+                # The environment is built before the mounts are read, because
+                # placing a path is what registers the mount that backs it.
+                home = placement.login(request["auth_home"], AUTH, LOGIN)
+                mounts = placement.mounts
                 # A regular file cannot block prompt delivery when the CLI stalls.
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
                     handle = launcher.start(
                         cmd,
-                        env={
-                            "PATH": os.defpath,
-                            "CODEX_HOME": placement.login(request["auth_home"], AUTH, LOGIN),
-                        },
+                        env={"PATH": os.defpath, "CODEX_HOME": home},
                         cwd=workspace,
                         stdin=prompt,
-                        mounts=placement.mounts,
+                        mounts=mounts,
                     )
             # What was started, named where the worker's own pid is named: a process
             # group on the process launcher and a container id on the container one.
+            # Written down before the id is asked for and again after, because asking
+            # waits, and a worker that dies while waiting would otherwise leave a live
+            # container that nothing on disk names.
+            written_handle(folder, handle)
             # Asked for after the dispatch guard has closed, because a container
             # runtime names what it created a moment later and the guard is one write
             # transaction over the whole store.
             launcher.identify(handle)
-            # ...and who is holding it, so that a later observation has a second and
-            # independent way to know whether this session still has a worker.
-            publish(folder / "handle.json", handle.document() | {"worker": os.getpid()})
+            written_handle(folder, handle)
             assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             with selectors.DefaultSelector() as selector:

@@ -74,7 +74,11 @@ def test_the_process_launcher_hands_back_the_child_s_own_stream(tmp_path):
     assert launcher.wait(handle, 10) == 3
     assert handle.stdout is not None and handle.stdout.read() == b"one\ntwo\n"
     assert launcher.inspect(handle) == "exited"
-    assert handle.document() == {"launcher": "process", "id": str(handle.process.pid)}
+    assert handle.document() == {
+        "launcher": "process",
+        "id": str(handle.process.pid),
+        "cidfile": None,
+    }
 
 
 def test_the_process_launcher_refuses_a_mount_list_it_cannot_enforce(tmp_path):
@@ -234,8 +238,18 @@ def test_a_session_the_runtime_never_named_is_not_guessed_at(tmp_path, monkeypat
     # nobody can name is never observed or adopted.
     monkeypatch.setattr(launcher, "docker", sys.executable)
     handle = launcher.start(["-c", "raise SystemExit(1)"], env={}, cwd=workspace, stdin=None)
+    # Before the id is asked for, the file it will be written to is the only thing
+    # there is to write down, and it is written down.
+    assert handle.document() == {
+        "launcher": "container",
+        "id": None,
+        "cidfile": str(handle.identity),
+    }
     assert launcher.identify(handle) is None
-    assert handle.id is None and handle.document() == {"launcher": "container", "id": None}
+    # Afterwards there is nothing left at all: the file is gone with the private
+    # directory that held it, and this session was never named.
+    assert handle.id is None
+    assert handle.document() == {"launcher": "container", "id": None, "cidfile": None}
     assert launcher.inspect(handle) == "unknown"
     launcher.stop(handle, signal.SIGKILL)
     assert launcher.wait(handle, 30) is not None

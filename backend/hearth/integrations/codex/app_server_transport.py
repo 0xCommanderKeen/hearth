@@ -228,7 +228,9 @@ class _Pipe:
 
 
 @contextmanager
-def _process(program, home, workspace, settings, deadline, cancelled, launcher, mounts=()):
+def _process(
+    program, home, workspace, settings, deadline, cancelled, launcher, mounts=(), started=None
+):
     """One app-server session, wherever this run was admitted to execute.
 
     `program` and `home` are already the paths the session itself names -- the image's
@@ -237,6 +239,7 @@ def _process(program, home, workspace, settings, deadline, cancelled, launcher, 
     a host path: it is the client's own working directory, and what the session sees
     of it is the empty tmpfs the launcher mounts.
     """
+    started = (lambda handle: None) if started is None else started
     handle = launcher.start(
         [program, "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
         env={"PATH": os.defpath, "CODEX_HOME": home},
@@ -245,9 +248,15 @@ def _process(program, home, workspace, settings, deadline, cancelled, launcher, 
         bufsize=0,
         mounts=mounts,
     )
-    # What was started, asked for outside Hearth's dispatch guard, which this process
-    # is deliberately created before entering.
+    # What was started, told to the caller before the id is asked for and again after:
+    # asking waits, and a worker that dies while waiting would otherwise leave a live
+    # container that nothing on disk names. A management run starts two of these, one
+    # after the other, and each in turn is the one that has to be findable.
+    started(handle)
+    # Asked for outside Hearth's dispatch guard, which this process is deliberately
+    # created before entering.
     launcher.identify(handle)
+    started(handle)
     child = handle.process
     try:
         yield _Pipe(child, deadline, cancelled)
@@ -349,6 +358,10 @@ def run(
     max_calls: int = 64,
     expected_pins: dict | None = None,
     launcher=None,
+    # Told what each of this run's sessions started, so that the caller -- which is the
+    # only thing here with a run folder to write in -- can record it. A container whose
+    # worker dies is only findable by what was written down.
+    on_session=None,
 ) -> dict:
     """One private native process/turn; callbacks retain Hearth's transactional authority.
 
@@ -406,12 +419,28 @@ def run(
             # Discovery never starts a thread/turn; a second isolated process starts
             # with every discovered skill disabled, then verifies the effective set.
             with _process(
-                program, home, workspace, settings, deadline, cancelled, launcher, mounts
+                program,
+                home,
+                workspace,
+                settings,
+                deadline,
+                cancelled,
+                launcher,
+                mounts,
+                on_session,
             ) as discovery:
                 paths = config.skill_paths(_initialize(discovery, inside, settings))
             settings["skills.config"] = [{"path": path, "enabled": False} for path in paths]
             with _process(
-                program, home, workspace, settings, deadline, cancelled, launcher, mounts
+                program,
+                home,
+                workspace,
+                settings,
+                deadline,
+                cancelled,
+                launcher,
+                mounts,
+                on_session,
             ) as process:
                 actual_paths = config.skill_paths(
                     _initialize(process, inside, settings), disabled=True

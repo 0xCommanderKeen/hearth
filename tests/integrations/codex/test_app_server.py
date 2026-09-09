@@ -548,11 +548,24 @@ def test_a_management_session_inside_a_sandbox_names_only_the_image_s_own_paths(
     fake_docker.hold(docker, image=image, network=network)
     cli = fake_cli(tmp_path)
     fake_docker.carry(docker, BINARIES["codex_live_binary"], cli[0].read_bytes())
+    seen = []
     result = run_fixture(
-        tmp_path, cli=cli, launcher=ContainerLauncher(image, network, docker=str(docker))
+        tmp_path,
+        cli=cli,
+        launcher=ContainerLauncher(image, network, docker=str(docker)),
+        on_session=lambda handle: seen.append(handle.document()),
     )
     assert result["launched"] is True and result["error"] is None, result["error"]
     assert evidence(result).cost == 700
+
+    # Both of this run's sessions are told to the caller, each of them twice: once
+    # with the file the runtime will write the id into and once with the id itself.
+    # A management worker records them, and a container whose worker dies is only
+    # findable by what was written down.
+    assert len(seen) == 4
+    assert [document["id"] is None for document in seen] == [True, False, True, False]
+    assert all(document["cidfile"] for document in seen[::2])
+    assert len({document["id"] for document in seen[1::2]}) == 2
 
     started = [call for call in fake_docker.calls(docker) if call[:1] == ["run"]]
     # Discovery and the session itself, both in containers of their own.

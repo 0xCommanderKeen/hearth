@@ -84,6 +84,11 @@ SCRATCH = "64m"
 # One question to the container runtime -- a version, an inspect, a hash -- may take
 # this long. A daemon that cannot answer in half a minute is unavailable.
 CLIENT_TIMEOUT = 30
+# What one question about a session nobody is holding any more may cost. This is asked
+# from an observation pass, once per unfinished run, where the alternative to a slow
+# answer is a supervisor that stops looking at everybody else's work; a daemon that
+# cannot say whether a container exists in five seconds is asked again next pass.
+STRAY_TIMEOUT = 5
 # How long the client is given to write the id of the container it created before the
 # run is treated as one whose identity was never observed.
 IDENTITY_TIMEOUT = 30
@@ -251,7 +256,19 @@ class Handle:
         return self.process.returncode
 
     def document(self) -> dict:
-        return {"launcher": self.launcher, "id": self.id}
+        """What is known about this session right now, and how to find out the rest.
+
+        Before the runtime has named the container there is still something to write
+        down: the file it is going to name it in. A worker that dies while waiting for
+        that name leaves a live container, and this is the only thing anyone can find
+        it by -- `stray` will not sweep by label, because a label finds every other
+        resident's session too.
+        """
+        return {
+            "launcher": self.launcher,
+            "id": self.id,
+            "cidfile": str(self.identity) if self.id is None and self.identity else None,
+        }
 
 
 class Launcher(Protocol):
@@ -529,15 +546,7 @@ class ContainerLauncher:
         """What the container runtime says about the container, or that it is gone."""
         if handle.id is None:
             return "unknown"
-        try:
-            status = self.client(
-                "inspect", "--type", "container", "--format", "{{.State.Status}}", handle.id
-            )
-        except Refused:
-            # `--rm` means a finished container is removed, and an inspect that finds
-            # nothing is the ordinary ending, not a broken daemon.
-            return "absent"
-        return "running" if status == "running" else "exited"
+        return self.status(handle.id)
 
     def stop(self, handle, signal):
         """End the session. Whatever else happens, the client does not outlive this.
@@ -571,6 +580,24 @@ class ContainerLauncher:
         except subprocess.TimeoutExpired:
             return None
 
+    def status(self, identity: str) -> str:
+        """What the runtime says about one container, asked by id and nothing else."""
+        try:
+            state = self.client(
+                "inspect",
+                "--type",
+                "container",
+                "--format",
+                "{{.State.Status}}",
+                identity,
+                timeout=STRAY_TIMEOUT,
+            )
+        except Refused:
+            # `--rm` means a finished container is removed, and an inspect that finds
+            # nothing is the ordinary ending, not a broken daemon.
+            return "absent"
+        return "running" if state == "running" else "exited"
+
     def stray(self, identity):
         """End and remove a container whose worker is gone. True if there was one.
 
@@ -586,21 +613,23 @@ class ContainerLauncher:
         """
         if not isinstance(identity, str) or not IDENTITY.match(identity):
             return False
-        try:
-            self.client("inspect", "--type", "container", "--format", "{{.State.Status}}", identity)
-        except Refused:
+        if self.status(identity) == "absent":
             # Either it ended and `--rm` removed it, or the daemon is not answering.
             # Both are "there is nothing here for Hearth to remove"; a daemon that
             # comes back is asked again by the next observation.
             return False
         for question in (("kill", identity), ("rm", "--force", identity)):
             try:
-                self.client(*question)
+                self.client(*question, timeout=STRAY_TIMEOUT)
             except Refused:
-                # It ended between the two questions and `--rm` took it away, which
-                # is the ending this was for.
+                # It may have ended between the two questions and `--rm` taken it
+                # away, which is the ending this was for. Whether it really went is
+                # not assumed from either answer -- it is asked below.
                 pass
-        return True
+        # Removed is a claim about the world, and the caller writes it into the audit
+        # log. A kill the daemon refused, or a removal already under way and not
+        # finished, is not one: it is a container the next observation will find again.
+        return self.status(identity) == "absent"
 
 
 @dataclass(frozen=True)

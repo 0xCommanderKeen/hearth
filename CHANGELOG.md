@@ -12,7 +12,10 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   says where it happened: `sandbox: {launcher, container_id, image}` on the receipt. A
   container whose worker is gone is now stopped, removed and audited
   `sandbox.stray_removed` rather than left spending, and it is never adopted: the stream
-  that was being priced died with the worker, so the run is unknown, never zero. One
+  that was being priced died with the worker, so the run is unknown, never zero. What a
+  run started is written down before the runtime has named it and again after, and once
+  for each session a management run starts, because that file is the only thing that can
+  find a container whose worker is gone. One
   real run on a Linux Docker host, `docs/evidence/sandbox-codex-journey-2026-09-09.json`.
   Three things it measured are in `docs/sandbox.md` and each of them failed every run it
   touched: the CLI cannot run with a read-only `CODEX_HOME` (it gets a tmpfs of its own
