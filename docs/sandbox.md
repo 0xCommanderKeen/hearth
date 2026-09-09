@@ -213,13 +213,15 @@ translation, and it collects the mounts the launcher is then handed.
 
 | what | `process` | `container` |
 | --- | --- | --- |
-| the CLI | the host's binary, at the path the pin names | `/usr/local/bin/codex`, the image's own |
+| the CLI | the host's binary, at the path the pin names | `/usr/local/bin/codex` or `/usr/local/bin/claude`, the image's own |
 | the login | the configuration directory itself | `/hearth/login`, below |
 | the final message | `<run>/workspace/final.md` | `/hearth/output/final.md`, one writable mount |
 | the working directory | `<run>/workspace` | `/workspace`, the runtime's empty tmpfs |
 | generated settings | the file Hearth wrote | the same path, mounted where it already is |
+| the bridge shim's interpreter | the one this worker is running | `/usr/local/bin/python3`, the image's own |
+| the bridge socket and its configuration | the two files in the run folder | the same two paths, mounted where they already are |
 
-Two of those are worth saying why.
+Three of those are worth saying why.
 
 **The login is a directory of the run's own with one file it may not change.** ADR 0016
 said a login is a directory mounted read-only at the CLI's config path. Measured: the
@@ -228,12 +230,31 @@ pinned Codex CLI does not run that way. It initializes its own app-server client
 `failed to initialize in-process app-server client: Read-only file system (os error 30)`
 -- because that directory is where it keeps session state, logs and a model cache. So a
 sandboxed session gets a tmpfs at `/hearth/login`, which is nothing of the host's and is
-gone when the run ends, and the household's `auth.json` is bind-mounted read-only inside
-it. What the ADR wanted from read-only holds and holds more narrowly: a run cannot
-change the login it was given, and what it does write neither outlives it nor is visible
-to the next resident. The credential has to be valid when the run starts, because a
-session that needs to refresh it cannot write it back; keeping it fresh stays outside
-the sandbox, where it always was.
+gone when the run ends, and the household's credential file is bind-mounted read-only
+inside it (`auth.json` for Codex, `.credentials.json` for Claude). What the ADR wanted
+from read-only holds and holds more narrowly: a run cannot change the login it was
+given, and what it does write neither outlives it nor is visible to the next resident.
+The credential has to be valid when the run starts, because a session that needs to
+refresh it cannot write it back; keeping it fresh stays outside the sandbox, where it
+always was.
+
+The Claude CLI would in fact have run under the ADR's own shape -- measured, it answers
+normally with a read-only configuration directory and simply writes nothing -- and it
+is given the same tmpfs anyway, because what it writes there is the reason rather than
+the error message: even `auth status` leaves a `.claude.json`, a lock and a `backups/`
+directory, and a session adds `projects/` and `sessions/`. A household login the runs
+wrote into would show the next resident what the last one left
+(`docs/claude-runtime.md`, spike 8).
+
+**The bridge's two files are mounted at the paths they already have.** Claude's session
+reaches Hearth's own tools through a shim the CLI itself launches, named by a
+`--mcp-config` document Hearth writes into the run folder beside the socket that
+document points at. Both are mounted at their own paths, so the string in the document
+is one string inside the sandbox and out and nothing has to agree with anything. What
+does change is the interpreter named in it: inside the sandbox the shim is started by
+the image's own `python3`, which is where Hearth's package sits for `python -I` to find
+it. The socket itself is mounted by the launcher, and that is the mount a Mac cannot
+make (measurement 6).
 
 **The generated model catalog is mounted where it already is.** The app-server session
 reports its own effective configuration back and Hearth compares it to what it sent, so
@@ -276,6 +297,48 @@ now leaves a labelled container for the operator instead of ending somebody's wo
 the finding above: the observation decided a container had no worker, `docker kill` and
 `docker rm --force` ended it, the run settled as unknown rather than at zero, and
 `sandbox.stray_removed` was recorded with the container's id.
+
+## Measured, 2026-09-09, with the real Claude CLI and the real bridge
+
+The Codex slice put a real CLI in a real container. This one did the same for Claude,
+and for the one thing that is Claude's alone: Hearth's own tools reaching a session
+across the boundary. `scripts/measure-claude-sandbox.py` against the same daemon,
+evidence `docs/evidence/sandbox-claude-2026-09-09.json`. Nothing was spent and no
+credential was involved -- the login throughout is a synthetic file the script writes,
+which the provider refuses with a 401, and that refusal is one of the answers. The whole
+of it is written up in `docs/claude-runtime.md`, spike 8; the three that change how the
+sandbox is built are here.
+
+**11. The uid the sandbox runs as has to exist in the image's own passwd file.** With
+`--user <uid>` on an image that does not name that uid, the Claude CLI ends before a
+byte of its protocol: `ENOENT: no such file or directory, uv_os_homedir`. It asks the
+system where its home is before it does anything else, and a uid nobody has named has
+no answer. With the entry `deploy/Dockerfile.sandbox` creates -- home `/nonexistent`, on
+a read-only root -- the same command answers normally. So the image is built *for* the
+uid Hearth runs as, and an image built for one uid and run as another fails every Claude
+run in it. Nothing else in the sandbox cared.
+
+**12. A read-only login would have worked for this CLI, and it gets the tmpfs anyway.**
+Measured both ways: a bounded session with the household's directory mounted read-only
+at `CLAUDE_CONFIG_DIR` reached its first API answer exactly as the tmpfs one did. So
+measurement 8's contradiction of ADR 0016 is Codex's alone. What decides it for Claude
+is what the CLI *writes*: `.claude.json`, a lock, `backups/`, `projects/`, `sessions/`
+-- into the login directory, on the cheapest question there is. The tmpfs lets it write
+all of that and keeps none of it. After two sessions the household's login directory
+held `.credentials.json` and nothing else.
+
+**13. The bridge holds across the boundary, and the peer check is what holds it.** The
+real shim, inside a container, started as `python3 -I -m
+hearth.integrations.claude.mcp_bridge <socket>` from the very configuration Hearth
+writes, connected over a socket mounted into it and had `initialize` and `tools/list`
+answered by the trusted half outside. Both ends ran as Hearth's uid, and the socket sat
+on a volume the daemon owns -- which is the burrow's shape, and the only shape available
+here, because measurement 6 says a Mac cannot bind-mount a socket at all. The same shim
+run as **another uid** was refused: the trusted half read `peer_uid = 0`, closed the
+connection, and the session was told `-32603 the Hearth bridge did not answer`. That is
+the whole of the bridge's authority story across the sandbox: it is not weakened by the
+boundary, and it would be by a daemon that remaps uids (`userns-remap`), which is
+therefore not a daemon Hearth's bridge holds on.
 
 ## What a run writes down about what it started
 
@@ -350,10 +413,45 @@ docker run --rm --user "$(id -u):0" \
 on the interpreter's own path (a `.pth` file, not `PYTHONPATH`) because the detached
 worker is started with `python -I`.
 
+## The Claude journey, and what it still waits for
+
+`scripts/claude-journey.py` is the three-run journey the Claude runtime was accepted on
+(#149): one run reports and writes its own journal entry over the bridge, the next opens
+with that entry and quotes it, the third is cancelled after it launches. It runs on the
+`container` launcher by configuration alone -- `HEARTH_SANDBOX=container` with an image
+and a network, and the harness in this page's Codex section, since the store's Claude pin
+is the sha256 of the CLI Hearth was configured with and the image's copy is hashed
+against it, so **Hearth itself has to be on Linux**. The evidence file it writes then
+carries each run's own container id and image digest beside Hearth's settlement.
+
+**It has not been run on the sandbox, and it cannot be from here.** Not for a reason in
+Hearth: a sandboxed Claude session's login is the *file* `.credentials.json`
+(measurement above), the Mac's login is a Keychain item, and only the account holder can
+make that file, with a browser:
+
+```sh
+CLAUDE_CONFIG_DIR=/path/to/private-claude-config claude auth login
+```
+
+run against the **Linux** build of the pinned CLI -- in a container on the Linux Docker
+host, with that directory on a volume. Until that exists, a store configured for the
+container launcher refuses `claude_subscription_login_required` at start, which is the
+refusal saying exactly this. Everything under it is measured: the CLI is the same
+release and reports the same version string, the login mount is the shape it runs in,
+and the bridge crosses the boundary.
+
+The same three runs *were* run on the `process` launcher on 2026-09-09, after all of
+this landed, and settled: `docs/evidence/claude-journey-process-2026-09-09.json` -- three
+succeeded runs, 170,005 µ$ from the CLI's own numbers, run 1 writing its journal entry
+over the bridge and run 2 quoting it back. It is not the sandbox journey and does not
+claim to be; it is the evidence that the launcher this Mac can use still settles a real
+session now that the adapter speaks in placements.
+
 ## Not yet true
 
-- The Claude adapter still names its CLI by its host path; #186 moves it, and the
-  bridge socket it needs is the one measurement 6 says is Linux-only.
+- No Claude session has run in a sandbox against the real model: the CLI, the login
+  mount and the bridge are each measured, and the paid three-run journey waits on the
+  Linux login above.
 - Nothing resolves a grant into a mount list yet: `Launcher.start` takes one and the
   argv is built from it, but no caller passes one. That is #187.
 - The network the sandbox is on is the operator's own, and Hearth does not yet measure

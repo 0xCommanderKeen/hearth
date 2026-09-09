@@ -19,6 +19,12 @@
 #
 #   docker image inspect --format '{{index .RepoDigests 0}}' hearth/sandbox:<version>
 #
+# The Linux build of the Claude CLI this store is pinned to is published in the same
+# signed release manifest as the macOS build a laptop installs, so the two are the same
+# release and never the same bytes: `claude-code-releases/<version>/manifest.json` names
+# a checksum per platform, and `claude-code-releases/<version>/<platform>/claude` is the
+# file. Hash what you downloaded against that manifest before building with it.
+#
 # See `docs/sandbox.md`. This file is not built in continuous integration: no CI host
 # has the pinned provider CLIs, and nothing Hearth ships downloads them.
 
@@ -33,6 +39,13 @@ FROM ${BASE}
 # The uid Hearth itself runs as. The session runs as this user so that the bridge's
 # peer-credential check still means something across the boundary: the worker created
 # the socket, and the process connecting to it is the uid the worker expects.
+#
+# It must be *this* image's uid, and not merely a number the daemon is told: the Claude
+# CLI asks the system for its home directory before it does anything else, and a uid
+# with no entry in the image's own passwd file ends it right there --
+# `ENOENT: uv_os_homedir` -- before a byte of its protocol (measured 2026-09-09,
+# `docs/claude-runtime.md`, spike 8). So an image built for one uid and run as another
+# fails every Claude run in it, which is why the build takes the uid as an argument.
 ARG HEARTH_UID=1000
 ARG HEARTH_GID=1000
 # Where the pinned Linux CLIs are in the build context.
@@ -74,7 +87,8 @@ RUN set -eux; \
     # a build that produced an image whose bridge cannot start is a failed build.
     python3 -I -c 'import hearth.integrations.claude.mcp_bridge'; \
     # The session's own user. It owns nothing: the workspace is a tmpfs the runtime
-    # mounts, and every other writable path is a mount the run's grant asked for.
+    # mounts, and every other writable path is a mount the run's grant asked for. The
+    # entry itself is load-bearing, not decoration -- see `HEARTH_UID` above.
     groupadd --gid ${HEARTH_GID} --non-unique hearth; \
     useradd --uid ${HEARTH_UID} --gid ${HEARTH_GID} --non-unique --no-create-home \
         --home-dir /nonexistent --shell /usr/sbin/nologin hearth; \

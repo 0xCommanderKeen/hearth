@@ -17,7 +17,6 @@ import json
 import os
 import signal
 import threading
-from pathlib import Path
 
 import pytest
 from hearth.integrations.claude.config import CREDENTIALS
@@ -299,6 +298,7 @@ def test_a_receipt_may_not_claim_a_container_a_process_run_never_had(tmp_path):
     """A receipt says where its session ran, and only what Hearth could have written."""
     from hearth.integrations.claude.subscription import encode
     from hearth.integrations.codex.usage import UsageBinding
+
     from tests.integrations.claude.test_claude_live import BINDING, receipt
 
     assert encode(receipt(sandbox=None), BINDING)[2].status == "succeeded"

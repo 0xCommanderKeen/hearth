@@ -1,0 +1,244 @@
+{
+  "measured": "2026-09-09",
+  "what": "the Claude runtime inside a per-run sandbox (hearth#186)",
+  "credentials": "none read, copied or written; the login here is a synthetic file this script writes and the provider refuses with a 401",
+  "cost": "nothing: no session reached a model",
+  "daemon": {
+    "version": "27.3.1",
+    "os": "linux/arm64",
+    "kernel": "6.10.14-linuxkit",
+    "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+  },
+  "cli": {
+    "path": "/private/tmp/hearth-claude-measure/claude",
+    "sha256": "7d25d7c8ae6c6e009cc7dae4e817f674179fd31fb7761bcd56fee4c2902b4c03",
+    "version": "2.1.263 (Claude Code)",
+    "hearth_expects": "2.1.263 (Claude Code)"
+  },
+  "home_directory": {
+    "uid": 501,
+    "without_a_passwd_entry": ",\"print\",\"version\",\"about\",\"status\",\"?\"],fz=l;function Wcr(t){return l.some((e)=>e===t)}var _xt=64,jje=100;function P$(t){return t.sort((e,r)=>{let o=r.modified.getTime()-e.modified.getTime();if(o!==0)return o;retur\n\nENOENT: no such file or directory, uv_os_homedir\n syscall: \"uv_os_homedir\",\n   errno: -2,\n    code: \"ENOENT\"\n\n      at /$bunfs/root/chunk-sdfpshh3.js:13:1145\n\nBun v1.4.1 (Linux arm64)",
+    "with_a_passwd_entry": "{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\",\n  \"analyticsDisabled\": false,\n  \"projectsDirectory\": \"/cfg/projects\"\n}"
+  },
+  "login_directory": {
+    "environment": "env -i PATH CLAUDE_CONFIG_DIR (no USER, no HOME)",
+    "empty_directory": {
+      "loggedIn": false,
+      "authMethod": "none",
+      "projectsDirectory": "/cfg/projects",
+      "wrote": [
+        ".claude.json",
+        ".claude.json.lock",
+        "backups"
+      ]
+    },
+    "with_credentials_file": {
+      "loggedIn": true,
+      "authMethod": "claude.ai",
+      "projectsDirectory": "/cfg/projects",
+      "wrote": [
+        ".claude.json",
+        ".claude.json.lock",
+        ".credentials.json",
+        "backups"
+      ]
+    },
+    "credentials_file": ".credentials.json",
+    "read_only_directory": {
+      "loggedIn": false,
+      "authMethod": "none",
+      "projectsDirectory": "/cfg/projects",
+      "wrote": []
+    }
+  },
+  "session": {
+    "command": [
+      "/usr/local/bin/claude",
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--no-session-persistence",
+      "--disable-slash-commands",
+      "--permission-prompts",
+      "none",
+      "--model",
+      "claude-opus-5",
+      "--effort",
+      "low",
+      "--tools",
+      "",
+      "--max-budget-usd",
+      "0.010000"
+    ],
+    "environment": {
+      "PATH": "/bin:/usr/bin",
+      "CLAUDE_CONFIG_DIR": "/hearth/login",
+      "DISABLE_AUTOUPDATER": "1"
+    },
+    "mounts": [
+      "type=tmpfs,destination=/hearth/login,tmpfs-size=64m",
+      "type=bind,source=/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-claude-measure-ekcy02t5/session-configuration/.credentials.json,target=/hearth/login/.credentials.json,readonly"
+    ],
+    "as_hearth_places_it": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/workspace"
+      },
+      {
+        "type": "system",
+        "subtype": "api_retry"
+      },
+      {
+        "type": "system",
+        "subtype": "api_retry"
+      },
+      {
+        "type": "assistant"
+      },
+      {
+        "type": "result",
+        "subtype": "success",
+        "api_error_status": 401,
+        "terminal_reason": "api_error"
+      }
+    ],
+    "with_a_read_only_configuration_directory": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/workspace"
+      },
+      {
+        "type": "system",
+        "subtype": "api_retry"
+      },
+      {
+        "type": "system",
+        "subtype": "api_retry"
+      },
+      {
+        "type": "assistant"
+      },
+      {
+        "type": "result",
+        "subtype": "success",
+        "api_error_status": 401,
+        "terminal_reason": "api_error"
+      }
+    ],
+    "the_household_login_afterwards": [
+      ".credentials.json"
+    ]
+  },
+  "bridge": {
+    "socket_inside_both_containers": "/run/hearth/bridge.sock",
+    "configuration_hearth_would_write": {
+      "mcpServers": {
+        "hearth": {
+          "type": "stdio",
+          "command": "/usr/local/bin/python3",
+          "args": [
+            "-I",
+            "-m",
+            "hearth.integrations.claude.mcp_bridge",
+            "/run/hearth/bridge.sock"
+          ],
+          "env": {
+            "PATH": "/bin:/usr/bin"
+          }
+        }
+      }
+    },
+    "server": {
+      "listening": "/run/hearth/bridge.sock",
+      "uid": 501
+    },
+    "as_hearths_own_uid": {
+      "uid": "501:20",
+      "replies": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {
+              "tools": {
+                "listChanged": false
+              }
+            },
+            "serverInfo": {
+              "name": "hearth",
+              "version": "1"
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": {
+            "tools": [
+              {
+                "name": "hearth_journal_write",
+                "description": "",
+                "in": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "as_another_uid": {
+      "uid": "0:0",
+      "replies": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {
+              "tools": {
+                "listChanged": false
+              }
+            },
+            "serverInfo": {
+              "name": "hearth",
+              "version": "1"
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "error": {
+            "code": -32603,
+            "message": "the Hearth bridge did not answer"
+          }
+        }
+      ]
+    },
+    "server_saw": [
+      {
+        "connection": {
+          "peer_uid": 501,
+          "accepted": true
+        }
+      },
+      {
+        "asked": {
+          "op": "tools/list"
+        }
+      },
+      {
+        "connection": {
+          "peer_uid": 0,
+          "accepted": false
+        }
+      }
+    ]
+  }
+}

@@ -2,6 +2,28 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A Claude run executes inside the sandbox, and Hearth's own tools reach it there. The
+  adapter names the CLI, the login and its `--mcp-config` by the paths the *session*
+  sees: the image's own `claude`, a configuration directory of the run's own with the
+  household's `.credentials.json` read-only inside it, and the bridge's two files
+  mounted at the paths they already have -- so the shim, started by the image's own
+  interpreter, connects to the same socket path Hearth wrote and the peer-credential
+  check still holds across the boundary. The receipt says where the session ran, the pin
+  a sandboxed run is held to is the image, what a worker started is written down before
+  the runtime has named it and again after, and a container whose worker is gone is
+  killed, removed and audited rather than left spending. A store on the container
+  launcher whose login is not a *file* refuses at start: the macOS Keychain stays a
+  convenience of the `process` launcher, as ADR 0016 said. Measured on a Linux Docker
+  host against the Linux build of the pin (`docs/evidence/sandbox-claude-2026-09-09.json`,
+  written up as spike 8 in `docs/claude-runtime.md`): a login on Linux is
+  `.credentials.json` and nothing else is needed to read it; the CLI writes its own state
+  into that directory, which is why it gets a tmpfs; the uid the sandbox runs as must
+  exist in the image's own passwd file or the CLI dies at `uv_os_homedir` before its
+  first byte; and the real shim, in a container, had `tools/list` answered over a mounted
+  socket -- and was refused when it ran as another uid. The paid three-run journey on the
+  sandbox waits on a Linux login only the account holder can make; the same three runs on
+  the process launcher are `docs/evidence/claude-journey-process-2026-09-09.json`.
+
 - A Codex run executes inside the sandbox, for real. The adapter names the CLI, the
   login and the file it writes its final message to by the paths the *session* sees:
   the image's own CLI, a login mounted at the path `CODEX_HOME` names, and one writable

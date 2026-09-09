@@ -101,11 +101,11 @@ The runtime refuses `claude_subscription_login_required` until that has happened
 
 ## Spike 2 — the NAS (Linux)
 
-**Not measured.** Nothing in this slice ran on the NAS. Before the deployed instance can
-run on Claude, the same three commands have to be run there, and the question the plan
-asks — whether credentials live as a file under the configuration directory and can be
-copied the way Codex's `auth.json` is — has to be answered from that host, not from
-this Mac.
+**Not measured, and now answered elsewhere.** Nothing in this slice ran on the NAS, and
+nothing since has: the sandbox decision (ADR 0016) is "any Linux host", not one machine.
+The question it left open — whether a login on Linux is a *file* under the configuration
+directory — is measured in **spike 8** below, on a Linux Docker host, against the Linux
+build of this very pin. The answer is yes, and its name is `.credentials.json`.
 
 ## Spike 3 — can the pinned binary change under its own pin?
 
@@ -517,3 +517,105 @@ resident on Claude — rather than a special case for the demo.
 What the runs cost is recorded beside Hearth's own settlement when the journey is
 run; the comparable measured sessions here were about $0.036 (#146) and $0.046
 (#147), so three runs sit well under a dollar.
+
+## Spike 8 — the CLI inside a sandbox (Linux), 2026-09-09
+
+Everything above was measured on a Mac, where the login is a Keychain item and a
+session is a child of the worker. ADR 0016 puts the session in a container instead, and
+`docs/sandbox.md` is the boundary itself; this section is what the *CLI* does on the
+other side of it. Measured with `scripts/measure-claude-sandbox.py` against Docker
+Desktop's Linux VM (server `linux/arm64`, kernel `6.10.14-linuxkit`), evidence
+`docs/evidence/sandbox-claude-2026-09-09.json`. **No credential was read, copied or
+written, and nothing was spent**: the login used throughout is a synthetic
+`.credentials.json` this script writes, whose token the provider refuses with a 401 --
+which is itself one of the measurements.
+
+**The Linux build of the pin is the same release, and never the same bytes.** The
+release manifest for `2.1.263` names a checksum per platform: `darwin-arm64` is
+`ef5d2909…`, which is the sha256 this store is pinned to on the Mac, and `linux-arm64`
+is `7d25d7c8ae6c6e009cc7dae4e817f674179fd31fb7761bcd56fee4c2902b4c03`. The Linux file
+reports `2.1.263 (Claude Code)` -- the exact string `config.VERSION` requires -- so a
+household on a Linux host is configured with that file, the image carries the same
+bytes, and the image check (`launcher.configure`) hashes them equal to the pin.
+
+**1. A login on Linux is one file, and its name is `.credentials.json`.** Under
+`env -i PATH CLAUDE_CONFIG_DIR` -- no `USER`, no `HOME` -- in a container:
+
+| `$CFG` holds | `auth status --json` |
+| --- | --- |
+| nothing | `{"loggedIn": false, "authMethod": "none"}`, exit 1 |
+| `.credentials.json` alone | `{"loggedIn": true, "authMethod": "claude.ai"}`, exit 0 |
+
+That closes the question spike 1 left open on macOS and spike 2 left open for Linux.
+It also settles `USER`: it is the Keychain's key on a Mac and nothing at all here, so a
+sandboxed session is given `PATH`, `CLAUDE_CONFIG_DIR` and `DISABLE_AUTOUPDATER` and
+the name of an account on the host does not cross the boundary
+(`config.environment(..., account=False)`).
+
+*Not measured, and it needs the account holder:* that `claude auth login` **writes**
+that file. It needs a browser and a person, so what is measured here is the file the
+CLI *reads*. See "What the operator has to run" below.
+
+**2. The CLI writes into `CLAUDE_CONFIG_DIR` on the cheapest question there is.** After
+`auth status --json` against an empty writable directory, that directory holds
+`.claude.json`, a `.claude.json.lock` directory and `backups/`; after a session, also
+`projects/` and `sessions/`. So the household's login directory is not somewhere a run
+may be pointed at directly: the next resident would read what the last one left.
+
+**3. Unlike Codex, a read-only configuration directory does not stop it.** Mounted
+read-only, `auth status --json` answers normally and writes nothing, and a full bounded
+session mounted that way reached its first API answer exactly as the writable one did.
+ADR 0016's read-only login would therefore have worked for this CLI -- it is the Codex
+CLI that refuses it (`docs/sandbox.md`, the login section). **Hearth gives Claude the
+same shape as Codex anyway**, and the reason is measurement 2 rather than an error
+message: a tmpfs at `/hearth/login` with the household's `.credentials.json`
+bind-mounted read-only inside it lets the CLI write what it insists on writing, keeps
+none of it, and shows the next run none of it. Measured: after two sessions, the
+household's directory held `.credentials.json` and nothing else.
+
+**4. The uid the sandbox runs as must exist in the image's own passwd file.** With
+`--user <uid>` on an image that does not name that uid, the CLI ends before a byte of
+its protocol:
+
+```
+ENOENT: no such file or directory, uv_os_homedir
+```
+
+It asks the system for a home directory before anything else. With the entry the
+sandbox image creates (`--home-dir /nonexistent`, on a read-only root filesystem) the
+same command answers normally. So `deploy/Dockerfile.sandbox` is built for the uid
+Hearth runs as, and an image built for one uid and run as another fails every Claude
+run in it. Nothing about the home directory itself has to exist.
+
+**5. The whole sandbox flag set is fine by it.** One session under `--read-only`,
+`--cap-drop ALL`, `--security-opt no-new-privileges`, `--pids-limit 512`, tmpfs
+`/workspace` and `/tmp`, non-root, on the argv `config.session_command` builds:
+`system/init` with `cwd: "/workspace"` and `tools: []`, then the provider's 401 for the
+synthetic token. The CLI puts a socket of its own under `/tmp`, which is why the
+launcher's `/tmp` tmpfs matters as much as the workspace one.
+
+**6. Hearth's bridge crosses the boundary, and the peer check is what holds it.** The
+shim inside a container, started as `python3 -I -m hearth.integrations.claude.mcp_bridge
+<socket>` from the very configuration Hearth writes, connected over a socket mounted
+into it and had `initialize` and `tools/list` answered by the trusted half outside --
+which is the shape a burrow runs, with the socket on a volume the daemon owns, because
+a socket cannot be bind-mounted from a Mac's filesystem at all (`docs/sandbox.md`,
+measurement 6). The same shim run as **another uid** was refused: the trusted half read
+`peer_uid = 0`, closed the connection, and the shim answered the session
+`-32603 the Hearth bridge did not answer`. So Hearth's own tools are reachable from
+inside a sandbox and only by the uid that owns the run.
+
+### What the operator has to run, once, for a sandboxed household
+
+Hearth never seeds a login. On a Linux burrow the login is a directory holding
+`.credentials.json`, and it is made by the account holder with a browser:
+
+```sh
+CLAUDE_CONFIG_DIR=/path/to/private-claude-config claude auth login
+```
+
+On a Mac, where the login is a Keychain item, that directory has no credential file in
+it -- so a store configured for the `container` launcher refuses at start
+(`claude_subscription_login_required`) rather than admitting residents whose every run
+would fail at the mount. The Keychain stays a convenience of the `process` launcher,
+which is what ADR 0016 decided.
