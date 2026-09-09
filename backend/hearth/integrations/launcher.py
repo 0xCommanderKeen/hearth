@@ -504,7 +504,7 @@ class ContainerLauncher:
         if handle.id is not None or handle.identity is None:
             return handle.id
         deadline = time.monotonic() + IDENTITY_TIMEOUT
-        while time.monotonic() < deadline:
+        while True:
             try:
                 value = handle.identity.read_text().strip()
             except OSError:
@@ -512,7 +512,12 @@ class ContainerLauncher:
             if IDENTITY.match(value):
                 handle.id = value
                 break
-            if handle.process.poll() is not None:
+            # The file is read before the client is asked whether it is still running,
+            # and never the other way round: a client that wrote the id and exited in
+            # between the two would otherwise leave a container Hearth created and
+            # cannot name -- which is a session nobody can end, and exactly the stray
+            # this launcher is supposed to be able to find.
+            if handle.process.poll() is not None or time.monotonic() >= deadline:
                 break
             time.sleep(0.02)
         if handle.directory is not None:
