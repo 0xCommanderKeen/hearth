@@ -37,6 +37,7 @@ from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.integrations.interface import label as runtime_label
 from hearth.integrations.launcher import Sandbox, configure
 from hearth.management.api import mount_management
+from hearth.management.authority import protected_paths
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import PAGE, Journal
@@ -504,13 +505,31 @@ def create_app(
 
     mount_maintenance(app, hearth)
     mount_inputs(app, hearth)
-    mount_management(app, hearth)
+    # What no grant on this installation may mount: Hearth's own data directory, the
+    # login of every runtime that opened one, and the container runtime's socket
+    # (`docs/adr/0016-sandbox-per-run.md`). Read once here, where the adapters and the
+    # sandbox configuration are both in hand.
+    mount_management(
+        app, hearth, protected_paths(data, login_directories(adapters), socket=sandbox.host)
+    )
     mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"
     if web.is_dir():
         app.mount("/", StaticFiles(directory=web, html=True), name="web")
     return app
+
+
+def login_directories(adapters: Iterable[Runtime]) -> list[Path]:
+    """Where each opened runtime keeps the credential it reads, if it keeps one here.
+
+    Asked of every adapter in the same words, because nothing outside `integrations/`
+    names a provider: a runtime with no login on this host, and a quarantined copy that
+    opened none, answer with nothing.
+    """
+    return [
+        Path(path) for path in (getattr(adapter, "login", None) for adapter in adapters) if path
+    ]
 
 
 def configured_runtimes(

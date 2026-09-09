@@ -15,7 +15,7 @@ from hearth.storage.schema import SCHEMA
 
 # Bump when SCHEMA changes; add fills for new required columns in migration.FILLS and
 # list deliberately removed columns in migration.DROPS.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 # The kind a new store records as its default: the runtime a resident that declares
 # none of its own runs on. Hearth knows a second live runtime, and a declaration may
 # name it (`docs/adr/0015-runtime-per-resident.md`); this is the default, not the only

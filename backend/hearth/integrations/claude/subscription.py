@@ -198,12 +198,17 @@ class ClaudeLiveRuntime:
         # Where this instance's sessions execute. It travels in the request rather
         # than in the worker's environment, which is a search path and nothing else.
         self.sandbox = sandbox if sandbox is not None else Sandbox()
+        # Where this adapter keeps the credential it reads, named the same way by every
+        # runtime so nothing outside `integrations/` has to know what it is called. A
+        # quarantined copy opens no login and answers with none.
+        self.login = None
         if self.database.restored():
             return
         if binary is None or config_dir is None:
             raise Refused("claude_subscription_configuration_required")
         self.binary = binary.resolve()
         self.config_dir = config_dir.resolve()
+        self.login = self.config_dir
         # The CLI creates a config directory it is pointed at. Hearth refuses first, so
         # a missing private login is a refusal rather than a new empty login.
         if not self.config_dir.is_dir():

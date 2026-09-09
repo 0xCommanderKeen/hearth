@@ -1,23 +1,6 @@
+"""Exact schema of Hearth stores at version 11, before filesystem grants; test fixture only."""
+
 # ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
-
-`runs.runtime_kind` admits every kind in `integrations.interface.RUNTIMES`: the two
-live ones this release can start work on, and the three simulated kinds Hearth used to
-ship. The simulated ones are history a forward-upgraded store may still carry, and a
-run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-
-`run_mounts` is what a run could reach on disk: the mounts its resident's grant held at
-the revision admission pinned, in the order the grant listed them, so a finished run says
-what it could see whether or not it executed inside a sandbox
-(`docs/adr/0016-sandbox-per-run.md`). A run with no filesystem grant has no rows here.
-
-`declarations.runtime` is the runtime one resident's work is admitted to, null for a
-resident that follows the store's default (`system_meta.runtime_kind`). It carries no
-CHECK: a store upgraded forward may hold a kind a later release retired, and refusing
-to open it would lose the resident rather than the runtime
-(`docs/adr/0015-runtime-per-resident.md`).
-"""
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -149,12 +132,6 @@ SCHEMA = (
     """CREATE TABLE run_skill_sets (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
         revision INTEGER NOT NULL, count INTEGER NOT NULL, sha256 TEXT NOT NULL
-    )""",
-    """CREATE TABLE run_mounts (
-        run_id TEXT NOT NULL REFERENCES runs(id), position INTEGER NOT NULL,
-        grant_revision INTEGER NOT NULL, name TEXT NOT NULL, host_path TEXT NOT NULL,
-        mode TEXT NOT NULL CHECK(mode IN ('ro','rw')),
-        PRIMARY KEY(run_id,position), UNIQUE(run_id,name)
     )""",
     """CREATE TABLE run_skills (
         run_id TEXT NOT NULL REFERENCES run_skill_sets(run_id), position INTEGER NOT NULL,

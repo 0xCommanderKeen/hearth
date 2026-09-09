@@ -19,6 +19,7 @@ from tests.fixtures.schema_v5_pre_letters import SCHEMA as SCHEMA_V5
 from tests.fixtures.schema_v6_pre_replies import SCHEMA as SCHEMA_V6
 from tests.fixtures.schema_v7_pre_letter_cap import SCHEMA as SCHEMA_V7
 from tests.fixtures.schema_v8_pre_letter_states import SCHEMA as SCHEMA_V8
+from tests.fixtures.schema_v11_pre_mounts import SCHEMA as SCHEMA_V11
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -1014,3 +1015,120 @@ def test_the_version_8_store_says_what_each_of_its_letters_came_to(tmp_path):
     # older shape is asked to end rather than launched with bytes it never reserved.
     run = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r2'").fetchone()
     assert (run["status"], run["cancellation_requested"]) == ("stopping", 1)
+
+
+def _grant_policy(**changes) -> dict:
+    """A management grant exactly as a version-11 store recorded one: no filesystem."""
+    return {
+        "enabled": True,
+        "profiles": ["codex_subscription"],
+        "input_set_ids": [],
+        "capabilities": ["create_residents"],
+        "letter_recipient_ids": [],
+        "max_residents": 5,
+        "max_daily_limit": 1000000,
+        "max_reserve": 500000,
+        "max_calls": 64,
+    } | changes
+
+
+def _grant_digest(policy: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def version_11_store(path, *, policy=None, sha256=None):
+    """A version-11 store with a granted resident, an admitted run and one in flight."""
+    policy = _grant_policy() if policy is None else policy
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V11:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+        " created_at) VALUES ('karen', 1, 'Karen', 'Synthetic', 1000000, 1)"
+    )
+    _lifecycle(db, "karen", 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES (1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, 86400, 5)"
+    )
+    db.execute(
+        "INSERT INTO management_grant_revisions VALUES ('karen', 1, ?, ?)",
+        (json.dumps(policy, sort_keys=True), sha256 or _grant_digest(policy)),
+    )
+    db.execute("INSERT INTO management_grants VALUES ('karen', 1)")
+    for run_id, task_id, status, finished, launched in (
+        ("r", "t", "succeeded", 10, 1),
+        ("r2", "t2", "starting", None, 0),
+    ):
+        db.execute(
+            "INSERT INTO tasks VALUES (?, 'karen', 'Work', ?, 1)",
+            (task_id, "succeeded" if finished else "starting"),
+        )
+        db.execute(
+            "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+            "reserved, budget_day, created_at, usage_known, finished_at, launch_attempted, "
+            "runtime_kind, runtime_version, input_digest) VALUES "
+            "(?, ?, 'karen', 1, ?, ?, 2000, '2026-09-09', 1, 1, ?, ?, 'codex_subscription', 1, ?)",
+            (run_id, task_id, "token-" + run_id, status, finished, launched, "a" * 64),
+        )
+        db.execute(
+            "INSERT INTO run_management VALUES (?, 'karen', 1, ?, 601, NULL, NULL, NULL, NULL)",
+            (run_id, sha256 or _grant_digest(policy)),
+        )
+    db.execute("PRAGMA user_version = 11")
+    db.commit()
+    db.close()
+
+
+def test_the_version_11_store_gains_filesystem_grants_and_reaches_nothing_new(tmp_path):
+    from hearth.management.authority import validate_management
+
+    path = tmp_path / "hearth.db"
+    version_11_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    row = db.execute("SELECT policy, sha256 FROM management_grant_revisions").fetchone()
+    policy = json.loads(row["policy"])
+    # The grant gained the section and not one path in it: an upgrade opens no folder.
+    assert policy["mounts"] == []
+    assert policy == _grant_policy(mounts=[])
+    assert row["sha256"] == _grant_digest(policy)
+    # Every admission that pinned the old digest moves with it, so a granted run keeps
+    # exactly the authority it was admitted with rather than reading as tampered with.
+    assert [pin["grant_sha256"] for pin in db.execute("SELECT * FROM run_management")] == [
+        row["sha256"],
+        row["sha256"],
+    ]
+    validate_management(db)
+    assert json.loads(
+        db.execute(
+            "SELECT detail FROM audit WHERE kind='management.grants_rescoped'"
+        ).fetchone()[0]
+    ) == {"count": 1, "reason": "mounts_added"}
+    # No run reached anything: the new table is there and empty.
+    assert db.execute("SELECT COUNT(*) FROM run_mounts").fetchone()[0] == 0
+    # The context now lists what a run reaches on disk, so a run admitted against the
+    # older shape is asked to end rather than launched with bytes it never reserved.
+    admitted = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r2'").fetchone()
+    assert (admitted["status"], admitted["cancellation_requested"]) == ("stopping", 1)
+    finished = db.execute("SELECT status FROM runs WHERE id='r'").fetchone()
+    assert finished["status"] == "succeeded"
+
+
+def test_a_grant_edited_in_the_file_refuses_the_mounts_upgrade(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_11_store(path, policy=_grant_policy(max_residents=20), sha256="b" * 64)
+    with pytest.raises(UpgradeError, match="was changed in the file"):
+        Database(path).initialize()
+    # The original is untouched, and no half-upgraded file is left behind.
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 11
+    assert not (tmp_path / "hearth.db.upgrading").exists()

@@ -173,12 +173,17 @@ class CodexLiveRuntime:
         # Where this instance's sessions execute. It travels in the request rather
         # than in the worker's environment, which is a search path and nothing else.
         self.sandbox = sandbox if sandbox is not None else Sandbox()
+        # Where this adapter keeps the credential it reads, named the same way by every
+        # runtime so nothing outside `integrations/` has to know what it is called. A
+        # quarantined copy opens no login and answers with none.
+        self.login = None
         if self.database.restored():
             return
         if binary is None or auth_home is None:
             raise Refused("codex_subscription_configuration_required")
         self.binary = binary.resolve()
         self.auth_home = auth_home.resolve()
+        self.login = self.auth_home
         if not (self.auth_home / AUTH).is_file():
             raise Refused("codex_subscription_login_required")
         env = {"PATH": os.defpath, "CODEX_HOME": str(self.auth_home)}
