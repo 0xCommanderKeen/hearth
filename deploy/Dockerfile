@@ -87,9 +87,10 @@ RUN set -eux; \
     su hearth -s /bin/sh -c '/opt/hearth/bin/python -I -c "import hearth.app"'
 
 ENV PATH=/opt/hearth/bin:/usr/local/bin:/usr/bin:/bin
-# Where the store is. It has no default: the path a Hearth in a container hands the
-# daemon is resolved in the *host's* filesystem, so it has to be the same string on
-# both sides, and only `deploy/compose.yaml` knows what that is here.
+# This image is the server's, and the server sandboxes its runs. `HEARTH_DATA` has
+# deliberately *no* default here: the path a Hearth in a container hands the daemon is
+# resolved in the host's filesystem, so it has to be the same string on both sides, and
+# only `deploy/compose.yaml` knows what that is.
 ENV HEARTH_SANDBOX=container
 USER ${HEARTH_UID}:${HEARTH_GID}
 EXPOSE 8000

@@ -336,3 +336,11 @@ def test_the_process_launcher_says_nothing_about_a_fence_it_does_not_have(tmp_pa
     with TestClient(application) as client:
         health = client.get("/api/health", headers={"Authorization": "Bearer " + TOKEN}).json()
     assert health["sandbox"] == {"launcher": "process"}
+
+
+def test_a_process_launcher_has_no_fence_to_measure_and_says_so(tmp_path):
+    """Asked anyway, it refuses rather than raising something nobody handles."""
+    docker = daemon(tmp_path, {})
+    fence = Fence(shut=("10.0.0.4:8000",), open=("chatgpt.com:443",))
+    with pytest.raises(Refused, match="sandbox_fence_unconfigured"):
+        fence.observe(Sandbox(docker=str(docker)))

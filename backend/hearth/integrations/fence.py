@@ -97,7 +97,10 @@ class Fence:
         it ends on its own within a couple of seconds whatever happens to Hearth,
         because dialling an address is all it does.
         """
-        if not self.shut or not self.open:
+        # Nothing to measure is refused rather than asserted: a caller with a process
+        # launcher or half a fence is asking a question with no answer, and an answer
+        # is the one thing this may not invent. `/api/health` reports the refusal.
+        if sandbox.launcher != CONTAINER or not self.shut or not self.open:
             raise Refused("sandbox_fence_unconfigured")
         launcher = sandbox.open()
         assert isinstance(launcher, ContainerLauncher)
