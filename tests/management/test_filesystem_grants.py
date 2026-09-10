@@ -161,6 +161,43 @@ def test_a_run_keeps_the_mounts_it_was_admitted_with_when_the_grant_changes(tmp_
         assert kept[0]["grant_revision"] == 1
 
 
+def test_a_routine_pass_leaves_a_waiting_task_queued_and_reports_no_fault(tmp_path):
+    """A folder an operator has to put back is "not now", never "not ever"."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        write_grant(client, who, [{"name": "notes", "host_path": str(shared)}])
+        hearth = client.app.state.hearth
+        from hearth.work.routines import Routines
+
+        routines = Routines(hearth)
+        routines.save(
+            "daily",
+            who,
+            "Read the folder",
+            local_time="09:00",
+            timezone="Europe/Ljubljana",
+            enabled=True,
+            expected_revision=0,
+        )
+        with hearth.database.transaction(write=True) as db:
+            # Long overdue, rather than at nine in the morning of whatever day this is.
+            db.execute("UPDATE routines SET next_at=1")
+        assert routines.tick()
+        shared.rmdir()
+        # The pass does not raise: nothing else queued is starved by this one resident,
+        # and the task is still there to be admitted once the folder is back.
+        routines.admit_queued()
+        with hearth.database.transaction() as db:
+            waiting = db.execute("SELECT id,status FROM tasks").fetchall()
+        assert [row["status"] for row in waiting] == ["queued"]
+        shared.mkdir()
+        routines.admit_queued()
+        with hearth.database.transaction() as db:
+            assert db.execute("SELECT status FROM tasks").fetchone()["status"] == "starting"
+
+
 def test_a_granted_folder_that_is_not_there_makes_the_run_wait(tmp_path):
     shared = tmp_path / "shared"
     shared.mkdir()

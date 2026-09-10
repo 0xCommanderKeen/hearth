@@ -39,6 +39,11 @@ ADMISSION_WAITS = frozenset(
         # Reporting it every pass would hold an error open for as long as the work is
         # queued and hide any real fault the same pass hits.
         "resident_setup_incomplete",
+        # A granted folder that is not on this host is the same shape of fault: an
+        # operator puts it back or takes it out of the grant, and the work is admitted
+        # the moment they do (`docs/adr/0016-sandbox-per-run.md`). Reporting it on
+        # every pass would hold one error open for as long as the task is queued.
+        "mount_unavailable",
         "capacity_exhausted",
         "budget_exhausted",
         "household_budget_exhausted",

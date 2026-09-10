@@ -290,7 +290,8 @@ revision on every row. A revision that removes a folder removes it from the *nex
 a run already admitted keeps what it was admitted with. A granted folder the host does
 not have refuses `mount_unavailable` before any money is reserved, and the task stays
 queued until an operator puts the folder back or takes it out of the grant (ADR 0015's
-wait rule). The run's own context, version 10, lists each folder by name, by the path it
+wait rule; `mount_unavailable` is one of `ADMISSION_WAITS`, so a routine pass leaves the
+task queued and reports no fault rather than holding one error open every pass). The run's own context, version 10, lists each folder by name, by the path it
 has inside a sandbox, by the host path a run that is not sandboxed reaches, and by mode.
 
 **What the launcher does.** The worker reads the list out of the request document
