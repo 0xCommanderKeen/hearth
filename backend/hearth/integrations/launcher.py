@@ -838,7 +838,10 @@ class ContainerLauncher:
         if result.returncode:
             # Only the daemon's explicit not-found response establishes absence.
             # A lost connection or timeout cannot prove a spending session ended.
-            if result.stderr.strip() == f"Error: No such container: {identity}":
+            if result.stderr.strip() in {
+                f"Error: No such container: {identity}",
+                f"Error response from daemon: No such container: {identity}",
+            }:
                 return "absent"
             return "unknown"
         state = result.stdout.strip()

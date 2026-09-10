@@ -105,6 +105,27 @@ def manager_run(tmp_path):
     return hearth, run, execution, bound, receipt
 
 
+def test_operator_diagnostic_is_bound_and_never_exposes_arbitrary_runtime_errors(tmp_path):
+    from hearth.integrations.codex.subscription import CodexLiveRuntime
+
+    hearth, run, _, _, receipt = manager_run(tmp_path)
+    runtime = object.__new__(CodexLiveRuntime)
+    runtime.database = hearth.database
+    runtime.receipt = lambda run_id: receipt
+    receipt["terminal"].update(
+        error="sandbox_termination_unknown", launched=False, events=[], exit_code=None
+    )
+    result = runtime.diagnostic(run.id)
+    assert result["code"] == "sandbox_termination_unknown"
+    assert result["turn_started"] is False
+    assert set(result) == {"code", "message", "turn_started"}
+    receipt["terminal"]["error"] = "secret-provider-output"
+    assert runtime.diagnostic(run.id) is None
+    receipt["terminal"]["error"] = "sandbox_termination_unknown"
+    receipt["binding"]["input_digest"] = "0" * 64
+    assert runtime.diagnostic(run.id) is None
+
+
 def test_native_management_usage_result_details_and_held_backup(tmp_path):
     from hearth.storage.backup import capture, restore
 

@@ -588,3 +588,25 @@ def test_stray_removal_requires_an_explicit_absence(tmp_path, monkeypatch, failu
     monkeypatch.setattr(launcher, "attempt", attempt)
     assert launcher.stray(identity) is False
     assert launcher.status(identity) == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Error: No such container: {identity}", "absent"),
+        ("Error response from daemon: No such container: {identity}", "absent"),
+        ("Error response from daemon: No such container: another-id", "unknown"),
+        ("Cannot connect to daemon; Error: No such container: {identity}", "unknown"),
+    ],
+)
+def test_absence_matches_only_explicit_daemon_responses(tmp_path, monkeypatch, message, expected):
+    launcher, _ = container(tmp_path)
+    identity = "a" * 64
+    monkeypatch.setattr(
+        launcher,
+        "attempt",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args, 1, "", message.format(identity=identity) + "\n"
+        ),
+    )
+    assert launcher.status(identity) == expected

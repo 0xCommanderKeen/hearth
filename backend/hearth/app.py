@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, Header, Request, Response
+from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -565,6 +565,26 @@ def create_app(
             # did, and this is Hearth's own record of what it admitted.
             "login_scope": run.login_scope,
         }
+
+    @app.get("/api/residents/{resident_id}/activity")
+    def resident_activity(
+        resident_id: str,
+        before: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=30, ge=1, le=100),
+    ):
+        from hearth.observation.activity import history
+
+        page = history(hearth, resident_id, before=before, limit=limit)
+        diagnostics = {}
+        for entry in page["entries"]:
+            run_id = entry["run_id"]
+            if run_id and entry["kind"] in {"run.interrupted", "run.failed", "run.stopping"}:
+                if run_id not in diagnostics:
+                    runtime = executor.runtimes.get(entry["runtime_kind"])
+                    diagnose = getattr(runtime, "diagnostic", None)
+                    diagnostics[run_id] = diagnose(run_id) if diagnose else None
+                entry["diagnostic"] = diagnostics[run_id]
+        return page
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel(run_id: str):
