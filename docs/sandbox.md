@@ -146,9 +146,11 @@ that breaks on somebody else's deploy, and saying it exactly needs an egress pro
 CLIs are pointed at, which is not built. ADR 0016's Measured section records the
 difference. Two other things do the work beside those rules and are worth knowing:
 Docker's own `DOCKER-ISOLATION` chains already keep one user-defined network from
-reaching another, which is most of why Hearth's own address is unreachable; and the
-daemon's embedded resolver may forward name lookups from inside the container's
-namespace, which is why the filter has a hole for exactly that address and nothing else.
+reaching another, which is what closes Hearth's own address (measurement 22 -- with the
+filter removed and Hearth still listening, its address still timed out while the LAN
+answered); and the daemon's embedded resolver may forward name lookups from inside the
+container's own namespace, which is why the filter has a hole for exactly that address
+and nothing else.
 
 ## The image
 
@@ -770,7 +772,16 @@ other machine. `scripts/sandbox-journey.py` ->
     it (measurements 14--17); what is missing is a tool with which to use it. Making a
     granted folder reachable by the model is a change to each provider's permission
     profile and is its own issue.
-22. **The Claude half did not run, for the reason it has run out of since #186**:
+22. **Two mechanisms hold the two halves of the fence, and they are not the same one.**
+    Asked with `deploy/fence.sh remove` and Hearth still up and listening, a container
+    on `hearth-egress` got `172.30.0.2:8000` **`timed out`** and `192.168.1.1:80`
+    **`connected`**. So Hearth's own address is closed by Docker's own
+    `DOCKER-ISOLATION` chains, which keep one user-defined network from reaching
+    another, and the LAN and the host are closed by the filter and only by the filter.
+    Both are measured together and neither is assumed; it is worth knowing which is
+    which, because a daemon configured to let its networks talk would move the first
+    one and Hearth would refuse on the next start.
+23. **The Claude half did not run, for the reason it has run out of since #186**:
     `claude_subscription_login_required`, recorded in the evidence as not run. A
     sandboxed Claude session's login is the file `.credentials.json`, and only the
     account holder can create one against the Linux build.
