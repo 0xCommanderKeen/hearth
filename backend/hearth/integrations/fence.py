@@ -108,6 +108,14 @@ class Fence:
             result = launcher.attempt(
                 "run",
                 "--rm",
+                "--init",
+                # The same promise the session launcher makes and `deploy/README.md`
+                # repeats to the operator: an image this daemon does not already hold
+                # is a refusal, never a pull. A measurement that quietly fetched an
+                # image would be this module contacting a registry to answer a
+                # question about a network.
+                "--pull",
+                "never",
                 "--network",
                 launcher.network,
                 "--user",

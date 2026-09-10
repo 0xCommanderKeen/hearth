@@ -15,7 +15,7 @@
     ],
     "sandbox": {
       "launcher": "container",
-      "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60"
+      "image": "sha256:cf2848137d422fcf18c855e425c15ab1f99a74ab1d6d1716724993eac79cf24b"
     }
   },
   "operator_health": {
@@ -33,7 +33,7 @@
     ],
     "sandbox": {
       "launcher": "container",
-      "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+      "image": "sha256:cf2848137d422fcf18c855e425c15ab1f99a74ab1d6d1716724993eac79cf24b",
       "network": "hearth-egress",
       "fence": {
         "shut": {
@@ -85,7 +85,7 @@
         "creator": "operator",
         "manager": "operator",
         "originating_run_id": null,
-        "created_at": 1789032175,
+        "created_at": 1789034763,
         "routine_id": null,
         "task_id": null
       },
@@ -118,20 +118,20 @@
         "id": "sandbox-journey-57e2a243",
         "revision": 1,
         "enabled": true,
-        "next_at": 1789032240
+        "next_at": 1789034880
       },
-      "routine_due_local": "2026-09-10 11:24 Europe/Ljubljana",
+      "routine_due_local": "2026-09-10 12:08 Europe/Ljubljana",
       "occurrence": {
         "routine_id": "sandbox-journey-57e2a243",
-        "scheduled_at": 1789032240,
+        "scheduled_at": 1789034880,
         "revision": 1,
-        "task_id": "8d97b52a-f1bd-4354-b2ed-ae6319b5dec6",
+        "task_id": "d0fa798f-b946-4507-a36a-8865641e72de",
         "status": "queued",
-        "created_at": 1789032240
+        "created_at": 1789034880
       },
       "run": {
-        "id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
-        "task_id": "8d97b52a-f1bd-4354-b2ed-ae6319b5dec6",
+        "id": "9b96a47f-0584-4572-9b0e-4e13eeb549f4",
+        "task_id": "d0fa798f-b946-4507-a36a-8865641e72de",
         "resident_id": "57e2a243-b598-5622-9d81-d7366736ac73",
         "resident_revision": 1,
         "status": "succeeded",
@@ -140,16 +140,16 @@
         "budget_timezone": "Europe/Ljubljana",
         "runtime_kind": "codex_subscription",
         "runtime_version": 1,
-        "input_digest": "d9b8c858bb2773d822f2c3528eaf6e03c3d26a157b414b65a1ec6bb9a89380f3",
+        "input_digest": "49bb85cc0befbf4642545876f5588141d48152cc15de1bea49da41cded9e9d8a",
         "login_scope": "resident",
         "model": "gpt-6-astra",
         "price_schedule": "gpt-6-astra-api-equivalent-2026-09-06",
-        "created_at": 1789032240,
-        "actual_cost": 35542,
+        "created_at": 1789034880,
+        "actual_cost": 97130,
         "memory_revision": 1,
         "usage_known": 1,
-        "finished_at": 1789032248,
-        "artifact_id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "finished_at": 1789034887,
+        "artifact_id": "9b96a47f-0584-4572-9b0e-4e13eeb549f4",
         "cancellation_requested": 0,
         "usage_source": "api_equivalent_subscription",
         "letters_refused": [],
@@ -206,18 +206,18 @@
           "mode": "standard",
           "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
           "basis": "api_equivalent_estimate",
-          "receipt_sha256": "60e4c0c5f84d64a16517ba7813badd64858ee1b9d30f77f9c89fc752ba79e4ff",
+          "receipt_sha256": "ddb346f793bfb1dfe985ecd118dddabf1cacd8d6580d76bf3b04f7981b226020",
           "requests": []
         },
-        "id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "id": "9b96a47f-0584-4572-9b0e-4e13eeb549f4",
         "status": "succeeded",
-        "artifact_id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "artifact_id": "9b96a47f-0584-4572-9b0e-4e13eeb549f4",
         "runtime_kind": "codex_subscription",
         "runtime_version": 1,
-        "input_digest": "d9b8c858bb2773d822f2c3528eaf6e03c3d26a157b414b65a1ec6bb9a89380f3",
+        "input_digest": "49bb85cc0befbf4642545876f5588141d48152cc15de1bea49da41cded9e9d8a",
         "login_scope": "resident"
       },
-      "answer": "Today’s fictional orchard summary: 12 pears were harvested Monday, and 3 trees were planted Tuesday.\n\nI couldn’t access the notes or drafts folders, so I couldn’t save `summary.md`.",
+      "answer": "Today’s fictional orchard summary: 12 pears were harvested Monday, and 3 trees were planted Tuesday. I couldn’t open the notes folder or save `summary.md` in drafts with the access available in this run.",
       "session": {
         "run_mounts": [
           {
@@ -235,8 +235,8 @@
         ],
         "login_scope": "resident",
         "sandbox": {
-          "container_id": "afc7801ee819242ae08aa2c878b2dbb166fd7d0c16318b4cfd43ebe9ca10e9dc",
-          "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+          "container_id": "cf4ff1f4f33856c9d50d30afa708bb5b44a5dc2e826ef84ddb4a3544fd90428c",
+          "image": "sha256:cf2848137d422fcf18c855e425c15ab1f99a74ab1d6d1716724993eac79cf24b",
           "launcher": "container",
           "mounts": [
             {
@@ -253,9 +253,9 @@
         },
         "handle": {
           "cidfile": null,
-          "id": "afc7801ee819242ae08aa2c878b2dbb166fd7d0c16318b4cfd43ebe9ca10e9dc",
+          "id": "cf4ff1f4f33856c9d50d30afa708bb5b44a5dc2e826ef84ddb4a3544fd90428c",
           "launcher": "container",
-          "worker": 124
+          "worker": 144
         },
         "receipt_login_scope": "resident",
         "receipt_mounts": [
@@ -275,11 +275,11 @@
         "launched": true,
         "binary_sha256": "4d76e542c222ea8c75861d8c4ade60a1a332a63255ce1c60bdaebf7c2a2869e6",
         "cli_reported_usage": {
-          "input_tokens": 9350,
-          "cached_input_tokens": 6912,
+          "input_tokens": 9348,
+          "cached_input_tokens": 0,
           "cache_write_input_tokens": 0,
-          "output_tokens": 85,
-          "reasoning_output_tokens": 39
+          "output_tokens": 73,
+          "reasoning_output_tokens": 23
         }
       },
       "container_afterwards": "absent",
@@ -303,24 +303,24 @@
       "sequence": 2,
       "kind": "sandbox.configured",
       "resource_id": "container",
-      "at": 1789032144,
-      "detail": "{\"binaries\": [\"codex_live_binary\"], \"image\": \"sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60\", \"network\": \"hearth-egress\"}"
+      "at": 1789034726,
+      "detail": "{\"binaries\": [\"codex_live_binary\"], \"image\": \"sha256:cf2848137d422fcf18c855e425c15ab1f99a74ab1d6d1716724993eac79cf24b\", \"network\": \"hearth-egress\"}"
     },
     {
       "sequence": 3,
       "kind": "sandbox.fence",
       "resource_id": "container",
-      "at": 1789032146,
+      "at": 1789034728,
       "detail": "{\"held\": true, \"network\": \"hearth-egress\", \"open\": {\"chatgpt.com:443\": \"connected\"}, \"shut\": {\"172.30.0.2:8000\": \"dropped\", \"192.168.1.1:80\": \"dropped\"}}"
     },
     {
       "sequence": 10,
       "kind": "grant.mount_rw_granted",
       "resource_id": "57e2a243-b598-5622-9d81-d7366736ac73",
-      "at": 1789032175,
+      "at": 1789034763,
       "detail": "{\"actor\": \"operator\", \"mounts\": [{\"host_path\": \"/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts\", \"name\": \"drafts\"}], \"revision\": 1}"
     }
   ],
-  "total_cost_microdollars": 35542,
+  "total_cost_microdollars": 97130,
   "limits": "One routine run per configured runtime kind, on fictional notes. This records that a resident's session executed inside a per-run container from the pinned image, on its own login, reaching exactly the folders its grant named; that the receipt is the CLI's own stream out of that container and the run settled from the usage the CLI reported there; and that Hearth measured, from inside the sandbox network, that its own address and a LAN address are unreachable and the provider is. It is not evidence of model quality, of anything about real sources, or of a fence narrower than the one `deploy/fence.sh` installs."
 }

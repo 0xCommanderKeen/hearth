@@ -27,6 +27,14 @@
 # DROP, never REJECT --reject-with tcp-reset: a reset is a packet that arrived, Hearth's
 # probe reads it as `refused`, and `refused` is not a fence holding.
 #
+# **This fence is IPv4 and only IPv4.** `ip6tables` is never touched here, and Hearth's
+# own probe cannot name an IPv6 address either (`host:port` cannot hold one
+# unambiguously), so on a sandbox network created with `--ipv6` a session would have an
+# unmeasured v6 path to this host and this LAN while the measurement said the fence
+# held. That is the one way an open fence reads as holding, so: **do not enable IPv6 on
+# `hearth-egress`.** Docker does not by default. An operator who needs it has to fence
+# v6 here and give Hearth a way to measure it, and neither exists yet.
+#
 # Usage (on a Linux host, as root):
 #
 #     deploy/fence.sh apply           # install the rules
@@ -53,21 +61,38 @@ PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
 
 # Both values are spliced into an argument list, so they are held to a shape first.
 # Nothing a resident says reaches here -- these are the operator's own `.env` -- but a
-# typo that silently became a different rule would be a fence nobody could read back.
-case "$SUBNET" in
-[0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) ;;
-*)
+# value carrying a space would be word-split into extra arguments and become a rule
+# nobody wrote, which is the opposite of a fence somebody can read back.
+#
+# A `case` glob is not enough for this: every one of its wildcards matches a space, so
+# `10.0.0.0/24 -j ACCEPT` would pass one. Each field is checked on its own instead,
+# which is also what makes "no spaces" true rather than hoped for.
+digits() {
+    case "$1" in
+    "" | *[!0-9]*) return 1 ;;
+    esac
+    [ "$1" -le "$2" ]
+}
+
+address() {
+    # Exactly four dot-separated numbers, each 0-255, and nothing else in the string.
+    set -- $(printf '%s' "$1" | tr '.' ' ') # deliberately unquoted: this is the split
+    [ $# -eq 4 ] || return 1
+    for part in "$@"; do
+        digits "$part" 255 || return 1
+    done
+}
+
+network=${SUBNET%/*}
+prefix=${SUBNET#*/}
+if [ "$network" = "$SUBNET" ] || ! address "$network" || ! digits "$prefix" 32; then
     echo "HEARTH_EGRESS_SUBNET must be an IPv4 network, e.g. 172.31.240.0/24" >&2
     exit 2
-    ;;
-esac
-case "${RESOLVER:-0.0.0.0}" in
-[0-9]*.[0-9]*.[0-9]*.[0-9]*) ;;
-*)
+fi
+if [ -n "$RESOLVER" ] && ! address "$RESOLVER"; then
     echo "HEARTH_EGRESS_RESOLVER must be an IPv4 address, or unset" >&2
     exit 2
-    ;;
-esac
+fi
 
 # Docker's own chains are in whichever iptables variant Docker used, and a host may
 # have both. The one that has `DOCKER-USER` is the one that is live.
@@ -85,8 +110,13 @@ if [ -z "$iptables" ]; then
 fi
 
 # Every rule this script owns, as arguments, most specific first. `apply` inserts them
-# in reverse so they end up in this order; `remove` deletes them all. Both are
-# idempotent, because every rule is deleted before it is inserted.
+# in reverse so they end up in this order; `remove` deletes them. Both are idempotent,
+# because every rule is deleted before it is inserted.
+#
+# What neither can do is find a rule this environment does not describe: the list is
+# built from `$SUBNET` and `$RESOLVER` as they are *now*, so an operator who changes
+# either and then runs `remove` leaves the previous fence in place. Take the old one out
+# before changing them, or read `show` and delete what is left by hand.
 rules() {
     if [ -n "$RESOLVER" ]; then
         # The daemon's own resolver, for name lookups and nothing else. A session that

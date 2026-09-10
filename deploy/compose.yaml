@@ -1,9 +1,9 @@
 # Hearth on a server: one control plane, one store, one sandbox network.
 #
 # `deploy/README.md` is the runbook. Everything this file needs is in `deploy/.env`
-# beside it (`.env.example` is the template); nothing here names a machine, a person or
-# a path outside a named volume, so the same file is the deployment on any Linux host
-# with a container runtime.
+# beside it (`.env.example` is the template); nothing here names a machine or a person,
+# and the container runtime's own socket is the one host path in it, so the same file is
+# the deployment on any Linux host with a container runtime.
 #
 # Two things about it are not obvious and both come from measurement (`docs/sandbox.md`):
 #
@@ -25,9 +25,9 @@ name: hearth
 
 services:
   # A fresh named volume belongs to root, and Hearth is not root. This is the only
-  # thing here that ever is: it makes the three directories belong to the uid Hearth
-  # runs as, and it ends before Hearth starts. It is idempotent, so an upgrade or a
-  # restart runs it again and changes nothing.
+  # thing here that ever is: it hands every volume below to the uid Hearth runs as, and
+  # it ends before Hearth starts. It is idempotent, so an upgrade or a restart runs it
+  # again and changes nothing.
   init:
     image: ${HEARTH_IMAGE:?set HEARTH_IMAGE to the digest of the image you built}
     user: "0:0"
@@ -147,8 +147,11 @@ networks:
   #
   #     docker network create --subnet "$HEARTH_EGRESS_SUBNET" hearth-egress
   #
-  # Declared external so that a deployment brought up without it stops here, rather
-  # than at `sandbox_network_missing` after everything else has started.
+  # Declared external because it is not this file's to make. Compose does not check it
+  # either -- it prunes a top-level network no service references -- so a deployment
+  # brought up without it comes up and then refuses `sandbox_network_missing` at start,
+  # by name, before any resident is admitted. **Do not create it with IPv6**: the filter
+  # and Hearth's probe are both IPv4, so a v6 path would be unfenced and unmeasured.
   hearth-egress:
     name: hearth-egress
     external: true

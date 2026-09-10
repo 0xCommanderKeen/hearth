@@ -12,7 +12,7 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   host's filesystem and not in Hearth's; Hearth is deliberately not on `hearth-egress`,
   because a session reaches Hearth over a socket file and needs no network path to it.
   The fence itself is measured, never assumed: `HEARTH_SANDBOX_SHUT` and
-  `HEARTH_SANDBOX_OPEN` name addresses that must and must not be reachable, and at every
+  `HEARTH_SANDBOX_OPEN` name what a session must not and must be able to reach, and at every
   start -- and again on every `GET /api/health` -- Hearth runs one container on the
   sandbox network, from the pinned image, as its own uid, with nothing mounted, and asks
   it what it reached (`integrations/reach.py`). A reset counts as reachable, because a

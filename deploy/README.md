@@ -114,13 +114,24 @@ docker network create --subnet "$HEARTH_EGRESS_SUBNET" hearth-egress
 docker compose --env-file deploy/.env -f deploy/compose.yaml create
 ```
 
+**Do not enable IPv6 on that network.** The filter below is IPv4 and so is Hearth's
+probe, so a `--ipv6` sandbox network would give a session an unmeasured v6 path to this
+host and this LAN while the measurement said the fence held. Docker does not enable it
+by default. Compose cannot make this network for you, and cannot check it either: no
+service in the compose file is attached to it, so an instance brought up without it
+refuses `sandbox_network_missing` at start rather than at `compose up`.
+
 That leaves `hearth` (Hearth's own; nothing else is on it) beside it. Then install the
 filter that makes `hearth-egress` a fence, as root on the Docker host:
 
 ```sh
-HEARTH_EGRESS_SUBNET=172.31.240.0/24 deploy/fence.sh apply
-deploy/fence.sh show
+HEARTH_EGRESS_SUBNET="$HEARTH_EGRESS_SUBNET" deploy/fence.sh apply
+HEARTH_EGRESS_SUBNET="$HEARTH_EGRESS_SUBNET" deploy/fence.sh show
 ```
+
+`remove` and `apply` both work from the values in the environment *now*, so take the old
+fence out before changing `HEARTH_EGRESS_SUBNET` or `HEARTH_EGRESS_RESOLVER` — rules
+described by values that are gone are rules nothing here can find.
 
 It drops every private destination from the sandbox subnet — RFC 1918, link-local and
 the carrier-grade range — in `DOCKER-USER`, and the host's own addresses in `INPUT`,
@@ -141,7 +152,7 @@ explicitly or every provider name answers `unresolved` (measured):
 ```sh
 docker run --rm --privileged --network host \
     -v "$PWD/deploy/fence.sh:/fence.sh:ro" \
-    -e HEARTH_EGRESS_SUBNET=172.31.240.0/24 \
+    -e HEARTH_EGRESS_SUBNET="$HEARTH_EGRESS_SUBNET" \
     -e HEARTH_EGRESS_RESOLVER=192.168.65.7 \
     alpine:3 sh -c 'apk add --no-cache iptables iptables-legacy >/dev/null && sh /fence.sh apply'
 ```
@@ -263,7 +274,7 @@ told about. The order is: new digest ⇒ quiet store ⇒ restart.
 #    detached worker outlives its Hearth by design, and a container it started is not
 #    a stray while its worker is alive.
 curl -s -H "Authorization: Bearer $HEARTH_OPERATOR_TOKEN" localhost:8000/api/state \
-    | grep -c '"status": "running"'      # zero before going on
+    | grep -c '"status":"running"'       # zero before going on; the JSON is compact
 # 3. Take a backup (below). An upgrade you cannot undo is not an upgrade.
 # 4. Point the store at the new digest and restart.
 $EDITOR deploy/.env                      # HEARTH_SANDBOX_IMAGE, HEARTH_IMAGE

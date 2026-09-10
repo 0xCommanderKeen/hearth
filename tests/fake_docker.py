@@ -98,11 +98,15 @@ def carry(executable: Path, path: str, content: bytes, *, digest: str | None = N
     target = state(executable) / "image-files" / path.lstrip("/")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
+    claimed = state(executable) / "image-hashes" / path.lstrip("/")
     if digest is not None:
-        claimed = state(executable) / "image-hashes" / path.lstrip("/")
         claimed.parent.mkdir(parents=True, exist_ok=True)
         claimed.write_text(digest)
         return digest
+    # A claim belongs to the bytes it was made about. Carrying that path again
+    # without one takes it away, so this function's answer is always what the fake
+    # will really report.
+    claimed.unlink(missing_ok=True)
     return hashlib.sha256(content).hexdigest()
 
 

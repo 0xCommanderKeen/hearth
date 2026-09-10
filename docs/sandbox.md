@@ -123,6 +123,11 @@ The vocabulary is the point, because a fence is judged on it:
 | `no route` | the kernel would not send it | yes |
 | `refused` | a reset came back | **no**: the packet arrived, and a fence that lets it arrive is relying on nothing listening tomorrow |
 | `unresolved` | the name has no address here | no: that is not a fact about the network |
+| `unreadable` | not an address this probe can dial | no: that is an operator's own typo |
+
+Anything else the kernel says comes back as its own `errno` name, lower-cased, and is
+read as "not blocked" for the same reason `refused` is: a verdict must never be a word
+chosen because nothing better fit.
 
 `HEARTH_SANDBOX_SHUT` names what must not be reachable -- Hearth's own address, one
 address on the LAN -- and `HEARTH_SANDBOX_OPEN` what must be, which is the provider.
@@ -136,11 +141,11 @@ fact `sandbox.fence` -- and *then* refuses `sandbox_network_open` if it did not 
 because an operator whose instance will not start needs to read which address answered.
 `GET /api/health` measures it again on the ask, afresh, like the login survey and for
 the same reason: an operator asking is asking about now. It is not free -- a container
-start plus, for each shut address, the whole of `reach.TIMEOUT`, because a dropped
-packet is measured by waiting -- so that endpoint takes a couple of seconds on a fence
-that holds. Every address is dialled at once, so it is one `TIMEOUT` and not one per
-address. A probe that could not answer at all is `sandbox_fence_unmeasured` and is never
-read as a fence that held.
+start plus the whole of `reach.TIMEOUT`, because a dropped packet is measured by waiting
+-- so that endpoint takes a couple of seconds on a fence that holds. Every address is
+dialled at once, so it is one `TIMEOUT` however many addresses there are. A probe that
+could not answer at all is `sandbox_fence_unmeasured` and is never read as a fence that
+held.
 
 **What the fence is, exactly.** `deploy/fence.sh` drops every private destination from
 the sandbox subnet in `DOCKER-USER` and the host's own addresses in `INPUT`, and leaves
@@ -763,9 +768,10 @@ other machine. `scripts/sandbox-journey.py` ->
     answered: `{"held": false, ... "192.168.1.1:80": "connected"}`. Putting the filter
     back brought it up again on its own.
 20. **A routine run, on a resident's own login, in a per-run sandbox, settled.** The
-    scheduler's own occurrence made the task; the run succeeded at **35,542 µ$** from
-    the CLI's own numbers, in container `afc7801e...` from the pinned image, and the
-    container was gone afterwards. `login_scope` is `resident` on the run and on the
+    scheduler's own occurrence made the task; the run succeeded at **97,130 µ$** from
+    the CLI's own numbers, in container `cf4ff1f4...` from the pinned image, and the
+    container was gone afterwards -- "gone" meaning the daemon answered *No such
+    container*, not merely that a question failed. `login_scope` is `resident` on the run and on the
     receipt: the resident's own directory, not the household's.
 21. **The grant is on the run and the folders are in the container; the *session* still
     cannot open them.** `run_mounts` names `notes` (ro) and `drafts` (rw) at the grant's
@@ -777,14 +783,22 @@ other machine. `scripts/sandbox-journey.py` ->
     granted folder reachable by the model is a change to each provider's permission
     profile and is its own issue.
 22. **Two mechanisms hold the two halves of the fence, and they are not the same one.**
-    Asked with `deploy/fence.sh remove` and Hearth still up and listening, a container
-    on `hearth-egress` got `172.30.0.2:8000` **`timed out`** and `192.168.1.1:80`
-    **`connected`**. So Hearth's own address is closed by Docker's own
-    `DOCKER-ISOLATION` chains, which keep one user-defined network from reaching
-    another, and the LAN and the host are closed by the filter and only by the filter.
-    Both are measured together and neither is assumed; it is worth knowing which is
-    which, because a daemon configured to let its networks talk would move the first
-    one and Hearth would refuse on the next start.
+    Hearth's own probe, run by hand from the pinned image on `hearth-egress` with
+    `deploy/fence.sh remove` and Hearth still up and listening:
+
+    ```
+    with the filter:     {"172.30.0.2:8000": "dropped",   "192.168.1.1:80": "dropped",
+                          "chatgpt.com:443": "connected"}
+    without the filter:  {"172.30.0.2:8000": "dropped",   "192.168.1.1:80": "connected",
+                          "chatgpt.com:443": "connected"}
+    ```
+
+    So Hearth's own address is closed by Docker's own `DOCKER-ISOLATION` chains, which
+    keep one user-defined network from reaching another, and the LAN and the host are
+    closed by the filter and only by the filter. Both are measured together and neither
+    is assumed; it is worth knowing which is which, because a daemon configured to let
+    its networks talk would move the first one and Hearth would refuse on the next
+    start.
 23. **The Claude half did not run, for the reason it has run out of since #186**:
     `claude_subscription_login_required`, recorded in the evidence as not run. A
     sandboxed Claude session's login is the file `.credentials.json`, and only the
@@ -848,6 +862,14 @@ must, and neither carried a credential: the format copies `hearth.db`, `artifact
 - The fence filter is not persistent by itself: `DOCKER-USER` is rebuilt when the daemon
   restarts, so `deploy/fence.sh apply` belongs in whatever restores firewall state at
   boot. Nothing rests on remembering, because a start that cannot see the fence refuses.
+- **The fence is IPv4 and only IPv4, and that is the one way an open fence could read
+  as holding.** `deploy/fence.sh` touches `iptables` and never `ip6tables`, and
+  `HEARTH_SANDBOX_SHUT` cannot name an IPv6 address either, because `host:port` cannot
+  hold one unambiguously. On a sandbox network created with `--ipv6` a session would
+  have an unmeasured v6 path to the host and the LAN while the measurement said the
+  fence held. Docker does not enable IPv6 on a network by default and the runbook says
+  not to; closing it properly means fencing v6 and giving the probe a way to say so,
+  and neither exists yet.
 - A login taken away in the moment between a run being gated and being launched is not
   held for the operator. The launch intent is already recorded by then, so that run is
   interrupted instead -- visibly, with nothing spent, and without ending the pass for

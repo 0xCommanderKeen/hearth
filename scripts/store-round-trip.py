@@ -36,6 +36,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 
 TOKEN = "round-trip-operator-" + secrets.token_hex(16)
@@ -81,15 +82,18 @@ def opened(store: Path, port: int) -> dict:
 
 def described(store: Path) -> dict:
     """What a store says about itself, without opening it for writing."""
-    with sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True)) as db:
         rows = dict(db.execute("SELECT key,value FROM system_meta").fetchall())
         runs = db.execute("SELECT count(*) FROM runs").fetchone()[0]
+        # The schema version is the database's own `user_version` pragma, not a row:
+        # reading it out of `system_meta` answered `null` for every store there is.
+        schema = db.execute("PRAGMA user_version").fetchone()[0]
     return {
         "restore_hold": "restore_hold" in rows,
         "epoch": rows.get("epoch"),
         "runtime_kind": rows.get("runtime_kind"),
         "sandbox_image": rows.get("sandbox_image"),
-        "schema_version": rows.get("schema_version"),
+        "schema_version": schema,
         "runs": runs,
         # A login never travels: the format copies `hearth.db`, `artifacts/` and
         # `memory/` by name, never the tree the credentials live in.

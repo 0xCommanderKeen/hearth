@@ -44,6 +44,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -201,7 +202,7 @@ def store_facts(store: Path, run_id: str, kind: str) -> dict:
     naming a folder the run was not granted names nothing. The receipt and `handle.json`
     are the worker's own account of the container it started.
     """
-    with sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         mounts = [
             dict(row)
@@ -241,7 +242,7 @@ def store_facts(store: Path, run_id: str, kind: str) -> dict:
 
 def sandbox_audit(store: Path) -> list[dict]:
     """Everything this store recorded about the sandbox and the fence."""
-    with sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         return [
             dict(row)
@@ -254,25 +255,43 @@ def sandbox_audit(store: Path) -> list[dict]:
 
 
 def container_state(identity: str | None) -> str | None:
-    """What the daemon still holds of one container. A sandbox ends with its run."""
+    """What the daemon still holds of one container. A sandbox ends with its run.
+
+    "Absent" is a claim about the world, so it is only made when the daemon really
+    answered that it has no such container. A client that could not be run, a daemon
+    that did not reply, a timeout -- each is reported as itself, because evidence
+    saying a container was removed when nobody could ask is the one thing this file
+    must not say. It is the same separation `launcher.hashed()` makes, for the same
+    reason.
+    """
     if identity is None:
         return None
     client = os.environ.get("HEARTH_SANDBOX_DOCKER", "docker")
     argv = [client]
     if os.environ.get("HEARTH_SANDBOX_DOCKER_HOST"):
         argv += ["--host", os.environ["HEARTH_SANDBOX_DOCKER_HOST"]]
-    result = subprocess.run(
-        [*argv, "inspect", "--type", "container", "--format", "{{.State.Status}}", identity],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.strip() if result.returncode == 0 else "absent"
+    try:
+        result = subprocess.run(
+            [*argv, "inspect", "--type", "container", "--format", "{{.State.Status}}", identity],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except OSError, subprocess.SubprocessError:
+        return "the runtime did not answer"
+    if result.returncode == 0:
+        return result.stdout.strip()
+    # The client's own words for "there is no such container". Anything else on
+    # stderr is a daemon that refused or a client that never reached one.
+    if "no such container" in result.stderr.lower() or "no such object" in result.stderr.lower():
+        return "absent"
+    return "the runtime did not answer"
 
 
 def occurrence_of(store: Path, task_id: str) -> dict | None:
     """The routine occurrence this task came from, if a routine made it."""
-    with sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{store / 'hearth.db'}?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         row = db.execute("SELECT * FROM occurrences WHERE task_id=?", (task_id,)).fetchone()
     return dict(row) if row is not None else None
@@ -383,6 +402,10 @@ def main() -> None:
                 record["kinds"][kind] = {"ran": False, "reason": reason}
                 print(kind, "not run:", reason)
                 continue
+            # Recorded as started *before* the journey runs, so a failure inside it
+            # cannot take the record of a paid run away with it. `ran` becomes true
+            # only once that kind's run has settled and been read.
+            record["kinds"][kind] = {"ran": False, "reason": "did not finish"}
             record["kinds"][kind] = {"ran": True} | journey(instance, args, kind)
     finally:
         # Whatever happened, this may already have spent real money, so what it did is
@@ -390,13 +413,25 @@ def main() -> None:
         # through the instance itself: the worker is detached and would go on billing
         # with nobody left to settle it.
         try:
+            # This demo's own residents and nobody else's. The deployment is meant to
+            # be a throwaway one, but a script that cancelled whatever it found would
+            # be a bad thing to point at a household by mistake.
+            mine = {resident_of(f"sandbox-journey-{kind}") for kind in KINDS}
             for row in instance.call("/api/state")["runs"]:
-                if row["status"] in ("starting", "running", "interrupted"):
+                if row["resident_id"] in mine and row["status"] in (
+                    "starting",
+                    "running",
+                    "interrupted",
+                ):
                     print("cancelling in-flight run", row["id"])
                     instance.call(f"/api/runs/{row['id']}/cancel", {})
                     wait_for(settled(instance, row["resident_id"]), "that run to settle", 300)
         except (SystemExit, OSError) as error:
             print("could not end an in-flight run:", error)
+        # Anything that reached a settled run is written down, even when a later kind
+        # failed and brought us here: that run spent real money and this file is the
+        # only account of it. A file with no settled run in it would still say
+        # `real_model_called`, which is what it must never fake.
         if any(entry.get("ran") for entry in record.get("kinds", {}).values()):
             write_evidence(record, args)
         else:
