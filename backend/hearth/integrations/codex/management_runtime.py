@@ -10,21 +10,26 @@ from hearth.integrations.codex import app_server
 from hearth.integrations.codex.app_server_transport import MAX_NATIVE_STREAM
 from hearth.integrations.codex.events import unique_object
 from hearth.integrations.codex.usage import sync_directory
+from hearth.integrations.logins import HOUSEHOLD
 from hearth.residents.models import Refused
 
 
 def encode(receipt, expected):
     from hearth.integrations.launcher import sandboxed
+    from hearth.integrations.logins import spent
 
     if (
         not isinstance(receipt, dict)
-        # Where the session ran is the one field a management receipt may leave out:
-        # one written before the sandbox existed says nothing about it.
-        or set(receipt) - {"sandbox"} != {"kind", "protocol", "binding", "binary", "terminal"}
+        # Where the session ran and whose login it spent are the two fields a
+        # management receipt may leave out: one written before either existed says
+        # nothing about them.
+        or set(receipt) - {"sandbox", "login_scope"}
+        != {"kind", "protocol", "binding", "binary", "terminal"}
         or receipt["kind"] != "codex_subscription"
         or receipt["protocol"] != "management"
         or receipt["binding"] != asdict(expected)
         or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     try:
@@ -280,6 +285,10 @@ def worker(folder, request, execution):
         "binding": request["binding"],
         "binary": request["sha256"],
         "terminal": terminal,
+        # Whose login both of this run's sessions spent. A request document written
+        # before a resident could have one of its own names none, and the household's
+        # is what such a run really used.
+        "login_scope": request.get("login_scope", HOUSEHOLD),
     }
     if box is not None:
         # Where this run's sessions ran, and what they held on disk. A management run

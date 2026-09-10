@@ -102,6 +102,11 @@ def scope(data: Path, resident_id: str, kind: str) -> str:
     return RESIDENT if resident_login(data, resident_id, kind) is not None else HOUSEHOLD
 
 
+def scopes(data: Path, resident_id: str, kinds) -> dict[str, str]:
+    """Which login this resident is on, kind by kind, for an operator to read."""
+    return {kind: scope(data, resident_id, kind) for kind in kinds}
+
+
 def directory_for(data: Path, household: Path, resident_id: str, kind: str, admitted: str) -> Path:
     """The configuration directory a run's session is launched with.
 
@@ -118,6 +123,15 @@ def directory_for(data: Path, household: Path, resident_id: str, kind: str, admi
     if directory is None:
         raise Refused("login_required")
     return directory
+
+
+def spent(value) -> bool:
+    """Is this a receipt's own statement of which login the session spent?
+
+    One of the two, or nothing at all: a receipt written before a resident could have a
+    login of its own says nothing, and it settles exactly as it always did.
+    """
+    return value is None or value in SCOPES
 
 
 def seeded(data: Path, kinds: tuple[str, ...] | list[str]) -> list[Seeded]:

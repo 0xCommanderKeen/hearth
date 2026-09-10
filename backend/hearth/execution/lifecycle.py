@@ -11,6 +11,7 @@ from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.integrations.launcher import written_mounts
+from hearth.integrations.logins import RESIDENT, Logins
 from hearth.management.authority import run_mounts
 from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
@@ -274,8 +275,16 @@ class Execution:
             record(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
 
-    def runtime_unavailable(self, run_id: str, owner_token: str) -> Run:
-        """A run whose pinned runtime this instance is not configured for waits.
+    def runtime_unavailable(
+        self, run_id: str, owner_token: str, *, reason: str = "runtime_unavailable"
+    ) -> Run:
+        """A run this instance cannot launch, for a reason an operator can fix, waits.
+
+        Two things get here. A run whose pinned runtime this instance is not configured
+        for, and a run pinned to a resident's own provider login that has lapsed or been
+        taken away (`docs/adr/0016-sandbox-per-run.md`). They are one wait because they
+        are one situation: the work is admitted, the machine cannot do it yet, and
+        nobody's money has been spent.
 
         The run named its runtime at admission and that pin is where its work happens;
         no other provider can be asked what it did, and launching it on one would be a
@@ -295,8 +304,9 @@ class Execution:
 
         A run that was never launched is therefore left exactly as it is -- still
         waiting to start, which is the truth about it -- rather than moved to a state
-        it could never start from again. Why the runtime is absent is recorded once,
-        where it is discovered: `app.configured_runtimes` at start.
+        it could never start from again. Why the runtime is absent, and which resident
+        login has lapsed, are each recorded once where they are discovered:
+        `app.configured_runtimes` and the login survey, both at start.
         """
         with self.hearth.database.transaction(write=True) as db:
             row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -346,11 +356,17 @@ class Executor:
     provider's adapter, whatever the store's default becomes afterwards.
     """
 
-    def __init__(self, execution: Execution, runtimes):
-        """`runtimes` is one runtime, or the several this instance is configured for."""
+    def __init__(self, execution: Execution, runtimes, logins: Logins | None = None):
+        """`runtimes` is one runtime, or the several this instance is configured for.
+
+        `logins` is what this instance knows about the residents holding a provider
+        login of their own; without one no run is ever held for a login, which is what
+        an instance with no resident logins on disk means anyway.
+        """
         adapters = [runtimes] if hasattr(runtimes, "kind") else list(runtimes)
         self.execution = execution
         self.runtimes: dict[str, Runtime] = {adapter.kind: adapter for adapter in adapters}
+        self.logins = logins
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
     @property
@@ -363,6 +379,19 @@ class Executor:
         """
         (only,) = self.runtimes.values()
         return only
+
+    def held(self, run: Run) -> bool:
+        """Is this run's own login a reason to wait rather than launch it?
+
+        Only ever asked of a run pinned to a resident's own login: the household's is
+        probed when its adapter opens, and a household login that does not work leaves
+        no adapter for these runs to be handed to at all.
+        """
+        return (
+            self.logins is not None
+            and run.login_scope == RESIDENT
+            and self.logins.holds(run.resident_id, run.runtime_kind)
+        )
 
     def _step(self, run, runtime: Runtime | None):
         if run.cancellation_requested and not run.launch_attempted:
@@ -395,6 +424,16 @@ class Executor:
         evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
         # There is no safe detached-start replay after a lost launch reply.
         if evidence.status == "absent" and not run.launch_attempted:
+            if self.held(run):
+                # A run admitted to spend its resident's own provider login, whose
+                # login has lapsed or been taken away. It waits for the operator; it
+                # does not fall back to the household's, because that would spend a
+                # subscription nobody chose for this resident
+                # (`docs/adr/0016-sandbox-per-run.md`). This resident alone is held:
+                # every other one is launched by the same pass.
+                return self.execution.runtime_unavailable(
+                    run.id, run.owner_token, reason="login_required"
+                )
             if self.execution.prepare_start(run.id, run.owner_token):
                 try:
                     with self.execution.hearth.database.transaction() as db:

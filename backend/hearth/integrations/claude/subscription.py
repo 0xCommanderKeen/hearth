@@ -62,6 +62,7 @@ from hearth.integrations.launcher import (
     used,
     written_handle,
 )
+from hearth.integrations.logins import HOUSEHOLD, directory_for, spent
 from hearth.management.authority import admitted_mounts
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
@@ -152,10 +153,11 @@ def encode(receipt, expected):
     if (
         not isinstance(receipt, dict)
         or not RECEIPT <= set(receipt)
-        or not set(receipt) <= RECEIPT | {"management", "sandbox"}
+        or not set(receipt) <= RECEIPT | {"management", "sandbox", "login_scope"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
         or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     raw = serialized(receipt)
@@ -182,6 +184,50 @@ def encode(receipt, expected):
     # A cancelled or failed session still spent what it spent. The CLI stopping on its
     # own budget fence is the ordinary case: the turn was billed before it stopped.
     return raw, digest, Evidence("cancelled" if receipt["cancelled"] else "failed", cost=cost)
+
+
+def ask(binary: Path | None, directory: Path, *arguments: str) -> str:
+    """Ask the pinned CLI one question about one configuration directory.
+
+    A CLI that cannot answer is not configured. The exit code is deliberately not read:
+    `auth status --json` prints its answer and **exits 1** when the configured
+    directory holds no login (measured on the pinned 2.1.263 and on 2.1.265), so
+    treating a non-zero exit as a broken installation would tell an operator whose
+    login has lapsed to go and check the binary path. What the CLI says is the answer;
+    whether it was happy is not.
+    """
+    if binary is None:
+        raise Refused("claude_subscription_configuration_required")
+    try:
+        return subprocess.run(
+            [str(binary), *arguments],
+            env=environment(directory),
+            capture_output=True,
+            # The login answer names the account. Nothing the CLI says on either
+            # stream is kept, logged or passed on, so its diagnostics are discarded
+            # rather than inherited onto Hearth's own stderr.
+            text=True,
+            timeout=PROBE_TIMEOUT,
+            check=False,
+        ).stdout
+    except OSError, subprocess.SubprocessError:
+        # A missing, unrunnable or unanswering binary is an operator's configuration
+        # to fix, and no answer of any kind is evidence of a version or a login.
+        raise Refused("claude_subscription_configuration_required") from None
+
+
+def login_probe(binary: Path | None, directory: Path) -> bool:
+    """Is there a Claude login in that directory? The CLI's own answer, one field of it.
+
+    `auth status --json` in that configuration directory, read for `loggedIn` and
+    nothing else -- the same question the household's login is opened with, asked of a
+    resident's own directory in the same words. The rest of the answer names the
+    account and is never read, logged or kept.
+
+    Without the pinned binary in hand nothing can be asked; that refuses rather than
+    answering "no", and the caller decides what not knowing means.
+    """
+    return logged_in(ask(binary, directory, "auth", "status", "--json"))
 
 
 class ClaudeLiveRuntime:
@@ -220,8 +266,9 @@ class ClaudeLiveRuntime:
         if self._probe("--version").strip() != VERSION:
             raise Refused("claude_subscription_version_unsupported")
         # Only `loggedIn` is read; the rest of that answer names the account and is
-        # never kept, logged or passed on.
-        if not logged_in(self._probe("auth", "status", "--json")):
+        # never kept, logged or passed on. The household's login is opened with exactly
+        # the probe a resident's own is checked with afterwards.
+        if not login_probe(self.binary, self.config_dir):
             raise Refused("claude_subscription_login_required")
         if self.sandbox.launcher == CONTAINER and not (self.config_dir / CREDENTIALS).is_file():
             # A sandboxed session's login is one file mounted into a configuration
@@ -251,30 +298,19 @@ class ClaudeLiveRuntime:
         self.root.mkdir(mode=0o700, exist_ok=True)
 
     def _probe(self, *arguments: str) -> str:
-        """Ask the pinned CLI one question. A CLI that cannot answer is not configured.
+        return ask(self.binary, self.config_dir, *arguments)
 
-        The exit code is deliberately not read. `auth status --json` prints its answer
-        and **exits 1** when the configured directory holds no login (measured on the
-        pinned 2.1.263 and on 2.1.265), so treating a non-zero exit as a broken
-        installation would tell an operator whose login has lapsed to go and check the
-        binary path. What the CLI says is the answer; whether it was happy is not.
+    def probe_login(self, directory: Path) -> bool:
+        """Is that directory logged in? Asked of every adapter in the same words.
+
+        A resident's own login is held to exactly the household's standard, including
+        the one thing a sandbox adds: the credential has to be a *file* there, because
+        a session inside a container is given that file and nothing else of this host,
+        and a Keychain does not cross the boundary (`docs/sandbox.md`).
         """
-        try:
-            return subprocess.run(
-                [str(self.binary), *arguments],
-                env=environment(self.config_dir),
-                capture_output=True,
-                # The login answer names the account. Nothing the CLI says on either
-                # stream is kept, logged or passed on, so its diagnostics are discarded
-                # rather than inherited onto Hearth's own stderr.
-                text=True,
-                timeout=PROBE_TIMEOUT,
-                check=False,
-            ).stdout
-        except OSError, subprocess.SubprocessError:
-            # A missing, unrunnable or unanswering binary is an operator's configuration
-            # to fix, and no answer of any kind is evidence of a version or a login.
-            raise Refused("claude_subscription_configuration_required") from None
+        if self.sandbox.launcher == CONTAINER and not (Path(directory) / CREDENTIALS).is_file():
+            return False
+        return login_probe(getattr(self, "binary", None), directory)
 
     def folder(self, run_id):
         identifier(run_id)
@@ -311,7 +347,18 @@ class ClaudeLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='epoch'"
                     ).fetchone()[0],
                     "binary": str(self.binary),
-                    "config_dir": str(self.config_dir),
+                    # Whose login pays for this session: the resident's own directory
+                    # if its admission pinned one, the household's otherwise. Read from
+                    # the run and not from configuration, so a login seeded after this
+                    # run was admitted belongs to the next one, and one taken away
+                    # refuses here rather than quietly spending the household's
+                    # (`docs/adr/0016-sandbox-per-run.md`).
+                    "config_dir": str(
+                        directory_for(
+                            self.data, self.config_dir, row["resident_id"], KIND, row["login_scope"]
+                        )
+                    ),
+                    "login_scope": row["login_scope"],
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key=?", (BINARY_PIN,)
                     ).fetchone()[0],
@@ -418,6 +465,7 @@ def unlaunched(request: dict, management: dict, code: str, sandbox: Sandbox) -> 
             "container_id": None,
             "image": sandbox.digest,
         },
+        "login_scope": request.get("login_scope", HOUSEHOLD),
         "stdout": "",
         "exit_code": None,
         "cancelled": True,
@@ -717,6 +765,10 @@ def worker(folder, inherited_fd=None):
                 # surveyed before it started and again now that it has ended.
                 "mounts": used(reached, before, surveyed(reached)),
             },
+            # And whose login it spent. A request document written before a resident
+            # could have one of its own names none, and the household's is what such a
+            # run really used, because it was the only login there was.
+            "login_scope": request.get("login_scope", HOUSEHOLD),
             "stdout": output.decode("utf-8", errors="replace"),
             "exit_code": handle.returncode if handle else None,
             # `launched` is the only thing that can make a cancellation free, so it is

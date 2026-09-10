@@ -36,6 +36,7 @@ from hearth.integrations.codex.subscription import KIND as CODEX_KIND
 from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.integrations.interface import label as runtime_label
 from hearth.integrations.launcher import Sandbox, configure
+from hearth.integrations.logins import Logins, Probe, prepare
 from hearth.management.api import mount_management
 from hearth.management.authority import protected_paths
 from hearth.observation.notifications import Inbox
@@ -134,7 +135,28 @@ def create_app(
     sandbox_state = (
         {"launcher": sandbox.launcher} if restored else configure(database, sandbox, hearth.clock)
     )
-    executor = Executor(execution, adapters)
+    # Which residents hold a provider login of their own, and whether it still works.
+    # The probe for a kind is that provider's own, taken from the adapter this instance
+    # opened, so nothing here names a provider and nothing reads a credential: the
+    # answer is `loggedIn` and no more (`docs/adr/0016-sandbox-per-run.md`).
+    logins = Logins(data, login_probes(adapters))
+    if not restored:
+        # The shelf, never a login: an operator seeds one by running that CLI's own
+        # login flow with its configuration path pointed here (`docs/sandbox.md`).
+        prepare(data)
+        # A login that has lapsed is a configuration this operator can fix, and their
+        # resident's runs are waiting on exactly that -- so it is recorded once per
+        # start, where it is discovered, exactly as an absent runtime is above.
+        with database.transaction(write=True) as db:
+            for entry in logins.lapsed():
+                _audit(
+                    db,
+                    "login.resident_lapsed",
+                    entry["resident_id"],
+                    int(hearth.clock()),
+                    {"kind": entry["kind"]},
+                )
+    executor = Executor(execution, adapters, logins)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
@@ -228,6 +250,11 @@ def create_app(
         half-written configuration -- names what is wrong with this machine, so it is
         answered here, behind the operator's token, rather than on the open liveness
         path. It is what an operator reads when a resident's runs are waiting.
+
+        The residents holding a login of their own are probed afresh on every ask,
+        because that is the question being asked: not what was true at start, but
+        whether the household can work right now. Each answer is `loggedIn` and nothing
+        else -- no account, no plan, no organisation, nothing of the credential itself.
         """
         return supervisor.health() | {
             "runtimes": opened_runtimes(),
@@ -236,6 +263,9 @@ def create_app(
                 {"kind": missing, "reason": reason}
                 for missing, reason in sorted(unavailable.items())
             ],
+            # A resident whose own login has lapsed: its runs wait, and nobody else's
+            # do (`docs/adr/0016-sandbox-per-run.md`).
+            "login": {"resident_lapsed": logins.lapsed()},
         }
 
     @app.get("/api/events")
@@ -456,6 +486,10 @@ def create_app(
             "runtime_kind": run.runtime_kind,
             "runtime_version": run.runtime_version,
             "input_digest": run.input_digest,
+            # Whose provider login paid for this run, read from the run's own pin and
+            # never from the receipt: the receipt is the worker's statement of what it
+            # did, and this is Hearth's own record of what it admitted.
+            "login_scope": run.login_scope,
         }
 
     @app.post("/api/runs/{run_id}/cancel")
@@ -534,6 +568,21 @@ def login_directories(adapters: Iterable[object]) -> list[Path]:
     return [
         Path(path) for path in (getattr(adapter, "login", None) for adapter in adapters) if path
     ]
+
+
+def login_probes(adapters: Iterable[object]) -> dict[str, Probe | None]:
+    """Each opened runtime's own answer to "is that directory logged in", by kind.
+
+    Asked of every adapter in the same words, for the same reason `login_directories`
+    is: what a login even *is* differs between providers, and nothing outside
+    `integrations/` may know which. An adapter that answers nothing -- a fake runtime
+    in a test -- leaves its kind unaskable, and a login nobody probed has not lapsed.
+    """
+    return {
+        str(kind): getattr(adapter, "probe_login", None)
+        for adapter in adapters
+        if (kind := getattr(adapter, "kind", None))
+    }
 
 
 def configured_runtimes(

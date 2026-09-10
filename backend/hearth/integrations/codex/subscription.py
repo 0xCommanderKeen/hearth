@@ -34,6 +34,7 @@ from hearth.integrations.launcher import (
     used,
     written_handle,
 )
+from hearth.integrations.logins import HOUSEHOLD, directory_for, spent
 from hearth.management.authority import admitted_mounts
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
@@ -92,10 +93,11 @@ def encode(receipt, expected):
         # A receipt written before a run had a sandbox to name says nothing about one,
         # and it settles exactly as it always did: that run was a child of its worker.
         or not FIELDS <= set(receipt)
-        or not set(receipt) <= FIELDS | {"sandbox"}
+        or not set(receipt) <= FIELDS | {"sandbox", "login_scope"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
         or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
@@ -159,6 +161,22 @@ def encode(receipt, expected):
     return raw, hashlib.sha256(raw.encode()).hexdigest(), evidence
 
 
+def login_probe(binary: Path | None, directory: Path) -> bool:
+    """Is there a Codex login in that directory?
+
+    This CLI keeps its credential in one file, and whether that file is there is the
+    whole of Hearth's question -- it is exactly what the household's own login is
+    checked for when this adapter opens, and a resident's own login is probed the same
+    way or it would be held to a different standard than the household's.
+
+    The CLI does offer a `login status` subcommand and Hearth does not run it: its
+    answer is a line of prose naming the account, and nothing about an account is
+    Hearth's to read. The binary is taken and not used for that reason; every kind's
+    probe is asked in the same words, and the ones that need a CLI use it.
+    """
+    return (Path(directory) / AUTH).is_file()
+
+
 class CodexLiveRuntime:
     kind = KIND
     version = 1
@@ -214,6 +232,14 @@ class CodexLiveRuntime:
                 raise Refused("codex_subscription_binary_changed")
         self.root.mkdir(mode=0o700, exist_ok=True)
 
+    def probe_login(self, directory: Path) -> bool:
+        """Is that directory logged in? Asked of every adapter in the same words.
+
+        A resident's own login is probed exactly as the household's is, so what an
+        operator is shown about one is the same fact they are shown about the other.
+        """
+        return login_probe(getattr(self, "binary", None), directory)
+
     def folder(self, run_id):
         identifier(run_id)
         return self.root / run_id
@@ -249,7 +275,18 @@ class CodexLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='epoch'"
                     ).fetchone()[0],
                     "binary": str(self.binary),
-                    "auth_home": str(self.auth_home),
+                    # Whose login pays for this session: the resident's own directory
+                    # if its admission pinned one, the household's otherwise. Read from
+                    # the run and not from configuration, so a login seeded after this
+                    # run was admitted belongs to the next one, and one taken away
+                    # refuses here rather than quietly spending the household's
+                    # (`docs/adr/0016-sandbox-per-run.md`).
+                    "auth_home": str(
+                        directory_for(
+                            self.data, self.auth_home, row["resident_id"], KIND, row["login_scope"]
+                        )
+                    ),
+                    "login_scope": row["login_scope"],
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key='codex_live_binary'"
                     ).fetchone()[0],
@@ -528,6 +565,10 @@ def worker(folder, inherited_fd=None):
                 # surveyed before it started and again now that it has ended.
                 "mounts": used(reached, before, surveyed(reached)),
             },
+            # And whose login it spent. A request document written before a resident
+            # could have one of its own names none, and the household's is what such a
+            # run really used, because it was the only login there was.
+            "login_scope": request.get("login_scope", HOUSEHOLD),
             "stdout": output.decode("utf-8", errors="replace"),
             "final": final.read_text()
             if final.exists() and final.stat().st_size <= 512 * 1024
