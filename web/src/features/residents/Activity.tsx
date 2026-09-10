@@ -22,12 +22,14 @@ export function ResidentActivityLog({
   residentName,
   cursor,
   connected,
+  compact = false,
 }: {
   client: Client;
   residentId: string;
   residentName: string;
   cursor: number;
   connected: boolean;
+  compact?: boolean;
 }) {
   const [before, setBefore] = useState<number | null>(null);
   const [page, setPage] = useState<ResidentActivity | null>(null);
@@ -61,11 +63,13 @@ export function ResidentActivityLog({
       className="resident-activity"
       aria-label={`Activity for ${residentName}`}
     >
-      <h2>Activity log</h2>
-      <p>
-        Recorded events for {residentName}, newest first. Updates as work
-        progresses.
-      </p>
+      {!compact && <h2>Activity log</h2>}
+      {!compact && (
+        <p>
+          Recorded events for {residentName}, newest first. Updates as work
+          progresses.
+        </p>
+      )}
       {!connected && (
         <p role="status">Disconnected. Showing the last loaded activity.</p>
       )}
@@ -76,13 +80,15 @@ export function ResidentActivityLog({
         </p>
       )}
       {loading && !page && <p role="status">Loading activity…</p>}
-      <button
-        disabled={loading || !connected}
-        onClick={() => setReload((value) => value + 1)}
-      >
-        Refresh activity
-      </button>
-      {before !== null && (
+      {!compact && (
+        <button
+          disabled={loading || !connected}
+          onClick={() => setReload((value) => value + 1)}
+        >
+          Refresh activity
+        </button>
+      )}
+      {!compact && before !== null && (
         <button
           disabled={loading || !connected}
           onClick={() => {
@@ -95,7 +101,7 @@ export function ResidentActivityLog({
       )}
       {page?.entries.length === 0 && <p>No recorded activity yet.</p>}
       <ol className="journal">
-        {page?.entries.map((entry) => (
+        {(compact ? page?.entries.slice(0, 4) : page?.entries)?.map((entry) => (
           <li key={entry.sequence}>
             <div className="memory-revision">
               <strong>
@@ -130,7 +136,7 @@ export function ResidentActivityLog({
           </li>
         ))}
       </ol>
-      {page?.next_before != null && (
+      {!compact && page?.next_before != null && (
         <button
           disabled={loading || !connected}
           onClick={() => {

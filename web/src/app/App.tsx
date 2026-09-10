@@ -16,6 +16,14 @@ import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
 import { Journal } from "../features/residents/Journal";
 import { ResidentActivityLog } from "../features/residents/Activity";
+import { ResidentDetails } from "../features/residents/Details";
+import {
+  ResidentOverview,
+  ResidentPanel,
+  ResidentTabs,
+  routeTab,
+  type ResidentTab,
+} from "../features/residents/Overview";
 import {
   NewResident,
   ProfileProvenance,
@@ -87,7 +95,7 @@ function Emblem() {
   );
 }
 
-function SummaryOutput({
+function TaskOutput({
   content,
   eyebrow,
   onClose,
@@ -106,7 +114,7 @@ function SummaryOutput({
       ref={panel}
       tabIndex={-1}
       className="output"
-      aria-label="Summary output"
+      aria-label="Task result"
     >
       <div className="section-title">
         <span className="eyebrow">{eyebrow}</span>
@@ -143,11 +151,25 @@ export function App() {
   const recordRequest = useRef(0);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [residentId, setResidentId] = useState("");
+  const [residentTab, setResidentTab] = useState<ResidentTab>("Overview");
+  function selectResidentTab(tab: ResidentTab) {
+    setResidentTab(tab);
+    window.location.hash = `#residents/${encodeURIComponent(residentId)}?tab=${tab.toLowerCase()}`;
+  }
+  function newResidentTask() {
+    selectResidentTab("Tasks");
+    setTimeout(() => {
+      document.getElementById("instruction")?.focus();
+      document
+        .getElementById("instruction")
+        ?.scrollIntoView?.({ block: "center" });
+    }, 0);
+  }
   const [provisionId, setProvisionId] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [instruction, setInstruction] = useState("Summarize today’s notes.");
+  const [instruction, setInstruction] = useState("");
   const [output, setOutput] = useState<{
     content: string;
     residentId?: string;
@@ -318,6 +340,7 @@ export function App() {
         setView("skills");
       } else if (hash.startsWith("#residents/")) {
         setResidentId(hash.slice(11));
+        setResidentTab(routeTab(window.location.hash));
         setView("resident");
       } else if (
         [
@@ -380,7 +403,7 @@ export function App() {
         target?.scrollIntoView?.({ block: "start" });
       }
     }
-  }, [view, residentId, snapshot?.epoch]);
+  }, [view, residentId, residentTab, snapshot?.epoch]);
   const residents = snapshot?.residents ?? [];
   const current = residents.find((r) => r.id === residentId);
   const visibleTasks = (snapshot?.tasks ?? []).filter(
@@ -588,7 +611,7 @@ export function App() {
           )}
         </div>
       </header>
-      <main>
+      <main className={view === "resident" ? "resident-page" : undefined}>
         {visitedHamlet && view !== "hamlet" && snapshot && (
           <a className="village-return" href="#hamlet">
             ← Return to village
@@ -601,11 +624,38 @@ export function App() {
                 <a href="#residents">← All residents</a>
               </div>
             )}
-            <h1>{pageTitle}</h1>
+            <div className="resident-title-line">
+              {view === "resident" && current && (
+                <span className="resident-avatar" aria-hidden="true">
+                  {current.name.slice(0, 1)}
+                </span>
+              )}
+              <div>
+                <h1>{pageTitle}</h1>
+                {view === "resident" && current && (
+                  <p className="resident-subtitle">
+                    {runtimeLabel(
+                      snapshot!.runtimes,
+                      current.profile?.execution_profile,
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
             {pageNote && <p>{pageNote}</p>}
           </div>
           {snapshot && client && (
             <div className="page-actions">
+              {view === "resident" && current && (
+                <>
+                  <button onClick={() => selectResidentTab("Settings")}>
+                    Settings
+                  </button>
+                  <button className="primary" onClick={newResidentTask}>
+                    ＋ New task
+                  </button>
+                </>
+              )}
               {(view === "townhall" || view === "residents") &&
                 !snapshot.restore_hold && (
                   <>
@@ -825,67 +875,23 @@ export function App() {
             )}
             {view === "resident" && current && (
               <>
-                <section
-                  className="profile-facts"
-                  aria-label="Resident information"
-                >
-                  <div>
-                    <span className="eyebrow">Purpose</span>
-                    <h2>{current.purpose}</h2>
-                    <span className={`state state-${current.presence}`}>
-                      {connected
-                        ? statusLabel(current.presence)
-                        : `Last known: ${statusLabel(current.presence)}`}
-                    </span>
-                    {current.pause_reason && (
-                      <p>{current.pause_reason.replaceAll("_", " ")}</p>
-                    )}
-                  </div>
-                  <dl className="facts">
-                    <dt>Resident ID</dt>
-                    <dd className="num">{current.id}</dd>
-                    <dt>Daily spending limit</dt>
-                    <dd>
-                      <span className="num">
-                        ${(current.daily_limit / 1e6).toFixed(2)}
-                      </span>{" "}
-                      · API-equivalent estimate
-                    </dd>
-                    <dt>Budget timezone</dt>
-                    <dd>{current.budget_timezone ?? "UTC"}</dd>
-                    <dt>Runtime</dt>
-                    <dd>
-                      {runtimeLabel(
-                        snapshot.runtimes,
-                        current.profile?.execution_profile,
-                      )}
-                      {current.profile?.execution_profile ===
-                      snapshot.runtimes.default
-                        ? " · the household default"
-                        : ""}
-                    </dd>
-                    {/* Whose subscription this resident's work spends, provider by
-                        provider. A resident with a login of its own is on different
-                        money from the rest of the household. */}
-                    <dt>Provider login</dt>
-                    <dd aria-label="Provider login">
-                      {configuredKinds(snapshot.runtimes)
-                        .map(
-                          (kind) =>
-                            `${providerName(snapshot.runtimes, kind)}: ${
-                              current.logins?.[kind] === "resident"
-                                ? "its own login"
-                                : "the household login"
-                            }`,
-                        )
-                        .join(" · ")}
-                    </dd>
-                    <dt>Declaration</dt>
-                    <dd>Revision {current.revision}</dd>
-                    <dt>Memory</dt>
-                    <dd>Revision {current.memory_revision ?? 0}</dd>
-                  </dl>
-                </section>
+                <ResidentTabs
+                  active={residentTab}
+                  onSelect={selectResidentTab}
+                />
+                <ResidentPanel name="Overview" active={residentTab}>
+                  {residentTab === "Overview" && (
+                    <ResidentOverview
+                      key={`${snapshot.epoch}:${current.id}`}
+                      resident={current}
+                      snapshot={snapshot}
+                      client={client}
+                      connected={connected}
+                      onSelect={selectResidentTab}
+                      onNewTask={newResidentTask}
+                    />
+                  )}
+                </ResidentPanel>
               </>
             )}
             {view === "resident" && !current && (
@@ -894,309 +900,365 @@ export function App() {
               </a>
             )}
             {view === "resident" && current && (
-              <ResidentActivityLog
-                key={`activity:${snapshot.epoch}:${current.id}`}
-                client={client}
-                residentId={current.id}
-                residentName={current.name}
-                cursor={snapshot.cursor}
-                connected={connected}
-              />
+              <ResidentPanel name="Activity" active={residentTab}>
+                <ResidentActivityLog
+                  key={`activity:${snapshot.epoch}:${current.id}`}
+                  client={client}
+                  residentId={current.id}
+                  residentName={current.name}
+                  cursor={snapshot.cursor}
+                  connected={connected && residentTab === "Activity"}
+                />
+              </ResidentPanel>
             )}
             {((view === "resident" && current) || view === "tasks") && (
               <div
-                className={`workspace ${view === "tasks" ? "tasks-only" : ""}`}
+                className="resident-task-content"
+                hidden={view === "resident" && residentTab !== "Tasks"}
+                role={view === "resident" ? "tabpanel" : undefined}
+                id={view === "resident" ? "resident-panel-Tasks" : undefined}
+                aria-labelledby={
+                  view === "resident" ? "resident-tab-Tasks" : undefined
+                }
               >
-                {view === "resident" && current && (
-                  <section className="work-panel">
-                    <h2>Assign work</h2>
-                    <p>
-                      A read-only assignment. Results appear beside this panel.
-                    </p>
-                    <form onSubmit={submit}>
-                      {pending.current &&
-                        pending.current.body.resident_id !== residentId && (
-                          <p className="notice" role="status">
-                            Pending submission belongs to{" "}
-                            {pending.current.body.resident_id}.{" "}
-                            <a
-                              href={`#residents/${encodeURIComponent(pending.current.body.resident_id)}`}
-                            >
-                              Return to that resident to retry.
-                            </a>
-                          </p>
-                        )}
-                      <label htmlFor="instruction">The assignment</label>
-                      <textarea
-                        id="instruction"
-                        value={instruction}
-                        disabled={busy || !!pending.current}
-                        onChange={(e) => setInstruction(e.target.value)}
-                        required
-                        maxLength={32000}
-                      />
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          !!snapshot.restore_hold ||
-                          (!pending.current &&
-                            !!current.lifecycle &&
-                            current.lifecycle.state !== "ready") ||
-                          (!!pending.current &&
-                            pending.current.body.resident_id !== residentId)
-                        }
-                      >
-                        {pending.current
-                          ? "Retry pending submission"
-                          : "Run summary"}{" "}
-                        <span>↗</span>
-                      </button>
-                      <small>
-                        Uses your{" "}
-                        {runtimeLabel(
-                          snapshot.runtimes,
-                          current.profile?.execution_profile,
-                        )}
-                        . Dollar amounts are API-equivalent estimates.
-                      </small>
-                    </form>
-                    <small>
-                      Pausing blocks new runs. Existing work continues until
-                      explicitly cancelled; safety holds remain enforced.
-                    </small>
-                  </section>
-                )}
-                <section
-                  className="task-panel"
-                  id="resident-work"
-                  tabIndex={-1}
+                <div
+                  className={`workspace ${view === "tasks" ? "tasks-only" : ""}`}
                 >
-                  <h2>Tasks &amp; results</h2>
-                  <UsageByOrigin client={client} busy={busy} act={act} />
-                  {!visibleTasks.length ? (
-                    <div className="empty">
-                      <h3>A quiet beginning.</h3>
+                  {view === "resident" && current && (
+                    <section className="work-panel">
+                      <h2>Assign work</h2>
                       <p>
-                        Once you assign something, its progress and result will
-                        appear here.
+                        Describe the work to do. The resident uses its
+                        configured tools and permissions.
                       </p>
-                    </div>
-                  ) : (
-                    <ul className="tasks">
-                      {visibleTasks.map((task) => {
-                        const run = snapshot.runs.find(
-                          (r) => r.task_id === task.id,
-                        );
-                        return (
-                          <li
-                            key={task.id}
-                            id={run ? `run-${run.id}` : undefined}
-                          >
-                            <div className="task-meta">
-                              <span className={`state state-${task.status}`}>
-                                {statusLabel(task.status)}
-                              </span>
-                              <time>{clock(task.created_at)}</time>
-                            </div>
-                            <TaskInstruction
-                              key={`${snapshot.epoch}:${task.id}`}
-                              client={client}
-                              task={task}
-                            />
-                            {task.lineage && <Lineage hops={task.lineage} />}
-                            {run?.memory_revision !== undefined && (
-                              <small>
-                                {run.memory_revision === 0
-                                  ? "Admitted without memory"
-                                  : `Memory revision ${run.memory_revision}`}
-                                {run.journal_opened?.length
-                                  ? ` · opened with journal ${run.journal_opened
-                                      .map((sequence) => `#${sequence}`)
-                                      .join(", ")}`
-                                  : " · opened with no journal entries"}
-                              </small>
-                            )}
-                            {run && (
-                              <small aria-label="What the run wrote">
-                                {run.memory_written?.length
-                                  ? `Wrote memory revision ${run.memory_written.join(", ")}`
-                                  : "Wrote no memory"}
-                                {run.journal_written
-                                  ? ` · wrote journal entry #${run.journal_written}`
-                                  : " · wrote no journal entry"}
-                              </small>
-                            )}
-                            {run && <RunInputs run={run} />}
-                            {!!run?.mounts?.length && (
-                              <div aria-label="Folders reached by run">
-                                <small>
-                                  Folders reached · as this run was admitted
-                                </small>
-                                <ul>
-                                  {run.mounts.map((mount) => (
-                                    <li key={mount.name}>
-                                      {mount.name} ·{" "}
-                                      {mount.mode === "rw"
-                                        ? "writable"
-                                        : "read only"}
-                                      <small>
-                                        {mount.path} → {mount.host_path}
-                                      </small>
-                                    </li>
-                                  ))}
-                                </ul>
+                      <form onSubmit={submit}>
+                        {pending.current &&
+                          pending.current.body.resident_id !== residentId && (
+                            <p className="notice" role="status">
+                              Pending submission belongs to{" "}
+                              {pending.current.body.resident_id}.{" "}
+                              <a
+                                href={`#residents/${encodeURIComponent(pending.current.body.resident_id)}`}
+                              >
+                                Return to that resident to retry.
+                              </a>
+                            </p>
+                          )}
+                        <label htmlFor="instruction">Task instructions</label>
+                        <textarea
+                          placeholder="Describe the outcome you want…"
+                          id="instruction"
+                          value={instruction}
+                          disabled={busy || !!pending.current}
+                          onChange={(e) => setInstruction(e.target.value)}
+                          required
+                          maxLength={32000}
+                        />
+                        <button
+                          className="primary"
+                          disabled={
+                            busy ||
+                            !!snapshot.restore_hold ||
+                            (!pending.current &&
+                              !!current.lifecycle &&
+                              current.lifecycle.state !== "ready") ||
+                            (!!pending.current &&
+                              pending.current.body.resident_id !== residentId)
+                          }
+                        >
+                          {pending.current
+                            ? "Retry pending submission"
+                            : "Run task"}{" "}
+                          <span>↗</span>
+                        </button>
+                        <small>
+                          Uses your{" "}
+                          {runtimeLabel(
+                            snapshot.runtimes,
+                            current.profile?.execution_profile,
+                          )}
+                          . Dollar amounts are API-equivalent estimates.
+                        </small>
+                      </form>
+                      <small>
+                        Pausing blocks new runs. Existing work continues until
+                        explicitly cancelled; safety holds remain enforced.
+                      </small>
+                    </section>
+                  )}
+                  <section
+                    className="task-panel"
+                    id="resident-work"
+                    tabIndex={-1}
+                  >
+                    <h2>Tasks &amp; results</h2>
+                    {view === "tasks" && (
+                      <UsageByOrigin client={client} busy={busy} act={act} />
+                    )}
+                    {!visibleTasks.length ? (
+                      <div className="empty">
+                        <h3>A quiet beginning.</h3>
+                        <p>
+                          Once you assign something, its progress and result
+                          will appear here.
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="tasks">
+                        {visibleTasks.map((task) => {
+                          const run = snapshot.runs.find(
+                            (r) => r.task_id === task.id,
+                          );
+                          return (
+                            <li key={task.id} id={`task-${task.id}`}>
+                              {run && <span id={`run-${run.id}`} />}
+                              <div className="task-meta">
+                                <span className={`state state-${task.status}`}>
+                                  {statusLabel(task.status)}
+                                </span>
+                                <time>{clock(task.created_at)}</time>
                               </div>
-                            )}
-                            {run?.login_scope && (
-                              <small aria-label="Login this run spent">
-                                {run.login_scope === "resident"
-                                  ? "Spent this resident's own provider login"
-                                  : "Spent the household's provider login"}
-                              </small>
-                            )}
-                            {run?.management && (
-                              <p aria-label="Management authority used by run">
-                                Management grant revision{" "}
-                                {run.management.grant_revision} ·{" "}
-                                {run.management.calls} recorded tool calls
-                              </p>
-                            )}
-                            {!!run?.letters_refused?.length && (
-                              <div aria-label="Letters this run was refused">
+                              <TaskInstruction
+                                key={`${snapshot.epoch}:${task.id}`}
+                                client={client}
+                                task={task}
+                              />
+                              {task.lineage && <Lineage hops={task.lineage} />}
+                              {run?.memory_revision !== undefined && (
                                 <small>
-                                  Letters refused · nothing was written
+                                  {run.memory_revision === 0
+                                    ? "Admitted without memory"
+                                    : `Memory revision ${run.memory_revision}`}
+                                  {run.journal_opened?.length
+                                    ? ` · opened with journal ${run.journal_opened
+                                        .map((sequence) => `#${sequence}`)
+                                        .join(", ")}`
+                                    : " · opened with no journal entries"}
                                 </small>
-                                <ul>
-                                  {/* Two letters can be refused in the same second for
+                              )}
+                              {run && (
+                                <small aria-label="What the run wrote">
+                                  {run.memory_written?.length
+                                    ? `Wrote memory revision ${run.memory_written.join(", ")}`
+                                    : "Wrote no memory"}
+                                  {run.journal_written
+                                    ? ` · wrote journal entry #${run.journal_written}`
+                                    : " · wrote no journal entry"}
+                                </small>
+                              )}
+                              {run && <RunInputs run={run} />}
+                              {!!run?.mounts?.length && (
+                                <div aria-label="Folders reached by run">
+                                  <small>
+                                    Folders reached · as this run was admitted
+                                  </small>
+                                  <ul>
+                                    {run.mounts.map((mount) => (
+                                      <li key={mount.name}>
+                                        {mount.name} ·{" "}
+                                        {mount.mode === "rw"
+                                          ? "writable"
+                                          : "read only"}
+                                        <small>
+                                          {mount.path} → {mount.host_path}
+                                        </small>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {run?.login_scope && (
+                                <small aria-label="Login this run spent">
+                                  {run.login_scope === "resident"
+                                    ? "Spent this resident's own provider login"
+                                    : "Spent the household's provider login"}
+                                </small>
+                              )}
+                              {run?.management && (
+                                <p aria-label="Management authority used by run">
+                                  Management grant revision{" "}
+                                  {run.management.grant_revision} ·{" "}
+                                  {run.management.calls} recorded tool calls
+                                </p>
+                              )}
+                              {!!run?.letters_refused?.length && (
+                                <div aria-label="Letters this run was refused">
+                                  <small>
+                                    Letters refused · nothing was written
+                                  </small>
+                                  <ul>
+                                    {/* Two letters can be refused in the same second for
                                       the same reason, so the position in the run's own
                                       evidence is what tells them apart. */}
-                                  {run.letters_refused.map((refusal, place) => (
-                                    <li key={place}>
-                                      {refusal.reason.replaceAll("_", " ")}
-                                      {Object.entries(refusal.details).map(
-                                        ([key, value]) => (
-                                          <small key={key}>
-                                            {key.replaceAll("_", " ")}:{" "}
-                                            {typeof value === "object"
-                                              ? JSON.stringify(value)
-                                              : String(value)}
-                                          </small>
-                                        ),
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {run?.skills_error && (
-                              <p className="notice error">
-                                Skill provenance unavailable:{" "}
-                                {run.skills_error.replaceAll("_", " ")}.
-                              </p>
-                            )}
-                            {!!run?.skills?.length && (
-                              <div aria-label="Skills used by run">
-                                <small>Skills used · in order</small>
-                                <ol>
-                                  {run.skills.map((skill) => (
-                                    <li key={skill.skill_id}>
-                                      <a
-                                        href={`#skills/${encodeURIComponent(skill.skill_id)}`}
-                                      >
-                                        {skill.name}
-                                      </a>{" "}
-                                      · revision {skill.revision}
-                                    </li>
-                                  ))}
-                                </ol>
-                              </div>
-                            )}
-                            <div className="task-actions">
-                              {task.status === "queued" && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void act(() => client.start(task.id))
-                                  }
-                                >
-                                  Start task ↗
-                                </button>
+                                    {run.letters_refused.map(
+                                      (refusal, place) => (
+                                        <li key={place}>
+                                          {refusal.reason.replaceAll("_", " ")}
+                                          {Object.entries(refusal.details).map(
+                                            ([key, value]) => (
+                                              <small key={key}>
+                                                {key.replaceAll("_", " ")}:{" "}
+                                                {typeof value === "object"
+                                                  ? JSON.stringify(value)
+                                                  : String(value)}
+                                              </small>
+                                            ),
+                                          )}
+                                        </li>
+                                      ),
+                                    )}
+                                  </ul>
+                                </div>
                               )}
-                              {run &&
-                                ["starting", "running", "interrupted"].includes(
-                                  run.status,
-                                ) && (
+                              {run?.skills_error && (
+                                <p className="notice error">
+                                  Skill provenance unavailable:{" "}
+                                  {run.skills_error.replaceAll("_", " ")}.
+                                </p>
+                              )}
+                              {!!run?.skills?.length && (
+                                <div aria-label="Skills used by run">
+                                  <small>Skills used · in order</small>
+                                  <ol>
+                                    {run.skills.map((skill) => (
+                                      <li key={skill.skill_id}>
+                                        <a
+                                          href={`#skills/${encodeURIComponent(skill.skill_id)}`}
+                                        >
+                                          {skill.name}
+                                        </a>{" "}
+                                        · revision {skill.revision}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              )}
+                              <div className="task-actions">
+                                {task.status === "queued" && (
                                   <button
-                                    disabled={
-                                      busy || !!run.cancellation_requested
-                                    }
+                                    disabled={busy}
                                     onClick={() =>
-                                      void act(() => client.cancel(run.id))
+                                      void act(() => client.start(task.id))
                                     }
                                   >
-                                    Cancel run
+                                    Start task ↗
                                   </button>
                                 )}
-                              {run?.artifact_id && (
-                                <button
-                                  className="result-link"
-                                  onClick={() =>
-                                    void act(async () => {
-                                      setOutput(null);
-                                      const result = await client.artifact(
-                                        run.artifact_id!,
-                                      );
-                                      if (currentSession.current === client)
-                                        setOutput({
-                                          content: result.content,
-                                          residentId: task.resident_id,
-                                          runtimeKind: run.runtime_kind,
-                                        });
-                                    })
-                                  }
-                                >
-                                  Read summary ↗
-                                </button>
-                              )}
-                              {run && (
-                                <small>
-                                  {run.usage_known
-                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported" ? " · operator reported" : ""}`
-                                    : "Usage not yet known"}
-                                </small>
-                              )}
-                              {run && (
-                                <small aria-label="Runtime this run was worked by">
-                                  {runtimeLabel(
-                                    snapshot.runtimes,
-                                    run.runtime_kind,
+                                {run &&
+                                  [
+                                    "starting",
+                                    "running",
+                                    "interrupted",
+                                  ].includes(run.status) && (
+                                    <button
+                                      disabled={
+                                        busy || !!run.cancellation_requested
+                                      }
+                                      onClick={() =>
+                                        void act(() => client.cancel(run.id))
+                                      }
+                                    >
+                                      Cancel run
+                                    </button>
                                   )}
-                                  {run.model ? ` · ${run.model}` : ""}
-                                  {run.price_schedule
-                                    ? ` · ${run.price_schedule}`
-                                    : ""}
-                                </small>
-                              )}
-                            </div>
-                            {run &&
-                              !run.usage_known &&
-                              ["succeeded", "failed", "cancelled"].includes(
-                                run.status,
-                              ) && (
-                                <UsageReport
-                                  client={client}
-                                  runId={run.id}
-                                  busy={busy || !!snapshot.restore_hold}
-                                  act={act}
-                                />
-                              )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </section>
+                                {run?.artifact_id && (
+                                  <button
+                                    className="result-link"
+                                    onClick={() =>
+                                      void act(async () => {
+                                        setOutput(null);
+                                        const result = await client.artifact(
+                                          run.artifact_id!,
+                                        );
+                                        if (currentSession.current === client)
+                                          setOutput({
+                                            content: result.content,
+                                            residentId: task.resident_id,
+                                            runtimeKind: run.runtime_kind,
+                                          });
+                                      })
+                                    }
+                                  >
+                                    View result ↗
+                                  </button>
+                                )}
+                                {run && (
+                                  <small>
+                                    {run.usage_known
+                                      ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported" ? " · operator reported" : ""}`
+                                      : "Usage not yet known"}
+                                  </small>
+                                )}
+                                {run && (
+                                  <small aria-label="Runtime this run was worked by">
+                                    {runtimeLabel(
+                                      snapshot.runtimes,
+                                      run.runtime_kind,
+                                    )}
+                                    {run.model ? ` · ${run.model}` : ""}
+                                    {run.price_schedule
+                                      ? ` · ${run.price_schedule}`
+                                      : ""}
+                                  </small>
+                                )}
+                              </div>
+                              {run &&
+                                !run.usage_known &&
+                                ["succeeded", "failed", "cancelled"].includes(
+                                  run.status,
+                                ) && (
+                                  <UsageReport
+                                    client={client}
+                                    runId={run.id}
+                                    busy={busy || !!snapshot.restore_hold}
+                                    act={act}
+                                  />
+                                )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+                {view === "resident" && current && (
+                  <>
+                    <section className="resident-card resident-document">
+                      <div className="resident-card-head">
+                        <h2>Scheduled work</h2>
+                        <a href="#routines">Manage routines →</a>
+                      </div>
+                      {!(snapshot.routines ?? []).some(
+                        (r) => r.resident_id === current.id,
+                      ) ? (
+                        <p>No routines configured.</p>
+                      ) : (
+                        <ul>
+                          {(snapshot.routines ?? [])
+                            .filter((r) => r.resident_id === current.id)
+                            .map((r) => (
+                              <li key={r.id}>
+                                Daily at {r.local_time} · {r.timezone} ·{" "}
+                                {r.enabled ? "Enabled" : "Disabled"}
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </section>
+                    <div id="resident-letters" tabIndex={-1}>
+                      <Letters
+                        key={`letters:${current.id}`}
+                        client={client}
+                        resident={current}
+                        residents={residents}
+                        busy={busy}
+                        readOnly={snapshot.restore_hold === true}
+                        act={act}
+                        openable={openableRun}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {view === "routines" && (
@@ -1209,8 +1271,10 @@ export function App() {
             )}
             {output &&
               (view === "tasks" ||
-                (view === "resident" && output.residentId === residentId)) && (
-                <SummaryOutput
+                (view === "resident" &&
+                  residentTab === "Tasks" &&
+                  output.residentId === residentId)) && (
+                <TaskOutput
                   key={output.content}
                   content={output.content}
                   eyebrow={resultEyebrow(snapshot.runtimes, output.runtimeKind)}
@@ -1218,80 +1282,152 @@ export function App() {
                 />
               )}
             {view === "resident" && current && (
-              <div key={`profile:${current.id}`}>
-                <ResidentMaintenance
-                  key={`maintenance:${snapshot.epoch}:${current.id}`}
+              <>
+                <ResidentDetails
+                  key={`details:${snapshot.epoch}:${current.id}`}
                   client={client}
                   resident={current}
-                  readOnly={snapshot.restore_hold === true}
-                  routines={snapshot.routines ?? []}
-                  onChanged={() => void act(async () => {})}
+                  active={residentTab}
+                  onSelect={selectResidentTab}
+                  memoryChildren={
+                    <>
+                      {" "}
+                      <MemoryHistory
+                        key={`memory:${snapshot.epoch}:${current.id}`}
+                        client={client}
+                        resident={current}
+                        busy={busy}
+                        act={act}
+                        openable={openableRun}
+                      />
+                      <div id="resident-journal" tabIndex={-1}>
+                        <Journal
+                          key={`journal:${snapshot.epoch}:${current.id}`}
+                          client={client}
+                          resident={current}
+                          busy={busy}
+                          act={act}
+                          openable={openableRun}
+                        />
+                      </div>
+                    </>
+                  }
+                  skillsChildren={
+                    <>
+                      {" "}
+                      {current.profile && (
+                        <ProfileProvenance
+                          profile={current.profile}
+                          runtimes={snapshot.runtimes}
+                        />
+                      )}
+                    </>
+                  }
+                  accessChildren={
+                    <>
+                      {" "}
+                      {current.management && (
+                        <section
+                          className="management-profile"
+                          aria-label="Resident management authority"
+                        >
+                          <h3>Management authority</h3>
+                          {"error" in current.management ? (
+                            <p role="alert">
+                              {current.management.error.replaceAll("_", " ")}
+                            </p>
+                          ) : (
+                            <p>
+                              {current.management.enabled
+                                ? `Enabled · grant revision ${current.management.revision} · up to ${current.management.max_residents} managed residents`
+                                : "No management tools granted."}
+                            </p>
+                          )}
+                          <a href={`#management/${current.id}`}>
+                            Inspect or edit the operator grant →
+                          </a>
+                        </section>
+                      )}
+                    </>
+                  }
                 />
-                <MemoryHistory
-                  key={`memory:${snapshot.epoch}:${current.id}`}
-                  client={client}
-                  resident={current}
-                  busy={busy}
-                  act={act}
-                  openable={openableRun}
-                />
-                <div id="resident-journal" tabIndex={-1}>
-                  <Journal
-                    key={`journal:${snapshot.epoch}:${current.id}`}
-                    client={client}
-                    resident={current}
-                    busy={busy}
-                    act={act}
-                    openable={openableRun}
-                  />
-                </div>
-                {/* Keyed on the resident alone, unlike its neighbours above: the
-                    others hold only server data a remount refetches, while Letters
-                    holds an unsent draft and the frozen identity of a command whose
-                    answer never arrived. Dropping those on a store swap would hand the
-                    operator a fresh command id for a letter Hearth may already hold.
-                    Its list is read on demand and reloaded by the same button. */}
-                <div id="resident-letters" tabIndex={-1}>
-                  <Letters
-                    key={`letters:${current.id}`}
-                    client={client}
-                    resident={current}
-                    residents={residents}
-                    busy={busy}
-                    readOnly={snapshot.restore_hold === true}
-                    act={act}
-                    openable={openableRun}
-                  />
-                </div>
-                {current.profile && (
-                  <ProfileProvenance
-                    profile={current.profile}
-                    runtimes={snapshot.runtimes}
-                  />
-                )}
-                {current.management && (
-                  <section
-                    className="management-profile"
-                    aria-label="Resident management authority"
-                  >
-                    <h3>Management authority</h3>
-                    {"error" in current.management ? (
-                      <p role="alert">
-                        {current.management.error.replaceAll("_", " ")}
-                      </p>
-                    ) : (
-                      <p>
-                        {current.management.enabled
-                          ? `Enabled · grant revision ${current.management.revision} · up to ${current.management.max_residents} managed residents`
-                          : "No management tools granted."}
-                      </p>
-                    )}
-                    <a href={`#management/${current.id}`}>
-                      Inspect or edit the operator grant →
-                    </a>
-                  </section>
-                )}
-              </div>
+                <ResidentPanel name="Settings" active={residentTab}>
+                  <div key={`profile:${current.id}`}>
+                    <ResidentMaintenance
+                      key={`maintenance:${snapshot.epoch}:${current.id}`}
+                      client={client}
+                      resident={current}
+                      readOnly={snapshot.restore_hold === true}
+                      routines={snapshot.routines ?? []}
+                      onChanged={() => void act(async () => {})}
+                    />
+                    <details className="resident-technical">
+                      <summary>Technical details</summary>{" "}
+                      <section
+                        className="profile-facts"
+                        aria-label="Technical resident information"
+                      >
+                        <div>
+                          <span className="eyebrow">Purpose</span>
+                          <h2>{current.purpose}</h2>
+                          <span className={`state state-${current.presence}`}>
+                            {connected
+                              ? statusLabel(current.presence)
+                              : `Last known: ${statusLabel(current.presence)}`}
+                          </span>
+                          {current.pause_reason && (
+                            <p>{current.pause_reason.replaceAll("_", " ")}</p>
+                          )}
+                        </div>
+                        <dl className="facts">
+                          <dt>Resident ID</dt>
+                          <dd className="num">{current.id}</dd>
+                          <dt>Daily spending limit</dt>
+                          <dd>
+                            <span className="num">
+                              ${(current.daily_limit / 1e6).toFixed(2)}
+                            </span>{" "}
+                            · API-equivalent estimate
+                          </dd>
+                          <dt>Budget timezone</dt>
+                          <dd>{current.budget_timezone ?? "UTC"}</dd>
+                          <dt>Runtime</dt>
+                          <dd>
+                            {runtimeLabel(
+                              snapshot.runtimes,
+                              current.profile?.execution_profile,
+                            )}
+                            {current.profile?.execution_profile ===
+                            snapshot.runtimes.default
+                              ? " · the household default"
+                              : ""}
+                          </dd>
+                          {/* Whose subscription this resident's work spends, provider by
+                        provider. A resident with a login of its own is on different
+                        money from the rest of the household. */}
+                          <dt>Provider login</dt>
+                          <dd aria-label="Provider login">
+                            {configuredKinds(snapshot.runtimes)
+                              .map(
+                                (kind) =>
+                                  `${providerName(snapshot.runtimes, kind)}: ${
+                                    current.logins?.[kind] === "resident"
+                                      ? "its own login"
+                                      : "the household login"
+                                  }`,
+                              )
+                              .join(" · ")}
+                          </dd>
+                          <dt>Declaration</dt>
+                          <dd>Revision {current.revision}</dd>
+                          <dt>Memory</dt>
+                          <dd>Revision {current.memory_revision ?? 0}</dd>
+                        </dl>
+                      </section>
+                    </details>
+                  </div>
+                </ResidentPanel>
+              </>
             )}
 
             {view === "inbox" && (
@@ -1374,7 +1510,6 @@ export function App() {
         )}
         <footer>
           <span>Hearth · local development</span>
-          <span>Fictional notes. Read-only summaries.</span>
         </footer>
       </main>
     </>

@@ -1,0 +1,646 @@
+/* Resident overview: the selected A layout, using Hearth's live controls. */
+.resident-page {
+  max-width: 1500px;
+  width: 100%;
+  margin: 0 auto;
+}
+.resident-page [hidden] {
+  display: none !important;
+}
+.resident-page .page-head {
+  padding-bottom: 24px;
+  margin-bottom: 0;
+}
+.resident-title-line {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.resident-avatar {
+  display: grid;
+  place-items: center;
+  width: 70px;
+  height: 70px;
+  border-radius: 19px;
+  background: #e2e7d8;
+  border: 1px solid #d4dcc8;
+  color: #526443;
+  font:
+    38px Georgia,
+    serif;
+  flex-shrink: 0;
+}
+.resident-page h1 {
+  font-size: 32px;
+  letter-spacing: -1px;
+}
+.resident-subtitle {
+  font-size: 13px !important;
+  color: #737b6a;
+  margin-top: 8px !important;
+}
+.resident-page .crumb {
+  margin-bottom: 20px;
+}
+.resident-page .page-actions {
+  align-self: center;
+}
+.resident-tabs {
+  display: flex;
+  gap: 28px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line-strong);
+  margin-bottom: 28px;
+  padding: 0 2px;
+}
+.resident-tabs button {
+  position: relative;
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  padding: 14px 0;
+  font-size: 13px;
+  color: #717866;
+  box-shadow: none;
+}
+.resident-tabs button[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+.resident-tabs button[aria-selected="true"]:after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.resident-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.resident-tab-panel {
+  min-width: 0;
+}
+.resident-overview-heading {
+  margin-bottom: 23px;
+}
+.resident-overview-heading h2 {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  margin-bottom: 7px;
+}
+.resident-overview-heading p {
+  color: #747b6b;
+  font-size: 13px;
+}
+.resident-overview-heading .eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.3px;
+  margin-bottom: 10px;
+}
+.resident-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.15fr;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 9px;
+  padding: 23px 0;
+  margin-bottom: 25px;
+}
+.resident-metrics > div {
+  border-right: 1px solid var(--line);
+  padding: 0 24px;
+  min-width: 0;
+}
+.resident-metrics > div:last-child {
+  border: 0;
+}
+.resident-metrics > div > span {
+  display: block;
+  color: #6e7765;
+  font-size: 12px;
+}
+.resident-metrics strong {
+  display: block;
+  font-size: 26px;
+  font-weight: 500;
+  margin: 12px 0 8px;
+  line-height: 1.2;
+}
+.resident-metrics strong.state {
+  display: inline-flex;
+  font-size: 13px;
+  background: none;
+  padding: 0;
+  margin-top: 18px;
+  line-height: 22px;
+}
+.resident-metrics em {
+  font-size: 11px;
+  color: #79826f;
+  font-weight: 400;
+  font-style: normal;
+}
+.resident-metrics small {
+  font-size: 11px;
+  color: #6e7765;
+}
+.resident-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 22px;
+}
+.resident-main-column,
+.resident-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.resident-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+  min-width: 0;
+}
+.resident-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 21px 23px 18px;
+}
+.resident-card-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.resident-card-head a,
+.resident-card-head button {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.resident-card .quiet {
+  padding: 3px 0;
+  color: var(--accent);
+  font-size: 12px;
+}
+.resident-card-empty {
+  padding: 0 23px 25px;
+  color: #717965;
+}
+.resident-recent-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.resident-recent-tasks > li {
+  border-top: 1px solid var(--line);
+}
+.resident-recent-tasks button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 20px 23px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  box-shadow: none;
+}
+.resident-recent-tasks button:hover {
+  background: #fafaf5;
+}
+.resident-recent-tasks button > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.resident-recent-tasks strong {
+  font-size: 13px;
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.resident-recent-tasks time {
+  display: block;
+  font-size: 11px;
+  margin-top: 8px;
+  color: #747d69;
+}
+.resident-recent-tasks .state {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.resident-recent-tasks button > span:last-child {
+  color: #8c947f;
+}
+.resident-purpose > p {
+  padding: 0 23px 22px;
+  line-height: 1.85;
+  color: #66705b;
+  font-size: 14px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.resident-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 23px;
+  border-top: 1px solid var(--line);
+  background: #fafaf7;
+  font-size: 11px;
+  color: #747c6a;
+}
+.resident-quick-task {
+  background: #f1ede3;
+  border-color: #e4dccd;
+  padding: 24px;
+}
+.resident-quick-task .eyebrow {
+  font-size: 10px;
+  color: #83765f;
+}
+.resident-quick-task h2 {
+  font:
+    25px/1.3 Georgia,
+    serif;
+  letter-spacing: -0.5px;
+  margin: 15px 0 13px;
+}
+.resident-quick-task p {
+  font-size: 13px;
+  color: #786c56;
+  line-height: 1.8;
+  margin-bottom: 23px;
+}
+.resident-quick-task button {
+  width: 100%;
+}
+.resident-detail-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0 23px;
+}
+.resident-detail-list dt {
+  font-size: 11px;
+  color: #78826c;
+}
+.resident-detail-list dd {
+  font-size: 13px;
+  margin: 0 0 15px;
+  overflow-wrap: anywhere;
+}
+.resident-card-link {
+  margin: 0 23px 21px;
+}
+.resident-attention {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 23px;
+  background: var(--warn-soft);
+  border: 1px solid #e5d2aa;
+  border-radius: 8px;
+  margin-bottom: 22px;
+}
+.resident-attention strong {
+  font-size: 14px;
+}
+.resident-attention p {
+  font-size: 13px;
+  color: #836b42;
+  max-width: 650px;
+  margin: 7px 0 0;
+}
+.resident-attention button {
+  white-space: nowrap;
+  font-size: 12px;
+}
+.resident-card .resident-activity {
+  padding: 0 23px 12px;
+  border: 0;
+  background: none;
+  margin: 0;
+}
+.resident-card .resident-activity .journal {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.resident-card .resident-activity .journal > li {
+  position: relative;
+  padding: 16px 0 14px 19px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.resident-card .resident-activity .journal > li:last-child {
+  border-bottom: 0;
+}
+.resident-card .resident-activity .journal > li:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 23px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #839375;
+}
+.resident-card .resident-activity strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.resident-card .resident-activity time {
+  font-size: 10px;
+}
+.resident-card .resident-activity p,
+.resident-card .resident-activity a {
+  font-size: 12px;
+}
+.resident-card .resident-activity small {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.resident-tab-panel > .resident-activity {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 25px;
+}
+.resident-tab-panel > .resident-activity .journal {
+  padding: 0;
+  list-style: none;
+}
+.resident-tab-panel > .resident-activity .journal > li {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.resident-document {
+  margin-bottom: 23px;
+  padding: 0 23px 23px;
+}
+.resident-document .resident-card-head {
+  padding: 23px 0 20px;
+}
+.resident-document h3 {
+  font-size: 14px;
+  margin: 20px 0 12px;
+}
+.resident-document p,
+.resident-document li {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.resident-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.9;
+  margin: 0;
+}
+.resident-page .workspace {
+  margin-top: 0;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.5fr);
+  gap: 23px;
+  align-items: start;
+}
+.resident-page .work-panel,
+.resident-page .task-panel {
+  border-radius: 9px;
+  min-width: 0;
+}
+.resident-page .task-panel .tasks > li {
+  overflow-wrap: anywhere;
+}
+.resident-page .task-panel .facts {
+  grid-template-columns: 110px minmax(0, 1fr);
+}
+.resident-page .task-panel .facts dd {
+  overflow-wrap: anywhere;
+}
+.resident-page .work-panel textarea {
+  min-height: 155px;
+}
+.resident-page .work-panel form {
+  margin-top: 20px;
+}
+.resident-task-content .resident-document {
+  margin-top: 23px;
+}
+.resident-task-content #resident-letters {
+  margin: 23px 0;
+}
+.resident-page .skill-editor {
+  margin-top: 20px;
+}
+.resident-technical {
+  border: 1px solid var(--line);
+  padding: 20px;
+  border-radius: 8px;
+  background: #fff;
+  margin: 24px 0;
+}
+.resident-technical summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #737b69;
+}
+.resident-technical .profile-facts {
+  border: 0;
+  padding: 20px 0 0;
+  margin: 0;
+}
+.resident-technical .facts dd {
+  overflow-wrap: anywhere;
+}
+.resident-page .maintenance .section-title {
+  align-items: baseline;
+  gap: 14px;
+}
+.resident-page .maintenance {
+  margin-top: 0;
+}
+.resident-page #resident-panel-Settings .provision-fields {
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .resident-overview-grid {
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 18px;
+  }
+  .resident-card-head,
+  .resident-recent-tasks button {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .resident-page .workspace {
+    grid-template-columns: 1fr;
+  }
+  .resident-metrics > div {
+    padding: 0 18px;
+  }
+  .resident-title-line {
+    gap: 14px;
+  }
+  .resident-tabs {
+    gap: 23px;
+  }
+}
+@media (max-width: 760px) {
+  .resident-overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .resident-side-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .resident-quick-task {
+    display: none;
+  }
+  .resident-metrics {
+    grid-template-columns: 1fr 1fr;
+    padding: 18px 0;
+  }
+  .resident-metrics > div:nth-child(2) {
+    border: 0;
+  }
+  .resident-metrics > div:last-child {
+    grid-column: 1/-1;
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+    margin-top: 18px;
+  }
+  .resident-page .page-head {
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+  .resident-attention {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .resident-avatar {
+    width: 58px;
+    height: 58px;
+    font-size: 32px;
+    border-radius: 15px;
+  }
+  .resident-page h1 {
+    font-size: 29px;
+  }
+  .resident-page .page-actions {
+    margin-left: 0;
+  }
+  .resident-tabs {
+    margin-bottom: 23px;
+  }
+  .resident-card .resident-activity .memory-revision {
+    flex-wrap: wrap;
+  }
+  .resident-card-foot {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 480px) {
+  .resident-page .page-head {
+    align-items: stretch;
+  }
+  .resident-page .page-actions {
+    width: 100%;
+    display: flex;
+  }
+  .resident-page .page-actions .primary {
+    flex: 1;
+  }
+  .resident-side-column {
+    display: flex;
+  }
+  .resident-overview-heading h2 {
+    font-size: 20px;
+  }
+  .resident-metrics > div {
+    padding: 0 15px;
+  }
+  .resident-metrics strong {
+    font-size: 24px;
+  }
+  .resident-metrics strong.state {
+    font-size: 12px;
+  }
+  .resident-metrics em {
+    display: block;
+    font-size: 10px;
+    margin-top: 7px;
+  }
+  .resident-metrics small {
+    font-size: 10px;
+  }
+  .resident-recent-tasks button {
+    gap: 10px;
+  }
+  .resident-recent-tasks .state {
+    font-size: 10px;
+  }
+  .resident-recent-tasks button > span:last-child {
+    display: none;
+  }
+  .resident-card-head {
+    gap: 12px;
+  }
+  .resident-card-head h2 {
+    font-size: 14px;
+  }
+  .resident-page .task-panel {
+    padding: 18px 14px;
+  }
+  .resident-page .task-panel .facts {
+    grid-template-columns: 1fr;
+  }
+  .resident-page .task-panel .facts dd {
+    margin-bottom: 10px;
+  }
+  .resident-page .profile-facts {
+    grid-template-columns: 1fr;
+  }
+  .resident-tabs {
+    gap: 24px;
+  }
+  .resident-title-line {
+    min-width: 0;
+  }
+  .resident-title-line h1 {
+    overflow-wrap: anywhere;
+  }
+  .resident-tab-panel > .resident-activity {
+    padding: 20px 16px;
+  }
+  .resident-page .maintenance .section-title {
+    flex-wrap: wrap;
+  }
+}
+/* The application rail is fixed on desktop; preserve its occupied width. */
+main.resident-page {
+  margin-left: var(--rail);
+  margin-right: 0;
+  width: calc(100% - var(--rail));
+}
+@media (max-width: 760px) {
+  main.resident-page {
+    margin-left: 0;
+    width: 100%;
+  }
+}
