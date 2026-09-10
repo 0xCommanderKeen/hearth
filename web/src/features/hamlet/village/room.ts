@@ -1,7 +1,11 @@
 import * as THREE from "three";
 import { selectionGesture } from "./gesture";
 
-export type RoomScene = { active(visible: boolean): void; dispose(): void };
+export type RoomScene = {
+  active(visible: boolean): void;
+  lighter(enabled: boolean): void;
+  dispose(): void;
+};
 type RoomTarget = { label: string; href: string };
 export type RoomTargets = Record<"work" | "shelf" | "letters", RoomTarget>;
 
@@ -122,7 +126,7 @@ export function createRoomScene(
   let disposed = false,
     visible = true;
   function draw() {
-    if (disposed || !visible) return;
+    if (disposed || !visible || document.hidden) return;
     const width = element.clientWidth,
       height = element.clientHeight;
     if (!width || !height) return;
@@ -171,6 +175,7 @@ export function createRoomScene(
     if (disposed) return;
     disposed = true;
     observer.disconnect();
+    document.removeEventListener("visibilitychange", draw);
     canvas.removeEventListener("pointerdown", down);
     canvas.removeEventListener("pointermove", move);
     canvas.removeEventListener("pointerup", up);
@@ -179,6 +184,7 @@ export function createRoomScene(
     geometry.dispose();
     materials.forEach((material) => material.dispose());
     renderer.dispose();
+    if (!renderer.getContext().isContextLost()) renderer.forceContextLoss();
     canvas.remove();
   }
   function lost(event: Event) {
@@ -191,8 +197,16 @@ export function createRoomScene(
   canvas.addEventListener("pointerup", up);
   canvas.addEventListener("pointercancel", cancel);
   canvas.addEventListener("webglcontextlost", lost);
+  document.addEventListener("visibilitychange", draw);
   draw();
   return {
+    lighter(enabled) {
+      if (disposed) return;
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, enabled ? 1 : 2),
+      );
+      draw();
+    },
     active(value) {
       visible = value;
       draw();

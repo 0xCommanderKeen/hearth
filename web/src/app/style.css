@@ -1334,6 +1334,24 @@ form label + button {
   color: var(--muted);
 }
 
+.scene-rendering {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  min-height: 44px;
+  background: #f2f1e6;
+  color: #354532;
+}
+.scene-rendering input {
+  width: 20px;
+  height: 20px;
+}
+.scene-rendering small {
+  color: var(--muted);
+}
+
 .scene-controls {
   display: flex;
   align-items: center;

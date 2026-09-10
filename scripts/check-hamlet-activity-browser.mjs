@@ -6,9 +6,11 @@ import { createServer } from "../web/node_modules/vite/dist/node/index.js";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
-const output = fileURLToPath(
-  new URL("../docs/evidence/hamlet-activity-2026-09-09/", import.meta.url),
-);
+const output =
+  process.env.HAMLET_EVIDENCE_DIR ||
+  fileURLToPath(
+    new URL("../docs/evidence/hamlet-activity-2026-09-09/", import.meta.url),
+  );
 await mkdir(output, { recursive: true });
 const fixture = `
 import React from 'react'; import {createRoot} from 'react-dom/client';

@@ -1,0 +1,730 @@
+{
+  "fixture": "Synthetic full App, real Client.watch and WebGL; no runtime/live data",
+  "checks": [
+    "initial and repeated history never travels",
+    "fresh letter completes along rendered street rectangles",
+    "recorded status updates",
+    "disconnected labels and timestamped history",
+    "reconnect history no travel",
+    "same-epoch cursor reset accepted without travel",
+    "epoch baseline",
+    "reduced motion consumes events",
+    "interior events no replay on exit",
+    "missing and archived doors text only",
+    "unknown, failed and paused text labels",
+    "no page errors"
+  ],
+  "freshRouteSamples": [
+    {
+      "x": 0.8262190475974767,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 0.8729047619047621,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.100904761904762,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.1508476190368337,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.1902952381060237,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.2248571428571426,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.2583333333333333,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.3982095238310954,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.5876666666666668,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.6857428571212858,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.7838190476298332,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 1.887504761883191,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.002047619047619,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.1135142857035003,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.2418095238095237,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.319257142878714,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.445742857121286,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.579466666655881,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.6889428571320715,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 2.882923809545381,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.0284095237879525,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.2187714285822135,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.3079809523593813,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.343628571439357,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.3756571428463573,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.409133333322548,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.440619047619048,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.472828571450143,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.50196190477269,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.5325428571644277,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.563304761926333,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.5949714285929995,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.623380952380952,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.6564952381168094,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.688523809523809,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.7185619047511196,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.7505904762120474,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.7800857142749287,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.808314285692714,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.8374476190691897,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.8653142856927145,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.8940857142749286,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.9232190475974758,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.9519904761796907,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 3.9818476190368335,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.011342857153642,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.043009523820309,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.073409523787952,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.104895238084453,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.134933333311762,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.164790476168905,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.19500952382031,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.226676190486976,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.254904761904762,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.283133333322548,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.310819047629833,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.339228571417786,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.369266666645095,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.397857142857143,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.42644761906919,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.455761904761905,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.4848952380844525,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.515114285735857,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.542257142878714,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.569942857132071,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.599076190454619,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.627123809502239,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.655352380973952,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.6853904762012615,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.713438095248881,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.743657142846357,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.773152380963166,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.8024666666558815,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.836847619036833,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.867971428592999,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.904342857153643,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.941438095248881,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 4.975095238095238,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.0069428571320715,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.038066666688238,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.067923809545381,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.0985047618831905,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.128180952370166,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.1562285714177865,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.185,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.214314285692715,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.243085714274929,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.273666666666667,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.301533333344119,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.330847619036833,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.358895238084452,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.386400000021571,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.413723809534595,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.4421333333225475,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.470361904740334,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.498590476212048,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.525914285725071,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.553599999978428,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.580742857121286,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.607704761893976,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.634847619036833,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.662895238084452,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.69003809522731,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.7170000000000005,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.744323809513024,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.773095238095238,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.800780952402524,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.829733333354905,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.85796190477269,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.8861904761904755,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.915685714307285,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.9439142857250715,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 5.972323809513024,
+      "z": -3,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.0003714285606424,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.0280571428679277,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.056104761915548,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.0832476190584046,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.111114285735857,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.137895238084453,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.1654000000215703,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.1923619047403333,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.2204095237879526,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.248276190465405,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.2763238095130234,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.3043714285606427,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.3316952380736664,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.358838095216523,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.3857999999892137,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.412761904761904,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.4406285714393565,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.4674095237879525,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.494190476190476,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.524409523787952,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.5513714285606426,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.5785142857034993,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.605657142846357,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.633342857153642,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.66247619047619,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.6903428571536425,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.7202000000107853,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.7495142857035004,
+      "onStreet": true
+    },
+    {
+      "x": 6,
+      "z": -3.780095238095238,
+      "onStreet": true
+    }
+  ],
+  "limits": "No real-host, deployment, daily observation or native accessibility acceptance."
+}

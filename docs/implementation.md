@@ -21,6 +21,19 @@ Backend checks passed 661 tests and installed-wheel journeys; the final frontend
 change passed 72 tests, formatting, types and packaged production build. Independent
 Standards and Spec reviews are clear.
 
+## Hamlet integrated UI acceptance — 2026-09-09 (stacked PRs)
+
+The six-slice Hamlet stack now has [integrated synthetic browser evidence](evidence/hamlet-journeys-2026-09-09/README.md)
+for overview → building → home/Townhall → existing records → retained camera, including
+keyboard, touch, reduced motion and actual graphics failures. All 16 combinations of
+0/5/25/100 residents and 320/390/768/1440 CSS pixels show the village without document
+overflow. Hidden views/tabs suspend rendering; closed room contexts and handlers are
+released. Normal/lighter desktop rendering measurements and remaining limits are
+recorded with the actual WebGL renderer. Frontend checks pass 177 tests, types, format,
+production build and packaged assets. [Epic #201](https://github.com/0xCommanderKeen/hearth/issues/201)
+tracks review and merge status. Physical phone GPUs, native accessibility, deployment
+and the real-host/daily gates remain open.
+
 ## Fresh-start simplification
 
 Issue #44 removes portable state import/export/diff/upgrade, historical schema and
