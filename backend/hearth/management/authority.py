@@ -253,7 +253,7 @@ class Management:
         return result
 
 
-def pin_mounts(db, run_id: str, resident_id: str) -> None:
+def pin_mounts(db, run_id: str, resident_id: str, *, protected: Iterable[str] = ()) -> None:
     """Turn the grant's filesystem section, as it stands now, into this run's own reach.
 
     Read at admission and never again: a grant revision that removes a folder removes it
@@ -268,7 +268,17 @@ def pin_mounts(db, run_id: str, resident_id: str) -> None:
     away over a configuration somebody can fix.
     """
     grant = read_grant(db, resident_id)
-    for position, mount in enumerate(grant["mounts"]):
+    mounts = [Mount.model_validate(mount) for mount in grant["mounts"]]
+    # A grant names paths; admission pins the targets they resolve to today.
+    # Recheck installation boundaries because a link may have moved since grant save.
+    check_mounts(mounts, (*SOCKETS, *protected))
+    resolved = [
+        mount.model_copy(update={"host_path": str(Path(mount.host_path).resolve())})
+        for mount in mounts
+    ]
+    check_mounts(resolved, (*SOCKETS, *protected))
+    for position, entry in enumerate(resolved):
+        mount = entry.model_dump()
         if not Path(mount["host_path"]).exists():
             raise Refused("mount_unavailable", {"name": mount["name"]})
         db.execute(

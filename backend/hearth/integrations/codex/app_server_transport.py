@@ -22,7 +22,7 @@ from hearth.integrations.codex.events import (
 )
 from hearth.integrations.codex.pricing import MODEL
 from hearth.integrations.codex.subscription import AUTH
-from hearth.integrations.launcher import LOGIN, Placement, ProcessLauncher, granted
+from hearth.integrations.launcher import CONTAINER, LOGIN, Placement, ProcessLauncher, granted
 from hearth.residents.models import Refused
 
 PROTOCOL = "codex-app-server-0.153.4"
@@ -270,6 +270,11 @@ def _process(
             child.stdin.close()
         if child.stdout is not None:
             child.stdout.close()
+        # Discovery and the turn each own a container. Do not overwrite the first
+        # identity with the second while the daemon cannot prove the first ended.
+        if launcher.kind == CONTAINER and launcher.inspect(handle) != "absent":
+            if not launcher.stray(handle.id):
+                raise Refused("sandbox_termination_unknown")
 
 
 def _initialize(pipe, workspace, settings):

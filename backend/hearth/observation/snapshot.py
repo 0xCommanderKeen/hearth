@@ -156,8 +156,11 @@ def snapshot(hearth: Hearth) -> dict:
         # Projection freshness is separate from audit identity. Include resident-local
         # dates even when the household rolls at another instant. Hash the household
         # projection too: a run's pinned window can outlive a later timezone edit.
+        # Seeding or removing a resident login also changes the rendered projection
+        # without an audit event. Keep the existing opaque field for client compatibility.
+        login_scopes = [[resident["id"], resident["logins"]] for resident in residents]
         budget_revision = hashlib.sha256(
-            json.dumps([household, budget_days], sort_keys=True).encode()
+            json.dumps([household, budget_days, login_scopes], sort_keys=True).encode()
         ).hexdigest()
         return {
             "household": household,

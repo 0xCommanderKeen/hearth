@@ -239,6 +239,7 @@ def _inspect(root: Path, argv) -> int:
         return 1
     path = _container(root, positional[0])
     if not path.is_file():
+        print(f"Error: No such container: {positional[0]}", file=sys.stderr)
         return 1
     print(json.loads(path.read_text())["status"])
     return 0

@@ -12,7 +12,7 @@ from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.integrations.launcher import written_mounts
 from hearth.integrations.logins import LOGIN_REQUIRED, RESIDENT, Logins
-from hearth.management.authority import run_mounts
+from hearth.management.authority import Mount, admitted_mounts, check_mounts, run_mounts
 from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
@@ -81,6 +81,12 @@ class Execution:
             if revision != row["resident_revision"]:
                 return False
             if not row["launch_attempted"]:
+                # A restart may configure a login in a folder an older run pinned.
+                # Current installation boundaries still apply before launch intent.
+                check_mounts(
+                    [Mount.model_validate(mount) for mount in admitted_mounts(db, run_id)],
+                    (str(self.hearth.database.path.parent.resolve()), *self.hearth.mount_protected),
+                )
                 db.execute("UPDATE runs SET launch_attempted = 1 WHERE id = ?", (run_id,))
                 _audit(
                     db,
@@ -462,7 +468,17 @@ class Executor:
                 return self.execution.waiting(
                     run.id, run.owner_token, "login_required", announce=announce
                 )
-            if self.execution.prepare_start(run.id, run.owner_token):
+            try:
+                prepared = self.execution.prepare_start(run.id, run.owner_token)
+            except Refused as error:
+                if error.code != "grant_mount_forbidden":
+                    raise
+                announce = run.id not in self._announced
+                self._announced.add(run.id)
+                return self.execution.waiting(
+                    run.id, run.owner_token, "mount_unavailable", announce=announce
+                )
+            if prepared:
                 try:
                     with self.execution.hearth.database.transaction() as db:
                         context = read_context(db, run.id, Memory(self.execution.hearth).files)

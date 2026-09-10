@@ -9,6 +9,7 @@ actually does with that argv is measured instead, against Docker Desktop's Linux
 
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -564,3 +565,26 @@ def test_a_container_whose_worker_is_gone_is_killed_and_removed(tmp_path):
 def test_the_process_launcher_never_signals_a_pid_it_cannot_prove_is_its_own():
     """A pid outlives the process it named; a container id names one session only."""
     assert ProcessLauncher().stray(str(os.getpid())) is False
+
+
+@pytest.mark.parametrize("failure", ["unavailable", "timeout", "malformed"])
+def test_stray_removal_requires_an_explicit_absence(tmp_path, monkeypatch, failure):
+    launcher, _ = container(tmp_path)
+    identity = "a" * 64
+    inspections = 0
+
+    def attempt(*arguments, timeout):
+        nonlocal inspections
+        if arguments[0] == "inspect":
+            inspections += 1
+            if inspections == 1:
+                return subprocess.CompletedProcess(arguments, 0, "running\n", "")
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(arguments, timeout)
+            if failure == "malformed":
+                return subprocess.CompletedProcess(arguments, 0, "", "")
+        return subprocess.CompletedProcess(arguments, 1, "", "Cannot connect to the Docker daemon")
+
+    monkeypatch.setattr(launcher, "attempt", attempt)
+    assert launcher.stray(identity) is False
+    assert launcher.status(identity) == "unknown"

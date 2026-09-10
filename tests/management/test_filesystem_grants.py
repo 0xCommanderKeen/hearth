@@ -323,3 +323,127 @@ def test_one_folder_may_not_be_reached_twice_under_two_names(tmp_path):
             ],
         )
         assert saved.status_code == 200
+
+
+@pytest.mark.parametrize("target", ["data", "login", "daemon"])
+def test_retargeted_grant_is_refused_before_admission(tmp_path, target):
+    from hearth.residents.models import Refused
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(shared, target_is_directory=True)
+    protected = tmp_path / target
+    protected.mkdir(exist_ok=True)
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        client.app.state.hearth.mount_protected = (str(protected),)
+        assert (
+            write_grant(client, who, [{"name": "notes", "host_path": str(link)}]).status_code == 200
+        )
+        link.unlink()
+        link.symlink_to(protected, target_is_directory=True)
+        with pytest.raises(Refused, match="grant_mount_forbidden"):
+            admit(client, who)
+        with client.app.state.hearth.database.transaction() as db:
+            assert db.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+            assert db.execute("SELECT count(*) FROM run_mounts").fetchone()[0] == 0
+            assert (
+                db.execute("SELECT count(*) FROM audit WHERE kind='run.admitted'").fetchone()[0]
+                == 0
+            )
+
+
+def test_admission_pins_the_target_and_launch_refuses_a_replaced_target(tmp_path):
+    from hearth.integrations.launcher import CONTAINER, Placement, granted
+    from hearth.management.authority import admitted_mounts
+    from hearth.residents.models import Refused
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(shared, target_is_directory=True)
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        assert (
+            write_grant(client, who, [{"name": "notes", "host_path": str(link)}]).status_code == 200
+        )
+        run = admit(client, who)
+        with client.app.state.hearth.database.transaction() as db:
+            mounts = admitted_mounts(db, run.id)
+        assert mounts[0]["host_path"] == str(shared.resolve())
+        link.unlink()
+        link.symlink_to(tmp_path / "data", target_is_directory=True)
+        placement = Placement(CONTAINER)
+        assert granted(placement, mounts) == mounts
+        assert placement.mounts[0].source == str(shared.resolve())
+        shared.rmdir()
+        shared.symlink_to(tmp_path / "data", target_is_directory=True)
+        with pytest.raises(Refused, match="sandbox_mount_invalid"):
+            granted(Placement(CONTAINER), mounts)
+
+
+def test_a_waiting_run_cannot_mount_a_login_configured_after_admission(tmp_path):
+    import json
+
+    from hearth.residents.models import Declaration
+
+    from tests.fake_runtime import FakeRuntime
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        assert (
+            write_grant(client, who, [{"name": "notes", "host_path": str(shared)}]).status_code
+            == 200
+        )
+        run = admit(client, who)
+        client.app.state.hearth.save_resident(
+            "healthy", Declaration("Healthy", "Synthetic notes", 1_000_000), expected_revision=0
+        )
+        healthy = admit(client, "healthy", command="unaffected")
+
+    # The next instance opens a runtime whose login now lives in the pinned folder.
+    def runtime(data):
+        adapter = FakeRuntime(data)
+        adapter.login = shared
+        return adapter
+
+    with TestClient(
+        create_app(tmp_path / "data", TOKEN, supervise=False, runtime=runtime)
+    ) as client:
+        assert str(shared.resolve()) in client.app.state.hearth.mount_protected
+        client.app.state.executor.step()
+        waiting = client.app.state.hearth.run(run.id)
+        assert waiting.status == "starting" and not waiting.launch_attempted
+        assert client.app.state.hearth.run(healthy.id).status == "succeeded"
+        assert not client.app.state.executor.runtime.folder(run.id).exists()
+        with client.app.state.hearth.database.transaction() as db:
+            assert (
+                db.execute(
+                    "SELECT count(*) FROM audit WHERE kind='run.launch_requested' "
+                    "AND resource_id=?",
+                    (run.id,),
+                ).fetchone()[0]
+                == 0
+            )
+            detail = db.execute(
+                "SELECT detail FROM audit WHERE kind='run.waiting' AND resource_id=?", (run.id,)
+            ).fetchone()[0]
+            assert json.loads(detail)["reason"] == "mount_unavailable"
+
+
+@pytest.mark.parametrize("option", ["codex_auth_home", "claude_config_dir"])
+def test_a_configured_login_stays_protected_without_an_open_adapter(tmp_path, option):
+    login = tmp_path / "unavailable-login"
+    login.mkdir()
+    app = create_app(
+        tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime(), **{option: login}
+    )
+    with TestClient(app) as client:
+        who = resident(client)
+        assert str(login.resolve()) in app.state.hearth.mount_protected
+        response = write_grant(client, who, [{"name": "notes", "host_path": str(login)}])
+        assert response.status_code == 409
+        assert response.json()["error"] == "grant_mount_forbidden"

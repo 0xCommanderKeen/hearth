@@ -350,7 +350,11 @@ class CodexLiveRuntime:
             ):
                 return Evidence("unknown")
             if (folder / "receipt.json").exists():
-                return encode(self.receipt(run_id), UsageBinding(**request["binding"]))[2]
+                receipt = self.receipt(run_id)
+                evidence = encode(receipt, UsageBinding(**request["binding"]))[2]
+                if not discard(self.database, folder, run_id, request, receipt=receipt):
+                    return Evidence("unknown")
+                return evidence
             with (folder / "worker.lock").open("a") as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

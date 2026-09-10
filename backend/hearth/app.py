@@ -620,7 +620,11 @@ def create_app(
     # (`docs/adr/0016-sandbox-per-run.md`). Read once here, where the adapters and the
     # sandbox configuration are both in hand, and held to by a grant an operator writes
     # and by one an imported bundle asks for alike.
-    protected = protected_paths(data, login_directories(adapters), socket=sandbox.host)
+    configured_logins = [path for path in (codex_auth_home, claude_config_dir) if path is not None]
+    protected = protected_paths(
+        data, [*login_directories(adapters), *configured_logins], socket=sandbox.host
+    )
+    hearth.mount_protected = protected
     mount_maintenance(app, hearth, protected)
     mount_inputs(app, hearth)
     mount_management(app, hearth, protected)

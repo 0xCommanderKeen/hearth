@@ -217,7 +217,7 @@ function MountsEditor({
       <h4>Folders this resident reaches</h4>
       {mounts.length === 0 && (
         <p className="muted">
-          No folders. A resident with none reaches nothing of this machine.
+          No folders granted. Folder isolation applies only to sandboxed runs.
         </p>
       )}
       {mounts.map((mount, place) => (

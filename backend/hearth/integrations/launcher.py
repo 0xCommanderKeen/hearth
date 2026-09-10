@@ -337,8 +337,16 @@ def granted(placement: Placement, mounts) -> list[dict]:
         # logins, the daemon it drives -- needs configuration this worker does not
         # carry; the runtime's own socket is checked below, where the daemon is known.
         source = placed.source or ""
-        if source != os.path.normpath(source) or any(
-            overlaps(source, forbidden) for forbidden in FORBIDDEN
+        try:
+            resolved = str(Path(source).resolve(strict=True))
+        except OSError, RuntimeError:
+            raise Refused("sandbox_mount_invalid") from None
+        # Admission wrote a canonical source. If a path component became a link,
+        # this is no longer the folder that run was admitted to reach.
+        if (
+            source != resolved
+            or source != os.path.normpath(source)
+            or any(overlaps(source, forbidden) for forbidden in (*FORBIDDEN, *SOCKETS))
         ):
             raise Refused("sandbox_mount_invalid")
         if placement.contained:
@@ -816,7 +824,7 @@ class ContainerLauncher:
     def status(self, identity: str) -> str:
         """What the runtime says about one container, asked by id and nothing else."""
         try:
-            state = self.client(
+            result = self.attempt(
                 "inspect",
                 "--type",
                 "container",
@@ -825,11 +833,26 @@ class ContainerLauncher:
                 identity,
                 timeout=STRAY_TIMEOUT,
             )
-        except Refused:
-            # `--rm` means a finished container is removed, and an inspect that finds
-            # nothing is the ordinary ending, not a broken daemon.
-            return "absent"
-        return "running" if state == "running" else "exited"
+        except OSError, subprocess.SubprocessError:
+            return "unknown"
+        if result.returncode:
+            # Only the daemon's explicit not-found response establishes absence.
+            # A lost connection or timeout cannot prove a spending session ended.
+            if result.stderr.strip() == f"Error: No such container: {identity}":
+                return "absent"
+            return "unknown"
+        state = result.stdout.strip()
+        if state not in {
+            "created",
+            "running",
+            "paused",
+            "restarting",
+            "removing",
+            "exited",
+            "dead",
+        }:
+            return "unknown"
+        return "running" if state in {"running", "paused", "restarting"} else "exited"
 
     def stray(self, identity):
         """End and remove a container whose worker is gone. True if there was one.
@@ -846,10 +869,8 @@ class ContainerLauncher:
         """
         if not isinstance(identity, str) or not IDENTITY.match(identity):
             return False
-        if self.status(identity) == "absent":
-            # Either it ended and `--rm` removed it, or the daemon is not answering.
-            # Both are "there is nothing here for Hearth to remove"; a daemon that
-            # comes back is asked again by the next observation.
+        if self.status(identity) in {"absent", "unknown"}:
+            # An unavailable daemon is asked again on the next observation.
             return False
         for question in (("kill", identity), ("rm", "--force", identity)):
             try:
@@ -1110,7 +1131,9 @@ def alive(pid) -> bool:
     return True
 
 
-def discard(database, folder: Path, run_id: str, request: dict, clock=time.time) -> None:
+def discard(
+    database, folder: Path, run_id: str, request: dict, clock=time.time, *, receipt=None
+) -> bool:
     """End and remove the session a dead worker left behind, and record that.
 
     A container outlives the client that was attached to it, so a worker that died
@@ -1126,21 +1149,32 @@ def discard(database, folder: Path, run_id: str, request: dict, clock=time.time)
     """
     from hearth.work.service import _audit
 
+    sandbox = Sandbox.of(request.get("sandbox"))
     handle = folder / "handle.json"
-    if database.restored() or not handle.is_file():
-        return
+    if database.restored() or sandbox.launcher == PROCESS:
+        return True
+    if not handle.is_file():
+        # No identity is only safe when the validated receipt proves no launch.
+        terminal = receipt.get("terminal", receipt) if receipt is not None else {}
+        return terminal.get("launched") is False
     started = read(handle)
-    if alive(started.get("worker")):
+    if receipt is None and alive(started.get("worker")):
         # The lock says this run's worker is gone and the worker itself says it is
         # not. One of the two is wrong, and ending a live session is the worse way to
         # be wrong: a container left with Hearth's label on it is somebody's to
         # remove, a killed session is somebody's work. Measured 2026-09-09: on a
         # Docker Desktop bind mount from macOS `flock` does not exclude at all and
         # says free while a worker holds it (`docs/sandbox.md`).
-        return
+        return False
     identity = named(started)
-    if not Sandbox.of(request.get("sandbox")).open().stray(identity):
-        return
+    if identity is None:
+        return False
+    launcher = sandbox.open()
+    if not launcher.stray(identity):
+        # A receipt describes the attached stream, not whether its container still
+        # runs after the daemon refused cancellation. Keep the owning run active
+        # until absence is measured so the executor will retry this cleanup.
+        return isinstance(launcher, ContainerLauncher) and launcher.status(identity) == "absent"
     with database.transaction(write=True) as db:
         _audit(
             db,
@@ -1149,6 +1183,7 @@ def discard(database, folder: Path, run_id: str, request: dict, clock=time.time)
             int(clock()),
             {"launcher": started.get("launcher"), "container": identity},
         )
+    return True
 
 
 def configure(database, sandbox: Sandbox, clock=time.time) -> dict:

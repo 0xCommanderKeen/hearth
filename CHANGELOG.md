@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Review fixes keep sandbox runs held until container removal is confirmed, recheck
+  protected mount targets at admission and launch, and refresh idle login-scope views;
+  integration preserves all reviewed PRs and their documented real-host acceptance limits.
+
 - Remember the operator token across browser restarts; Lock and server rejection
   clear it, and the login screen and setup docs describe the same behavior (#151).
 - Preserve the mock-removal plan as history, linking its delivered epic, migration

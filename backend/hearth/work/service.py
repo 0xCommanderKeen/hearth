@@ -190,6 +190,7 @@ class Hearth:
     def __init__(self, database: Database, *, clock: Callable[[], float] = time.time):
         self.database = database
         self.clock = clock
+        self.mount_protected: tuple[str, ...] = ()
 
     def declared_declaration(self, db, resident_id: str) -> Declaration | None:
         """The declaration standing now, read inside the caller's own transaction.
@@ -632,7 +633,12 @@ class Hearth:
             # reserved. A skill example gets none of it, for the same reason it gets no
             # management tools: it is the resident's own work with none of its
             # authority, and a folder is authority.
-            pin_mounts(db, run.id, resident_id)
+            pin_mounts(
+                db,
+                run.id,
+                resident_id,
+                protected=(str(self.database.path.parent.resolve()), *self.mount_protected),
+            )
             pin_management(
                 db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
             )

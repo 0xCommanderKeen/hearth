@@ -28,8 +28,34 @@ own stream either way. `start` returns the instant the session is launched and
 `identify` reads what was created afterwards, because the worker holds Hearth's
 dispatch guard -- one write transaction over the whole store -- around the launch and
 nothing that waits may happen inside it.
-`tests/integrations/test_launcher_parity.py` runs a real Codex session and a real
-Claude session through both and holds the evidence identical.
+`tests/integrations/test_launcher_parity.py` runs synthetic Codex and Claude CLI
+sessions through both and holds the interpreted evidence identical.
+
+## Review corrections — 2026-09-10
+
+A receipt records the attached CLI stream; it cannot prove a container ended after
+its daemon refused cancellation. A receipt-bearing run stays interrupted with its
+reservation held until the daemon confirms the recorded container is absent. Cleanup
+retries on the ordinary active-run pass, then settlement uses the original receipt.
+An unavailable daemon is `unknown`, never `absent`, and cannot produce a
+`sandbox.stray_removed` audit fact. Codex discovery must confirm its container's
+removal before starting the turn's container and replacing its recorded identity.
+
+Admission rechecks a grant's resolved targets against protected installation paths
+and pins canonical host paths. Launch refuses a target that has become a symlink.
+Before recording launch intent, Hearth also rechecks an already-admitted run against
+the current installation's protected paths: a restart that moves a login into its
+folder holds that run without holding unrelated residents. Configured login roots
+remain protected even when their adapter could not open. These checks enforce the
+existing boundary; no new mount authority or store schema is introduced.
+
+Townhall's projection identity includes current login scopes, so seeding or removing
+a resident login refreshes HTTP and SSE views while idle without inventing an audit
+mutation. The folder editor qualifies isolation as a sandbox property.
+
+These corrections have synthetic CLI, temporary SQLite and fake-daemon regression
+evidence. The real-host evidence below was not repeated, and its remaining gates
+stay open.
 
 ## Configuration
 
