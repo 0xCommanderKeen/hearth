@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Claude tool retries recheck current run and grant authority through durable receipts,
+  preserving idempotency and independent memory and letter authority (#195).
+
 - Completed Claude turns with recorded bridge failures settle as failed, preserving
   recoverable output and billed usage while unknown usage retains its hold (#194).
 
