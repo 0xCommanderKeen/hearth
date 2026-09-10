@@ -2,6 +2,8 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Preserve the mock-removal plan as history, linking its delivered epic, migration
+  decisions and current per-resident runtime architecture (#150).
 - Memory-conflict guidance defers updates through the journal to a later run, preserving
   concurrent human edits and admission-pinned reads (#200).
 
