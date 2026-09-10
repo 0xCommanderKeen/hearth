@@ -5,6 +5,43 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
 - Routine admission rotates through at most 100 queued occurrences per pass, so persistent
   pauses and budget waits cannot hide later healthy residents; each attempt retains the
   existing transactional admission checks and refused work is revisited (#192).
+
+- Returning from a Hamlet selection now refits an overview to the current viewport
+  and village bounds. Custom views keep their orientation and zoom while a roster
+  shrink returns a departed target to the remaining village.
+
+- Hamlet offers reversible lighter graphics, draws changed scenes and repaints resizing
+  immediately, suspends hidden tabs/views and releases closed room contexts. Integrated
+  keyboard/touch, graphics-failure and 0–100 resident browser journeys now have retained
+  screenshots and measured desktop frame intervals/draw calls; no phone-GPU or deployment
+  acceptance is claimed.
+
+- Hamlet labels show recorded status and disconnection in text and colour. Finite
+  letter journeys follow the rendered streets from actual doors; initial, reset and
+  reconnect history stays in timestamped Recent post, with bounded deduplication and
+  no travel for hidden views, missing homes or reduced motion.
+
+- Hamlet homes and Townhall open furnished cutaway rooms whose desks, shelves and
+  letter cabinets reach existing records, with equivalent keyboard links. Room and
+  village context survive record visits and snapshot updates; archive and graphics
+  failure retain history and return paths. Rooms imply no physical occupancy.
+
+- Hamlet homes and Townhall open contextual panels with recorded work, bounded-history
+  limits and on-demand record links. A mobile bottom sheet, archived-selection holds,
+  keyboard return and retained camera/renderer keep the village context through
+  record visits, disconnects and reconnects.
+
+- Hamlet homes keep their plots through arrivals, archive, reorder and reload, with
+  bounded epoch-scoped browser preferences (ADR 0017). Connected streets, projected
+  names and shared building/directory selection make the miniature navigable at
+  household sizes up to the verified 100 residents; archive history and holds remain
+  reachable.
+
+- Hamlet opens with a fitted, angled orthographic village and visible overview, zoom
+  and rotation controls. Snapshot and roster updates retain the renderer and a usable
+  camera; pointer drags and touch gestures never select a home. Reduced motion and
+  graphics loss preserve access to the recorded residents and Townhall.
+
 - The Claude journey ran for real, and two things it found are fixed. The evidence
   file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
   `claude_subscription` beside a Codex default, each settled to exactly the CLI's own

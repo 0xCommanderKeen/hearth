@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
+  streamBaseline,
+  inheritStreamBaseline,
   RequestError,
   StateFormatError,
   type PendingTask,
@@ -133,6 +135,8 @@ export function App() {
   const [token, setToken] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState<Page>("townhall");
+  const [visitedHamlet, setVisitedHamlet] = useState(false);
+  const recordRequest = useRef(0);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [residentId, setResidentId] = useState("");
   const [provisionId, setProvisionId] = useState("");
@@ -150,9 +154,16 @@ export function App() {
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
 
+  const lastStream = useRef<ReturnType<typeof streamBaseline>>(undefined);
   function publish(next: Snapshot) {
+    const delivery = streamBaseline(next);
+    const newStream = delivery && delivery !== lastStream.current;
+    if (delivery) lastStream.current = delivery;
+    else inheritStreamBaseline(next, lastStream.current);
     setSnapshot((previous) =>
-      previous?.epoch === next.epoch && previous.cursor > next.cursor
+      previous?.epoch === next.epoch &&
+      previous.cursor > next.cursor &&
+      !newStream
         ? previous
         : next,
     );
@@ -275,9 +286,11 @@ export function App() {
   }
   useEffect(() => {
     const openLinkedView = () => {
+      const request = ++recordRequest.current;
+      setOutput((previous) => (previous?.residentId ? previous : null));
       let hash: string;
       try {
-        hash = decodeURIComponent(window.location.hash).replace(
+        hash = decodeURIComponent(window.location.hash.split("?")[0]).replace(
           /^#runs\//,
           "#run-",
         );
@@ -326,7 +339,10 @@ export function App() {
           const content = run.artifact_id
             ? (await client.artifact(run.artifact_id)).content
             : `Run ${run.status}`;
-          if (currentSession.current === client)
+          if (
+            currentSession.current === client &&
+            request === recordRequest.current
+          )
             setOutput({ content, runtimeKind: run.runtime_kind });
         });
       }
@@ -342,6 +358,25 @@ export function App() {
         .getElementById(hash.slice(1))
         ?.scrollIntoView?.({ block: "center" });
   }, [view, snapshot]);
+  useEffect(() => {
+    if (view === "hamlet") setVisitedHamlet(true);
+    if (view === "resident") {
+      const section = new URLSearchParams(
+        window.location.hash.split("?")[1],
+      ).get("panel");
+      if (
+        section === "journal" ||
+        section === "letters" ||
+        section === "work"
+      ) {
+        const target = document.getElementById(`resident-${section}`);
+        const details = target?.querySelector("details");
+        if (details) details.open = true;
+        target?.focus();
+        target?.scrollIntoView?.({ block: "start" });
+      }
+    }
+  }, [view, residentId, snapshot?.epoch]);
   const residents = snapshot?.residents ?? [];
   const current = residents.find((r) => r.id === residentId);
   const visibleTasks = (snapshot?.tasks ?? []).filter(
@@ -550,6 +585,11 @@ export function App() {
         </div>
       </header>
       <main>
+        {visitedHamlet && view !== "hamlet" && snapshot && (
+          <a className="village-return" href="#hamlet">
+            ← Return to village
+          </a>
+        )}
         <div className="page-head">
           <div>
             {view === "resident" && (
@@ -741,12 +781,14 @@ export function App() {
                 readOnly={snapshot.restore_hold === true}
               />
             )}
-            {view === "hamlet" && (
-              <Hamlet snapshot={snapshot} connected={connected} />
+            {(visitedHamlet || view === "hamlet") && (
+              <Hamlet
+                snapshot={snapshot}
+                connected={connected}
+                active={view === "hamlet"}
+              />
             )}
-            {(view === "townhall" ||
-              view === "residents" ||
-              view === "hamlet") && (
+            {(view === "townhall" || view === "residents") && (
               <section
                 className="resident-directory"
                 aria-label="Resident directory"
@@ -895,7 +937,11 @@ export function App() {
                     </small>
                   </section>
                 )}
-                <section className="task-panel">
+                <section
+                  className="task-panel"
+                  id="resident-work"
+                  tabIndex={-1}
+                >
                   <h2>Tasks &amp; results</h2>
                   <UsageByOrigin client={client} busy={busy} act={act} />
                   {!visibleTasks.length ? (
@@ -1128,30 +1174,34 @@ export function App() {
                   act={act}
                   openable={openableRun}
                 />
-                <Journal
-                  key={`journal:${snapshot.epoch}:${current.id}`}
-                  client={client}
-                  resident={current}
-                  busy={busy}
-                  act={act}
-                  openable={openableRun}
-                />
+                <div id="resident-journal" tabIndex={-1}>
+                  <Journal
+                    key={`journal:${snapshot.epoch}:${current.id}`}
+                    client={client}
+                    resident={current}
+                    busy={busy}
+                    act={act}
+                    openable={openableRun}
+                  />
+                </div>
                 {/* Keyed on the resident alone, unlike its neighbours above: the
                     others hold only server data a remount refetches, while Letters
                     holds an unsent draft and the frozen identity of a command whose
                     answer never arrived. Dropping those on a store swap would hand the
                     operator a fresh command id for a letter Hearth may already hold.
                     Its list is read on demand and reloaded by the same button. */}
-                <Letters
-                  key={`letters:${current.id}`}
-                  client={client}
-                  resident={current}
-                  residents={residents}
-                  busy={busy}
-                  readOnly={snapshot.restore_hold === true}
-                  act={act}
-                  openable={openableRun}
-                />
+                <div id="resident-letters" tabIndex={-1}>
+                  <Letters
+                    key={`letters:${current.id}`}
+                    client={client}
+                    resident={current}
+                    residents={residents}
+                    busy={busy}
+                    readOnly={snapshot.restore_hold === true}
+                    act={act}
+                    openable={openableRun}
+                  />
+                </div>
                 {current.profile && (
                   <ProfileProvenance
                     profile={current.profile}

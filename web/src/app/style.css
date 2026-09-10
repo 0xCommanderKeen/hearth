@@ -1093,10 +1093,10 @@ table.ledger {
   color: var(--ink);
 }
 .scene-canvas {
-  height: min(62vh, 620px);
+  height: min(68vh, 760px);
   min-height: 340px;
   touch-action: none;
-  background: #e4e9d6;
+  background: #cbd5c1;
 }
 .scene-canvas canvas {
   display: block;
@@ -1331,5 +1331,320 @@ form label + button {
   color: var(--bad);
 }
 .memory-diff .diff-same {
+  color: var(--muted);
+}
+
+.scene-rendering {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  min-height: 44px;
+  background: #f2f1e6;
+  color: #354532;
+}
+.scene-rendering input {
+  width: 20px;
+  height: 20px;
+}
+.scene-rendering small {
+  color: var(--muted);
+}
+
+.scene-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f2f1e6;
+  border-bottom: 1px solid var(--line);
+}
+.scene-controls button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.scene-controls span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scene-controls button:focus-visible,
+.scene-residents a:focus-visible {
+  outline: 3px solid #54713d;
+  outline-offset: 3px;
+}
+
+main:has(.hamlet-scene:not([hidden])) {
+  max-width: none;
+}
+.scene-controls button:not(:first-child) {
+  font-size: 20px;
+}
+@media (max-width: 640px) {
+  .scene-canvas {
+    height: 100vw;
+    min-height: 300px;
+    max-height: 480px;
+  }
+}
+
+.scene-canvas {
+  position: relative;
+}
+.scene-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.scene-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 9px;
+  border: 1px solid #82755b;
+  border-radius: 3px;
+  background: #fff7e6ed;
+  color: #362e23;
+  box-shadow: 0 2px 3px #36352230;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.scene-label.selected,
+.scene-label.hovered {
+  background: #fff0b2;
+  border-color: #62512a;
+}
+.scene-label:focus-visible {
+  outline: 3px solid #563c18;
+  outline-offset: 2px;
+}
+.scene-directory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 14px 18px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.scene-directory button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.scene-directory button[aria-pressed="true"] {
+  background: #efe0ad;
+  color: #362e23;
+  border-color: #82755b;
+}
+.scene-selection {
+  margin: 0;
+  padding: 0 18px 12px;
+  font-size: 13px;
+}
+
+.hamlet-scene[hidden] {
+  display: none;
+}
+.hamlet-scene {
+  position: relative;
+}
+.village-panel {
+  position: absolute;
+  top: 110px;
+  right: 18px;
+  z-index: 5;
+  width: min(380px, 44%);
+  max-height: 510px;
+  overflow-y: auto;
+  background: #fff8e9;
+  border: 1px solid #8c7859;
+  border-top: 4px solid #986447;
+  padding: 20px;
+  box-shadow: 0 12px 36px #302b2933;
+  overscroll-behavior: contain;
+}
+.village-panel h2 {
+  margin: 12px 0;
+  font-size: 30px;
+}
+.village-panel h3 {
+  font-size: 15px;
+  margin-top: 20px;
+}
+.village-panel p,
+.village-panel li,
+.village-panel dd {
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.village-panel dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #786b55;
+  margin-top: 12px;
+}
+.village-panel dd {
+  margin: 3px 0;
+}
+.village-panel nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.village-bound {
+  display: block;
+  border-top: 1px solid #dacdb6;
+  padding-top: 12px;
+  line-height: 1.6;
+}
+.village-panel:focus-visible {
+  outline: 3px solid #785728;
+  outline-offset: 2px;
+}
+.scene-directory button small {
+  display: block;
+  font-size: 10px;
+  font-weight: normal;
+  margin-top: 3px;
+}
+.village-return {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .village-panel {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-height: 55dvh;
+    padding: 18px 22px max(22px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* Cutaways retain the village behind them; furniture is a route into records. */
+.hamlet-scene > [hidden] {
+  display: none;
+}
+.room-enter {
+  background: #477a77;
+  color: #fff8e9;
+  padding: 12px 20px;
+}
+.hamlet-room {
+  background: #fff8e9;
+  padding: 22px;
+}
+.room-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.hamlet-room h2 {
+  font-size: clamp(27px, 4vw, 40px);
+  margin: 24px 0 8px;
+}
+.room-caption,
+.room-facts {
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 80ch;
+}
+.room-canvas {
+  height: 470px;
+  width: 100%;
+  border: 1px solid #b6bda5;
+  margin-top: 18px;
+}
+.room-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.room-records {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: #dacdb6;
+  border: 1px solid #dacdb6;
+}
+.room-records a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff8e9;
+  padding: 20px 14px;
+  font-size: 13px;
+}
+.room-records a span {
+  color: #986447;
+  font-size: 11px;
+}
+.room-records a b {
+  margin-left: auto;
+}
+.room-facts {
+  color: #615644;
+}
+@media (max-width: 640px) {
+  .hamlet-room {
+    padding: 16px;
+  }
+  .room-canvas {
+    height: 350px;
+  }
+  .room-records {
+    grid-template-columns: 1fr;
+  }
+  .room-records a {
+    padding: 14px;
+  }
+}
+
+.scene-label small {
+  display: block;
+  font-size: 10px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scene-label[data-status] {
+  border-left-width: 4px;
+}
+.scene-label[data-status="ready"] {
+  border-left-color: #527544;
+}
+.scene-label[data-status="working"] {
+  border-left-color: #426f85;
+}
+.scene-label[data-status="paused"] {
+  border-left-color: #a37828;
+}
+.scene-label[data-status="unknown"] {
+  border-left-color: #914f45;
+}
+.scene-post-history > p {
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.scene-post time {
+  font-size: 11px;
   color: var(--muted);
 }
