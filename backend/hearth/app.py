@@ -189,9 +189,15 @@ def create_app(
         return {"service": "hearth", "runtimes": opened_runtimes()}
 
     @app.get("/api/state")
-    def state(cursor: int | None = None, epoch: str | None = None):
+    def state(
+        cursor: int | None = None, epoch: str | None = None, budget_revision: str | None = None
+    ):
         current = snapshot(hearth)
-        if cursor == current["cursor"] and epoch == current["epoch"]:
+        if (
+            cursor == current["cursor"]
+            and epoch == current["epoch"]
+            and budget_revision == current["budget_revision"]
+        ):
             return Response(status_code=204)
         return current
 
@@ -213,19 +219,26 @@ def create_app(
         }
 
     @app.get("/api/events")
-    async def events(request: Request, cursor: int = -1, epoch: str = ""):
+    async def events(
+        request: Request, cursor: int = -1, epoch: str = "", budget_revision: str = ""
+    ):
         async def changes():
-            nonlocal cursor, epoch
+            nonlocal cursor, epoch, budget_revision
             ticks = 0
             while not await request.is_disconnected():
                 current = await asyncio.to_thread(snapshot, hearth)
-                if current["cursor"] != cursor or current["epoch"] != epoch:
+                if (
+                    current["cursor"] != cursor
+                    or current["epoch"] != epoch
+                    or current["budget_revision"] != budget_revision
+                ):
                     kind = (
                         "reset"
                         if epoch != current["epoch"] or cursor > current["cursor"]
                         else "snapshot"
                     )
                     cursor, epoch = current["cursor"], current["epoch"]
+                    budget_revision = current["budget_revision"]
                     yield f"event: {kind}\ndata: {json.dumps(current)}\n\n"
                 elif ticks % 20 == 0:
                     yield ": keepalive\n\n"

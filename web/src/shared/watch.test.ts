@@ -86,3 +86,39 @@ it("gives a same-cursor reconnect its own baseline before reporting live connect
     "state",
   ]);
 });
+
+it("delivers budget rollover at the same audit cursor and sends its initial budget identity", async () => {
+  const client = new Client("synthetic");
+  const abort = new AbortController();
+  const before = { ...state(10), budget_revision: "before" };
+  const after = { ...state(10), budget_revision: "after" };
+  const delivered: Snapshot[] = [];
+  vi.spyOn(client, "state").mockResolvedValue(before);
+  const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `event: snapshot\ndata: ${JSON.stringify(after)}\n\n`,
+            ),
+          );
+        },
+      }),
+    ),
+  );
+  await client.watch(
+    abort.signal,
+    (s) => {
+      delivered.push(s);
+      if (delivered.length === 2) abort.abort();
+    },
+    () => {},
+  );
+  expect(fetcher.mock.calls[0][0]).toBe(
+    "/api/events?cursor=10&epoch=one&budget_revision=before",
+  );
+  expect(delivered.map((s) => s.budget_revision)).toEqual(["before", "after"]);
+  expect(delivered.map((s) => s.cursor)).toEqual([10, 10]);
+  expect(streamBaseline(delivered[0])).toBe(streamBaseline(delivered[1]));
+});

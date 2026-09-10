@@ -122,7 +122,7 @@ def test_cancellation_roundtrip_keeps_intent_separate_from_termination(tmp_path)
 
 def test_cursor_matches_transaction_and_epoch_requires_resync(client):
     first = client.get("/api/state", headers=AUTH).json()
-    query = {"cursor": first["cursor"], "epoch": first["epoch"]}
+    query = {key: first[key] for key in ("cursor", "epoch", "budget_revision")}
     assert client.get("/api/state", params=query, headers=AUTH).status_code == 204
     seed_reader_via(client)
     updated = client.get("/api/state", params=query, headers=AUTH)
