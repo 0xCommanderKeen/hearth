@@ -2,6 +2,11 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet opens with a fitted, angled orthographic village and visible overview, zoom
+  and rotation controls. Snapshot and roster updates retain the renderer and a usable
+  camera; pointer drags and touch gestures never select a home. Reduced motion and
+  graphics loss preserve access to the recorded residents and Townhall.
+
 - The Claude journey ran for real, and two things it found are fixed. The evidence
   file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
   `claude_subscription` beside a Codex default, each settled to exactly the CLI's own
