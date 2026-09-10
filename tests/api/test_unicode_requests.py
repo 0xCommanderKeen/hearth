@@ -5,12 +5,19 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from hearth.api.auth import MAX_DECLARATION_BODY, MAX_ROUTINE_BODY, MAX_TASK_BODY
 from hearth.app import create_app
 
 from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 from .test_api import AUTH, TOKEN
+
+ROUTES = {
+    "task": ("POST", "/api/tasks", MAX_TASK_BODY),
+    "routine": ("POST", "/api/routines/unicode", MAX_ROUTINE_BODY),
+    "declaration": ("PUT", "/api/residents/reader", MAX_DECLARATION_BODY),
+}
 
 
 @pytest.fixture
@@ -43,11 +50,7 @@ def payload(route, text):
 
 
 def send(client, route, content):
-    method, path = {
-        "task": ("POST", "/api/tasks"),
-        "routine": ("POST", "/api/routines/unicode"),
-        "declaration": ("PUT", "/api/residents/reader"),
-    }[route]
+    method, path, _ = ROUTES[route]
     return client.request(
         method,
         path,
