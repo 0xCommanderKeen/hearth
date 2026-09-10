@@ -176,7 +176,7 @@ export function ResidentMaintenance({
     >
       <div className="section-title">
         <span className="eyebrow">RESIDENT / CONFIGURATION</span>
-        <h3>Care & continuity</h3>
+        <h3>Resident settings</h3>
       </div>
       <p>
         <strong>{lifecycle?.state ?? "Unavailable"}</strong> · Lifecycle
@@ -191,7 +191,8 @@ export function ResidentMaintenance({
       {!!resident.unresolved_runs && (
         <p role="status">
           {resident.unresolved_runs} unresolved run(s) retain their accounting
-          holds. Inspect tasks below and cancel explicitly when needed.
+          holds. Open the Tasks tab to inspect them and request cancellation
+          when needed.
         </p>
       )}
       {resident.safety_hold_reason && (

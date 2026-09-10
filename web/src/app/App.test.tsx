@@ -118,6 +118,19 @@ async function login(profile = true) {
   }
 }
 
+async function openTasks() {
+  const tab = screen.queryByRole("tab", { name: "Tasks" });
+  if (tab) {
+    fireEvent.click(tab);
+    await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+    const input = screen.getByLabelText(
+      "Task instructions",
+    ) as HTMLTextAreaElement;
+    if (!input.disabled && !input.value)
+      fireEvent.change(input, { target: { value: "Synthetic task" } });
+  }
+}
+
 function addReader() {
   state.residents = [
     {
@@ -164,6 +177,7 @@ it("freezes a pending command and retries the same request after a lost response
     });
   const start = vi.spyOn(Client.prototype, "start").mockResolvedValue({});
   await login();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByRole("alert");
   expect(
@@ -210,6 +224,7 @@ it("shows cancellation intent until a later snapshot confirms termination", asyn
     return {};
   });
   await login();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
   await screen.findByText("Stopping");
   expect(screen.queryByText("Cancelled")).toBeNull();
@@ -245,6 +260,7 @@ it("displays run output and clears it when the operator locks the session", asyn
     content: "# Synthetic summary\nNo model was called.",
   });
   await login();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   const summaryPanel = await screen.findByLabelText("Task result");
   // The panel takes focus in an effect, which lands after it is first findable; on a
@@ -334,6 +350,7 @@ it("credits a result to the provider that produced it, on either brain", async (
     "Claude subscription · claude-opus-5 · claude-opus-5-api-equivalent-2026-09-07",
   );
 
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   await screen.findByLabelText("Task result");
   expect(screen.getByText("CLAUDE RESULT")).toBeTruthy();
@@ -347,6 +364,7 @@ it("credits a result to the provider that produced it, on either brain", async (
     price_schedule: "gpt-6-astra-api-equivalent-2026-09-06",
   };
   await act(async () => publish(structuredClone(state)));
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   await screen.findByLabelText("Task result");
   expect(screen.getByText("CODEX RESULT")).toBeTruthy();
@@ -385,6 +403,7 @@ it("never presents a run from a retired runtime as a provider's result", async (
   expect(
     screen.getByLabelText("Runtime this run was worked by").textContent,
   ).toBe("retired Codex mock");
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   await screen.findByLabelText("Task result");
   expect(screen.getByText("SIMULATED ARTIFACT")).toBeTruthy();
@@ -396,6 +415,7 @@ it("does not leave a rejected credential signed in", async () => {
     new RequestError(401, "unauthorized"),
   );
   await login();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByLabelText("Operator token");
   expect(screen.queryByRole("button", { name: "Lock" })).toBeNull();
@@ -432,6 +452,7 @@ it("does not restore an artifact response that arrives after locking", async () 
       }),
   );
   await login();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   await act(async () => complete({ content: "late private output" }));
@@ -565,6 +586,7 @@ it("lists every resident and scopes profile work to the selected resident", asyn
   );
   expect(screen.queryByText("Reader-only assignment")).toBeNull();
   expect(screen.getByText("A quiet beginning.")).toBeTruthy();
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await waitFor(() => expect(submit).toHaveBeenCalled());
   expect(submit.mock.calls[0][0].body.resident_id).toBe("gardener");
@@ -583,6 +605,7 @@ it("keeps an ambiguous submission attached to its original resident", async () =
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
   await screen.findByLabelText("Task instructions");
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
@@ -591,6 +614,7 @@ it("keeps an ambiguous submission attached to its original resident", async () =
     screen.getByRole("link", { name: /Gardener.*View resident/ }),
   );
   await screen.findByRole("heading", { level: 1, name: "Gardener" });
+  await openTasks();
   expect(screen.getByText(/Pending submission belongs to reader/)).toBeTruthy();
   expect(
     (
@@ -636,6 +660,7 @@ it("does not display another resident's late artifact response on a profile", as
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
   await screen.findByLabelText("Resident information");
+  await openTasks();
   fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
   await screen.findByRole("heading", { level: 1, name: "Residents" });
@@ -648,6 +673,8 @@ it("does not display another resident's late artifact response on a profile", as
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
   await screen.findByRole("heading", { level: 1, name: "Residents" });
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
+  await screen.findByRole("tab", { name: "Tasks" });
+  await openTasks();
   await screen.findByText("Reader private result");
 });
 
@@ -862,7 +889,7 @@ it("says what a run opened with and what it wrote, without hiding the page", asy
   expect(screen.getByLabelText("What the run wrote").textContent).toContain(
     "wrote journal entry #2",
   );
-  // The panels sit on the page beside the work, not behind a tab.
+  // The same records remain reachable in their dedicated tabs.
   expect(screen.getByText(/Reader . Memory history/)).toBeTruthy();
   expect(screen.getByText(/Reader . Journal/)).toBeTruthy();
   expect(screen.getByRole("link", { name: /All residents/ })).toBeTruthy();
@@ -1252,5 +1279,86 @@ it("says which login a finished run spent", async () => {
   await login(false);
   expect(screen.getByLabelText("Login this run spent").textContent).toBe(
     "Spent this resident's own provider login",
+  );
+});
+
+it("opens the resident overview and retains task and configuration drafts across tabs", async () => {
+  addReader();
+  window.location.hash = "#residents/reader";
+  await login(false);
+  await screen.findByRole("tab", { name: "Overview", selected: true });
+  expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: /Run task/ })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Recent tasks" })).toBeTruthy();
+  fireEvent.click(screen.getAllByRole("button", { name: /New task/ })[0]);
+  const input = await screen.findByRole("textbox", {
+    name: "Task instructions",
+  });
+  expect((input as HTMLTextAreaElement).value).toBe("");
+  fireEvent.change(input, { target: { value: "An unsent resident task" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Memory" }));
+  expect(
+    screen.queryByRole("textbox", { name: "Task instructions" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Tasks" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Task instructions",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("An unsent resident task");
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Edit configuration" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Purpose" }), {
+    target: { value: "An unsaved purpose" },
+  });
+  fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Purpose",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("An unsaved purpose");
+  expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+});
+
+it("selects tabs for same-resident deep links and supports keyboard navigation", async () => {
+  addReader();
+  window.location.hash = "#residents/reader";
+  await login(false);
+  await screen.findByRole("tab", { name: "Overview", selected: true });
+  await act(async () => {
+    window.location.hash = "#residents/reader?panel=journal";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(
+    screen.getByRole("tab", { name: "Memory", selected: true }),
+  ).toBeTruthy();
+  expect(
+    document.querySelector<HTMLDetailsElement>("#resident-journal details")!
+      .open,
+  ).toBe(true);
+  await act(async () => {
+    window.location.hash = "#residents/reader?panel=letters";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(
+    screen.getByRole("tab", { name: "Tasks", selected: true }),
+  ).toBeTruthy();
+  fireEvent.keyDown(
+    screen.getByRole("tab", { name: "Tasks", selected: true }),
+    { key: "ArrowRight" },
+  );
+  expect(screen.getByRole("tab", { name: "Activity", selected: true })).toBe(
+    document.activeElement,
+  );
+  fireEvent.keyDown(document.activeElement!, { key: "Home" });
+  expect(screen.getByRole("tab", { name: "Overview", selected: true })).toBe(
+    document.activeElement,
   );
 });

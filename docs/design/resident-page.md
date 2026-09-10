@@ -1,6 +1,6 @@
 # Resident page design review
 
-2026-09-10 · Three interactive layout studies, pending operator preference.
+2026-09-10 · Layout A selected by the operator and implemented on the live resident page.
 
 ## Findings
 
@@ -40,7 +40,7 @@ selector work locally without API requests. Task and settings forms explicitly
 explain that nothing is submitted. Query parameters preserve the chosen variant
 and tab for sharing. Real navigation links return to Hearth.
 
-## Integration after selection
+## Live integration
 
 Use live snapshot fields for presence, known usage, and actual task counts; retain
 unknown/stale distinctions and never infer idle from a missing event. Map memory
@@ -51,12 +51,27 @@ editors reachable from there. Preserve run, journal, and correspondence deep lin
 by selecting the owning tab. Retain unsent drafts across tab switches, and retain
 restore/read-only gates and pending-command identity across store changes.
 
-The prototypes are a design comparison, not a replacement of those live behaviors.
-The selected design should be wired into the resident page in a subsequent change.
+The live page now uses A: Overview, Tasks, Activity, Memory, Skills, Access, and
+Settings. The task form, configuration editor, and correspondence remain mounted
+when hidden so unsent drafts and pending command identities survive tab switches.
+The full activity history retains pagination; Overview shows only four events.
+Existing journal, correspondence, work, and run links select the appropriate view.
+Keyboard arrows, Home, and End navigate the tabs.
+
+The overview labels snapshot counts as recent history. It shows the declared daily
+limit rather than inventing a daily usage total from the snapshot's bounded window.
+Household-wide usage-origin reporting remains on the global Tasks page; resident
+tasks retain their individual run accounting. Configuration edits remain in the
+existing Settings editor, linked from Memory, Skills, and Access. The generic task
+form starts empty, and the obsolete fictional/read-only footer was removed.
+
+The three sample-data studies remain available for comparison. They are separate
+from the production resident page and submit no work.
 
 ## Validation
 
-- 197 existing frontend tests passed after updating the task wording; TypeScript
+- 199 frontend tests passed, including tab navigation, deep links, and retained
+  task/configuration drafts; TypeScript
   and production build passed.
 - Chromium exercised all seven tabs in each variant at 1440, 390, and 320 pixels,
   with no document overflow or JavaScript errors. Checks also covered arrow-key
@@ -64,3 +79,8 @@ The selected design should be wired into the resident page in a subsequent chang
   filtering, and the blocked state.
 - Desktop and mobile screenshots were visually reviewed. These are sample-data
   design checks, not live resident workflow acceptance.
+
+- The actual authenticated Docker frontend was checked at 1440, 390, and 320
+  pixels. All seven tabs, retained task drafts, and journal deep links passed
+  without API mutations or document overflow. Desktop rail spacing and mobile
+  layouts were visually reviewed.
