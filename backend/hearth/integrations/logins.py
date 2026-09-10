@@ -162,6 +162,14 @@ def seeded(data: Path, kinds: tuple[str, ...] | list[str]) -> list[Seeded]:
     return found
 
 
+def _stamp(directory: Path) -> int | None:
+    """When this login directory last changed, or nothing if it is not there."""
+    try:
+        return os.stat(directory).st_mtime_ns
+    except OSError:
+        return None
+
+
 class Logins:
     """What Hearth knows about the residents that have logins of their own.
 
@@ -188,7 +196,7 @@ class Logins:
         self.probes = probes
         self.refresh = refresh
         self.clock = clock
-        self._answers: dict[Path, tuple[float, int, bool | None]] = {}
+        self._answers: dict[Path, tuple[float, int | None, bool | None]] = {}
 
     @property
     def kinds(self) -> tuple[str, ...]:
@@ -242,19 +250,23 @@ class Logins:
         return self._remembered(kind, directory) is False
 
     def _remembered(self, kind: str, directory: Path) -> bool | None:
-        """The last answer about this directory, re-asked when it is old or it moved."""
-        try:
-            stamp = os.stat(directory).st_mtime_ns
-        except OSError:
-            return False
-        now = self.clock()
+        """The last answer about this directory, re-asked when it is old or it changed.
+
+        The stamp is taken **after** the probe, never before, because asking a CLI
+        whether a directory is logged in writes into that directory: the pinned Claude
+        build leaves a `.claude.json`, a lock and a `backups/` behind on the cheapest
+        question there is (measured, `docs/claude-runtime.md`, spike 8). Stamped before,
+        every answer would look stale the moment it was given, and a held run would
+        start a CLI twice a second -- which is the one thing this remembers to avoid.
+        What the stamp still catches is an operator seeding the login again.
+        """
         remembered = self._answers.get(directory)
         if remembered is not None:
             at, seen, answer = remembered
-            if seen == stamp and now - at < self.refresh:
+            if self.clock() - at < self.refresh and _stamp(directory) == seen:
                 return answer
         answer = self._probe(kind, directory)
-        self._answers[directory] = (now, stamp, answer)
+        self._answers[directory] = (self.clock(), _stamp(directory), answer)
         return answer
 
     def _probe(self, kind: str, directory: Path) -> bool | None:

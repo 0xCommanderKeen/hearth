@@ -44,7 +44,11 @@ There is intentionally no activation command or automatic hold removal.
 The restored database retains runs (including active/unknown ownership), command
 receipts, occurrence identities, usage and the inbox as it stood. This preserves
 information for reconciliation without claiming that copied execution is
-authoritative. The backup format does not include runtime credentials.
+authoritative. The backup format does not include runtime credentials -- including the
+per-resident logins that live under the data directory itself
+(`<data>/credentials/`, `docs/sandbox.md`): a backup copies `hearth.db`, `artifacts/`
+and `memory/` by name and never the tree, so a subscription never leaves the machine its
+operator seeded it on.
 Production restore requires an ownership reconciliation plan and actual host checks
 before activation.
 

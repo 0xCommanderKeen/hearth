@@ -372,6 +372,15 @@ time. Every other resident in the household is launched by the same pass. Nothin
 spent and nothing is thrown away: the held run was never launched, and it runs as soon
 as the login works again.
 
+The answer is stamped **after** the probe and never before, because asking a CLI whether
+a directory is logged in writes into that directory. Measured 2026-09-10 against the
+pinned `2.1.263` on a throwaway directory: the first `auth status --json` answers
+`loggedIn: false` in **0.142 s** and leaves a `.claude.json`, a `.claude.json.lock` and
+a `backups/` behind; stamped before the probe, every answer would look stale the moment
+it was given, and three asks in a row would have started three CLIs instead of one.
+This is also the reason the *session* gets a tmpfs rather than the household's folder
+(measurement 12).
+
 **Where an operator sees it.** `GET /api/health` names every lapsed one under
 `login.resident_lapsed` (probed afresh on each ask, behind the operator's token; nothing
 about a login reaches the open `/health`). Each is audited once per start as
@@ -426,6 +435,12 @@ Verify without reading anything secret -- the answer also names the account, and
 ```sh
 python -m hearth credentials --data <data>
 ```
+
+Run on this Mac on 2026-09-10 against a throwaway data directory holding a copy of a
+real Codex login and an empty Claude directory, with `HEARTH_CLAUDE_BINARY` pointed at
+the pin, it answered `logged_in: true` for the one and `logged_in: false` for the other
+-- the real CLI really ran -- and printed nothing else of either. The copy was deleted
+straight afterwards; no credential is in this repository.
 
 ## Measured, 2026-09-09, a granted folder against the real daemon
 

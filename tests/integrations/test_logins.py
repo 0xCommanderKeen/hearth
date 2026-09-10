@@ -164,6 +164,38 @@ def test_the_answer_is_remembered_for_a_while_and_asked_again_when_the_login_cha
     assert len(asked) == 3
 
 
+def test_a_probe_that_writes_into_the_login_it_asks_about_is_still_remembered(tmp_path):
+    """Asking the Claude CLI writes a `.claude.json`, a lock and a `backups/` there.
+
+    Stamped before the probe, every answer would look stale the moment it was given and
+    a held run would start a CLI twice a second -- the one thing remembering avoids.
+    """
+    import os
+
+    directory = seed(tmp_path, "reader", CODEX)
+    asked = []
+    mtime = [1_000_000_000]
+
+    def probe(path):
+        asked.append(path)
+        # What a real CLI does to the directory it is asked about.
+        mtime[0] += 1_000_000_000
+        (path / ".cli-state.json").write_text("{}")
+        os.utime(path, ns=(mtime[0], mtime[0]))
+        return True
+
+    logins = Logins(tmp_path, {CODEX: probe}, refresh=60, clock=lambda: 1000.0)
+    assert logins.holds("reader", CODEX) is False
+    assert logins.holds("reader", CODEX) is False
+    assert logins.holds("reader", CODEX) is False
+    assert len(asked) == 1
+    # An operator re-seeding the login still invalidates it.
+    (directory / "auth.json").write_text("re-seeded")
+    os.utime(directory, ns=(9_000_000_000, 9_000_000_000))
+    assert logins.holds("reader", CODEX) is False
+    assert len(asked) == 2
+
+
 def test_a_provider_that_cannot_be_asked_has_not_said_the_login_works(tmp_path):
     seed(tmp_path, "reader", CODEX)
 

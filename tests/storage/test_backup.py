@@ -411,3 +411,23 @@ def test_a_copy_that_renames_what_became_of_a_letter_is_refused(tmp_path, tamper
         db.execute(tamper + " WHERE task_id=?", (receipt["task_id"],))
     with pytest.raises(Refused, match="backup_letters_invalid"):
         capture(root, tmp_path / "refused")
+
+
+def test_a_resident_login_is_never_in_a_backup(system, tmp_path):
+    """Logins live under the data directory; a backup copies an allowlist, not the tree.
+
+    A backup travels between hosts (ADR 0013), and a credential that travelled with it
+    would be a subscription leaving the machine its operator seeded it on.
+    """
+    hearth, executor, run, root = system
+    executor.step()
+    private = root / "credentials" / "reader" / "codex_subscription"
+    private.mkdir(parents=True)
+    (private / "auth.json").write_text("synthetic-only")
+    backup = tmp_path / "backup"
+    manifest = capture(root, backup)
+    assert not any("credentials" in name for name in manifest["files"])
+    assert not (backup / "credentials").exists()
+    restored = tmp_path / "restored"
+    restore(backup, restored)
+    assert not (restored / "credentials").exists()
