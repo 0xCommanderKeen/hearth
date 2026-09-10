@@ -1,6 +1,6 @@
 # A sandbox per run: containers as the execution boundary
 
-Status: proposed, 2026-09-09.
+Status: accepted, 2026-09-10 (proposed 2026-09-09).
 
 Hearth runs every resident's session as a subprocess of a detached worker on the host
 it is started on (ADR 0008 for Codex, epic #144 for Claude). The worker is trustworthy —
@@ -108,3 +108,51 @@ resident for speed; and any use of the sandbox for skills that run code. Those a
 follow-ups once the boundary holds.
 
 Implemented by epic #183, which supersedes #106.
+
+**Measured.** Accepted on 2026-09-10, after epic #183 built all of it against a real
+container runtime. The decisions above are left as they were written; this is what
+building them found, and where a measurement contradicted an assumption in them the
+measurement wins. Every one is written up with its evidence in `docs/sandbox.md`.
+
+- **"The bridge socket is a unix socket in the run folder, mounted into the container"
+  does not hold everywhere.** A Mac cannot bind-mount a socket file into the Linux VM
+  at all — the mount fails before the container starts. It holds on a Linux host, where
+  the run folder and the daemon share one kernel, which is why Hearth itself is a
+  container on the server and why the Mac stays a `process`-launcher development host
+  (measurement 6).
+- **`--rm` does not end a container whose client died.** The ADR read it as "the
+  container ends when its receipt is written"; a worker killed mid-session leaves a live
+  container spending real money. Every container Hearth starts is therefore labelled and
+  a stray is killed and removed, never merely reaped (measurement 5).
+- **A read-only login directory is not what the pinned Codex CLI runs on.** "A login is
+  a directory Hearth mounts read-only at the CLI's own config path" fails —
+  `Read-only file system` — because that directory is where the CLI keeps session state.
+  A run gets a tmpfs there with the credential bind-mounted read-only inside it, which
+  is narrower: the run cannot change the login, and what it writes neither outlives it
+  nor is visible to the next resident (measurements 8 and 12).
+- **The image is built for one uid and cannot be run as another.** The Claude CLI asks
+  the system where its home is before anything else, so the uid Hearth runs as has to
+  exist in the image's own passwd file (measurement 11).
+- **"Its egress is the provider's own API host and nothing else" is not what a fence
+  can say.** The providers are behind CDNs whose addresses rotate; an address allowlist
+  is a fence that breaks on somebody else's deploy, and saying it exactly needs an
+  egress proxy the CLIs are pointed at. What `deploy/fence.sh` installs and what Hearth
+  measures is *nothing of this house* — every private destination dropped, the host's own
+  addresses dropped, the public internet left alone. The half of the decision that does
+  hold is the half that mattered: Hearth's own API and the LAN are unreachable from
+  inside a sandbox, measured from in there at every start, and an open fence refuses
+  `sandbox_network_open` and does not open.
+- **A Hearth in a container hands the daemon paths from the host's filesystem, not its
+  own.** The ADR treats "Hearth is packaged as a container" as packaging; it is also a
+  constraint on every path Hearth passes down — the bridge socket, a login directory, a
+  granted folder. The deployment answers it by mounting each volume inside Hearth at the
+  path it has on the host, and the store has to be a real filesystem for `flock` besides
+  (measurement 9).
+- **"A resident reaches exactly what its grant mounts" is true of the container and not
+  yet of the session.** The mounts are placed, recorded on the run and enforced by the
+  kernel — a read-only one refuses a write, a writable one takes it, and `/mounts` holds
+  the grant and nothing else. But Hearth configures the Codex CLI with its filesystem
+  denied at `/` and no shell tool, so a real session has no tool with which to open a
+  granted folder: the acceptance run reached neither its read-only folder nor its
+  writable one, and said so. Making a granted folder reachable *by the model* is a
+  change to each provider's permission profile and is left to its own issue.

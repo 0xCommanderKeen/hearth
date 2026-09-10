@@ -30,23 +30,25 @@ import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
 import {
   configuredKinds,
+  providerName,
   resultEyebrow,
   runtimeLabel,
   runtimeNames,
 } from "../shared/runtimes";
 
-const SESSION_KEY = "hearth.operator-token";
+const TOKEN_KEY = "hearth.operator-token";
+// Remembered across browser restarts on this machine; Lock clears it.
 function savedToken(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY);
+    return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
 }
 function saveToken(value: string | null) {
   try {
-    if (value === null) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, value);
+    if (value === null) localStorage.removeItem(TOKEN_KEY);
+    else localStorage.setItem(TOKEN_KEY, value);
   } catch {
     /* Storage may be disabled; the current login still works. */
   }
@@ -627,8 +629,8 @@ export function App() {
             <span className="eyebrow">Welcome home</span>
             <h2>Open the gate</h2>
             <p>
-              Enter your local operator token to open Hearth. This tab stays
-              signed in across refreshes until you select Lock or close it.
+              Enter your local operator token to open Hearth. This browser stays
+              signed in across restarts until you select Lock.
             </p>
             <form onSubmit={login}>
               <label htmlFor="token">Operator token</label>
@@ -861,6 +863,22 @@ export function App() {
                         ? " · the household default"
                         : ""}
                     </dd>
+                    {/* Whose subscription this resident's work spends, provider by
+                        provider. A resident with a login of its own is on different
+                        money from the rest of the household. */}
+                    <dt>Provider login</dt>
+                    <dd aria-label="Provider login">
+                      {configuredKinds(snapshot.runtimes)
+                        .map(
+                          (kind) =>
+                            `${providerName(snapshot.runtimes, kind)}: ${
+                              current.logins?.[kind] === "resident"
+                                ? "its own login"
+                                : "the household login"
+                            }`,
+                        )
+                        .join(" · ")}
+                    </dd>
                     <dt>Declaration</dt>
                     <dd>Revision {current.revision}</dd>
                     <dt>Memory</dt>
@@ -999,6 +1017,33 @@ export function App() {
                               </small>
                             )}
                             {run && <RunInputs run={run} />}
+                            {!!run?.mounts?.length && (
+                              <div aria-label="Folders reached by run">
+                                <small>
+                                  Folders reached · as this run was admitted
+                                </small>
+                                <ul>
+                                  {run.mounts.map((mount) => (
+                                    <li key={mount.name}>
+                                      {mount.name} ·{" "}
+                                      {mount.mode === "rw"
+                                        ? "writable"
+                                        : "read only"}
+                                      <small>
+                                        {mount.path} → {mount.host_path}
+                                      </small>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {run?.login_scope && (
+                              <small aria-label="Login this run spent">
+                                {run.login_scope === "resident"
+                                  ? "Spent this resident's own provider login"
+                                  : "Spent the household's provider login"}
+                              </small>
+                            )}
                             {run?.management && (
                               <p aria-label="Management authority used by run">
                                 Management grant revision{" "}

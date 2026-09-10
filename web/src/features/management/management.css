@@ -97,3 +97,29 @@
     grid-template-columns: 1fr;
   }
 }
+
+.management-mounts {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+.management-mount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0 10px;
+}
+.management-mount button {
+  margin-bottom: 10px;
+}
+.management-mounts code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .management-mount {
+    grid-template-columns: 1fr;
+  }
+  .management-mount button {
+    margin-bottom: 14px;
+  }
+}

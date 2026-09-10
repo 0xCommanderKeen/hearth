@@ -10,16 +10,26 @@ from hearth.integrations.codex import app_server
 from hearth.integrations.codex.app_server_transport import MAX_NATIVE_STREAM
 from hearth.integrations.codex.events import unique_object
 from hearth.integrations.codex.usage import sync_directory
+from hearth.integrations.logins import HOUSEHOLD
 from hearth.residents.models import Refused
 
 
 def encode(receipt, expected):
+    from hearth.integrations.launcher import sandboxed
+    from hearth.integrations.logins import spent
+
     if (
         not isinstance(receipt, dict)
-        or set(receipt) != {"kind", "protocol", "binding", "binary", "terminal"}
+        # Where the session ran and whose login it spent are the two fields a
+        # management receipt may leave out: one written before either existed says
+        # nothing about them.
+        or set(receipt) - {"sandbox", "login_scope"}
+        != {"kind", "protocol", "binding", "binary", "terminal"}
         or receipt["kind"] != "codex_subscription"
         or receipt["protocol"] != "management"
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     try:
@@ -152,11 +162,23 @@ def pin_configuration(hearth, bound, binary):
     return pins
 
 
+def check_pin(sandbox, db) -> None:
+    """Refuse a sandboxed session whose image this store is no longer pinned to."""
+    from hearth.integrations.launcher import CONTAINER, IMAGE_PIN
+
+    if sandbox.launcher != CONTAINER:
+        return
+    pinned = db.execute("SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)).fetchone()
+    if pinned is None or pinned[0] != sandbox.digest:
+        raise Refused("sandbox_image_changed")
+
+
 def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
 
     from hearth.integrations.codex.usage import UsageBinding
+    from hearth.integrations.launcher import Sandbox, granted, surveyed, used, written_handle
     from hearth.management.bridge import BoundRun, Bridge, authorize
     from hearth.management.tools import tool_specs
     from hearth.work.letters import run_letter_scope
@@ -187,9 +209,26 @@ def worker(folder, request, execution):
             return True
         return False
 
+    box, reached, before = None, [], {}
     try:
+        # Where this run was admitted to execute, read before anything is launched and
+        # inside this guard, so a request document the worker cannot read leaves an
+        # unlaunched receipt with its own reason rather than no receipt at all.
+        sandbox = Sandbox.of(request.get("sandbox"))
+        # Recorded the moment it is known, so a run refused by anything below still says
+        # where it was admitted to execute rather than saying nothing at all.
+        box = sandbox
+        launcher = sandbox.open()
+        # And what it was admitted to reach on disk. Checked here, before anything is
+        # launched, and surveyed so this receipt can say which writable folder was used.
+        reached = granted(sandbox.placement(), request.get("mounts") or [])
+        before = surveyed(reached)
         with hearth.database.transaction() as db:
             authority = authorize(db, bound, int(hearth.clock()))
+            # The pin a sandboxed session runs on is the image, whose own CLIs were
+            # hashed against this store's binary pin at start; an image this store is
+            # no longer configured for is refused here, before anything is launched.
+            check_pin(sandbox, db)
             row = db.execute(
                 "SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)
             ).fetchone()
@@ -212,6 +251,15 @@ def worker(folder, request, execution):
     else:
         terminal = app_server.run(
             binary=Path(request["binary"]),
+            # Each session this run starts, written down where a later observation
+            # looks: a management run starts two containers, one after the other, and
+            # a worker that dies leaves whichever it was holding still running.
+            on_session=lambda handle: written_handle(folder, handle),
+            # The session executes where this run was admitted to execute, which the
+            # control plane published into the request; the worker's own environment
+            # is a search path and carries nothing.
+            launcher=launcher,
+            mounts=reached,
             auth_home=Path(request["auth_home"]),
             workspace=workspace,
             prompt=request["prompt"],
@@ -237,6 +285,21 @@ def worker(folder, request, execution):
         "binding": request["binding"],
         "binary": request["sha256"],
         "terminal": terminal,
+        # Whose login both of this run's sessions spent. A request document written
+        # before a resident could have one of its own names none, and the household's
+        # is what such a run really used.
+        "login_scope": request.get("login_scope", HOUSEHOLD),
     }
+    if box is not None:
+        # Where this run's sessions ran, and what they held on disk. A management run
+        # starts two containers, one after the other, so no single id is the one it ran
+        # in; what each of them was is written down beside this receipt as it starts
+        # (`handle.json`), which is what a later observation reads.
+        receipt["sandbox"] = {
+            "launcher": box.launcher,
+            "container_id": None,
+            "image": box.digest,
+            "mounts": used(reached, before, surveyed(reached)),
+        }
     encode(receipt, UsageBinding(**request["binding"]))
     publish_receipt(folder / "receipt.json", receipt)

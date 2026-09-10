@@ -33,9 +33,14 @@ from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
+from hearth.integrations.fence import Fence
+from hearth.integrations.fence import check as check_fence
 from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.integrations.interface import label as runtime_label
+from hearth.integrations.launcher import CONTAINER, Sandbox, configure
+from hearth.integrations.logins import Logins, Probe, prepare
 from hearth.management.api import mount_management
+from hearth.management.authority import protected_paths
 from hearth.observation.notifications import Inbox
 from hearth.observation.snapshot import snapshot
 from hearth.residents.journal import PAGE, Journal
@@ -61,6 +66,8 @@ def create_app(
     codex_auth_home: Path | None = None,
     claude_binary: Path | None = None,
     claude_config_dir: Path | None = None,
+    sandbox: Sandbox | None = None,
+    fence: Fence | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
@@ -86,6 +93,12 @@ def create_app(
         seed_letter_skills(hearth)
     execution = Execution(hearth, Artifacts(data / "artifacts"))
     kind = database.runtime_kind()
+    # Where every run this instance starts will execute. One instance has one answer:
+    # the boundary is a property of the burrow Hearth is running on, not of a resident.
+    sandbox = Sandbox() if sandbox is None else sandbox
+    # What that boundary is worth is a question about the network it is on, and it is
+    # asked from inside it rather than assumed (`integrations/fence.py`).
+    fence = Fence.from_environment() if fence is None else fence
     unavailable: dict[str, str] = {}
     if runtime is not None:
         built = runtime(data)
@@ -98,6 +111,7 @@ def create_app(
                 CODEX_KIND: {"binary": codex_binary, "auth_home": codex_auth_home},
                 CLAUDE_KIND: {"binary": claude_binary, "config_dir": claude_config_dir},
             },
+            sandbox=sandbox,
         )
         # A runtime some resident declares and this instance cannot open is an
         # operator's configuration to fix, and those residents' runs are waiting on
@@ -119,7 +133,79 @@ def create_app(
                         int(hearth.clock()),
                         {"reason": unavailable[missing]},
                     )
-    executor = Executor(execution, adapters)
+    # The sandbox is checked after the adapters, because the binary pins it compares
+    # the image's own CLIs against are what those adapters have just written. A store
+    # configured for a provider on this start is therefore checked on this start, not
+    # on the next one. A quarantined copy starts nothing and is never written to, so it
+    # pins nothing either; it still reports the launcher it was opened with.
+    sandbox_state = (
+        {"launcher": sandbox.launcher} if restored else configure(database, sandbox, hearth.clock)
+    )
+    # And the fence that boundary is only as good as: measured on the sandbox network,
+    # from the image a session runs from, before a resident is admitted to it. An open
+    # one refuses `sandbox_network_open` here and this instance does not open at all
+    # (`docs/adr/0016-sandbox-per-run.md`). A quarantined copy starts no session, so it
+    # measures no network either -- there is nothing here to fence in.
+    if not restored:
+        check_fence(database, sandbox, fence, hearth.clock)
+
+    def fence_state() -> dict:
+        """What the sandbox network lets a session reach, measured on this ask.
+
+        Afresh, like the login survey and for the same reason: an operator asking is
+        asking about now, not about the morning this process started. A measurement
+        that could not be taken is reported as one that did not hold, because the one
+        thing this may never answer is a fence nobody saw.
+        """
+        try:
+            return fence.observe(sandbox)
+        except Refused as error:
+            return {"held": False, "error": error.code}
+
+    # Which residents hold a provider login of their own, and whether it still works.
+    # The probe for a kind is that provider's own, taken from the adapter this instance
+    # opened, so nothing here names a provider and nothing reads a credential: the
+    # answer is `loggedIn` and no more (`docs/adr/0016-sandbox-per-run.md`).
+    # A quarantined copy asks no provider anything: it opened on an adapter with no
+    # binary behind it and it starts no run, so it has nothing to say about a login and
+    # says nothing rather than reporting every one of them as out.
+    logins = Logins(data, {} if restored else login_probes(adapters))
+
+    def login_state() -> dict:
+        """What this instance knows about the residents holding a login of their own."""
+        answers = logins.survey()
+        return {
+            "resident_lapsed": [
+                {key: answer[key] for key in ("resident_id", "kind")}
+                for answer in answers
+                if answer["logged_in"] is False
+            ],
+            "resident_unknown": logins.unknown(answers),
+        }
+
+    if not restored:
+        # The shelf, never a login: an operator seeds one by running that CLI's own
+        # login flow with its configuration path pointed here (`docs/sandbox.md`).
+        prepare(data)
+        # A login that has lapsed is a configuration this operator can fix, and their
+        # resident's runs are waiting on exactly that -- so it is recorded once per
+        # start, where it is discovered, exactly as an absent runtime is above. Only a
+        # login the provider really answered "no" about is recorded: a provider that
+        # would not start has not told anybody a login lapsed, and a durable audit fact
+        # saying it did would send an operator to run a login flow they do not need.
+        # A household where every login works opens no transaction to say so.
+        lapsed = logins.lapsed()
+        if lapsed:
+            with database.transaction(write=True) as db:
+                for entry in lapsed:
+                    _audit(
+                        db,
+                        "login.resident_lapsed",
+                        entry["resident_id"],
+                        int(hearth.clock()),
+                        {"kind": entry["kind"]},
+                    )
+    executor = Executor(execution, adapters, logins)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
@@ -186,7 +272,17 @@ def create_app(
         missing is a configuration fact about this operator's machine and is answered
         by `/api/health`, which asks for the operator's own token first.
         """
-        return {"service": "hearth", "runtimes": opened_runtimes()}
+        return {
+            "service": "hearth",
+            "runtimes": opened_runtimes(),
+            # Where this instance's runs execute, and -- on the container launcher --
+            # the image digest they execute from. The digest names bytes, not this
+            # machine: it is the same answer for every instance built from that image,
+            # so it tells a reader which sandbox is deployed without telling a LAN
+            # peer anything about the host. The network's name and the reasons a
+            # sandbox did not open stay behind the operator's token.
+            "sandbox": sandbox_state,
+        }
 
     @app.get("/api/state")
     def state(
@@ -209,13 +305,30 @@ def create_app(
         half-written configuration -- names what is wrong with this machine, so it is
         answered here, behind the operator's token, rather than on the open liveness
         path. It is what an operator reads when a resident's runs are waiting.
+
+        The residents holding a login of their own are probed afresh on every ask,
+        because that is the question being asked: not what was true at start, but
+        whether the household can work right now. Each answer is `loggedIn` and nothing
+        else -- no account, no plan, no organisation, nothing of the credential itself.
         """
         return supervisor.health() | {
             "runtimes": opened_runtimes(),
+            # The network's name, and what a session on it was just measured to
+            # reach. Both name this building rather than these bytes, so both stay
+            # behind the operator's token and neither is on the open `/health`.
+            "sandbox": sandbox_state
+            | ({"network": sandbox.network} if sandbox.network else {})
+            | ({"fence": fence_state()} if sandbox.launcher == CONTAINER and not restored else {}),
             "unavailable": [
                 {"kind": missing, "reason": reason}
                 for missing, reason in sorted(unavailable.items())
             ],
+            # A resident whose own login has lapsed: its runs wait, and nobody else's
+            # do (`docs/adr/0016-sandbox-per-run.md`). Beside it, the ones this instance
+            # could not get an answer about at all -- a provider that would not start is
+            # not a login an operator has to seed again, and their runs wait for a
+            # different reason, so they are not reported as the same thing.
+            "login": login_state(),
         }
 
     @app.get("/api/events")
@@ -433,9 +546,13 @@ def create_app(
             from hearth.inputs.selection import input_summary
 
             used_inputs = input_summary(db, run_id, run=True)
+            from hearth.management.authority import mount_summary
+
+            reached = mount_summary(db, run_id)
         return {
             **used_skills,
             **used_inputs,
+            **reached,
             "accounting": accounting,
             "id": run.id,
             "status": run.status,
@@ -443,6 +560,10 @@ def create_app(
             "runtime_kind": run.runtime_kind,
             "runtime_version": run.runtime_version,
             "input_digest": run.input_digest,
+            # Whose provider login paid for this run, read from the run's own pin and
+            # never from the receipt: the receipt is the worker's statement of what it
+            # did, and this is Hearth's own record of what it admitted.
+            "login_scope": run.login_scope,
         }
 
     @app.post("/api/runs/{run_id}/cancel")
@@ -494,9 +615,19 @@ def create_app(
 
     from hearth.residents.maintenance_api import mount_maintenance
 
-    mount_maintenance(app, hearth)
+    # What no grant on this installation may mount: Hearth's own data directory, the
+    # login of every runtime that opened one, and the container runtime's socket
+    # (`docs/adr/0016-sandbox-per-run.md`). Read once here, where the adapters and the
+    # sandbox configuration are both in hand, and held to by a grant an operator writes
+    # and by one an imported bundle asks for alike.
+    configured_logins = [path for path in (codex_auth_home, claude_config_dir) if path is not None]
+    protected = protected_paths(
+        data, [*login_directories(adapters), *configured_logins], socket=sandbox.host
+    )
+    hearth.mount_protected = protected
+    mount_maintenance(app, hearth, protected)
     mount_inputs(app, hearth)
-    mount_management(app, hearth)
+    mount_management(app, hearth, protected)
     mount_skills(app, hearth)
 
     web = Path(__file__).parent / "web"
@@ -505,8 +636,35 @@ def create_app(
     return app
 
 
+def login_directories(adapters: Iterable[object]) -> list[Path]:
+    """Where each opened runtime keeps the credential it reads, if it keeps one here.
+
+    Asked of every adapter in the same words, because nothing outside `integrations/`
+    names a provider: a runtime with no login on this host, and a quarantined copy that
+    opened none, answer with nothing.
+    """
+    return [
+        Path(path) for path in (getattr(adapter, "login", None) for adapter in adapters) if path
+    ]
+
+
+def login_probes(adapters: Iterable[object]) -> dict[str, Probe | None]:
+    """Each opened runtime's own answer to "is that directory logged in", by kind.
+
+    Asked of every adapter in the same words, for the same reason `login_directories`
+    is: what a login even *is* differs between providers, and nothing outside
+    `integrations/` may know which. An adapter that answers nothing -- a fake runtime
+    in a test -- leaves its kind unaskable, and a login nobody probed has not lapsed.
+    """
+    return {
+        str(kind): getattr(adapter, "probe_login", None)
+        for adapter in adapters
+        if (kind := getattr(adapter, "kind", None))
+    }
+
+
 def configured_runtimes(
-    data: Path, kind: str, configuration: dict[str, dict]
+    data: Path, kind: str, configuration: dict[str, dict], *, sandbox: Sandbox | None = None
 ) -> tuple[list[Runtime], dict[str, str]]:
     """Every live runtime this host is configured for, the store's default included.
 
@@ -530,18 +688,19 @@ def configured_runtimes(
         # A live kind nobody built an adapter for refuses here rather than quietly
         # opening on another provider's.
         raise Refused("runtime_configuration_invalid")
-    adapters = [build(default, data, **configuration[default])]
+    options = {"sandbox": sandbox} if sandbox is not None else {}
+    adapters = [build(default, data, **configuration[default], **options)]
     refused: dict[str, str] = {}
     for other in live_kinds():
-        options = configuration.get(other)
-        if other == default or options is None:
+        settings = configuration.get(other)
+        if other == default or settings is None:
             continue
-        if any(value is None for value in options.values()):
-            if any(value is not None for value in options.values()):
+        if any(value is None for value in settings.values()):
+            if any(value is not None for value in settings.values()):
                 refused[other] = "runtime_configuration_incomplete"
             continue
         try:
-            adapters.append(build(other, data, **options))
+            adapters.append(build(other, data, **settings, **options))
         except Refused as error:
             refused[other] = error.code
     return adapters, refused
@@ -563,4 +722,6 @@ def from_env() -> FastAPI:
         claude_config_dir=Path(os.environ["HEARTH_CLAUDE_CONFIG_DIR"])
         if os.environ.get("HEARTH_CLAUDE_CONFIG_DIR")
         else None,
+        sandbox=Sandbox.from_environment(),
+        fence=Fence.from_environment(),
     )

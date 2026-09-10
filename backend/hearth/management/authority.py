@@ -2,14 +2,102 @@
 
 import hashlib
 import json
+import os
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.inputs.catalog import read_input
 from hearth.integrations.interface import management_protocol
+from hearth.integrations.launcher import FORBIDDEN, SOCKETS, mounted, overlaps
 from hearth.residents.models import Refused, identifier
 from hearth.work.service import Hearth, _audit
+
+# Paths no grant may name, whatever an operator writes, on any host, and where a
+# container runtime's socket ordinarily is -- both read from the launcher, which is
+# where they are refused a second time when a session is actually started. Everything
+# else a grant may not reach is this installation's own and arrives through
+# `protected_paths`: Hearth's data directory, the logins and the configured daemon.
+
+
+class Mount(BaseModel):
+    """One host path this resident's runs may reach, and how far into it they may go.
+
+    The name is what the run's own context calls the folder and what it is mounted as
+    inside the sandbox (`/mounts/<name>`); the host path is this household's business
+    and never travels in a bundle. Read-only unless the grant says `rw`, which is
+    audited when it is granted and again when a run is seen to have used it.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=64)
+    host_path: str = Field(min_length=1, max_length=4096)
+    mode: Literal["ro", "rw"] = "ro"
+
+
+def protected_paths(
+    data: Path, logins: Iterable[Path] = (), *, socket: str | None = None
+) -> tuple[str, ...]:
+    """The paths this installation refuses to mount, beside the ones no host may.
+
+    Hearth's own data directory holds the store, the run folders and the artifacts; a
+    login directory holds a credential; the container runtime's socket is root on the
+    host. None of them is a folder a resident works in, and a grant naming one is
+    refused when it is written rather than when a run is admitted.
+    """
+    named = None
+    if isinstance(socket, str) and socket.startswith("unix://"):
+        named = socket[len("unix://") :]
+    values = [str(Path(data).resolve()), *(str(Path(login).resolve()) for login in logins)]
+    values += [path for path in (*SOCKETS, named) if path]
+    return tuple(dict.fromkeys(values))
+
+
+def check_mounts(mounts: list[Mount], protected: Iterable[str] = ()) -> None:
+    """Refuse a filesystem grant nothing should ever hold, at the moment it is written.
+
+    Every refusal here is `grant_mount_forbidden`: a relative or unnormalised path, a
+    path this host protects, a name two mounts share, and one folder reached twice --
+    the same path under two names, or two paths where one holds the other. Overlap is
+    refused because the narrower grant would be a fiction: `/data` writable beside
+    `/data/secrets` read-only is `/data/secrets` writable, under another name, and the
+    audit would name only the folder that was granted `rw`.
+
+    A path is held to all of that as it is written and as it resolves, because a symlink
+    is not an argument: the container runtime resolves a mount's source on the way in,
+    so a link into Hearth's own data directory would mount the data directory, and a
+    link beside a granted folder would be that folder under a second name.
+    """
+    names: set[str] = set()
+    paths: list[str] = []
+    for mount in mounts:
+        try:
+            identifier(mount.name)
+        except Refused:
+            raise Refused("grant_mount_forbidden") from None
+        path = mount.host_path
+        if (
+            not path.startswith("/")
+            or path != os.path.normpath(path)
+            or any(character in path for character in ",=\n\0")
+        ):
+            raise Refused("grant_mount_forbidden")
+        try:
+            resolved = str(Path(path).resolve())
+        except OSError:
+            # A path the filesystem cannot even resolve is not one to hand a daemon.
+            raise Refused("grant_mount_forbidden") from None
+        candidates = (path, resolved)
+        if any(overlaps(one, other) for one in candidates for other in (*FORBIDDEN, *protected)):
+            raise Refused("grant_mount_forbidden")
+        if mount.name in names or any(
+            overlaps(one, other) for one in candidates for other in paths
+        ):
+            raise Refused("grant_mount_forbidden")
+        names.add(mount.name)
+        paths += [path, resolved]
 
 
 class GrantPolicy(BaseModel):
@@ -33,6 +121,12 @@ class GrantPolicy(BaseModel):
     # Whom this resident may write to. Empty means every resident that opens its own
     # letters door; a listed set narrows that and never widens anything else.
     letter_recipient_ids: list[str] = Field(default_factory=list, max_length=20)
+    # What this resident reaches on disk. A bounded list, read-only by default, refused
+    # at write time for anything Hearth's own machinery lives in
+    # (`docs/adr/0016-sandbox-per-run.md`). It is not gated by `enabled`: reaching a
+    # folder is not a management tool, and a resident with no management authority at
+    # all may still be given one to read.
+    mounts: list[Mount] = Field(default_factory=list, max_length=16)
     max_residents: int = Field(default=5, ge=0, le=20)
     max_daily_limit: int = Field(default=1_000_000, ge=0, le=10_000_000)
     max_reserve: int = Field(default=500_000, ge=1, le=2_000_000)
@@ -71,8 +165,13 @@ def read_grant(db, resident_id: str) -> dict:
 
 
 class Management:
-    def __init__(self, hearth: Hearth):
+    def __init__(self, hearth: Hearth, protected: Iterable[str] = ()):
         self.hearth = hearth
+        # What this installation refuses to let any grant mount. It is passed in
+        # rather than discovered here because it is host configuration -- where the
+        # store is, which logins were opened, which container runtime is being
+        # driven -- and this module is the store's own rules.
+        self.protected = tuple(protected)
 
     def read(self, resident_id: str) -> dict:
         with self.hearth.database.transaction() as db:
@@ -111,6 +210,10 @@ class Management:
         ):
             if len(values) != len(set(values)):
                 raise Refused("management_duplicate_scope")
+        # What a resident reaches on disk is refused here, where an operator is writing
+        # it, and never at admission: a run that waits on a grant nobody will fix is a
+        # resident that never works again.
+        check_mounts(body.mounts, self.protected)
         policy = body.model_dump(exclude={"expected_revision"})
         revision = previous["revision"] + 1
         db.execute(
@@ -123,14 +226,121 @@ class Management:
             (resident_id, revision, json.dumps(policy, sort_keys=True), digest(policy)),
         )
         result = dict(resident_id=resident_id, revision=revision, **policy)
+        now = int(self.hearth.clock())
         _audit(
             db,
             "resident.management_granted",
             resident_id,
-            int(self.hearth.clock()),
+            now,
             {"actor": "operator", **result},
         )
+        # A folder a resident may change is the one grant that alters the host, so it is
+        # a fact of its own rather than a field inside a larger one. Only the writable
+        # ones are named: the read-only reach is in the grant fact above.
+        writable = [
+            {"name": mount.name, "host_path": mount.host_path}
+            for mount in body.mounts
+            if mount.mode == "rw"
+        ]
+        if writable:
+            _audit(
+                db,
+                "grant.mount_rw_granted",
+                resident_id,
+                now,
+                {"actor": "operator", "revision": revision, "mounts": writable},
+            )
         return result
+
+
+def pin_mounts(db, run_id: str, resident_id: str, *, protected: Iterable[str] = ()) -> None:
+    """Turn the grant's filesystem section, as it stands now, into this run's own reach.
+
+    Read at admission and never again: a grant revision that removes a folder removes it
+    from the next run, and a run already admitted keeps what it was admitted with
+    (`docs/adr/0016-sandbox-per-run.md`). The revision travels with each row, because a
+    run without management authority pins no grant revision anywhere else and its reach
+    would otherwise be a list nothing can be traced back to.
+
+    A host path that is not there refuses the admission rather than the launch. The task
+    stays queued and is admitted the moment an operator puts the folder back or takes it
+    out of the grant -- the wait of ADR 0015, for the same reason: work is not thrown
+    away over a configuration somebody can fix.
+    """
+    grant = read_grant(db, resident_id)
+    mounts = [Mount.model_validate(mount) for mount in grant["mounts"]]
+    # A grant names paths; admission pins the targets they resolve to today.
+    # Recheck installation boundaries because a link may have moved since grant save.
+    check_mounts(mounts, (*SOCKETS, *protected))
+    resolved = [
+        mount.model_copy(update={"host_path": str(Path(mount.host_path).resolve())})
+        for mount in mounts
+    ]
+    check_mounts(resolved, (*SOCKETS, *protected))
+    for position, entry in enumerate(resolved):
+        mount = entry.model_dump()
+        if not Path(mount["host_path"]).exists():
+            raise Refused("mount_unavailable", {"name": mount["name"]})
+        db.execute(
+            "INSERT INTO run_mounts VALUES (?,?,?,?,?,?)",
+            (
+                run_id,
+                position,
+                grant["revision"],
+                mount["name"],
+                mount["host_path"],
+                mount["mode"],
+            ),
+        )
+
+
+def run_mounts(db, run_id: str) -> list[dict]:
+    """What this run could reach on disk, in the order its grant listed it.
+
+    Each entry says what the folder is called, where it is on the host, how far the run
+    may go into it and what it is called from inside a sandbox. The last one is the same
+    answer whichever launcher started the session: a run on the process launcher reaches
+    the host path itself, and saying what it *would* have been mounted as is how a
+    finished run on a laptop still says what it was granted.
+    """
+    return [
+        {
+            "name": row["name"],
+            "host_path": row["host_path"],
+            "mode": row["mode"],
+            "path": mounted(row["name"]),
+            "grant_revision": row["grant_revision"],
+        }
+        for row in db.execute(
+            "SELECT * FROM run_mounts WHERE run_id=? ORDER BY position", (run_id,)
+        )
+    ]
+
+
+def admitted_mounts(db, run_id: str) -> list[dict]:
+    """What a run's worker is told about its folders: the name, the path, the mode.
+
+    The one shape a request document carries, written here so both adapters publish the
+    same three fields and the worker checks exactly those (`integrations/launcher.py`).
+    """
+    return [
+        {key: entry[key] for key in ("name", "host_path", "mode")}
+        for entry in run_mounts(db, run_id)
+    ]
+
+
+def mount_summary(db, run_id: str) -> dict:
+    """What an operator is shown about one run's reach: the pin, without the revision.
+
+    A resident's own folders are read from its grant, which an operator reads whole;
+    this is the finished run's answer, which is the one that cannot change afterwards.
+    """
+    return {
+        "mounts": [
+            {key: entry[key] for key in ("name", "host_path", "mode", "path")}
+            for entry in run_mounts(db, run_id)
+        ]
+    }
 
 
 def works_a_letter(db, run_id: str) -> bool:

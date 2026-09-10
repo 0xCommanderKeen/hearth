@@ -1,0 +1,121 @@
+# The sandbox a run executes in: the two pinned CLIs, Hearth's bridge shim, nothing
+# that can install anything, and no root.
+#
+# The image is pinned by digest in the store (`system_meta.sandbox_image`), and the
+# CLIs inside it are hashed at start and must equal the binary pins that store already
+# holds (`codex_live_binary`, `claude_live_binary`). That only holds if the image
+# carries exactly the bytes Hearth measured, so the CLIs are copied in from the build
+# context rather than downloaded here: an image that fetches its own tools cannot be
+# the same image twice. The binaries have to be the *Linux* builds for the host's
+# architecture; a macOS build of either will hash correctly and refuse to execute.
+#
+#   docker build -f deploy/Dockerfile.sandbox \
+#     --build-arg HEARTH_UID="$(id -u)" --build-arg HEARTH_GID="$(id -g)" \
+#     --build-arg CODEX_BINARY=binaries/codex --build-arg CLAUDE_BINARY=binaries/claude \
+#     --build-arg CODEX_CODE_MODE_HOST=binaries/codex-code-mode-host \
+#     -t hearth/sandbox:<version> .
+#
+# Then read the digest it resolves to and configure Hearth with it:
+#
+#   docker image inspect --format '{{index .RepoDigests 0}}' hearth/sandbox:<version>
+#
+# The Linux build of the Claude CLI this store is pinned to is published in the same
+# signed release manifest as the macOS build a laptop installs, so the two are the same
+# release and never the same bytes: `claude-code-releases/<version>/manifest.json` names
+# a checksum per platform, and `claude-code-releases/<version>/<platform>/claude` is the
+# file. Hash what you downloaded against that manifest before building with it.
+#
+# See `docs/sandbox.md`. This file is not built in continuous integration: no CI host
+# has the pinned provider CLIs, and nothing Hearth ships downloads them.
+
+# Debian slim with the interpreter Hearth is written for. The bridge shim is imported
+# with `python -I`, which ignores `PYTHONPATH` and the user site directory, so the
+# package is placed in the interpreter's own site directory and no installer is needed
+# to put it there. Pinned by digest: the sandbox's own digest means nothing if what it
+# was built on can move underneath it.
+ARG BASE=python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
+FROM ${BASE}
+
+# The uid Hearth itself runs as. The session runs as this user so that the bridge's
+# peer-credential check still means something across the boundary: the worker created
+# the socket, and the process connecting to it is the uid the worker expects.
+#
+# It must be *this* image's uid, and not merely a number the daemon is told: the Claude
+# CLI asks the system for its home directory before it does anything else, and a uid
+# with no entry in the image's own passwd file ends it right there --
+# `ENOENT: uv_os_homedir` -- before a byte of its protocol (measured 2026-09-09,
+# `docs/claude-runtime.md`, spike 8). So an image built for one uid and run as another
+# fails every Claude run in it, which is why the build takes the uid as an argument.
+ARG HEARTH_UID=1000
+ARG HEARTH_GID=1000
+# Where the pinned Linux CLIs are in the build context.
+ARG CODEX_BINARY=binaries/codex
+ARG CLAUDE_BINARY=binaries/claude
+# Codex on Linux is not one file. Its own package ships three more things beside the
+# executable, and the CLI finds them by their place in that layout -- the directory
+# above the one it is in -- so this image keeps the same shape. All three were measured
+# on 2026-09-09 (`docs/sandbox.md`) and every one of them fails a run when it is absent:
+#
+#   codex-code-mode-host   the CLI looks for it by name even with code mode disabled.
+#                          Present, it says "code-mode host is disabled", which is the
+#                          diagnostic Hearth knows and steps over; absent, it says
+#                          "failed to spawn ... host executable was not found", which
+#                          Hearth reads as a stream error and the run settles failed.
+#   codex-resources/bwrap  the CLI's *own* filesystem sandbox, which Hearth's read-only
+#                          profile turns on. Without it a session ends before its first
+#                          turn: "bubblewrap is unavailable".
+#   codex-path/rg          what the CLI puts on the session's PATH for search.
+ARG CODEX_CODE_MODE_HOST=binaries/codex-code-mode-host
+ARG CODEX_RESOURCES=binaries/codex-resources
+ARG CODEX_PATH=binaries/codex-path
+# Hearth's own package, for the bridge shim alone. Nothing else in the image imports it.
+ARG HEARTH_PACKAGE=backend/hearth
+ARG SITE=/usr/local/lib/python3.14/site-packages
+
+COPY ${CODEX_BINARY} /usr/local/bin/codex
+COPY ${CODEX_CODE_MODE_HOST} /usr/local/bin/codex-code-mode-host
+COPY ${CODEX_RESOURCES} /usr/local/codex-resources
+COPY ${CODEX_PATH} /usr/local/codex-path
+COPY ${CLAUDE_BINARY} /usr/local/bin/claude
+COPY ${HEARTH_PACKAGE} ${SITE}/hearth
+
+RUN set -eux; \
+    chmod 0755 /usr/local/bin/codex /usr/local/bin/codex-code-mode-host /usr/local/bin/claude; \
+    chmod -R a=rX /usr/local/codex-resources /usr/local/codex-path; \
+    chmod -R a=rX ${SITE}/hearth; \
+    # The shim has to be importable with the interpreter's own flags and stdlib alone;
+    # a build that produced an image whose bridge cannot start is a failed build. So
+    # does the fence probe: Hearth measures its own network by running that module in
+    # this image, and refuses to start when it cannot be run (`sandbox_fence_unmeasured`),
+    # so an image that cannot answer is an image no instance opens on.
+    python3 -I -c 'import hearth.integrations.claude.mcp_bridge'; \
+    python3 -I -m hearth.integrations.reach 127.0.0.1:1 >/dev/null; \
+    # The session's own user. It owns nothing: the workspace is a tmpfs the runtime
+    # mounts, and every other writable path is a mount the run's grant asked for. The
+    # entry itself is load-bearing, not decoration -- see `HEARTH_UID` above.
+    groupadd --gid ${HEARTH_GID} --non-unique hearth; \
+    useradd --uid ${HEARTH_UID} --gid ${HEARTH_GID} --non-unique --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin hearth; \
+    # Nothing in here may install, fetch or replace anything. The root filesystem is
+    # read-only at runtime as well, but a package manager that cannot be run is one
+    # less thing that has to be true about how the container was started.
+    rm -rf ${SITE}/pip ${SITE}/pip-* /usr/local/lib/python3.14/ensurepip \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.14 \
+        /usr/bin/apt /usr/bin/apt-get /usr/bin/apt-cache /usr/bin/apt-config \
+        /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/dpkg /usr/bin/dpkg-deb \
+        /usr/bin/dpkg-query /usr/bin/dpkg-split /usr/bin/dpkg-trigger \
+        /usr/bin/dpkg-divert /usr/bin/dpkg-statoverride /usr/bin/dpkg-maintscript-helper \
+        /var/lib/apt/lists/* /var/cache/apt/*; \
+    # A last check that what the image is for still runs, as the user it will run as.
+    su hearth -s /bin/sh -c '/usr/local/bin/codex --version' >/dev/null; \
+    su hearth -s /bin/sh -c '/usr/local/bin/claude --version' >/dev/null
+
+USER ${HEARTH_UID}:${HEARTH_GID}
+# The launcher mounts a fresh tmpfs here and starts the session in it. Nothing is
+# baked into the workspace, and nothing survives the run.
+WORKDIR /workspace
+# No entrypoint of the image's own: the whole command is Hearth's, built by the
+# provider's adapter, and the only thing that ever replaces it is `sha256sum` when
+# Hearth checks which CLIs this image carries.
+ENTRYPOINT []
+CMD ["/usr/local/bin/claude", "--version"]

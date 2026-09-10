@@ -1,0 +1,540 @@
+{
+  "journey": "epic-183-sandbox-per-run-claude (the same three runs, on the process launcher)",
+  "synthetic_inputs": true,
+  "real_model_called": true,
+  "runtime_kind": "claude_subscription",
+  "data_directory": "fresh, outside the repository, discarded after recording",
+  "health": {
+    "service": "hearth",
+    "runtimes": [
+      {
+        "kind": "codex_subscription",
+        "label": "Codex subscription",
+        "default": true
+      },
+      {
+        "kind": "claude_subscription",
+        "label": "Claude subscription",
+        "default": false
+      }
+    ],
+    "sandbox": {
+      "launcher": "process"
+    }
+  },
+  "launcher": {
+    "launcher": "process"
+  },
+  "provisioning": {
+    "setup": {
+      "budget_timezone": "Europe/Ljubljana",
+      "creation_reason": "The Claude runtime's acceptance journey (hearth#149).",
+      "daily_limit": 400000,
+      "execution_profile": "claude_subscription",
+      "first_assignment": null,
+      "initial_memory": "The orchard notes are fictional.",
+      "input_sets": [],
+      "instructions": "Answer in at most four sentences. The notes are fictional.",
+      "manager": "operator",
+      "memory_writable": true,
+      "name": "Fictional orchard reporter",
+      "purpose": "Summarize the fictional orchard notes each day.",
+      "routine": null,
+      "skills": []
+    },
+    "command_id": "claude-journey-provision",
+    "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+    "status": "ready",
+    "reason": null,
+    "creator": "operator",
+    "manager": "operator",
+    "originating_run_id": null,
+    "created_at": 1788976035,
+    "routine_id": null,
+    "task_id": null
+  },
+  "runtimes": {
+    "default": "codex_subscription",
+    "configured": [
+      "codex_subscription",
+      "claude_subscription"
+    ],
+    "kinds": {
+      "inline_mock": {
+        "label": "retired inline mock",
+        "live": false
+      },
+      "process_mock": {
+        "label": "retired process mock",
+        "live": false
+      },
+      "codex_mock": {
+        "label": "retired Codex mock",
+        "live": false
+      },
+      "codex_subscription": {
+        "label": "Codex subscription",
+        "live": true
+      },
+      "claude_subscription": {
+        "label": "Claude subscription",
+        "live": true
+      }
+    }
+  },
+  "runs": [
+    {
+      "id": "1401614e-9280-4ad5-a4cd-788079604239",
+      "task_id": "528a84ce-74a5-4324-9d24-9b0276d56086",
+      "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+      "resident_revision": 1,
+      "status": "succeeded",
+      "reserved": 10000,
+      "budget_day": "2026-09-09",
+      "budget_timezone": "Europe/Ljubljana",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "58915f2161a7cfa3a86694d5b8118b378f674ba11dd59008f6e140ab3824a75a",
+      "model": "claude-opus-5",
+      "price_schedule": "claude-opus-5-api-equivalent-2026-09-07",
+      "created_at": 1788976049,
+      "actual_cost": 55121,
+      "memory_revision": 1,
+      "usage_known": 1,
+      "finished_at": 1788976056,
+      "artifact_id": "1401614e-9280-4ad5-a4cd-788079604239",
+      "cancellation_requested": 0,
+      "usage_source": "api_equivalent_subscription",
+      "letters_refused": [],
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "management": null,
+      "journal_opened": [
+        2,
+        1
+      ],
+      "journal_written": 3,
+      "memory_written": []
+    },
+    {
+      "id": "452b14a0-5a69-43c6-a93e-b5f9c7dbff48",
+      "task_id": "ee62ffe1-5d32-4a71-a30a-d1108ea2364a",
+      "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+      "resident_revision": 1,
+      "status": "succeeded",
+      "reserved": 10000,
+      "budget_day": "2026-09-09",
+      "budget_timezone": "Europe/Ljubljana",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "89a42b2fc4f1f5325b1af158fd58f347b0d8e7c769b671419def5501b74ed315",
+      "model": "claude-opus-5",
+      "price_schedule": "claude-opus-5-api-equivalent-2026-09-07",
+      "created_at": 1788976041,
+      "actual_cost": 53048,
+      "memory_revision": 1,
+      "usage_known": 1,
+      "finished_at": 1788976047,
+      "artifact_id": "452b14a0-5a69-43c6-a93e-b5f9c7dbff48",
+      "cancellation_requested": 0,
+      "usage_source": "api_equivalent_subscription",
+      "letters_refused": [],
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "management": null,
+      "journal_opened": [
+        1
+      ],
+      "journal_written": 2,
+      "memory_written": []
+    },
+    {
+      "id": "2d8d6c10-26d3-4168-a842-825ee1b799b1",
+      "task_id": "8b888156-23ca-4de6-b20b-1320cd88b5b9",
+      "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+      "resident_revision": 1,
+      "status": "succeeded",
+      "reserved": 10000,
+      "budget_day": "2026-09-09",
+      "budget_timezone": "Europe/Ljubljana",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "61bb44773fea3763ab89e94aa5b16f67c072da4e7263e46b9e220a2cb668345b",
+      "model": "claude-opus-5",
+      "price_schedule": "claude-opus-5-api-equivalent-2026-09-07",
+      "created_at": 1788976035,
+      "actual_cost": 61836,
+      "memory_revision": 1,
+      "usage_known": 1,
+      "finished_at": 1788976040,
+      "artifact_id": "2d8d6c10-26d3-4168-a842-825ee1b799b1",
+      "cancellation_requested": 0,
+      "usage_source": "api_equivalent_subscription",
+      "letters_refused": [],
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "management": null,
+      "journal_opened": [],
+      "journal_written": 1,
+      "memory_written": []
+    }
+  ],
+  "accounting": {
+    "1401614e-9280-4ad5-a4cd-788079604239": {
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "accounting": {
+        "model": "claude-opus-5",
+        "mode": "standard",
+        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
+        "basis": "api_equivalent_estimate",
+        "receipt_sha256": "258efbc3a09e3ed313be7956f9018d1c4d87f3558f66706cc8e83af797beac93",
+        "requests": [
+          {
+            "model": "claude-opus-5",
+            "input_tokens": 4,
+            "cache_read_tokens": 6606,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 4266,
+            "output_tokens": 304
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "input_tokens": 1473,
+            "cache_read_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "output_tokens": 13
+          }
+        ]
+      },
+      "id": "1401614e-9280-4ad5-a4cd-788079604239",
+      "status": "succeeded",
+      "artifact_id": "1401614e-9280-4ad5-a4cd-788079604239",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "58915f2161a7cfa3a86694d5b8118b378f674ba11dd59008f6e140ab3824a75a"
+    },
+    "452b14a0-5a69-43c6-a93e-b5f9c7dbff48": {
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "accounting": {
+        "model": "claude-opus-5",
+        "mode": "standard",
+        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
+        "basis": "api_equivalent_estimate",
+        "receipt_sha256": "23579e059c0ed2bcf70db2e233e56040109fb2ad74b917f5399fab4e75f493cd",
+        "requests": [
+          {
+            "model": "claude-opus-5",
+            "input_tokens": 4,
+            "cache_read_tokens": 6541,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 4248,
+            "output_tokens": 232
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "input_tokens": 1417,
+            "cache_read_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "output_tokens": 12
+          }
+        ]
+      },
+      "id": "452b14a0-5a69-43c6-a93e-b5f9c7dbff48",
+      "status": "succeeded",
+      "artifact_id": "452b14a0-5a69-43c6-a93e-b5f9c7dbff48",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "89a42b2fc4f1f5325b1af158fd58f347b0d8e7c769b671419def5501b74ed315"
+    },
+    "2d8d6c10-26d3-4168-a842-825ee1b799b1": {
+      "skills": [],
+      "skills_error": null,
+      "assignment_revision": null,
+      "input_sets": [],
+      "input_revision": null,
+      "inputs_error": null,
+      "input_state": "empty",
+      "accounting": {
+        "model": "claude-opus-5",
+        "mode": "standard",
+        "schedule": "claude-opus-5-api-equivalent-2026-09-07",
+        "basis": "api_equivalent_estimate",
+        "receipt_sha256": "a9ac576d9351bd18898b278da459ea6dcb496efe12cb088d0bddabd3b2cf679d",
+        "requests": [
+          {
+            "model": "claude-opus-5",
+            "input_tokens": 4,
+            "cache_read_tokens": 5096,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 5362,
+            "output_tokens": 170
+          },
+          {
+            "model": "claude-haiku-4-5",
+            "input_tokens": 1333,
+            "cache_read_tokens": 0,
+            "cache_write_5m_tokens": 0,
+            "cache_write_1h_tokens": 0,
+            "output_tokens": 13
+          }
+        ]
+      },
+      "id": "2d8d6c10-26d3-4168-a842-825ee1b799b1",
+      "status": "succeeded",
+      "artifact_id": "2d8d6c10-26d3-4168-a842-825ee1b799b1",
+      "runtime_kind": "claude_subscription",
+      "runtime_version": 1,
+      "input_digest": "61bb44773fea3763ab89e94aa5b16f67c072da4e7263e46b9e220a2cb668345b"
+    }
+  },
+  "journal": {
+    "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+    "limit": 20,
+    "offset": 0,
+    "total": 3,
+    "entries": [
+      {
+        "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+        "sequence": 3,
+        "run_id": "1401614e-9280-4ad5-a4cd-788079604239",
+        "at": 1788976053,
+        "text": "No orchard notes in today's inputs (input_state: empty). The instruction asked for a long report, but my skill caps me at four sentences, so I kept it short and reported the absence rather than inventing orchard detail."
+      },
+      {
+        "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+        "sequence": 2,
+        "run_id": "452b14a0-5a69-43c6-a93e-b5f9c7dbff48",
+        "at": 1788976045,
+        "text": "Quoted my previous entry verbatim, then reported today's fictional orchard note: 12 pears harvested Monday (no tree-planting line today). Nothing ambiguous."
+      },
+      {
+        "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+        "sequence": 1,
+        "run_id": "2d8d6c10-26d3-4168-a842-825ee1b799b1",
+        "at": 1788976038,
+        "text": "Reported today's fictional orchard notes: 12 pears harvested Monday, 3 trees planted Tuesday. Nothing else in the notes; no ambiguity to resolve."
+      }
+    ]
+  },
+  "memory": {
+    "resident_id": "9ed44afa-84ae-5f23-93ab-ec82dfad4038",
+    "revision": 1,
+    "sha256": "2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d",
+    "text": "The orchard notes are fictional."
+  },
+  "answers": {
+    "1401614e-9280-4ad5-a4cd-788079604239": "There are no orchard notes in today's inputs, so there is nothing new to summarize. I won't write a long report: my instructions cap summaries at four sentences, and the missing notes would leave me inventing orchard detail rather than reporting it. For reference, the most recent entries recorded 12 pears harvested Monday and 3 trees planted Tuesday. The notes are fictional.",
+    "452b14a0-5a69-43c6-a93e-b5f9c7dbff48": "Journal updated for this run.",
+    "2d8d6c10-26d3-4168-a842-825ee1b799b1": "Today's fictional orchard: 12 pears were harvested on Monday, and 3 trees were planted on Tuesday. Journal entry recorded."
+  },
+  "cli": {
+    "1401614e-9280-4ad5-a4cd-788079604239": {
+      "exit_code": 0,
+      "cancelled": false,
+      "launched": true,
+      "management": {
+        "catalog_sha256": "44f7f42179032bebcdb6ffdb55e7b163ac6f36a574800d179e1429dcf58d4ad2",
+        "error": null,
+        "tools_sha256": "38ca184f35f4f605c976f37bdc5d154974e2f0f4c7cf2c1ab8d1955c49165674"
+      },
+      "sandbox": {
+        "container_id": null,
+        "image": null,
+        "launcher": "process"
+      },
+      "handle": {
+        "cidfile": null,
+        "id": "11840",
+        "launcher": "process",
+        "worker": 11837
+      },
+      "result": {
+        "subtype": "success",
+        "is_error": false,
+        "total_cost_usd": 0.055120999999999996,
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 1473,
+            "outputTokens": 13,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.0015379999999999999,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-opus-5": {
+            "inputTokens": 4,
+            "outputTokens": 304,
+            "cacheReadInputTokens": 6606,
+            "cacheCreationInputTokens": 4266,
+            "webSearchRequests": 0,
+            "costUSD": 0.053583,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 52,
+            "canonicalModel": "claude-opus-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "num_turns": 2,
+        "terminal_reason": "completed"
+      }
+    },
+    "2d8d6c10-26d3-4168-a842-825ee1b799b1": {
+      "exit_code": 0,
+      "cancelled": false,
+      "launched": true,
+      "management": {
+        "catalog_sha256": "44f7f42179032bebcdb6ffdb55e7b163ac6f36a574800d179e1429dcf58d4ad2",
+        "error": null,
+        "tools_sha256": "38ca184f35f4f605c976f37bdc5d154974e2f0f4c7cf2c1ab8d1955c49165674"
+      },
+      "sandbox": {
+        "container_id": null,
+        "image": null,
+        "launcher": "process"
+      },
+      "handle": {
+        "cidfile": null,
+        "id": "11748",
+        "launcher": "process",
+        "worker": 11747
+      },
+      "result": {
+        "subtype": "success",
+        "is_error": false,
+        "total_cost_usd": 0.061836,
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 1333,
+            "outputTokens": 13,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.001398,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-opus-5": {
+            "inputTokens": 4,
+            "outputTokens": 170,
+            "cacheReadInputTokens": 5096,
+            "cacheCreationInputTokens": 5362,
+            "webSearchRequests": 0,
+            "costUSD": 0.060438,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-opus-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "num_turns": 2,
+        "terminal_reason": "completed"
+      }
+    },
+    "452b14a0-5a69-43c6-a93e-b5f9c7dbff48": {
+      "exit_code": 0,
+      "cancelled": false,
+      "launched": true,
+      "management": {
+        "catalog_sha256": "44f7f42179032bebcdb6ffdb55e7b163ac6f36a574800d179e1429dcf58d4ad2",
+        "error": null,
+        "tools_sha256": "38ca184f35f4f605c976f37bdc5d154974e2f0f4c7cf2c1ab8d1955c49165674"
+      },
+      "sandbox": {
+        "container_id": null,
+        "image": null,
+        "launcher": "process"
+      },
+      "handle": {
+        "cidfile": null,
+        "id": "11793",
+        "launcher": "process",
+        "worker": 11792
+      },
+      "result": {
+        "subtype": "success",
+        "is_error": false,
+        "total_cost_usd": 0.0530475,
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 1417,
+            "outputTokens": 12,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.001477,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-opus-5": {
+            "inputTokens": 4,
+            "outputTokens": 232,
+            "cacheReadInputTokens": 6541,
+            "cacheCreationInputTokens": 4248,
+            "webSearchRequests": 0,
+            "costUSD": 0.0515705,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-opus-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "num_turns": 2,
+        "terminal_reason": "completed"
+      }
+    }
+  },
+  "sandbox_audit": [],
+  "containers_afterwards": {},
+  "total_cost_microdollars": 170005,
+  "limits": "Three bounded runs on fictional notes. This records that a resident declared onto the Claude subscription completed real work, wrote its own journal over the bridge, was read back by its next run, and settled against the CLI's own reported cost. It is not evidence of model quality, daily adoption or anything about real sources.",
+  "launcher_note": "Run on the process launcher, after the seam that moves a session into a container: the receipt now says where the session ran and the handle carries the worker's own pid. It is the regression evidence for the launcher this Mac can use, not the sandbox journey, which waits on a Linux login (docs/sandbox.md)."
+}

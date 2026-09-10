@@ -283,3 +283,147 @@ def test_karen_fixture_imports_as_ordinary_resident(tmp_path):
     with target.database.transaction() as db:
         assert read_grant(db, receipt["resident_id"])["revision"] == 0
     assert target.resident(receipt["resident_id"]).declaration.name == "Karen"
+
+
+def granted(hearth, resident_id, mounts):
+    from hearth.management.authority import Management
+
+    return Management(hearth).save(
+        resident_id, {"expected_revision": 0, "enabled": True, "mounts": mounts}
+    )
+
+
+def test_a_bundle_carries_a_folder_by_name_and_never_by_path(tmp_path):
+    """What a resident reaches is definition; where it is, is this household's own."""
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    granted(source, who, [{"name": "notes", "host_path": str(shared), "mode": "rw"}])
+    bundle = Bundles(source).export(who)
+    assert bundle["management"]["mounts"] == [{"name": "notes", "mode": "rw"}]
+    assert str(shared) not in json.dumps(bundle)
+    ResidentBundle.model_validate(bundle)
+
+
+def test_importing_a_folder_needs_the_operator_to_say_where_it_is(tmp_path):
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    granted(source, who, [{"name": "notes", "host_path": str(shared), "mode": "rw"}])
+    bundle = Bundles(source).export(who)
+    target = store(tmp_path / "target")
+    # Nothing said, nothing resolved: the mount is left out and the resolution says so.
+    receipt = Bundles(target).import_("import-mounts-1", {"bundle": bundle})
+    assert receipt["resolution"]["mounts"] == [
+        {"name": "notes", "mode": "rw", "outcome": "mount_unresolved"}
+    ]
+    from hearth.management.authority import read_grant
+
+    with target.database.transaction() as db:
+        assert read_grant(db, receipt["resident_id"])["revision"] == 0
+
+
+def test_an_imported_folder_is_the_operators_own_path_and_nothing_elses(tmp_path):
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    granted(source, who, [{"name": "notes", "host_path": str(tmp_path), "mode": "rw"}])
+    bundle = Bundles(source).export(who)
+    here = tmp_path / "target-folder"
+    here.mkdir()
+    target = store(tmp_path / "target")
+    receipt = Bundles(target).import_(
+        "import-mounts-2", {"bundle": bundle, "mount_paths": {"notes": str(here)}}
+    )
+    assert receipt["resolution"]["mounts"] == [
+        {"name": "notes", "mode": "rw", "host_path": str(here), "outcome": "granted"}
+    ]
+    from hearth.management.authority import read_grant
+
+    with target.database.transaction() as db:
+        grant = read_grant(db, receipt["resident_id"])
+    # The folder travelled; the authority did not. The imported grant reaches the one
+    # path the operator named and holds no management capability at all.
+    assert grant["mounts"] == [{"name": "notes", "host_path": str(here), "mode": "rw"}]
+    assert grant["enabled"] is False and grant["capabilities"] == []
+    assert receipt["resolution"]["management_ignored"] is True
+
+
+def test_an_imported_folder_this_household_protects_refuses_the_import(tmp_path):
+    from hearth.management.authority import protected_paths
+
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    granted(source, who, [{"name": "notes", "host_path": str(tmp_path), "mode": "ro"}])
+    bundle = Bundles(source).export(who)
+    target = store(tmp_path / "target")
+    protected = protected_paths(tmp_path / "target")
+    with pytest.raises(Refused, match="grant_mount_forbidden"):
+        Bundles(target, protected).import_(
+            "import-mounts-3",
+            {"bundle": bundle, "mount_paths": {"notes": str(tmp_path / "target")}},
+        )
+    # Nothing was provisioned: the whole import is one transaction.
+    with target.database.transaction() as db:
+        assert db.execute("SELECT COUNT(*) FROM residents").fetchone()[0] == 0
+
+
+def test_a_bundle_naming_a_path_of_its_own_is_not_a_bundle(tmp_path):
+    source = store(tmp_path / "source")
+    bundle = Bundles(source).export(seeded(source)["resident_id"])
+    bundle["management"] = {
+        "enabled": False,
+        "mounts": [{"name": "notes", "host_path": "/tmp/anything", "mode": "ro"}],
+    }
+    target = store(tmp_path / "target")
+    with pytest.raises(Refused, match="invalid_resident_bundle"):
+        Bundles(target).import_("import-mounts-4", {"bundle": bundle})
+
+
+def test_importing_the_same_bundle_twice_grants_the_folder_once(tmp_path):
+    """A lost reply is retried with the same key, and the retry is not a failure."""
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    granted(source, who, [{"name": "notes", "host_path": str(tmp_path), "mode": "rw"}])
+    bundle = Bundles(source).export(who)
+    here = tmp_path / "target-folder"
+    here.mkdir()
+    target = store(tmp_path / "target")
+    request = {"bundle": bundle, "mount_paths": {"notes": str(here)}}
+    first = Bundles(target).import_("import-mounts-5", request)
+    again = Bundles(target).import_("import-mounts-5", request)
+    # The retry is the first import's own receipt, and it says the same about the
+    # folder. (What it says about the catalog differs as it always has: the second
+    # pass reuses the skill and the input set the first one created.)
+    assert (again["resident_id"], again["status"]) == (first["resident_id"], "ready")
+    assert again["resolution"]["mounts"] == first["resolution"]["mounts"]
+    from hearth.management.authority import read_grant
+
+    with target.database.transaction() as db:
+        grant = read_grant(db, first["resident_id"])
+    # One grant revision, not two, and the folder is the one the first call named.
+    assert grant["revision"] == 1
+    assert grant["mounts"] == [{"name": "notes", "host_path": str(here), "mode": "rw"}]
+
+
+def test_a_bundle_carries_no_login_and_an_imported_resident_is_on_its_new_household_s(tmp_path):
+    """A login is a file on one machine and never travels (ADR 0010, ADR 0016)."""
+    from hearth.integrations.logins import HOUSEHOLD, scope
+
+    source = store(tmp_path / "source")
+    created = seeded(source)
+    private = tmp_path / "source" / "credentials" / created["resident_id"] / "codex_subscription"
+    private.mkdir(parents=True)
+    (private / "auth.json").write_text("synthetic-only")
+
+    bundle = Bundles(source).export(created["resident_id"])
+    # Not the credential, not the directory, not even the fact that there was one.
+    assert "credential" not in json.dumps(bundle) and "login" not in json.dumps(bundle)
+
+    target = store(tmp_path / "target")
+    receipt = Bundles(target).import_("import-1", {"bundle": bundle})
+    assert receipt["status"] == "ready"
+    assert not (tmp_path / "target" / "credentials").exists()
+    # The importing household decides whose subscription this resident's work spends.
+    assert scope(tmp_path / "target", receipt["resident_id"], "codex_subscription") == HOUSEHOLD

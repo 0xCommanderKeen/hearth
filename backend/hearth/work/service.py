@@ -39,6 +39,11 @@ ADMISSION_WAITS = frozenset(
         # Reporting it every pass would hold an error open for as long as the work is
         # queued and hide any real fault the same pass hits.
         "resident_setup_incomplete",
+        # A granted folder that is not on this host is the same shape of fault: an
+        # operator puts it back or takes it out of the grant, and the work is admitted
+        # the moment they do (`docs/adr/0016-sandbox-per-run.md`). Reporting it on
+        # every pass would hold one error open for as long as the task is queued.
+        "mount_unavailable",
         "capacity_exhausted",
         "budget_exhausted",
         "household_budget_exhausted",
@@ -185,6 +190,7 @@ class Hearth:
     def __init__(self, database: Database, *, clock: Callable[[], float] = time.time):
         self.database = database
         self.clock = clock
+        self.mount_protected: tuple[str, ...] = ()
 
     def declared_declaration(self, db, resident_id: str) -> Declaration | None:
         """The declaration standing now, read inside the caller's own transaction.
@@ -583,6 +589,9 @@ class Hearth:
         if outstanding + spent + reserve > declaration["daily_limit"]:
             raise Refused("budget_exhausted")
         check_admission(db, now, reserve)
+        from hearth.integrations.logins import scope as login_scope
+
+        kind = declaration["runtime"] or default_runtime(db)
         run = Run(
             str(uuid.uuid4()),
             task_id,
@@ -597,10 +606,15 @@ class Hearth:
             # Where this run happens is the resident's own declaration, and the store's
             # default only where the declaration says nothing. The pin is written once,
             # here, and a finished run keeps it whatever either of them becomes later.
-            runtime_kind=declaration["runtime"] or default_runtime(db),
+            runtime_kind=kind,
+            # And whose login pays for it: the resident's own directory for that kind if
+            # it has one, the household's otherwise. Resolved here, once, for the same
+            # reason -- a login seeded or taken away later belongs to the next run
+            # (`docs/adr/0016-sandbox-per-run.md`).
+            login_scope=login_scope(self.database.path.parent, resident_id, kind),
         )
         db.execute(
-            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             tuple(asdict(run).values()),
         )
         pin_admission(db, now, run.id)
@@ -611,8 +625,20 @@ class Hearth:
         # rather than whatever the resident has written since.
         example = case_validation(db, run.id)
         if example is None:
-            from hearth.management.authority import pin_management
+            from hearth.management.authority import pin_management, pin_mounts
 
+            # What this run reaches on disk, resolved from the grant as it stands now
+            # and never read again (`docs/adr/0016-sandbox-per-run.md`). A folder the
+            # grant names and the host does not have refuses here, before any money is
+            # reserved. A skill example gets none of it, for the same reason it gets no
+            # management tools: it is the resident's own work with none of its
+            # authority, and a folder is authority.
+            pin_mounts(
+                db,
+                run.id,
+                resident_id,
+                protected=(str(self.database.path.parent.resolve()), *self.mount_protected),
+            )
             pin_management(
                 db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
             )
@@ -683,6 +709,7 @@ class Hearth:
                 "runtime_kind": run.runtime_kind,
                 "runtime_version": run.runtime_version,
                 "input_digest": run.input_digest,
+                "login_scope": run.login_scope,
             }
             | {"accounting": pricing},
         )

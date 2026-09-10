@@ -20,6 +20,22 @@ from hearth.integrations.codex.pricing import MODEL, estimate_api_equivalent
 from hearth.integrations.codex.usage import UsageBinding, publish, read
 from hearth.integrations.durable import transferable_lock
 from hearth.integrations.interface import Evidence
+from hearth.integrations.launcher import (
+    CONTAINER,
+    IMAGE_PIN,
+    LOGIN,
+    OUTPUT,
+    Sandbox,
+    check_image,
+    discard,
+    granted,
+    sandboxed,
+    surveyed,
+    used,
+    written_handle,
+)
+from hearth.integrations.logins import HOUSEHOLD, directory_for, spent
+from hearth.management.authority import admitted_mounts
 from hearth.residents.models import Refused, identifier
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -28,6 +44,12 @@ from hearth.work.service import Hearth, _audit
 KIND = "codex_subscription"
 VERSION = "codex-cli 0.153.4"
 RUN_TIMEOUT = 120
+# What a settled exec receipt says, whichever launcher started the session. `sandbox`
+# joins them where a run has one to name, and is absent from every receipt written
+# before this seam existed (`docs/adr/0016-sandbox-per-run.md`).
+FIELDS = {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
+# The one file in `CODEX_HOME` that is the household's rather than the session's.
+AUTH = "auth.json"
 CONFIG = {
     "forced_login_method": "chatgpt",
     "cli_auth_credentials_store": "file",
@@ -68,10 +90,14 @@ def encode(receipt, expected):
         return encode_management(receipt, expected)
     if (
         not isinstance(receipt, dict)
-        or set(receipt)
-        != {"kind", "binding", "binary", "stdout", "final", "exit_code", "cancelled", "launched"}
+        # A receipt written before a run had a sandbox to name says nothing about one,
+        # and it settles exactly as it always did: that run was a child of its worker.
+        or not FIELDS <= set(receipt)
+        or not set(receipt) <= FIELDS | {"sandbox", "login_scope"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
@@ -135,21 +161,54 @@ def encode(receipt, expected):
     return raw, hashlib.sha256(raw.encode()).hexdigest(), evidence
 
 
+def login_probe(binary: Path | None, directory: Path, *, contained: bool = False) -> bool:
+    """Is there a Codex login in that directory?
+
+    This CLI keeps its credential in one file, and whether that file is there is the
+    whole of Hearth's question -- it is exactly what the household's own login is
+    checked for when this adapter opens, and a resident's own login is probed the same
+    way or it would be held to a different standard than the household's.
+
+    The CLI does offer a `login status` subcommand and Hearth does not run it: its
+    answer is a line of prose naming the account, and nothing about an account is
+    Hearth's to read. The binary is taken and not used for that reason; every kind's
+    probe is asked in the same words, and the ones that need a CLI use it. `contained`
+    likewise changes nothing here: the file this checks for is the same file a sandbox
+    mounts, so what is asked is already what a sandboxed session will be given.
+    """
+    return (Path(directory) / AUTH).is_file()
+
+
 class CodexLiveRuntime:
     kind = KIND
     version = 1
 
-    def __init__(self, data: Path, *, binary: Path | None = None, auth_home: Path | None = None):
+    def __init__(
+        self,
+        data: Path,
+        *,
+        binary: Path | None = None,
+        auth_home: Path | None = None,
+        sandbox: Sandbox | None = None,
+    ):
         self.data = data.resolve()
         self.database = Database(self.data / "hearth.db")
         self.root = self.data / "codex-live"
+        # Where this instance's sessions execute. It travels in the request rather
+        # than in the worker's environment, which is a search path and nothing else.
+        self.sandbox = sandbox if sandbox is not None else Sandbox()
+        # Where this adapter keeps the credential it reads, named the same way by every
+        # runtime so nothing outside `integrations/` has to know what it is called. A
+        # quarantined copy opens no login and answers with none.
+        self.login = None
         if self.database.restored():
             return
         if binary is None or auth_home is None:
             raise Refused("codex_subscription_configuration_required")
         self.binary = binary.resolve()
         self.auth_home = auth_home.resolve()
-        if not (self.auth_home / "auth.json").is_file():
+        self.login = self.auth_home
+        if not (self.auth_home / AUTH).is_file():
             raise Refused("codex_subscription_login_required")
         env = {"PATH": os.defpath, "CODEX_HOME": str(self.auth_home)}
         version = subprocess.check_output(
@@ -174,6 +233,14 @@ class CodexLiveRuntime:
             elif previous[0] != pin:
                 raise Refused("codex_subscription_binary_changed")
         self.root.mkdir(mode=0o700, exist_ok=True)
+
+    def probe_login(self, directory: Path) -> bool:
+        """Is that directory logged in? Asked of every adapter in the same words.
+
+        A resident's own login is probed exactly as the household's is, so what an
+        operator is shown about one is the same fact they are shown about the other.
+        """
+        return login_probe(getattr(self, "binary", None), directory)
 
     def folder(self, run_id):
         identifier(run_id)
@@ -210,10 +277,26 @@ class CodexLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='epoch'"
                     ).fetchone()[0],
                     "binary": str(self.binary),
-                    "auth_home": str(self.auth_home),
+                    # Whose login pays for this session: the resident's own directory
+                    # if its admission pinned one, the household's otherwise. Read from
+                    # the run and not from configuration, so a login seeded after this
+                    # run was admitted belongs to the next one, and one taken away
+                    # refuses here rather than quietly spending the household's
+                    # (`docs/adr/0016-sandbox-per-run.md`).
+                    "auth_home": str(
+                        directory_for(
+                            self.data, self.auth_home, row["resident_id"], KIND, row["login_scope"]
+                        )
+                    ),
+                    "login_scope": row["login_scope"],
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key='codex_live_binary'"
                     ).fetchone()[0],
+                    "sandbox": self.sandbox.document(),
+                    # What this run was admitted to reach on disk, resolved from its
+                    # resident's grant at admission and never from anything a session
+                    # says (`docs/adr/0016-sandbox-per-run.md`).
+                    "mounts": admitted_mounts(db, run_id),
                 }
             from hearth.integrations.codex.management_runtime import pin_configuration
             from hearth.management.bridge import BoundRun
@@ -267,15 +350,26 @@ class CodexLiveRuntime:
             ):
                 return Evidence("unknown")
             if (folder / "receipt.json").exists():
-                return encode(self.receipt(run_id), UsageBinding(**request["binding"]))[2]
+                receipt = self.receipt(run_id)
+                evidence = encode(receipt, UsageBinding(**request["binding"]))[2]
+                if not discard(self.database, folder, run_id, request, receipt=receipt):
+                    return Evidence("unknown")
+                return evidence
             with (folder / "worker.lock").open("a") as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return Evidence("running")
+            # The lock is free and no receipt was written: the worker that held this
+            # run's stream is gone, and whatever it started may not be.
+            self.discard(run_id, request)
             return Evidence("unknown")
         except OSError, ValueError, KeyError, TypeError, Refused:
             return Evidence("unknown")
+
+    def discard(self, run_id, request) -> None:
+        """End the session a dead worker left behind. The rule is the launcher's."""
+        discard(self.database, self.folder(run_id), run_id, request)
 
     def stop(self, run_id):
         if self.database.restored():
@@ -283,6 +377,24 @@ class CodexLiveRuntime:
         folder = self.folder(run_id)
         if folder.exists() and not (folder / "cancel.json").exists():
             publish(folder / "cancel.json", {"cancelled": True})
+
+
+def check_pin(sandbox, binary: Path, expected: str, image: str | None) -> None:
+    """Refuse unless what is about to execute is what this run was admitted with.
+
+    Two launchers, two things to compare. A child of the worker executes the file at
+    `binary` on this host, so its bytes are hashed, exactly as they always were. A
+    container executes the image's own copy of the CLI, which every start hashes
+    against this store's binary pin before a resident is admitted (`configure`), so
+    hashing a host file the session will never open would be a check of nothing;
+    what can still change under a waiting run is the image this store is pinned to,
+    and that is what is compared.
+    """
+    check_image(sandbox, image)
+    if sandbox.launcher == CONTAINER:
+        return
+    if hashlib.sha256(binary.read_bytes()).hexdigest() != expected:
+        raise Refused("codex_subscription_binary_changed")
 
 
 @contextmanager
@@ -314,19 +426,48 @@ def worker(folder, inherited_fd=None):
             or prompt_digest != request["binding"]["input_digest"]
         ):
             return
+        try:
+            sandbox = Sandbox.of(request.get("sandbox"))
+        except Refused:
+            # Where this run was admitted to execute is Hearth's own writing, and a
+            # request this worker cannot read is not a session to launch. Nothing has
+            # started, exactly as for a changed pin above, and the run reads as
+            # unknown rather than as something a later pass may retry.
+            return
         binary = Path(request["binary"])
-        if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
+        if (
+            sandbox.launcher != CONTAINER
+            and hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]
+        ):
             return
         if request.get("management") is not None:
             from hearth.integrations.codex.management_runtime import worker as management_worker
 
             management_worker(folder, request, execution)
             return
+        launcher = sandbox.open()
+        placement = sandbox.placement()
+        try:
+            # The folders this run was admitted with, checked again here and placed
+            # where the session will name them. Read outside the dispatch guard,
+            # because looking at what they hold is not something to do while holding
+            # the store's one write transaction.
+            reached = granted(placement, request.get("mounts") or [])
+        except Refused:
+            # A mount list this worker cannot read is not a session to launch, exactly
+            # as a sandbox document it cannot read is not one. Nothing has started.
+            return
+        before = surveyed(reached)
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         final = workspace / "final.md"
+        # The session's own view of three host paths: the CLI it runs, the login it
+        # reads and the one directory it writes into. Inside a container each is a
+        # mount and nothing else on this host exists; on the process launcher each is
+        # itself and the command below is byte for byte the one Hearth always built.
+        written = placement.directory(workspace, OUTPUT, writable=True)
         cmd = [
-            str(binary),
+            placement.binary(binary, "codex"),
             "exec",
             "--ignore-user-config",
             "--ignore-rules",
@@ -339,12 +480,12 @@ def worker(folder, inherited_fd=None):
             "--model",
             MODEL,
             "-o",
-            str(final),
+            written + "/final.md",
         ]
         for key, value in CONFIG.items():
             cmd += ["-c", key + "=" + json.dumps(value)]
         cmd.append("-")
-        child = None
+        handle = None
         output = bytearray()
         cancelled = False
         eof = False
@@ -354,33 +495,52 @@ def worker(folder, inherited_fd=None):
                 request["owner"],
                 epoch=request["epoch"],
                 input_digest=prompt_digest,
-            ):
-                if hashlib.sha256(binary.read_bytes()).hexdigest() != request["sha256"]:
-                    raise Refused("codex_subscription_binary_changed")
+            ) as db:
+                # Read inside the guard, which is already this store's one write
+                # transaction: a pin that changed while this run waited is refused
+                # here, before anything is launched, and never afterwards -- a
+                # session already running is priced from what it really said.
+                current = db.execute(
+                    "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
+                ).fetchone()
+                check_pin(sandbox, binary, request["sha256"], current[0] if current else None)
+                # The environment is built before the mounts are read, because
+                # placing a path is what registers the mount that backs it.
+                home = placement.login(request["auth_home"], AUTH, LOGIN)
+                mounts = placement.mounts
                 # A regular file cannot block prompt delivery when the CLI stalls.
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
-                    child = subprocess.Popen(
+                    handle = launcher.start(
                         cmd,
+                        env={"PATH": os.defpath, "CODEX_HOME": home},
                         cwd=workspace,
-                        env={"PATH": os.defpath, "CODEX_HOME": request["auth_home"]},
                         stdin=prompt,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
+                        mounts=mounts,
                     )
-            assert child.stdout is not None
+            # What was started, named where the worker's own pid is named: a process
+            # group on the process launcher and a container id on the container one.
+            # Written down before the id is asked for and again after, because asking
+            # waits, and a worker that dies while waiting would otherwise leave a live
+            # container that nothing on disk names.
+            written_handle(folder, handle)
+            # Asked for after the dispatch guard has closed, because a container
+            # runtime names what it created a moment later and the guard is one write
+            # transaction over the whole store.
+            launcher.identify(handle)
+            written_handle(folder, handle)
+            assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
+                selector.register(handle.stdout, selectors.EVENT_READ)
                 while time.monotonic() < deadline:
                     if (folder / "cancel.json").exists():
                         cancelled = True
                         break
                     if not selector.select(0.05):
                         continue
-                    chunk = os.read(child.stdout.fileno(), 8192)
+                    chunk = os.read(handle.stdout.fileno(), 8192)
                     if not chunk:
                         eof = True
                         break
@@ -390,32 +550,38 @@ def worker(folder, inherited_fd=None):
         except Refused:
             cancelled = True
         finally:
-            if child is not None and eof:
-                try:
-                    child.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    eof = False
-            if child is not None and not eof:
-                try:
-                    os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
+            if handle is not None and eof and launcher.wait(handle, 1) is None:
+                eof = False
+            if handle is not None and not eof:
+                launcher.stop(handle, signal.SIGTERM)
+                if launcher.wait(handle, 5) is None:
+                    launcher.stop(handle, signal.SIGKILL)
+                    launcher.wait(handle, None)
         receipt = {
             "kind": KIND,
             "binding": request["binding"],
             "binary": request["sha256"],
+            # Where this session ran, so a finished run says it rather than leaving a
+            # reader to infer it from configuration that has moved on since.
+            "sandbox": {
+                "launcher": sandbox.launcher,
+                "container_id": handle.id if handle is not None and placement.contained else None,
+                "image": sandbox.digest,
+                # What this session held on disk and what became of the writable ones,
+                # surveyed before it started and again now that it has ended.
+                "mounts": used(reached, before, surveyed(reached)),
+            },
+            # And whose login it spent. A request document written before a resident
+            # could have one of its own names none, and the household's is what such a
+            # run really used, because it was the only login there was.
+            "login_scope": request.get("login_scope", HOUSEHOLD),
             "stdout": output.decode("utf-8", errors="replace"),
             "final": final.read_text()
             if final.exists() and final.stat().st_size <= 512 * 1024
             else None,
-            "exit_code": child.returncode if child else None,
+            "exit_code": handle.returncode if handle else None,
             "cancelled": cancelled,
-            "launched": child is not None,
+            "launched": handle is not None,
         }
         encode(receipt, UsageBinding(**request["binding"]))
         publish(folder / "receipt.json", receipt)

@@ -29,6 +29,13 @@ MODEL = "claude-opus-5"
 EFFORT = "low"
 # `system_meta` key holding the sha256 of the binary this store was configured with.
 BINARY_PIN = "claude_live_binary"
+# The one file in `CLAUDE_CONFIG_DIR` that is the household's rather than the
+# session's. Measured on 2026-09-09 against the pinned CLI's own Linux build: a
+# directory holding nothing but this file answers `auth status --json` with
+# `{"loggedIn": true, "authMethod": "claude.ai"}` under `env -i PATH CLAUDE_CONFIG_DIR`
+# (`docs/claude-runtime.md`, spike 8). Everything else the CLI keeps in that directory
+# is the session's own and belongs to no later run.
+CREDENTIALS = ".credentials.json"
 # The CLI is a ~200 MB single file and starts a Node runtime; the Codex adapter's five
 # seconds is too tight for a cold start of it.
 PROBE_TIMEOUT = 30
@@ -60,11 +67,11 @@ SESSION_FLAGS: tuple[str, ...] = (
 
 
 def session_command(
-    binary: Path,
+    binary: str | Path,
     *,
     budget_usd: str,
     tools: Sequence[str] = (),
-    mcp_config: Path | None = None,
+    mcp_config: str | Path | None = None,
 ) -> list[str]:
     """The whole argv of one bounded headless run. The prompt is delivered on stdin.
 
@@ -81,6 +88,10 @@ def session_command(
     session only *after* a request has already been billed past it, so Hearth's own
     admission hold stays the authority and the receipt records that the CLI stopped
     on the fence.
+
+    Every path in here is the session's own name for it, which is not always this
+    host's: inside a sandbox the CLI is the image's copy and the configuration is a
+    mount (`integrations/launcher.Placement`). The flags are the same either way.
     """
     command = [str(binary), *SESSION_FLAGS, "--model", MODEL, "--effort", EFFORT]
     if mcp_config is not None:
@@ -111,7 +122,7 @@ def binary_digest(path: Path) -> str:
         return hashlib.file_digest(binary, "sha256").hexdigest()
 
 
-def environment(config_dir: Path) -> dict[str, str]:
+def environment(config_dir: str | Path, *, account: bool = True) -> dict[str, str]:
     """The whole environment a Claude session gets: a search path and its own login.
 
     `DISABLE_AUTOUPDATER` keeps the pinned binary from being replaced under its own
@@ -124,13 +135,19 @@ def environment(config_dir: Path) -> dict[str, str]:
     2026-09-09: `env -i PATH=… CLAUDE_CONFIG_DIR=$CFG` is not logged in, adding
     `USER=$USER` alone is). It names nobody's secret; the login itself stays in the
     Keychain.
+
+    A sandboxed session asks for `account=False`, and the name of an account on this
+    host does not cross the boundary. It has nothing to answer there: the Keychain is
+    macOS's, a sandbox is Linux, and the login inside one is the credential *file*
+    mounted into the CLI's own configuration directory, which was measured to be read
+    with no `USER` and no `HOME` at all (`docs/claude-runtime.md`, spike 8).
     """
     env = {
         "PATH": os.defpath,
         "CLAUDE_CONFIG_DIR": str(config_dir),
         "DISABLE_AUTOUPDATER": "1",
     }
-    user = account_name()
+    user = account_name() if account else None
     if user:
         env["USER"] = user
     return env

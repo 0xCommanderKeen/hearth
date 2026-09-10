@@ -130,3 +130,7 @@ class Run:
     runtime_kind: str = "codex_subscription"
     runtime_version: int = 1
     input_digest: str = ""
+    # Which provider login this run was admitted to spend: the resident's own, or the
+    # household's (`hearth.integrations.logins`). Every field above it is written into
+    # the `runs` row in this order, so it stays last.
+    login_scope: str = "household"

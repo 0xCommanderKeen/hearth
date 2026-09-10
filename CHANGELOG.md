@@ -2,6 +2,14 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Review fixes keep sandbox runs held until container removal is confirmed, recheck
+  protected mount targets at admission and launch, and refresh idle login-scope views;
+  integration preserves all reviewed PRs and their documented real-host acceptance limits.
+
+- Remember the operator token across browser restarts; Lock and server rejection
+  clear it, and the login screen and setup docs describe the same behavior (#151).
+- Preserve the mock-removal plan as history, linking its delivered epic, migration
+  decisions and current per-resident runtime architecture (#150).
 - Memory-conflict guidance defers updates through the journal to a later run, preserving
   concurrent human edits and admission-pinned reads (#200).
 
@@ -66,6 +74,139 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   camera; pointer drags and touch gestures never select a home. Reduced motion and
   graphics loss preserve access to the recorded residents and Townhall.
 
+- Hearth is deployable on a Linux server as a container, and it will not open on a
+  sandbox network it cannot see holding. `deploy/Dockerfile` packages the release wheel,
+  the locked dependencies and a container client with no package manager and no root;
+  `deploy/compose.yaml` is the deployment -- a store volume, a credentials volume, a
+  folders volume, the pinned CLIs read-only, the runtime socket, `HEARTH_SANDBOX=container`
+  and both image digests as environment. Every volume is mounted inside Hearth at the
+  path it has on the host, because the daemon resolves the paths Hearth hands it in the
+  host's filesystem and not in Hearth's; Hearth is deliberately not on `hearth-egress`,
+  because a session reaches Hearth over a socket file and needs no network path to it.
+  The fence itself is measured, never assumed: `HEARTH_SANDBOX_SHUT` and
+  `HEARTH_SANDBOX_OPEN` name what a session must not and must be able to reach, and at every
+  start -- and again on every `GET /api/health` -- Hearth runs one container on the
+  sandbox network, from the pinned image, as its own uid, with nothing mounted, and asks
+  it what it reached (`integrations/reach.py`). A reset counts as reachable, because a
+  packet that arrived is not a fence. What it saw is recorded as `sandbox.fence` and
+  anything but "the provider and nothing else" refuses `sandbox_network_open` and the
+  instance does not open; an empty list refuses `sandbox_fence_unconfigured` and a probe
+  that could not answer `sandbox_fence_unmeasured`. `deploy/fence.sh` installs the packet
+  filter that makes it hold -- honestly "nothing of this house" rather than a provider
+  allowlist, and the runbook says so. `deploy/README.md` is the whole order: build and
+  pin both images, configure, make the network and the filter, seed the binaries and the
+  logins, first start, upgrade, backup and restore, and where a resident's folders live
+  on a host whose filesystem is volumes. ADR 0016 is accepted, with a Measured section
+  naming every assumption the epic contradicted.
+
+- A resident may run on a provider login of its own. `<data>/credentials/<resident
+  id>/<kind>/` is a directory an operator seeds with that CLI's own login flow -- Hearth
+  makes the shelf `0700` and never creates or copies a login. Admission resolves which
+  one a run spends and writes `runs.login_scope` (schema 13, forward-filled to
+  `household`: every run that predates the column spent the only login there was), the
+  worker mounts that directory rather than the household's, and the receipt says which
+  it was. The directory decides the scope and validity decides whether the run happens:
+  a resident whose own login is empty, lapsed or taken away **waits** with
+  `login_required` and never falls back to the household's, because falling back would
+  spend a subscription the operator did not choose. That resident is held and nobody
+  else, and it says so: a held run is audited once as `run.waiting`. Each login is probed
+  the way the household's is -- `loggedIn` and nothing more, never a credential -- at
+  start (a lapse audited once as `login.resident_lapsed`), on `GET /api/health` under
+  `login.resident_lapsed`, and before that resident's run launches, with the answer
+  remembered for a minute and shared between those paths so a held run does not start a
+  CLI twice a second. A provider that could not be asked at all is
+  `login.resident_unknown` rather than a lapse: its runs wait all the same, but nobody
+  is sent to run a login flow they do not need. `python -m hearth credentials --data <dir>` lists
+  every seeded login with its probe result and nothing else of the provider's answer,
+  asking the stricter question a sandboxed burrow will ask. Townhall's resident view
+  says whose login it is on per provider, and a finished run says which it spent.
+  Bundles carry no login at all -- not the credential, not the directory, not the fact
+  that there was one.
+
+- What a resident may reach on disk is part of its management grant. `mounts` names at
+  most sixteen folders with a mode, read-only unless the grant says `rw`, refused at
+  write time (`grant_mount_forbidden`) for a relative path, for `/`, `/etc`, `/proc`,
+  `/sys`, for anything containing or contained by Hearth's data directory, a runtime
+  login or the container runtime's socket, and for a name or path two mounts share.
+  Admission resolves the list into the run's own `run_mounts` at the grant's revision
+  (schema 12; a folder the host lacks makes the run wait, `mount_unavailable`), the run's
+  context lists what it reaches and where, and the launcher turns each into a bind mount
+  at `/mounts/<name>` -- read-only unless writable, and nothing else of the host in the
+  container. A run on the process launcher records the same list and reaches the host
+  paths, so a laptop run says honestly what it would have had. A writable folder is
+  surveyed before and after the session (names, sizes, times -- never content), the
+  receipt says written, untouched or not known, and settlement audits
+  `run.mount_rw_used` from what admission pinned; granting one audits
+  `grant.mount_rw_granted`. Bundles carry a folder as a name and a mode with no path,
+  and an import grants only what the operator's own map resolves. Townhall edits the
+  folders in the grant and lists them on a finished run. Measured against Docker
+  Desktop's Linux VM (`docs/evidence/sandbox-mounts-2026-09-09.json`): a read-only mount
+  refuses a write with `Read-only file system`, a writable one takes it and the file is
+  on the host owned by Hearth's uid, `/mounts` holds the grant and nothing else, and the
+  folder they were carved out of does not exist inside the container.
+
+- A Claude run executes inside the sandbox, and Hearth's own tools reach it there. The
+  adapter names the CLI, the login and its `--mcp-config` by the paths the *session*
+  sees: the image's own `claude`, a configuration directory of the run's own with the
+  household's `.credentials.json` read-only inside it, and the bridge's two files
+  mounted at the paths they already have -- so the shim, started by the image's own
+  interpreter, connects to the same socket path Hearth wrote and the peer-credential
+  check still holds across the boundary. The receipt says where the session ran, the pin
+  a sandboxed run is held to is the image, what a worker started is written down before
+  the runtime has named it and again after, and a container whose worker is gone is
+  killed, removed and audited rather than left spending. A store on the container
+  launcher whose login is not a *file* refuses at start: the macOS Keychain stays a
+  convenience of the `process` launcher, as ADR 0016 said. Measured on a Linux Docker
+  host against the Linux build of the pin (`docs/evidence/sandbox-claude-2026-09-09.json`,
+  written up as spike 8 in `docs/claude-runtime.md`): a login on Linux is
+  `.credentials.json` and nothing else is needed to read it; the CLI writes its own state
+  into that directory, which is why it gets a tmpfs; the uid the sandbox runs as must
+  exist in the image's own passwd file or the CLI dies at `uv_os_homedir` before its
+  first byte; and the real shim, in a container, had `tools/list` answered over a mounted
+  socket -- and was refused when it ran as another uid. The paid three-run journey on the
+  sandbox waits on a Linux login only the account holder can make; the same three runs on
+  the process launcher are `docs/evidence/claude-journey-process-2026-09-09.json`.
+
+- A Codex run executes inside the sandbox, for real. The adapter names the CLI, the
+  login and the file it writes its final message to by the paths the *session* sees:
+  the image's own CLI, a login mounted at the path `CODEX_HOME` names, and one writable
+  mount, so the receipt is still the CLI's own stream and the final message still
+  reaches the worker that reads it. On the process launcher the command is unchanged,
+  byte for byte. The pin a sandboxed run is held to is the image digest -- read inside
+  the dispatch guard, refused before the launch and never after it -- and a finished run
+  says where it happened: `sandbox: {launcher, container_id, image}` on the receipt. A
+  container whose worker is gone is now stopped, removed and audited
+  `sandbox.stray_removed` rather than left spending, and it is never adopted: the stream
+  that was being priced died with the worker, so the run is unknown, never zero. What a
+  run started is written down before the runtime has named it and again after, and once
+  for each session a management run starts, because that file is the only thing that can
+  find a container whose worker is gone. One
+  real run on a Linux Docker host, `docs/evidence/sandbox-codex-journey-2026-09-09.json`.
+  Three things it measured are in `docs/sandbox.md` and each of them failed every run it
+  touched: the CLI cannot run with a read-only `CODEX_HOME` (it gets a tmpfs of its own
+  now, with the household's credential read-only inside it), Codex on Linux needs the
+  `bwrap` and code-mode-host executables its own package ships beside it, and `flock`
+  does not exclude on a Docker Desktop bind mount from macOS -- so a lock alone no
+  longer authorises killing a container, and the worker records its own pid beside it.
+- There is one seam under the worker for starting a session, and a sandbox it can be
+  pointed at. Neither live adapter calls `subprocess.Popen` on a provider CLI any more:
+  `process` is byte for byte what Hearth has always done, and `container` starts the
+  same command inside a container created for that run, from an image pinned by digest,
+  on the operator's own network, read-only, on a tmpfs workspace, as Hearth's own uid.
+  Which one is `HEARTH_SANDBOX`, and it travels in the run's request because the
+  detached worker has a search path and nothing else. The image digest is pinned in
+  `system_meta` with an audit fact, and the CLIs inside the image are hashed by the
+  image's own `sha256sum` against the binary pins the store already holds, so
+  `sandbox_image_changed`, `sandbox_image_unavailable`, `sandbox_network_missing`,
+  `sandbox_runtime_unavailable` and `sandbox_binary_mismatch` are all refusals at start
+  rather than one failed run at a time. `/health` names the launcher and the digest;
+  the network and the reasons stay behind the operator's token. Measured against a real
+  daemon (`docs/sandbox.md`, `docs/evidence/sandbox-2026-09-09.json`), and two of the
+  measurements contradict what the decision assumed: killing the attached worker does
+  **not** stop its container, and a unix socket cannot be bind-mounted from a Mac's
+  filesystem into a container at all, though it works between containers over a volume,
+  which is the shape the server runs in. No run executes in a container yet; this is the
+  seam, the pins and the measurements the rest of the epic stands on.
 - The Claude journey ran for real, and two things it found are fixed. The evidence
   file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
   `claude_subscription` beside a Codex default, each settled to exactly the CLI's own

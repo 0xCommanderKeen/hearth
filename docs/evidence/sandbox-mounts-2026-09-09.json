@@ -1,0 +1,69 @@
+{
+  "arguments": [
+    "type=bind,source=/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-mounts-rbkiguy8/drafts,target=/mounts/drafts",
+    "type=bind,source=/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-mounts-rbkiguy8/notes,target=/mounts/notes,readonly"
+  ],
+  "base": "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
+  "daemon": {
+    "client_version": "27.3.1",
+    "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "kernel": "6.10.14-linuxkit",
+    "server_arch": "arm64",
+    "server_os": "linux",
+    "server_version": "27.3.1"
+  },
+  "grant": [
+    {
+      "host_path": "/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-mounts-rbkiguy8/notes",
+      "mode": "ro",
+      "name": "notes"
+    },
+    {
+      "host_path": "/var/folders/_q/qnl7_sgx2mn7z4c9tzrgkqjm0000gn/T/hearth-mounts-rbkiguy8/drafts",
+      "mode": "rw",
+      "name": "drafts"
+    }
+  ],
+  "host_after": {
+    "drafts": [
+      "written-inside.md"
+    ],
+    "drafts_owner": 501,
+    "notes": [
+      "note.md"
+    ]
+  },
+  "image_id": "sha256:799d21c8788eeb509e7fd058267b5b9391be037c14f434fffe88beac5612bc14",
+  "inside": {
+    "drafts": "written",
+    "listing": [
+      "drafts",
+      "notes"
+    ],
+    "notes": "OSError: Read-only file system",
+    "parent_visible": false,
+    "read_only_content": "A synthetic note, read-only.\n",
+    "uid": 501
+  },
+  "measured_at": "2026-09-09T19:28:33Z",
+  "receipt_mounts": [
+    {
+      "mode": "ro",
+      "name": "notes",
+      "written": null
+    },
+    {
+      "mode": "rw",
+      "name": "drafts",
+      "written": true
+    }
+  ],
+  "session": {
+    "exit_code": 0,
+    "stdout": "{\"listing\": [\"drafts\", \"notes\"], \"uid\": 501, \"read_only_content\": \"A synthetic note, read-only.\\n\", \"notes\": \"OSError: Read-only file system\", \"drafts\": \"written\", \"parent_visible\": false}"
+  },
+  "survey": {
+    "drafts": true,
+    "notes": false
+  }
+}

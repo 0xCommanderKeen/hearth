@@ -1,4 +1,4 @@
-"""Time alone refreshes the operator projection, never the audit log."""
+"""Time and login-directory changes refresh the projection, never the audit log."""
 
 import asyncio
 import json
@@ -22,6 +22,47 @@ def instant(value):
 
 def query(state):
     return {key: state[key] for key in ("cursor", "epoch", "budget_revision")}
+
+
+async def stream_after(app, state, change):
+    incoming = asyncio.Queue()
+    await incoming.put({"type": "http.request", "body": b"", "more_body": False})
+    frames = []
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            assert message["status"] == 200
+        if message["type"] == "http.response.body" and message.get("body"):
+            frame = message["body"].decode()
+            frames.append(frame)
+            if frame.startswith(": keepalive"):
+                change()
+            elif frame.startswith("event:"):
+                await incoming.put({"type": "http.disconnect"})
+
+    await asyncio.wait_for(
+        app(
+            {
+                "type": "http",
+                "asgi": {"version": "3.0"},
+                "http_version": "1.1",
+                "method": "GET",
+                "scheme": "http",
+                "path": "/api/events",
+                "raw_path": b"/api/events",
+                "query_string": urlencode(query(state)).encode(),
+                "headers": [(b"authorization", AUTH["Authorization"].encode())],
+                "client": ("127.0.0.1", 1234),
+                "server": ("test", 80),
+            },
+            incoming.get,
+            send,
+        ),
+        timeout=5,
+    )
+    assert frames[0] == ": keepalive\n\n"
+    assert frames[1].startswith("event: snapshot\ndata: ")
+    return json.loads(frames[1].split("data: ", 1)[1])
 
 
 @pytest.mark.parametrize(
@@ -60,47 +101,10 @@ def test_conditional_and_connected_stream_refresh_without_audit(
             == 200
         )
 
-        async def stream():
-            incoming = asyncio.Queue()
-            await incoming.put({"type": "http.request", "body": b"", "more_body": False})
-            frames = []
+        def advance():
+            now[0] = instant(boundary)
 
-            async def send(message):
-                if message["type"] == "http.response.start":
-                    assert message["status"] == 200
-                if message["type"] == "http.response.body" and message.get("body"):
-                    frame = message["body"].decode()
-                    frames.append(frame)
-                    if frame.startswith(": keepalive"):
-                        now[0] = instant(boundary)
-                    elif frame.startswith("event:"):
-                        await incoming.put({"type": "http.disconnect"})
-
-            await asyncio.wait_for(
-                app(
-                    {
-                        "type": "http",
-                        "asgi": {"version": "3.0"},
-                        "http_version": "1.1",
-                        "method": "GET",
-                        "scheme": "http",
-                        "path": "/api/events",
-                        "raw_path": b"/api/events",
-                        "query_string": urlencode(query(first)).encode(),
-                        "headers": [(b"authorization", AUTH["Authorization"].encode())],
-                        "client": ("127.0.0.1", 1234),
-                        "server": ("test", 80),
-                    },
-                    incoming.get,
-                    send,
-                ),
-                timeout=5,
-            )
-            assert frames[0] == ": keepalive\n\n"
-            assert frames[1].startswith("event: snapshot\ndata: ")
-            return json.loads(frames[1].split("data: ", 1)[1])
-
-        streamed = asyncio.run(stream())
+        streamed = asyncio.run(stream_after(app, first, advance))
         response = client.get("/api/state", params=query(first), headers=AUTH)
         assert response.status_code == 200
         updated = response.json()
@@ -114,6 +118,42 @@ def test_conditional_and_connected_stream_refresh_without_audit(
             assert updated["household"]["spent"] == 0
         else:
             assert updated["household"] == first["household"]
+        assert client.get("/api/state", params=query(updated), headers=AUTH).status_code == 204
+
+
+@pytest.mark.parametrize("initially_seeded", [False, True])
+def test_login_scope_change_refreshes_conditional_and_connected_stream(tmp_path, initially_seeded):
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
+    app.state.hearth.clock = lambda: instant("2026-09-06T12:00:00")
+    with TestClient(app) as client:
+        seed_reader_via(client)
+        kind = app.state.executor.runtime.kind
+        login = tmp_path / "credentials" / "reader" / kind
+        if initially_seeded:
+            login.mkdir(parents=True)
+        first = client.get("/api/state", headers=AUTH).json()
+        assert first["residents"][0]["logins"][kind] == (
+            "resident" if initially_seeded else "household"
+        )
+        assert client.get("/api/state", params=query(first), headers=AUTH).status_code == 204
+
+        def change_login():
+            if initially_seeded:
+                login.rmdir()
+            else:
+                login.mkdir(parents=True)
+
+        streamed = asyncio.run(stream_after(app, first, change_login))
+        response = client.get("/api/state", params=query(first), headers=AUTH)
+        assert response.status_code == 200
+        updated = response.json()
+        assert updated == streamed
+        assert updated["residents"][0]["logins"][kind] == (
+            "household" if initially_seeded else "resident"
+        )
+        assert updated["budget_revision"] != first["budget_revision"]
+        for field in ("cursor", "epoch", "activity", "household", "runs", "tasks"):
+            assert updated[field] == first[field]
         assert client.get("/api/state", params=query(updated), headers=AUTH).status_code == 204
 
 

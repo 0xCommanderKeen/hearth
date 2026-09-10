@@ -21,6 +21,8 @@ from hearth.integrations.codex.events import (
     unique_object,
 )
 from hearth.integrations.codex.pricing import MODEL
+from hearth.integrations.codex.subscription import AUTH
+from hearth.integrations.launcher import CONTAINER, LOGIN, Placement, ProcessLauncher, granted
 from hearth.residents.models import Refused
 
 PROTOCOL = "codex-app-server-0.153.4"
@@ -226,34 +228,53 @@ class _Pipe:
 
 
 @contextmanager
-def _process(binary, auth_home, workspace, settings, deadline, cancelled):
-    child = subprocess.Popen(
-        [str(binary), "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
+def _process(
+    program, home, workspace, settings, deadline, cancelled, launcher, mounts=(), started=None
+):
+    """One app-server session, wherever this run was admitted to execute.
+
+    `program` and `home` are already the paths the session itself names -- the image's
+    own CLI and the login mounted at the path `CODEX_HOME` will hold -- so the argv
+    below is the same on both launchers and only the strings differ. `workspace` stays
+    a host path: it is the client's own working directory, and what the session sees
+    of it is the empty tmpfs the launcher mounts.
+    """
+    started = (lambda handle: None) if started is None else started
+    handle = launcher.start(
+        [program, "app-server", "--strict-config", "--stdio", *config.arguments(settings)],
+        env={"PATH": os.defpath, "CODEX_HOME": home},
         cwd=workspace,
-        env={"PATH": os.defpath, "CODEX_HOME": str(auth_home)},
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
         bufsize=0,
-        start_new_session=True,
+        mounts=mounts,
     )
+    # What was started, told to the caller before the id is asked for and again after:
+    # asking waits, and a worker that dies while waiting would otherwise leave a live
+    # container that nothing on disk names. A management run starts two of these, one
+    # after the other, and each in turn is the one that has to be findable.
+    started(handle)
+    # Asked for outside Hearth's dispatch guard, which this process is deliberately
+    # created before entering.
+    launcher.identify(handle)
+    started(handle)
+    child = handle.process
     try:
         yield _Pipe(child, deadline, cancelled)
     finally:
         if child.poll() is None:
-            try:
-                os.killpg(child.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                child.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait(timeout=2)
+            launcher.stop(handle, signal.SIGTERM)
+            if launcher.wait(handle, 2) is None:
+                launcher.stop(handle, signal.SIGKILL)
+                launcher.wait(handle, 2)
         if child.stdin is not None:
             child.stdin.close()
         if child.stdout is not None:
             child.stdout.close()
+        # Discovery and the turn each own a container. Do not overwrite the first
+        # identity with the second while the daemon cannot prove the first ended.
+        if launcher.kind == CONTAINER and launcher.inspect(handle) != "absent":
+            if not launcher.stray(handle.id):
+                raise Refused("sandbox_termination_unknown")
 
 
 def _initialize(pipe, workspace, settings):
@@ -341,6 +362,16 @@ def run(
     timeout: float = 600,
     max_calls: int = 64,
     expected_pins: dict | None = None,
+    launcher=None,
+    # The folders this run was admitted to reach, as admission resolved them from its
+    # resident's grant. A management session is confined by the same boundary as any
+    # other (`docs/adr/0016-sandbox-per-run.md`); what it may write through Hearth's
+    # own tools is a different question and is the grant's other half.
+    mounts: list[dict] | tuple = (),
+    # Told what each of this run's sessions started, so that the caller -- which is the
+    # only thing here with a run folder to write in -- can record it. A container whose
+    # worker dies is only findable by what was written down.
+    on_session=None,
 ) -> dict:
     """One private native process/turn; callbacks retain Hearth's transactional authority.
 
@@ -356,6 +387,13 @@ def run(
         "events": [],
     }
     process = None
+    # Where this session's processes are started. The default is the launcher Hearth
+    # has always used, so a caller that names none is launched exactly as before.
+    launcher = ProcessLauncher() if launcher is None else launcher
+    # And what its own paths are. On the process launcher every one of them is the
+    # host path it always was; in a container the CLI is the image's, the login and
+    # the generated settings are mounts, and the working directory is a tmpfs.
+    placement = Placement(launcher.kind)
     try:
         if not 0 < timeout <= 600 or type(max_calls) is not int or not 1 <= max_calls <= 64:
             raise Refused("app_server_limits_invalid")
@@ -379,15 +417,44 @@ def run(
             catalog_path = Path(temporary) / "models.json"
             catalog_path.write_bytes(catalog)
             catalog_path.chmod(0o600)
-            settings = config.settings() | {"model_catalog_json": str(catalog_path)}
+            # The three paths this session names, and the mounts that put them there.
+            # The catalog is generated here from the CLI this store is pinned to and
+            # read inside as a file the session may not change.
+            program = placement.binary(binary, "codex")
+            home = placement.login(auth_home, AUTH, LOGIN)
+            catalog_json = placement.same(temporary) + "/models.json"
+            inside = placement.workspace(workspace)
+            granted(placement, list(mounts))
+            placed = placement.mounts
+            settings = config.settings() | {"model_catalog_json": catalog_json}
             # Discovery never starts a thread/turn; a second isolated process starts
             # with every discovered skill disabled, then verifies the effective set.
-            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as discovery:
-                paths = config.skill_paths(_initialize(discovery, workspace, settings))
+            with _process(
+                program,
+                home,
+                workspace,
+                settings,
+                deadline,
+                cancelled,
+                launcher,
+                placed,
+                on_session,
+            ) as discovery:
+                paths = config.skill_paths(_initialize(discovery, inside, settings))
             settings["skills.config"] = [{"path": path, "enabled": False} for path in paths]
-            with _process(binary, auth_home, workspace, settings, deadline, cancelled) as process:
+            with _process(
+                program,
+                home,
+                workspace,
+                settings,
+                deadline,
+                cancelled,
+                launcher,
+                placed,
+                on_session,
+            ) as process:
                 actual_paths = config.skill_paths(
-                    _initialize(process, workspace, settings), disabled=True
+                    _initialize(process, inside, settings), disabled=True
                 )
                 if actual_paths != paths:
                     raise Refused("app_server_skills_changed")
@@ -405,7 +472,8 @@ def run(
                     {
                         "model": MODEL,
                         "modelProvider": "openai",
-                        "cwd": str(workspace),
+                        # The session's own working directory, as the session names it.
+                        "cwd": inside,
                         "ephemeral": True,
                         "approvalPolicy": "never",
                         "permissions": "reader",

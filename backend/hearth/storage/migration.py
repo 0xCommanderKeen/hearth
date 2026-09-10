@@ -41,6 +41,9 @@ FILLS: dict[tuple[str, str], str] = {
     # which is exactly what null says here: follow the default
     # (`docs/adr/0015-runtime-per-resident.md`).
     ("declarations", "runtime"): "NULL",
+    # Every run that predates per-resident logins spent the household's login, because
+    # it was the only one there was (`docs/adr/0016-sandbox-per-run.md`).
+    ("runs", "login_scope"): "'household'",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is
@@ -136,9 +139,9 @@ REWRITES: dict[tuple[str, str], str] = {
 # instruction an admitted run would now be launched with no longer matches the digest it
 # reserved against. Such a run cannot start, and on the next pass it would settle as
 # interrupted while holding its resident's slot and reservation. The context gained the
-# rendered letter at version 8 and the replies a sender opens with at version 9, so
-# every store below that is rebuilt this way.
-CONTEXT_REWRITTEN_AT = 9
+# rendered letter at version 8, the replies a sender opens with at version 9 and what the
+# run reaches on disk at version 12, so every store below that is rebuilt this way.
+CONTEXT_REWRITTEN_AT = 12
 
 # Upgrading from a version below this removes approvals, so a notification announcing
 # one names a review the store no longer holds and can no longer open.
@@ -158,6 +161,12 @@ LETTERS_ADDED_AT = 6
 # it. A store that already worked letters knows the answer from its own rows, so the
 # state is read back from them rather than invented or left saying nothing.
 LETTER_STATES_ADDED_AT = 9
+
+# Upgrading from a version below this adds the filesystem grant to the management grant.
+# A stored grant is a digested document, exactly as at LETTERS_ADDED_AT, so the new field
+# has to be written into every recorded revision and into the admissions that pinned one,
+# or the grant reads as tampered with and every granted run loses its authority.
+MOUNTS_ADDED_AT = 12
 
 # The pinned request fields of a `skill_validations` row before and at version 5, frozen
 # here: the rename moves what the stored digest covers, so the old digest is verified and
@@ -351,6 +360,56 @@ def _open_grants_to_letters(connection: sqlite3.Connection, now: int) -> None:
                 "management",
                 now,
                 json.dumps({"count": changed, "reason": "letters_added"}, sort_keys=True),
+            ),
+        )
+
+
+def _open_grants_to_mounts(connection: sqlite3.Connection, now: int) -> None:
+    """Write the filesystem section into every stored grant, empty, and into its pins.
+
+    The same shape as `_open_grants_to_letters` and for the same reason: a grant is a
+    digested document, so a new field changes what every recorded revision hashes to.
+    The old digest is verified before the new one is written, and each admission that
+    pinned that revision moves with it, so a run already in flight keeps exactly the
+    authority it was admitted with.
+
+    The list arrives empty, and it stays empty until an operator writes one: an upgrade
+    hands no resident a folder it did not already have, and there is no path this could
+    infer one from -- what a resident reached before this release was whatever the host
+    had, which is precisely what the boundary exists to end.
+    """
+    changed = 0
+    for row in connection.execute("SELECT * FROM management_grant_revisions").fetchall():
+        try:
+            policy = json.loads(row["policy"])
+            if not isinstance(policy, dict):
+                raise ValueError
+        except ValueError:
+            raise UpgradeError(f"Management grant {row['resident_id']} is unreadable") from None
+        if _policy_digest(policy) != row["sha256"]:
+            raise UpgradeError(
+                f"Stored management grant {row['resident_id']} was changed in the file"
+            )
+        policy["mounts"] = []
+        sha256 = _policy_digest(policy)
+        connection.execute(
+            "UPDATE management_grant_revisions SET policy=?,sha256=? "
+            "WHERE resident_id=? AND revision=?",
+            (json.dumps(policy, sort_keys=True), sha256, row["resident_id"], row["revision"]),
+        )
+        connection.execute(
+            "UPDATE run_management SET grant_sha256=? WHERE resident_id=? AND grant_revision=?",
+            (sha256, row["resident_id"], row["revision"]),
+        )
+        changed += 1
+    if changed:
+        connection.execute(
+            "INSERT INTO audit(kind, resource_id, at, detail) VALUES (?, ?, ?, ?)",
+            (
+                "management.grants_rescoped",
+                "management",
+                now,
+                json.dumps({"count": changed, "reason": "mounts_added"}, sort_keys=True),
             ),
         )
 
@@ -567,6 +626,8 @@ def upgrade(path: Path, *, from_version: int, to_version: int, now: int | None =
                 _open_grants_to_letters(new, at)
             if from_version < LETTER_STATES_ADDED_AT:
                 _settle_stored_letters(new, at)
+            if from_version < MOUNTS_ADDED_AT:
+                _open_grants_to_mounts(new, at)
             new.execute(f"PRAGMA user_version = {to_version}")
             new.commit()
             if new.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

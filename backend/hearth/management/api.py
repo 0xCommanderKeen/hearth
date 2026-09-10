@@ -1,6 +1,7 @@
 """Operator-only grant and management bootstrap routes."""
 
 import json
+from collections.abc import Iterable
 
 from fastapi import FastAPI
 
@@ -12,8 +13,9 @@ from hearth.residents.provisioning import execution_profiles
 from hearth.work.service import Hearth
 
 
-def mount_management(app: FastAPI, hearth: Hearth) -> None:
-    management = Management(hearth)
+def mount_management(app: FastAPI, hearth: Hearth, protected: Iterable[str] = ()) -> None:
+    """`protected` is what this installation refuses to let a grant mount on disk."""
+    management = Management(hearth, protected)
 
     @app.get("/api/management")
     def catalog():

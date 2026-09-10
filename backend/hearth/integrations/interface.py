@@ -48,6 +48,9 @@ class RuntimeSpec:
     provider's own and differs between them. `binary_pin` is the `system_meta` key
     holding the sha256 of the binary this store was configured with, which is also the
     store's own record that it was ever configured for that runtime at all.
+    `binary_env` names the environment variable an operator points at that binary, which
+    is what an operator command with no server running has to read to ask this provider
+    anything -- whether a login directory is logged in, for one.
     """
 
     kind: str
@@ -60,6 +63,7 @@ class RuntimeSpec:
     management: bool = False
     management_protocol: str | None = None
     binary_pin: str | None = None
+    binary_env: str | None = None
 
     @property
     def receipted(self) -> bool:
@@ -90,6 +94,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         management=True,
         management_protocol="codex_app_server",
         binary_pin="codex_live_binary",
+        binary_env="HEARTH_CODEX_BINARY",
     ),
     "claude_subscription": RuntimeSpec(
         "claude_subscription",
@@ -105,6 +110,7 @@ RUNTIMES: dict[str, RuntimeSpec] = {
         management=True,
         management_protocol="claude_mcp_bridge",
         binary_pin="claude_live_binary",
+        binary_env="HEARTH_CLAUDE_BINARY",
     ),
 }
 
@@ -133,6 +139,26 @@ def binary_pin(kind: str) -> str | None:
     """The `system_meta` key one runtime's binary sha256 is pinned under, if it has one."""
     spec = RUNTIMES.get(kind)
     return spec.binary_pin if spec is not None else None
+
+
+def login_probe(kind: str):
+    """How one provider answers "is this directory logged in", or nothing.
+
+    The registry names the module; the module owns the question, because what a login
+    even *is* differs between providers -- a file for one, an answer from the CLI for
+    the other -- and nothing outside `integrations/` may know which
+    (`hearth.integrations.logins`).
+    """
+    spec = RUNTIMES.get(kind)
+    if spec is None or not spec.live or spec.module is None:
+        return None
+    return getattr(importlib.import_module(spec.module), "login_probe", None)
+
+
+def binary_environment(kind: str) -> str | None:
+    """The environment variable this provider's pinned binary is named in."""
+    spec = RUNTIMES.get(kind)
+    return spec.binary_env if spec is not None else None
 
 
 def live_kinds() -> tuple[str, ...]:

@@ -6,10 +6,11 @@ three.js village, each linking to that resident's profile; it shows no run state
 its own. A disconnected client explicitly labels its state stale.
 
 All `/api/` requests authenticate with an operator bearer credential before body
-parsing. Request bodies are capped at 64 KiB. The browser keeps the credential in
-memory, refuses external API paths and redirects, clears rejected credentials, and
-does not cache private responses. Late results from a locked session cannot restore
-content. The server binds to localhost in the documented startup command;
+parsing. Request bodies have finite route-specific limits. The browser remembers the credential in
+local storage across restarts until Lock or server rejection clears it. It refuses
+external API paths and redirects, and does not cache private responses. Late
+results from a locked session cannot restore content. The server binds to localhost
+in the documented startup command;
 this is not an internet deployment or a completed production authentication design.
 
 Submission receipts survive retries and remain queryable after their deadline.
