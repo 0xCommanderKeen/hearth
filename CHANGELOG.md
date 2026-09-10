@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Out-of-range Claude costs preserve terminal output and receipts with unknown usage,
+  retaining the hold without blocking unrelated runs (#196).
+
 - Claude tool retries recheck current run and grant authority through durable receipts,
   preserving idempotency and independent memory and letter authority (#195).
 

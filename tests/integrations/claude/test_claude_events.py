@@ -388,3 +388,38 @@ def test_more_messages_than_the_bound_costs_the_price_and_never_the_answer():
     assert transcript.status == "completed" and transcript.output == "pong"
     # The split those messages carried is gone, so the session is not priced.
     assert transcript.usage is None
+
+
+@pytest.mark.parametrize("value", [1e308, 10**400, -1e308, -(10**400), -1, True, None, "0.03658"])
+@pytest.mark.parametrize("field", ["total", "model"])
+def test_invalid_cost_preserves_the_terminal_answer(value, field):
+    rows = events("success")
+    if field == "total":
+        rows[-1]["total_cost_usd"] = value
+    else:
+        rows[-1]["modelUsage"][MODEL]["costUSD"] = value
+    transcript = read("\n".join(json.dumps(row) for row in rows) + "\n")
+    assert transcript.status == "completed" and transcript.output == "pong"
+    assert (transcript.reported_total if field == "total" else transcript.reported) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0, 0),
+        (1000, 1_000_000_000),
+        (0.03658, 36_580),
+        (0.0000005, 0),
+        (0.0000015, 2),
+        (1000.0000004, 1_000_000_000),
+        (1000.0000006, None),
+        (-0.0000004, 0),
+        (float("inf"), None),
+        (float("-inf"), None),
+        (float("nan"), None),
+    ],
+)
+def test_cost_conversion_keeps_rounding_and_refuses_nonfinite_values(value, expected):
+    from hearth.integrations.claude.events import microdollars
+
+    assert microdollars(value) == expected

@@ -556,3 +556,80 @@ def test_the_operator_sees_the_individual_requests_the_session_reported(tmp_path
     assert rows[0]["cache_write_1h_tokens"] == 3552
     # A stream whose numbers do not hold together reports nothing rather than a guess.
     assert receipt_requests(json.dumps(receipt("not-logged-in"))) == []
+
+
+@pytest.mark.parametrize("value", [1e308, 10**400])
+def test_invalid_cost_worker_evidence_settles_without_blocking_other_runs(
+    tmp_path, monkeypatch, value
+):
+    from hearth.execution.lifecycle import Execution, Executor
+    from hearth.storage.artifacts import Artifacts
+
+    rows = [json.loads(line) for line in stream("success").splitlines()]
+    rows[-1]["total_cost_usd"] = value
+    recorded = "\n".join(json.dumps(row) for row in rows) + "\n"
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    (fixtures / "success.jsonl").write_text(recorded)
+    monkeypatch.setattr(sys.modules[__name__], "FIXTURES", fixtures)
+    runtime, hearth, run, prompt = prepared(tmp_path)
+    worker(runtime.folder(run.id))
+    published = runtime.receipt(run.id)
+    assert published["stdout"] == recorded and published["exit_code"] == 0
+    for _ in range(2):
+        evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+        assert evidence.status == "succeeded" and evidence.output == "pong"
+        assert evidence.cost is None
+    assert (
+        encode(
+            published, UsageBinding(run.id, run.input_digest, MODEL, "standard", PRICE_SCHEDULE)
+        )[2]
+        == evidence
+    )
+
+    execution = Execution(hearth, Artifacts(tmp_path / "data/artifacts"))
+    executor = Executor(execution, runtime)
+    hearth.save_resident(
+        "healthy", Declaration("Healthy", "Synthetic", 10_000_000), expected_revision=0
+    )
+    task = hearth.submit("healthy", "healthy", "Summarize", expires_at=int(hearth.clock()) + 600)
+    healthy = hearth.admit(task.task_id, reserve=100_000)
+    # Start the unrelated run without launching a detached worker; then replay its
+    # healthy stream through the same executable and runtime.
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            "hearth.integrations.claude.subscription.subprocess.Popen", lambda *a, **k: None
+        )
+        executor.step()
+    rows[-1]["total_cost_usd"] = 0.03658
+    (fixtures / "success.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    worker(runtime.folder(healthy.id))
+    executor.step()
+    result = hearth.run(run.id)
+    assert result.status == "succeeded" and result.actual_cost is None and not result.usage_known
+    assert execution.artifact(result.artifact_id)[1] == "pong"
+    assert hearth.run(healthy.id).actual_cost == 36_580
+    assert hearth.run(healthy.id).status == "succeeded"
+    assert executor.step() == []
+    with hearth.database.transaction() as db:
+        assert (
+            db.execute("SELECT COUNT(*) FROM run_usage WHERE run_id=?", (run.id,)).fetchone()[0]
+            == 1
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM audit WHERE kind='run.succeeded' AND resource_id=?", (run.id,)
+            ).fetchone()[0]
+            == 1
+        )
+    next_task = hearth.submit("next", "reader", "Next", expires_at=int(hearth.clock()) + 600)
+    with pytest.raises(Refused, match="resident_paused"):
+        hearth.admit(next_task.task_id, reserve=10_000)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            "hearth.integrations.claude.subscription.subprocess.Popen",
+            lambda *a, **k: pytest.fail("unknown usage authorized relaunch"),
+        )
+        runtime.start(run.id, prompt)
+        worker(runtime.folder(run.id))
+    assert runtime.receipt(run.id) == published
