@@ -51,7 +51,9 @@ editors reachable from there. Preserve run, journal, and correspondence deep lin
 by selecting the owning tab. Retain unsent drafts across tab switches, and retain
 restore/read-only gates and pending-command identity across store changes.
 
-The live page now uses A: Overview, Tasks, Activity, Memory, Skills, Access, and
+The initial live pass provided A’s navigation and overview. The completed tab layouts use description cards and revision labels for Skills, a memory/journal split, explicit permission facts in Access, identity and availability sections in Settings, a paged activity timeline, and filtered task cards with inline results. Advanced configuration and provenance remain collapsible.
+
+The live page uses A: Overview, Tasks, Activity, Memory, Skills, Access, and
 Settings. The task form, configuration editor, and correspondence remain mounted
 when hidden so unsent drafts and pending command identities survive tab switches.
 The full activity history retains pagination; Overview shows only four events.
@@ -70,7 +72,7 @@ from the production resident page and submit no work.
 
 ## Validation
 
-- 199 frontend tests passed, including tab navigation, deep links, and retained
+- 201 frontend tests passed, including tab navigation, deep links, and retained
   task/configuration drafts; TypeScript
   and production build passed.
 - Chromium exercised all seven tabs in each variant at 1440, 390, and 320 pixels,

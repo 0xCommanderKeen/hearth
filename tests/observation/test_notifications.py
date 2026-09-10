@@ -155,3 +155,51 @@ def test_a_forwarder_relays_what_the_inbox_already_holds(system):
     assert [n.resource_id for n in relayed] == [notification.resource_id]
     # Relaying is not reading: the inbox keeps the record exactly as it was.
     assert notifications(system)[0]["read_at"] is None
+
+
+def test_mark_all_observed_notices_is_concurrent_idempotent_and_preserves_new_arrivals(system):
+    hearth, _, inbox, now = system
+    with hearth.database.transaction(write=True) as db:
+        for index in range(125):
+            record(db, "run.succeeded", f"run-{index}", now[0])
+        cursor = db.execute("SELECT MAX(sequence) FROM audit").fetchone()[0]
+        record(db, "run.succeeded", "later-run", now[0])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        counts = list(pool.map(lambda _: inbox.mark_all(through_cursor=cursor), range(2)))
+    assert sorted(counts) == [0, 125]
+    assert len(audit(system, "notification.read")) == 125
+    assert [row["resource_id"] for row in notifications(system) if row["read_at"] is None] == [
+        "later-run"
+    ]
+    assert inbox.mark_all(through_cursor=cursor) == 0
+
+
+def test_mark_all_rolls_back_when_its_audit_cannot_be_recorded(system):
+    import sqlite3
+
+    hearth, _, inbox, now = system
+    with hearth.database.transaction(write=True) as db:
+        record(db, "run.succeeded", "first-run", now[0])
+        record(db, "run.succeeded", "second-run", now[0])
+        cursor = db.execute("SELECT MAX(sequence) FROM audit").fetchone()[0]
+        db.execute(
+            "CREATE TRIGGER reject_read BEFORE INSERT ON audit "
+            "WHEN NEW.kind='notification.read' BEGIN SELECT RAISE(ABORT, 'test'); END"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        inbox.mark_all(through_cursor=cursor)
+    assert all(row["read_at"] is None for row in notifications(system))
+    assert not audit(system, "notification.read")
+
+
+@pytest.mark.parametrize("cursor", [-1, True, "1", None])
+def test_mark_all_refuses_invalid_cursor(system, cursor):
+    with pytest.raises(Refused, match="invalid_notification_cursor"):
+        system[2].mark_all(through_cursor=cursor)
+
+
+def test_mark_all_obeys_restore_hold(system):
+    with system[0].database.transaction(write=True) as db:
+        db.execute("INSERT INTO system_meta(key, value) VALUES ('restore_hold', '1')")
+    with pytest.raises(Refused, match="restored_copy_read_only"):
+        system[2].mark_all(through_cursor=1000)

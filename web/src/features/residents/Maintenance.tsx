@@ -174,107 +174,460 @@ export function ResidentMaintenance({
       className="provisioning maintenance"
       aria-label="Resident configuration"
     >
-      <div className="section-title">
-        <span className="eyebrow">RESIDENT / CONFIGURATION</span>
-        <h3>Resident settings</h3>
-      </div>
-      <p>
-        <strong>{lifecycle?.state ?? "Unavailable"}</strong> · Lifecycle
-        revision {lifecycle?.revision ?? "unavailable"} · Current manager:{" "}
-        {lifecycle?.manager ?? "unavailable"}
-      </p>
-      <p>
-        Pausing suspends new runs and routine occurrences. Already admitted work
-        continues. Archiving also prevents pending work from launching and
-        removes the resident from the active Hamlet. Archive is permanent.
-      </p>
-      {!!resident.unresolved_runs && (
-        <p role="status">
-          {resident.unresolved_runs} unresolved run(s) retain their accounting
-          holds. Open the Tasks tab to inspect them and request cancellation
-          when needed.
-        </p>
-      )}
-      {resident.safety_hold_reason && (
-        <p>
-          Safety hold: {resident.safety_hold_reason.replaceAll("_", " ")}.
-          Resuming does not clear this hold.
-        </p>
-      )}
-      <div className="maintenance-actions">
-        {!archived && (
-          <>
+      <header className="resident-tab-heading">
+        <span className="eyebrow">{resident.name} / Settings</span>
+        <h2>Settings</h2>
+        <p>Identity, execution, spending limits, and availability.</p>
+      </header>
+      {!editing && base && (
+        <section className="resident-card resident-document">
+          <div className="resident-card-head">
+            <h3>Identity & execution</h3>
             <button
-              disabled={locked || editing || lifecycle?.revision === undefined}
-              onClick={() =>
-                changeState(lifecycle?.state === "paused" ? "ready" : "paused")
-              }
+              disabled={locked || archived}
+              onClick={() => setEditing(true)}
             >
-              {lifecycle?.state === "paused"
-                ? "Resume new runs"
-                : "Pause new runs"}
+              Edit configuration
             </button>
-            <button
-              disabled={locked || editing || lifecycle?.revision === undefined}
-              onClick={() => changeState("archived")}
-            >
-              Archive resident
-            </button>
-          </>
-        )}
-        {base && !archived && !editing && (
-          <button disabled={locked} onClick={() => setEditing(true)}>
-            Edit configuration
-          </button>
-        )}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            void (async () => {
-              setBusy(true);
-              setMessage("");
-              try {
-                const bundle = await client.exportResident(resident.id);
-                if (!live.current) return;
-                downloadBundle(bundle);
-                setMessage(
-                  `Exported ${bundle.resident.name} with ${bundle.skills.length} skill(s) and ${bundle.input_sets.length} input set(s). Runs, history and authority are not included.`,
-                );
-              } catch (e) {
-                if (live.current)
-                  setMessage(e instanceof Error ? e.message : "Export failed");
-              } finally {
-                if (live.current) setBusy(false);
-              }
-            })()
-          }
-        >
-          Export resident
-        </button>
-      </div>
-      {message && <p role="status">{message}</p>}
-      {pending && (
-        <button
-          disabled={busy || readOnly}
-          onClick={() => void submit(pending)}
-        >
-          Retry pending resident change
-        </button>
+          </div>
+          <dl className="resident-permission-grid">
+            <div>
+              <dt>Resident name</dt>
+              <dd>{base.declaration.name}</dd>
+            </div>
+            <div>
+              <dt>Daily spending limit</dt>
+              <dd>${(base.declaration.daily_limit / 1e6).toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt>Runtime</dt>
+              <dd>
+                {options?.execution_profiles.find(
+                  (profile) => profile.id === base.execution_profile,
+                )?.name ?? base.execution_profile}
+              </dd>
+            </div>
+            <div>
+              <dt>Budget timezone</dt>
+              <dd>{base.declaration.budget_timezone}</dd>
+            </div>
+            <div className="resident-field-wide">
+              <dt>Purpose</dt>
+              <dd>{base.declaration.purpose}</dd>
+            </div>
+          </dl>
+          <small>
+            Spending limits use API-equivalent estimates. Subscription usage is
+            not an API bill.
+          </small>
+        </section>
       )}
-      {conflict && (
-        <button
-          disabled={busy || !!pending}
-          onClick={() => {
-            setMessage("");
-            setReload((n) => n + 1);
+      {editing && draft && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
           }}
         >
-          Reload current configuration (replace draft)
-        </button>
+          <fieldset disabled={locked || archived}>
+            <h3>Identity & execution</h3>
+            <div className="provision-fields">
+              <label>
+                Name
+                <input
+                  value={draft.declaration.name}
+                  onChange={(e) => declaration("name", e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Purpose
+                <textarea
+                  value={draft.declaration.purpose}
+                  onChange={(e) => declaration("purpose", e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Daily spending limit (USD)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.declaration.daily_limit / 1e6}
+                  onChange={(e) =>
+                    declaration(
+                      "daily_limit",
+                      Math.round(Number(e.target.value) * 1e6),
+                    )
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Budget timezone
+                <input
+                  value={draft.declaration.budget_timezone}
+                  onChange={(e) =>
+                    declaration("budget_timezone", e.target.value)
+                  }
+                  required
+                />
+              </label>
+            </div>
+            <details className="resident-advanced-editor">
+              <summary>Instructions, memory, inputs & skills</summary>
+              <label>
+                Instructions
+                <textarea
+                  value={draft.declaration.instructions}
+                  onChange={(e) => declaration("instructions", e.target.value)}
+                />
+              </label>
+              <label>
+                Memory
+                <textarea
+                  value={draft.memory.text}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      memory: { ...draft.memory, text: e.target.value },
+                    })
+                  }
+                />
+              </label>
+              <h3>Inputs</h3>
+              <p>
+                Selected in checkbox order; remove and reselect to change
+                reading order. Up to four sets.
+              </p>
+              {options?.input_sets.map((i) => (
+                <label className="provision-check" key={i.input_set_id}>
+                  <input
+                    type="checkbox"
+                    checked={draft.inputs.input_sets.some(
+                      (s) => s.input_set_id === i.input_set_id,
+                    )}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        inputs: {
+                          ...draft.inputs,
+                          input_sets: e.target.checked
+                            ? [
+                                ...draft.inputs.input_sets,
+                                { input_set_id: i.input_set_id },
+                              ]
+                            : draft.inputs.input_sets.filter(
+                                (s) => s.input_set_id !== i.input_set_id,
+                              ),
+                        },
+                      })
+                    }
+                  />
+                  {i.name}
+                </label>
+              ))}
+              <h3>Skill revisions</h3>
+              <p>
+                Each assignment pins an exact revision. Existing revisions are
+                never upgraded automatically.
+              </p>
+              {draft.skills.skills.map((s, index) => (
+                <div className="maintenance-skill" key={s.skill_id}>
+                  <a href={`#skills/${s.skill_id}`}>
+                    {catalog.find((c) => c.skill_id === s.skill_id)?.name ??
+                      s.skill_id}
+                  </a>
+                  <label>
+                    Revision for {s.skill_id}
+                    <input
+                      type="number"
+                      min="1"
+                      value={s.revision}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          skills: {
+                            ...draft.skills,
+                            skills: draft.skills.skills.map((item, n) =>
+                              n === index
+                                ? { ...item, revision: Number(e.target.value) }
+                                : item,
+                            ),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => {
+                      const skills = [...draft.skills.skills];
+                      [skills[index - 1], skills[index]] = [
+                        skills[index],
+                        skills[index - 1],
+                      ];
+                      setDraft({
+                        ...draft,
+                        skills: { ...draft.skills, skills },
+                      });
+                    }}
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        skills: {
+                          ...draft.skills,
+                          skills: draft.skills.skills.filter(
+                            (_, n) => n !== index,
+                          ),
+                        },
+                      })
+                    }
+                  >
+                    Remove skill
+                  </button>
+                </div>
+              ))}
+              <label>
+                Add skill
+                <select
+                  value=""
+                  disabled={draft.skills.skills.length >= 8}
+                  onChange={(e) => {
+                    const skill = catalog.find(
+                      (s) => s.skill_id === e.target.value,
+                    );
+                    if (skill)
+                      setDraft({
+                        ...draft,
+                        skills: {
+                          ...draft.skills,
+                          skills: [
+                            ...draft.skills.skills,
+                            {
+                              skill_id: skill.skill_id,
+                              revision: skill.revision,
+                            },
+                          ],
+                        },
+                      });
+                  }}
+                >
+                  <option value="">Choose an exact current revision</option>
+                  {catalog
+                    .filter(
+                      (c) =>
+                        c.status === "active" &&
+                        !draft.skills.skills.some(
+                          (s) => s.skill_id === c.skill_id,
+                        ),
+                    )
+                    .map((c) => (
+                      <option key={c.skill_id} value={c.skill_id}>
+                        {c.name} · revision {c.revision}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <h3>Daily routines</h3>
+              {draft.routines.map((r, index) => (
+                <fieldset className="maintenance-routine" key={r.routine_id}>
+                  <legend>
+                    Routine {index + 1} · revision {r.expected_revision}
+                  </legend>
+                  {(["instruction", "local_time", "timezone"] as const).map(
+                    (key) => (
+                      <label key={key}>
+                        {key === "local_time"
+                          ? "Daily time"
+                          : key === "instruction"
+                            ? "Routine instruction"
+                            : "Routine timezone"}
+                        <input
+                          type={key === "local_time" ? "time" : "text"}
+                          value={r[key]}
+                          required
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              routines: draft.routines.map((item, n) =>
+                                n === index
+                                  ? { ...item, [key]: e.target.value }
+                                  : item,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    ),
+                  )}
+                  <label className="provision-check">
+                    <input
+                      type="checkbox"
+                      checked={r.enabled}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          routines: draft.routines.map((item, n) =>
+                            n === index
+                              ? { ...item, enabled: e.target.checked }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
+                    Enabled when resident is ready
+                  </label>
+                </fieldset>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    routines: [
+                      ...draft.routines,
+                      {
+                        routine_id: crypto.randomUUID(),
+                        expected_revision: 0,
+                        instruction: "Summarize today’s notes.",
+                        local_time: "09:00",
+                        timezone: draft.declaration.budget_timezone,
+                        enabled: false,
+                      },
+                    ],
+                  })
+                }
+              >
+                Add daily routine
+              </button>
+            </details>
+            <div className="maintenance-actions">
+              <button className="primary">Save configuration</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(structuredClone(base));
+                  setEditing(false);
+                }}
+              >
+                Discard draft
+              </button>
+            </div>
+          </fieldset>
+        </form>
       )}
+      <section className="resident-card resident-document resident-availability">
+        <h3>Availability</h3>
+        <p>
+          <strong>{lifecycle?.state ?? "Unavailable"}</strong> · Lifecycle
+          revision {lifecycle?.revision ?? "unavailable"} · Current manager:{" "}
+          {lifecycle?.manager ?? "unavailable"}
+        </p>
+        <p>
+          Pausing suspends new runs and routine occurrences. Already admitted
+          work continues. Archiving also prevents pending work from launching
+          and removes the resident from the active Hamlet. Archive is permanent.
+        </p>
+        {!!resident.unresolved_runs && (
+          <p role="status">
+            {resident.unresolved_runs} unresolved run(s) retain their accounting
+            holds. Open the Tasks tab to inspect them and request cancellation
+            when needed.
+          </p>
+        )}
+        {resident.safety_hold_reason && (
+          <p>
+            Safety hold: {resident.safety_hold_reason.replaceAll("_", " ")}.
+            Resuming does not clear this hold.
+          </p>
+        )}
+        <div className="maintenance-actions">
+          {!archived && (
+            <>
+              <button
+                disabled={
+                  locked || editing || lifecycle?.revision === undefined
+                }
+                onClick={() =>
+                  changeState(
+                    lifecycle?.state === "paused" ? "ready" : "paused",
+                  )
+                }
+              >
+                {lifecycle?.state === "paused"
+                  ? "Resume new runs"
+                  : "Pause new runs"}
+              </button>
+              <button
+                disabled={
+                  locked || editing || lifecycle?.revision === undefined
+                }
+                onClick={() => changeState("archived")}
+              >
+                Archive resident
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void (async () => {
+                setBusy(true);
+                setMessage("");
+                try {
+                  const bundle = await client.exportResident(resident.id);
+                  if (!live.current) return;
+                  downloadBundle(bundle);
+                  setMessage(
+                    `Exported ${bundle.resident.name} with ${bundle.skills.length} skill(s) and ${bundle.input_sets.length} input set(s). Runs, history and authority are not included.`,
+                  );
+                } catch (e) {
+                  if (live.current)
+                    setMessage(
+                      e instanceof Error ? e.message : "Export failed",
+                    );
+                } finally {
+                  if (live.current) setBusy(false);
+                }
+              })()
+            }
+          >
+            Export resident
+          </button>
+        </div>
+        {message && <p role="status">{message}</p>}
+        {pending && (
+          <button
+            disabled={busy || readOnly}
+            onClick={() => void submit(pending)}
+          >
+            Retry pending resident change
+          </button>
+        )}
+        {conflict && (
+          <button
+            disabled={busy || !!pending}
+            onClick={() => {
+              setMessage("");
+              setReload((n) => n + 1);
+            }}
+          >
+            Reload current configuration (replace draft)
+          </button>
+        )}
+      </section>
       {base && (
-        <>
+        <details className="resident-technical">
+          <summary>Management & configuration details</summary>
           <p>
             {/* Named from the options this store offers, which the server names
                 from its own runtime registry. A resident on a runtime this
@@ -354,299 +707,7 @@ export function ResidentMaintenance({
                     : "Disabled"}
               </p>
             ))}
-        </>
-      )}
-      {editing && draft && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            save();
-          }}
-        >
-          <fieldset disabled={locked || archived}>
-            <h3>Declaration & budget</h3>
-            <div className="provision-fields">
-              <label>
-                Name
-                <input
-                  value={draft.declaration.name}
-                  onChange={(e) => declaration("name", e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Purpose
-                <textarea
-                  value={draft.declaration.purpose}
-                  onChange={(e) => declaration("purpose", e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Daily limit (microdollars)
-                <input
-                  type="number"
-                  min="0"
-                  value={draft.declaration.daily_limit}
-                  onChange={(e) =>
-                    declaration("daily_limit", Number(e.target.value))
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Budget timezone
-                <input
-                  value={draft.declaration.budget_timezone}
-                  onChange={(e) =>
-                    declaration("budget_timezone", e.target.value)
-                  }
-                  required
-                />
-              </label>
-            </div>
-            <label>
-              Instructions
-              <textarea
-                value={draft.declaration.instructions}
-                onChange={(e) => declaration("instructions", e.target.value)}
-              />
-            </label>
-            <label>
-              Memory
-              <textarea
-                value={draft.memory.text}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    memory: { ...draft.memory, text: e.target.value },
-                  })
-                }
-              />
-            </label>
-            <h3>Inputs</h3>
-            <p>
-              Selected in checkbox order; remove and reselect to change reading
-              order. Up to four sets.
-            </p>
-            {options?.input_sets.map((i) => (
-              <label className="provision-check" key={i.input_set_id}>
-                <input
-                  type="checkbox"
-                  checked={draft.inputs.input_sets.some(
-                    (s) => s.input_set_id === i.input_set_id,
-                  )}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      inputs: {
-                        ...draft.inputs,
-                        input_sets: e.target.checked
-                          ? [
-                              ...draft.inputs.input_sets,
-                              { input_set_id: i.input_set_id },
-                            ]
-                          : draft.inputs.input_sets.filter(
-                              (s) => s.input_set_id !== i.input_set_id,
-                            ),
-                      },
-                    })
-                  }
-                />
-                {i.name}
-              </label>
-            ))}
-            <h3>Skill revisions</h3>
-            <p>
-              Each assignment pins an exact revision. Existing revisions are
-              never upgraded automatically.
-            </p>
-            {draft.skills.skills.map((s, index) => (
-              <div className="maintenance-skill" key={s.skill_id}>
-                <a href={`#skills/${s.skill_id}`}>
-                  {catalog.find((c) => c.skill_id === s.skill_id)?.name ??
-                    s.skill_id}
-                </a>
-                <label>
-                  Revision for {s.skill_id}
-                  <input
-                    type="number"
-                    min="1"
-                    value={s.revision}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        skills: {
-                          ...draft.skills,
-                          skills: draft.skills.skills.map((item, n) =>
-                            n === index
-                              ? { ...item, revision: Number(e.target.value) }
-                              : item,
-                          ),
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={index === 0}
-                  onClick={() => {
-                    const skills = [...draft.skills.skills];
-                    [skills[index - 1], skills[index]] = [
-                      skills[index],
-                      skills[index - 1],
-                    ];
-                    setDraft({ ...draft, skills: { ...draft.skills, skills } });
-                  }}
-                >
-                  Move up
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      skills: {
-                        ...draft.skills,
-                        skills: draft.skills.skills.filter(
-                          (_, n) => n !== index,
-                        ),
-                      },
-                    })
-                  }
-                >
-                  Remove skill
-                </button>
-              </div>
-            ))}
-            <label>
-              Add skill
-              <select
-                value=""
-                disabled={draft.skills.skills.length >= 8}
-                onChange={(e) => {
-                  const skill = catalog.find(
-                    (s) => s.skill_id === e.target.value,
-                  );
-                  if (skill)
-                    setDraft({
-                      ...draft,
-                      skills: {
-                        ...draft.skills,
-                        skills: [
-                          ...draft.skills.skills,
-                          {
-                            skill_id: skill.skill_id,
-                            revision: skill.revision,
-                          },
-                        ],
-                      },
-                    });
-                }}
-              >
-                <option value="">Choose an exact current revision</option>
-                {catalog
-                  .filter(
-                    (c) =>
-                      c.status === "active" &&
-                      !draft.skills.skills.some(
-                        (s) => s.skill_id === c.skill_id,
-                      ),
-                  )
-                  .map((c) => (
-                    <option key={c.skill_id} value={c.skill_id}>
-                      {c.name} · revision {c.revision}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <h3>Daily routines</h3>
-            {draft.routines.map((r, index) => (
-              <fieldset className="maintenance-routine" key={r.routine_id}>
-                <legend>
-                  Routine {index + 1} · revision {r.expected_revision}
-                </legend>
-                {(["instruction", "local_time", "timezone"] as const).map(
-                  (key) => (
-                    <label key={key}>
-                      {key === "local_time"
-                        ? "Daily time"
-                        : key === "instruction"
-                          ? "Routine instruction"
-                          : "Routine timezone"}
-                      <input
-                        type={key === "local_time" ? "time" : "text"}
-                        value={r[key]}
-                        required
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            routines: draft.routines.map((item, n) =>
-                              n === index
-                                ? { ...item, [key]: e.target.value }
-                                : item,
-                            ),
-                          })
-                        }
-                      />
-                    </label>
-                  ),
-                )}
-                <label className="provision-check">
-                  <input
-                    type="checkbox"
-                    checked={r.enabled}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        routines: draft.routines.map((item, n) =>
-                          n === index
-                            ? { ...item, enabled: e.target.checked }
-                            : item,
-                        ),
-                      })
-                    }
-                  />
-                  Enabled when resident is ready
-                </label>
-              </fieldset>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setDraft({
-                  ...draft,
-                  routines: [
-                    ...draft.routines,
-                    {
-                      routine_id: crypto.randomUUID(),
-                      expected_revision: 0,
-                      instruction: "Summarize today’s notes.",
-                      local_time: "09:00",
-                      timezone: draft.declaration.budget_timezone,
-                      enabled: false,
-                    },
-                  ],
-                })
-              }
-            >
-              Add daily routine
-            </button>
-            <div className="maintenance-actions">
-              <button className="primary">Save configuration</button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(structuredClone(base));
-                  setEditing(false);
-                }}
-              >
-                Discard draft
-              </button>
-            </div>
-          </fieldset>
-        </form>
+        </details>
       )}
     </section>
   );

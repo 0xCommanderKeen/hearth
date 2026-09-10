@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Complete the resident detail tab layouts, open results inside their task, and
+  distinguish unread inbox notices with an atomic, snapshot-bounded mark-all action.
+
 - Reorganize the resident page around a live overview and seven detail tabs, preserve
   drafts and deep links, and use generic task wording; retain three design studies.
 

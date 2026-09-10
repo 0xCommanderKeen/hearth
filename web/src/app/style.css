@@ -1648,3 +1648,209 @@ main:has(.hamlet-scene:not([hidden])) {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* Results belong to their task; technical evidence stays available below. */
+.tasks .task-inline-result,
+.task-panel > .task-inline-result {
+  margin: 20px 0 10px;
+  padding: 24px;
+  border: 1px solid #d9dfd0;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: #fff;
+  scroll-margin-top: 24px;
+  min-width: 0;
+}
+.task-inline-result .section-title {
+  align-items: flex-start;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+.task-inline-result h3 {
+  font-size: 18px;
+  margin-bottom: 7px;
+}
+.task-inline-result .eyebrow {
+  font-size: 10px;
+  color: var(--muted);
+}
+.task-inline-result pre {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  max-width: 85ch;
+}
+.task-inline-result:focus {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 3px;
+}
+.task-execution-details {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.task-execution-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.task-execution-details[open] > summary {
+  margin-bottom: 18px;
+}
+.run-page-heading {
+  margin-bottom: 24px;
+}
+.run-page-heading > a {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 18px;
+}
+.run-page-heading code {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.run-page-heading h2 {
+  font-size: 21px;
+  margin-bottom: 9px;
+}
+.tasks > li > .task-actions {
+  margin-top: 16px;
+}
+.task-inline-result[aria-busy="true"] {
+  min-height: 120px;
+}
+@media (max-width: 760px) {
+  .tasks .task-inline-result,
+  .task-panel > .task-inline-result {
+    padding: 19px 16px;
+    scroll-margin-top: 16px;
+  }
+  .task-inline-result pre {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .task-inline-result .section-title {
+    flex-direction: row;
+  }
+  .task-inline-result .section-title button {
+    flex-shrink: 0;
+  }
+  .task-inline-result .eyebrow {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Read state has shape and contrast as well as text. */
+.inbox.output {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.inbox .section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
+.inbox .section-title > .eyebrow {
+  margin-left: auto;
+}
+.inbox .tasks {
+  display: grid;
+  gap: 13px;
+  margin-top: 25px;
+}
+.inbox .tasks > li {
+  border: 1px solid var(--line);
+  border-left: 4px solid transparent;
+  border-radius: 9px;
+  padding: 23px 25px;
+  background: #f0f0eb;
+}
+.inbox .tasks > li.unread {
+  background: #fff8ed;
+  border-color: #e9d2b9;
+  border-left-color: var(--accent);
+  box-shadow: 0 2px 6px #4b311b06;
+}
+.inbox .tasks > li.read {
+  background: #f0f0eb;
+  border-color: #e1e3da;
+  color: #5e695b;
+}
+.inbox .tasks h3 {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 15px;
+}
+.notice-state-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #eadfd0;
+  color: var(--accent);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.read .notice-state-icon {
+  background: #e1e6da;
+  color: #687660;
+}
+.inbox .tasks > li.unread h3 {
+  font-weight: 600;
+}
+.inbox .tasks > li.read h3 {
+  font-weight: 400;
+}
+.inbox .tasks h3 .nav-badge {
+  margin-left: auto;
+  border-radius: 4px;
+  background: #f1d6b8;
+  color: #8a4429;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+.inbox .tasks > li > p {
+  margin: 10px 0 18px;
+}
+.inbox .tasks > li > a {
+  display: inline-block;
+  font-weight: 500;
+}
+.inbox .tasks > li > button {
+  margin-left: 18px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  font-size: 12px;
+  background: #fff;
+}
+.inbox .tasks > li.read > button {
+  background: transparent;
+}
+@media (max-width: 600px) {
+  .inbox .section-title > .eyebrow {
+    margin-left: 0;
+  }
+  .inbox .section-title > button {
+    width: 100%;
+  }
+  .inbox .tasks > li {
+    padding: 20px 17px;
+  }
+  .inbox .tasks > li > button {
+    margin-left: 0;
+    margin-top: 14px;
+    display: block;
+  }
+  .inbox .tasks h3 {
+    font-size: 14px;
+  }
+}

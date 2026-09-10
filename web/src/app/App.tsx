@@ -99,8 +99,10 @@ function TaskOutput({
   content,
   eyebrow,
   onClose,
+  loading = false,
 }: {
   content: string;
+  loading?: boolean;
   eyebrow: string;
   onClose: () => void;
 }) {
@@ -113,16 +115,20 @@ function TaskOutput({
     <section
       ref={panel}
       tabIndex={-1}
-      className="output"
+      className="output task-inline-result"
       aria-label="Task result"
+      aria-busy={loading}
     >
       <div className="section-title">
-        <span className="eyebrow">{eyebrow}</span>
+        <div>
+          <h3>Result</h3>
+          <span className="eyebrow">{eyebrow}</span>
+        </div>
         <button className="quiet" onClick={onClose}>
           Close ×
         </button>
       </div>
-      <pre>{content}</pre>
+      {loading ? <p role="status">Loading result…</p> : <pre>{content}</pre>}
     </section>
   );
 }
@@ -156,7 +162,10 @@ export function App() {
     setResidentTab(tab);
     window.location.hash = `#residents/${encodeURIComponent(residentId)}?tab=${tab.toLowerCase()}`;
   }
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [taskFilter, setTaskFilter] = useState("all");
   function newResidentTask() {
+    setComposerOpen(true);
     selectResidentTab("Tasks");
     setTimeout(() => {
       document.getElementById("instruction")?.focus();
@@ -168,9 +177,21 @@ export function App() {
   const [provisionId, setProvisionId] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [inboxMessage, setInboxMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const [linkedRunId, setLinkedRunId] = useState<string | null>(null);
+  const resultTrigger = useRef<HTMLButtonElement | null>(null);
+  const resultRequest = useRef(0);
+  function closeResult() {
+    ++recordRequest.current;
+    ++resultRequest.current;
+    setOutput(null);
+    resultTrigger.current?.focus({ preventScroll: true });
+  }
   const [output, setOutput] = useState<{
+    runId: string;
+    loading?: boolean;
     content: string;
     residentId?: string;
     // The runtime the run was pinned to, so the result is credited to the provider
@@ -358,19 +379,36 @@ export function App() {
       ) {
         setView(hash.slice(1) as Page);
       }
+      setLinkedRunId(hash.startsWith("#run-") ? hash.slice(5) : null);
       if (hash.startsWith("#run-") && client) {
         setView("tasks");
         const id = hash.slice(5);
+        resultTrigger.current = null;
+        ++resultRequest.current;
+        setOutput({ runId: id, content: "", loading: true });
         void act(async () => {
-          const run = await client.run(id);
-          const content = run.artifact_id
-            ? (await client.artifact(run.artifact_id)).content
-            : `Run ${run.status}`;
-          if (
-            currentSession.current === client &&
-            request === recordRequest.current
-          )
-            setOutput({ content, runtimeKind: run.runtime_kind });
+          try {
+            const run = await client.run(id);
+            const content = run.artifact_id
+              ? (await client.artifact(run.artifact_id)).content
+              : `Run ${run.status}`;
+            if (
+              currentSession.current === client &&
+              request === recordRequest.current
+            )
+              setOutput({ runId: id, content, runtimeKind: run.runtime_kind });
+          } catch (error) {
+            if (
+              currentSession.current === client &&
+              request === recordRequest.current
+            )
+              setOutput({
+                runId: id,
+                content:
+                  "Could not load this run. Reload the page to try again.",
+              });
+            throw error;
+          }
         });
       }
     };
@@ -378,13 +416,6 @@ export function App() {
     window.addEventListener("hashchange", openLinkedView);
     return () => window.removeEventListener("hashchange", openLinkedView);
   }, [client]);
-  useEffect(() => {
-    const hash = window.location.hash.replace(/^#runs\//, "#run-");
-    if (hash.startsWith("#run-"))
-      document
-        .getElementById(hash.slice(1))
-        ?.scrollIntoView?.({ block: "center" });
-  }, [view, snapshot]);
   useEffect(() => {
     if (view === "hamlet") setVisitedHamlet(true);
     if (view === "resident") {
@@ -407,7 +438,15 @@ export function App() {
   const residents = snapshot?.residents ?? [];
   const current = residents.find((r) => r.id === residentId);
   const visibleTasks = (snapshot?.tasks ?? []).filter(
-    (task) => view !== "resident" || task.resident_id === residentId,
+    (task) =>
+      (view !== "resident" ||
+        (task.resident_id === residentId &&
+          (taskFilter === "all" || task.status === taskFilter))) &&
+      (view !== "tasks" ||
+        !linkedRunId ||
+        snapshot?.runs.some(
+          (run) => run.id === linkedRunId && run.task_id === task.id,
+        )),
   );
   // A `#run-<id>` anchor lands on a row in Tasks & results, so it can only open a run
   // whose task is still listed there. Older work is named rather than linked.
@@ -415,7 +454,7 @@ export function App() {
     (snapshot?.runs ?? []).some(
       (run) =>
         run.id === runId &&
-        visibleTasks.some((task) => task.id === run.task_id),
+        (snapshot?.tasks ?? []).some((task) => task.id === run.task_id),
     );
   const completed =
     snapshot?.runs.filter((r) => r.status === "succeeded").length ?? 0;
@@ -424,7 +463,9 @@ export function App() {
       ["starting", "running", "stopping", "interrupted"].includes(r.status),
     ).length ?? 0;
   const notifications = snapshot?.notifications ?? [];
-  const unread = notifications.filter((n) => n.read_at === null).length;
+  const unread =
+    snapshot?.unread_notifications ??
+    notifications.filter((n) => n.read_at === null).length;
   const troubledRuns =
     snapshot?.runs.filter((r) =>
       ["failed", "interrupted"].includes(r.status),
@@ -444,7 +485,9 @@ export function App() {
         ? "New resident"
         : view === "townhall"
           ? "Townhall"
-          : view[0].toUpperCase() + view.slice(1);
+          : view === "tasks" && linkedRunId
+            ? "Run details"
+            : view[0].toUpperCase() + view.slice(1);
   const pageNote = {
     townhall: "Residents, their work, and what needs your attention.",
     residents: "Everyone who lives here.",
@@ -921,12 +964,47 @@ export function App() {
                   view === "resident" ? "resident-tab-Tasks" : undefined
                 }
               >
+                {view === "resident" && (
+                  <header className="resident-tab-heading">
+                    <span className="eyebrow">{current?.name} / Tasks</span>
+                    <h2>Tasks & results</h2>
+                    <p>
+                      Assign work, follow progress, and read results in each
+                      task.
+                    </p>
+                    <label className="resident-task-filter">
+                      Show tasks
+                      <select
+                        value={taskFilter}
+                        onChange={(event) => setTaskFilter(event.target.value)}
+                      >
+                        <option value="all">All tasks</option>
+                        <option value="succeeded">Completed</option>
+                        <option value="queued">Queued</option>
+                        <option value="failed">Failed</option>
+                        <option value="cancelled">Cancelled tasks</option>
+                      </select>
+                    </label>
+                  </header>
+                )}
                 <div
                   className={`workspace ${view === "tasks" ? "tasks-only" : ""}`}
                 >
                   {view === "resident" && current && (
-                    <section className="work-panel">
-                      <h2>Assign work</h2>
+                    <section
+                      className="work-panel"
+                      hidden={!composerOpen && !instruction && !pending.current}
+                    >
+                      <div className="resident-card-head">
+                        <h2>New task</h2>
+                        <button
+                          className="quiet"
+                          onClick={() => setComposerOpen(false)}
+                          disabled={!!instruction || !!pending.current}
+                        >
+                          Hide composer
+                        </button>
+                      </div>
                       <p>
                         Describe the work to do. The resident uses its
                         configured tools and permissions.
@@ -991,23 +1069,56 @@ export function App() {
                     id="resident-work"
                     tabIndex={-1}
                   >
-                    <h2>Tasks &amp; results</h2>
-                    {view === "tasks" && (
+                    {linkedRunId && view === "tasks" ? (
+                      <div className="run-page-heading">
+                        <a href="#tasks">← All tasks</a>
+                        <h2>Selected run</h2>
+                        <code>{linkedRunId}</code>
+                      </div>
+                    ) : view !== "resident" ? (
+                      <h2>Tasks &amp; results</h2>
+                    ) : null}
+                    {output &&
+                      view === "tasks" &&
+                      !visibleTasks.some((task) =>
+                        snapshot.runs.some(
+                          (run) =>
+                            run.id === output.runId && run.task_id === task.id,
+                        ),
+                      ) && (
+                        <TaskOutput
+                          key={output.runId}
+                          content={output.content}
+                          loading={output.loading}
+                          eyebrow={resultEyebrow(
+                            snapshot.runtimes,
+                            output.runtimeKind,
+                          )}
+                          onClose={closeResult}
+                        />
+                      )}
+                    {view === "tasks" && !linkedRunId && (
                       <UsageByOrigin client={client} busy={busy} act={act} />
                     )}
                     {!visibleTasks.length ? (
-                      <div className="empty">
-                        <h3>A quiet beginning.</h3>
-                        <p>
-                          Once you assign something, its progress and result
-                          will appear here.
-                        </p>
-                      </div>
+                      linkedRunId ? null : (
+                        <div className="empty">
+                          <h3>A quiet beginning.</h3>
+                          <p>
+                            Once you assign something, its progress and result
+                            will appear here.
+                          </p>
+                        </div>
+                      )
                     ) : (
                       <ul className="tasks">
                         {visibleTasks.map((task) => {
                           const run = snapshot.runs.find(
-                            (r) => r.task_id === task.id,
+                            (r) =>
+                              r.task_id === task.id &&
+                              (!linkedRunId ||
+                                view !== "tasks" ||
+                                r.id === linkedRunId),
                           );
                           return (
                             <li key={task.id} id={`task-${task.id}`}>
@@ -1023,116 +1134,6 @@ export function App() {
                                 client={client}
                                 task={task}
                               />
-                              {task.lineage && <Lineage hops={task.lineage} />}
-                              {run?.memory_revision !== undefined && (
-                                <small>
-                                  {run.memory_revision === 0
-                                    ? "Admitted without memory"
-                                    : `Memory revision ${run.memory_revision}`}
-                                  {run.journal_opened?.length
-                                    ? ` · opened with journal ${run.journal_opened
-                                        .map((sequence) => `#${sequence}`)
-                                        .join(", ")}`
-                                    : " · opened with no journal entries"}
-                                </small>
-                              )}
-                              {run && (
-                                <small aria-label="What the run wrote">
-                                  {run.memory_written?.length
-                                    ? `Wrote memory revision ${run.memory_written.join(", ")}`
-                                    : "Wrote no memory"}
-                                  {run.journal_written
-                                    ? ` · wrote journal entry #${run.journal_written}`
-                                    : " · wrote no journal entry"}
-                                </small>
-                              )}
-                              {run && <RunInputs run={run} />}
-                              {!!run?.mounts?.length && (
-                                <div aria-label="Folders reached by run">
-                                  <small>
-                                    Folders reached · as this run was admitted
-                                  </small>
-                                  <ul>
-                                    {run.mounts.map((mount) => (
-                                      <li key={mount.name}>
-                                        {mount.name} ·{" "}
-                                        {mount.mode === "rw"
-                                          ? "writable"
-                                          : "read only"}
-                                        <small>
-                                          {mount.path} → {mount.host_path}
-                                        </small>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              {run?.login_scope && (
-                                <small aria-label="Login this run spent">
-                                  {run.login_scope === "resident"
-                                    ? "Spent this resident's own provider login"
-                                    : "Spent the household's provider login"}
-                                </small>
-                              )}
-                              {run?.management && (
-                                <p aria-label="Management authority used by run">
-                                  Management grant revision{" "}
-                                  {run.management.grant_revision} ·{" "}
-                                  {run.management.calls} recorded tool calls
-                                </p>
-                              )}
-                              {!!run?.letters_refused?.length && (
-                                <div aria-label="Letters this run was refused">
-                                  <small>
-                                    Letters refused · nothing was written
-                                  </small>
-                                  <ul>
-                                    {/* Two letters can be refused in the same second for
-                                      the same reason, so the position in the run's own
-                                      evidence is what tells them apart. */}
-                                    {run.letters_refused.map(
-                                      (refusal, place) => (
-                                        <li key={place}>
-                                          {refusal.reason.replaceAll("_", " ")}
-                                          {Object.entries(refusal.details).map(
-                                            ([key, value]) => (
-                                              <small key={key}>
-                                                {key.replaceAll("_", " ")}:{" "}
-                                                {typeof value === "object"
-                                                  ? JSON.stringify(value)
-                                                  : String(value)}
-                                              </small>
-                                            ),
-                                          )}
-                                        </li>
-                                      ),
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                              {run?.skills_error && (
-                                <p className="notice error">
-                                  Skill provenance unavailable:{" "}
-                                  {run.skills_error.replaceAll("_", " ")}.
-                                </p>
-                              )}
-                              {!!run?.skills?.length && (
-                                <div aria-label="Skills used by run">
-                                  <small>Skills used · in order</small>
-                                  <ol>
-                                    {run.skills.map((skill) => (
-                                      <li key={skill.skill_id}>
-                                        <a
-                                          href={`#skills/${encodeURIComponent(skill.skill_id)}`}
-                                        >
-                                          {skill.name}
-                                        </a>{" "}
-                                        · revision {skill.revision}
-                                      </li>
-                                    ))}
-                                  </ol>
-                                </div>
-                              )}
                               <div className="task-actions">
                                 {task.status === "queued" && (
                                   <button
@@ -1164,20 +1165,48 @@ export function App() {
                                 {run?.artifact_id && (
                                   <button
                                     className="result-link"
-                                    onClick={() =>
+                                    aria-expanded={output?.runId === run.id}
+                                    aria-controls={`result-${run.id}`}
+                                    onClick={(event) => {
+                                      resultTrigger.current =
+                                        event.currentTarget;
+                                      const request = ++resultRequest.current;
+                                      setOutput({
+                                        runId: run.id,
+                                        residentId: task.resident_id,
+                                        content: "",
+                                        loading: true,
+                                      });
                                       void act(async () => {
-                                        setOutput(null);
-                                        const result = await client.artifact(
-                                          run.artifact_id!,
-                                        );
-                                        if (currentSession.current === client)
+                                        const result = await client
+                                          .artifact(run.artifact_id!)
+                                          .catch((error) => {
+                                            if (
+                                              currentSession.current ===
+                                                client &&
+                                              request === resultRequest.current
+                                            )
+                                              setOutput({
+                                                runId: run.id,
+                                                residentId: task.resident_id,
+                                                content:
+                                                  "Could not load this result. Select View result to try again.",
+                                                runtimeKind: run.runtime_kind,
+                                              });
+                                            throw error;
+                                          });
+                                        if (
+                                          currentSession.current === client &&
+                                          request === resultRequest.current
+                                        )
                                           setOutput({
+                                            runId: run.id,
                                             content: result.content,
                                             residentId: task.resident_id,
                                             runtimeKind: run.runtime_kind,
                                           });
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     View result ↗
                                   </button>
@@ -1189,6 +1218,23 @@ export function App() {
                                       : "Usage not yet known"}
                                   </small>
                                 )}
+                              </div>
+                              {run && output?.runId === run.id && (
+                                <div id={`result-${run.id}`}>
+                                  <TaskOutput
+                                    key={run.id}
+                                    content={output.content}
+                                    loading={output.loading}
+                                    eyebrow={resultEyebrow(
+                                      snapshot.runtimes,
+                                      output.runtimeKind,
+                                    )}
+                                    onClose={closeResult}
+                                  />
+                                </div>
+                              )}
+                              <details className="task-execution-details">
+                                <summary>Run details &amp; usage</summary>
                                 {run && (
                                   <small aria-label="Runtime this run was worked by">
                                     {runtimeLabel(
@@ -1201,7 +1247,122 @@ export function App() {
                                       : ""}
                                   </small>
                                 )}
-                              </div>
+                                {task.lineage && (
+                                  <Lineage hops={task.lineage} />
+                                )}
+                                {run?.memory_revision !== undefined && (
+                                  <small>
+                                    {run.memory_revision === 0
+                                      ? "Admitted without memory"
+                                      : `Memory revision ${run.memory_revision}`}
+                                    {run.journal_opened?.length
+                                      ? ` · opened with journal ${run.journal_opened
+                                          .map((sequence) => `#${sequence}`)
+                                          .join(", ")}`
+                                      : " · opened with no journal entries"}
+                                  </small>
+                                )}
+                                {run && (
+                                  <small aria-label="What the run wrote">
+                                    {run.memory_written?.length
+                                      ? `Wrote memory revision ${run.memory_written.join(", ")}`
+                                      : "Wrote no memory"}
+                                    {run.journal_written
+                                      ? ` · wrote journal entry #${run.journal_written}`
+                                      : " · wrote no journal entry"}
+                                  </small>
+                                )}
+                                {run && <RunInputs run={run} />}
+                                {!!run?.mounts?.length && (
+                                  <div aria-label="Folders reached by run">
+                                    <small>
+                                      Folders reached · as this run was admitted
+                                    </small>
+                                    <ul>
+                                      {run.mounts.map((mount) => (
+                                        <li key={mount.name}>
+                                          {mount.name} ·{" "}
+                                          {mount.mode === "rw"
+                                            ? "writable"
+                                            : "read only"}
+                                          <small>
+                                            {mount.path} → {mount.host_path}
+                                          </small>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {run?.login_scope && (
+                                  <small aria-label="Login this run spent">
+                                    {run.login_scope === "resident"
+                                      ? "Spent this resident's own provider login"
+                                      : "Spent the household's provider login"}
+                                  </small>
+                                )}
+                                {run?.management && (
+                                  <p aria-label="Management authority used by run">
+                                    Management grant revision{" "}
+                                    {run.management.grant_revision} ·{" "}
+                                    {run.management.calls} recorded tool calls
+                                  </p>
+                                )}
+                                {!!run?.letters_refused?.length && (
+                                  <div aria-label="Letters this run was refused">
+                                    <small>
+                                      Letters refused · nothing was written
+                                    </small>
+                                    <ul>
+                                      {/* Two letters can be refused in the same second for
+                                      the same reason, so the position in the run's own
+                                      evidence is what tells them apart. */}
+                                      {run.letters_refused.map(
+                                        (refusal, place) => (
+                                          <li key={place}>
+                                            {refusal.reason.replaceAll(
+                                              "_",
+                                              " ",
+                                            )}
+                                            {Object.entries(
+                                              refusal.details,
+                                            ).map(([key, value]) => (
+                                              <small key={key}>
+                                                {key.replaceAll("_", " ")}:{" "}
+                                                {typeof value === "object"
+                                                  ? JSON.stringify(value)
+                                                  : String(value)}
+                                              </small>
+                                            ))}
+                                          </li>
+                                        ),
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                                {run?.skills_error && (
+                                  <p className="notice error">
+                                    Skill provenance unavailable:{" "}
+                                    {run.skills_error.replaceAll("_", " ")}.
+                                  </p>
+                                )}
+                                {!!run?.skills?.length && (
+                                  <div aria-label="Skills used by run">
+                                    <small>Skills used · in order</small>
+                                    <ol>
+                                      {run.skills.map((skill) => (
+                                        <li key={skill.skill_id}>
+                                          <a
+                                            href={`#skills/${encodeURIComponent(skill.skill_id)}`}
+                                          >
+                                            {skill.name}
+                                          </a>{" "}
+                                          · revision {skill.revision}
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  </div>
+                                )}
+                              </details>
                               {run &&
                                 !run.usage_known &&
                                 ["succeeded", "failed", "cancelled"].includes(
@@ -1269,18 +1430,6 @@ export function App() {
                 act={act}
               />
             )}
-            {output &&
-              (view === "tasks" ||
-                (view === "resident" &&
-                  residentTab === "Tasks" &&
-                  output.residentId === residentId)) && (
-                <TaskOutput
-                  key={output.content}
-                  content={output.content}
-                  eyebrow={resultEyebrow(snapshot.runtimes, output.runtimeKind)}
-                  onClose={() => setOutput(null)}
-                />
-              )}
             {view === "resident" && current && (
               <>
                 <ResidentDetails
@@ -1300,17 +1449,20 @@ export function App() {
                         act={act}
                         openable={openableRun}
                       />
-                      <div id="resident-journal" tabIndex={-1}>
-                        <Journal
-                          key={`journal:${snapshot.epoch}:${current.id}`}
-                          client={client}
-                          resident={current}
-                          busy={busy}
-                          act={act}
-                          openable={openableRun}
-                        />
-                      </div>
                     </>
+                  }
+                  journalChildren={
+                    <div id="resident-journal" tabIndex={-1}>
+                      <Journal
+                        expanded={residentTab === "Memory"}
+                        key={`journal:${snapshot.epoch}:${current.id}`}
+                        client={client}
+                        resident={current}
+                        busy={busy}
+                        act={act}
+                        openable={openableRun}
+                      />
+                    </div>
                   }
                   skillsChildren={
                     <>
@@ -1320,33 +1472,6 @@ export function App() {
                           profile={current.profile}
                           runtimes={snapshot.runtimes}
                         />
-                      )}
-                    </>
-                  }
-                  accessChildren={
-                    <>
-                      {" "}
-                      {current.management && (
-                        <section
-                          className="management-profile"
-                          aria-label="Resident management authority"
-                        >
-                          <h3>Management authority</h3>
-                          {"error" in current.management ? (
-                            <p role="alert">
-                              {current.management.error.replaceAll("_", " ")}
-                            </p>
-                          ) : (
-                            <p>
-                              {current.management.enabled
-                                ? `Enabled · grant revision ${current.management.revision} · up to ${current.management.max_residents} managed residents`
-                                : "No management tools granted."}
-                            </p>
-                          )}
-                          <a href={`#management/${current.id}`}>
-                            Inspect or edit the operator grant →
-                          </a>
-                        </section>
                       )}
                     </>
                   }
@@ -1439,11 +1564,29 @@ export function App() {
                   <span className="eyebrow">
                     {unread} unread · showing {notifications.length}
                   </span>
+                  <button
+                    disabled={busy || !!snapshot.restore_hold || unread === 0}
+                    onClick={() =>
+                      void act(async () => {
+                        setInboxMessage("");
+                        const result = await client.markAllNotifications(
+                          snapshot.cursor,
+                        );
+                        if (currentSession.current === client)
+                          setInboxMessage(
+                            `${result.marked_read} notifications marked as read.`,
+                          );
+                      })
+                    }
+                  >
+                    Mark all as read
+                  </button>
                 </div>
                 <p>
-                  Everything Hearth raises is recorded here and stays here.
-                  Reading one only marks it read.
+                  Unread notices are highlighted. Marking them as read keeps
+                  them in your history.
                 </p>
+                {inboxMessage && <p role="status">{inboxMessage}</p>}
                 {!notifications.length && (
                   <p className="muted">Run results will appear here.</p>
                 )}
@@ -1451,12 +1594,15 @@ export function App() {
                   {notifications.map((n) => (
                     <li
                       key={n.id}
-                      className={n.read_at === null ? "unread" : ""}
+                      className={n.read_at === null ? "unread" : "read"}
                     >
                       <h3>
+                        <span className="notice-state-icon" aria-hidden="true">
+                          {n.read_at === null ? "●" : "✓"}
+                        </span>
                         {n.kind.replace("run.", "Run ")}
                         {n.read_at === null && (
-                          <span className="nav-badge">New</span>
+                          <span className="nav-badge">Unread</span>
                         )}
                       </h3>
                       <p>
@@ -1471,7 +1617,7 @@ export function App() {
                       </a>
                       <button
                         className="quiet"
-                        disabled={busy}
+                        disabled={busy || !!snapshot.restore_hold}
                         aria-label={`Mark the ${n.kind.replace("run.", "run ")} notice for ${n.resource_id} ${n.read_at === null ? "read" : "unread"}`}
                         onClick={() =>
                           act(() =>

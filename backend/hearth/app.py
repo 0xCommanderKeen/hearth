@@ -600,6 +600,10 @@ def create_app(
         return {"artifact": asdict(metadata), "content": content}
 
     # The inbox is the record; reading one only marks it read.
+    @app.post("/api/notifications/read-all")
+    def mark_all_notifications(through_cursor: int = Query(ge=0)):
+        return {"marked_read": inbox.mark_all(through_cursor=through_cursor)}
+
     @app.post("/api/notifications/{notification_id}/read")
     def mark_notification(notification_id: str, body: ReadPost):
         return asdict(inbox.mark(notification_id, read=body.read))

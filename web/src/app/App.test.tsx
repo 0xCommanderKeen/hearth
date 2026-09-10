@@ -78,6 +78,13 @@ beforeEach(() => {
   vi.spyOn(Client.prototype, "inputSelection").mockImplementation(
     async (resident_id) => ({ resident_id, revision: 0, input_sets: [] }),
   );
+  vi.spyOn(Client.prototype, "journal").mockResolvedValue({
+    resident_id: "reader",
+    entries: [],
+    total: 0,
+    limit: 20,
+    offset: 0,
+  });
   vi.spyOn(Client.prototype, "skills").mockResolvedValue([]);
   vi.spyOn(Client.prototype, "assignments").mockImplementation(
     async (resident_id) => ({
@@ -791,6 +798,13 @@ it.each(["navigation", "lock", "epoch"])(
       input_sets: [],
       managers: [{ id: "operator", name: "Operator" }],
     });
+    vi.spyOn(Client.prototype, "journal").mockResolvedValue({
+      resident_id: "reader",
+      entries: [],
+      total: 0,
+      limit: 20,
+      offset: 0,
+    });
     vi.spyOn(Client.prototype, "skills").mockResolvedValue([]);
     vi.spyOn(Client.prototype, "provision").mockImplementation(
       async (id, body) => ({
@@ -1361,4 +1375,64 @@ it("selects tabs for same-resident deep links and supports keyboard navigation",
   expect(screen.getByRole("tab", { name: "Overview", selected: true })).toBe(
     document.activeElement,
   );
+});
+
+it("keeps results inside the selected task and ignores a response after closing", async () => {
+  addReader();
+  addRun({ artifact_id: "artifact" });
+  let finish!: (value: { content: string }) => void;
+  vi.spyOn(Client.prototype, "artifact").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await login();
+  await openTasks();
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
+  const result = await screen.findByRole("region", { name: "Task result" });
+  expect(result.closest("li")?.id).toBe("task-task");
+  expect(within(result).getByText("Loading result…")).toBeTruthy();
+  fireEvent.click(within(result).getByRole("button", { name: /Close/ }));
+  await act(async () => finish({ content: "Late private result" }));
+  expect(screen.queryByText("Late private result")).toBeNull();
+});
+
+it("marks the whole observed inbox read and keeps its history visually distinct", async () => {
+  state.cursor = 42;
+  state.unread_notifications = 125;
+  state.notifications = [
+    {
+      id: "notice",
+      kind: "run.succeeded",
+      resource_id: "run",
+      created_at: 1,
+      read_at: null,
+      payload: { link: "/#run-run" },
+    },
+  ];
+  const mark = vi
+    .spyOn(Client.prototype, "markAllNotifications")
+    .mockImplementation(async () => {
+      state.unread_notifications = 0;
+      state.notifications![0].read_at = 2;
+      return { marked_read: 125 };
+    });
+  window.location.hash = "#inbox";
+  await login(false);
+  const inbox = await screen.findByRole("region", { name: "Inbox" });
+  expect(inbox.querySelector("li.unread")).toBeTruthy();
+  fireEvent.click(
+    within(inbox).getByRole("button", { name: "Mark all as read" }),
+  );
+  await screen.findByText("125 notifications marked as read.");
+  expect(mark).toHaveBeenCalledWith(42);
+  await waitFor(() => expect(inbox.querySelector("li.read")).toBeTruthy());
+  expect(
+    (
+      within(inbox).getByRole("button", {
+        name: "Mark all as read",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });

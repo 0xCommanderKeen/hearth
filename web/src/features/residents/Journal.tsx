@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Client, type JournalEntry, type Resident } from "../../shared/client";
 import { RunLink } from "./RunLink";
 
@@ -13,18 +13,40 @@ export function Journal({
   busy,
   act,
   openable,
+  expanded = false,
 }: {
   client: Client;
   resident: Resident;
   busy: boolean;
   act: (operation: () => Promise<unknown>) => Promise<void>;
   openable: (runId: string) => boolean;
+  expanded?: boolean;
 }) {
+  const [loadError, setLoadError] = useState(false);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    let current = true;
+    void client.journal(resident.id, PAGE, 0).then(
+      (page) => {
+        if (current) {
+          setLoaded(page);
+          setLoadError(false);
+        }
+      },
+      () => {
+        if (current) setLoadError(true);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [client, resident.id, expanded]);
   const read = () =>
     act(async () => {
       const page = await client.journal(resident.id, PAGE, 0);
       setLoaded({ entries: page.entries, total: page.total });
+      setLoadError(false);
     });
   // Paging moves the window rather than growing it, so a journal longer than one page
   // stays reachable. Retention may roll an entry out between pages; keeping the
@@ -42,13 +64,18 @@ export function Journal({
       });
     });
   return (
-    <details className="skill-editor">
+    <details className="skill-editor" open={expanded || undefined}>
       <summary>{resident.name} · Journal</summary>
       <p>
         What this resident's own runs wrote, newest first. Hearth never writes
         an entry on a resident's behalf, never edits one and never summarizes
         work into one, so an empty journal means its runs wrote none.
       </p>
+      {loadError && (
+        <p role="alert">
+          Could not load the journal. Use Read journal to try again.
+        </p>
+      )}
       <button disabled={busy} onClick={() => void read()}>
         {loaded ? "Reload journal" : "Read journal"}
       </button>
