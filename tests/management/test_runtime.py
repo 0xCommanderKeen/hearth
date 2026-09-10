@@ -296,3 +296,115 @@ def test_missing_native_usage_keeps_hold_and_survives_current_data_backup(tmp_pa
     assert state["household"]["unknown"] == 100000
     assert state["residents"][0]["pause_reason"] == "usage_unknown"
     capture(tmp_path / "data", tmp_path / "backup")
+
+
+def test_unstarted_lost_identity_recovers_only_after_daemon_absence(tmp_path, monkeypatch):
+    import fcntl
+    import subprocess
+
+    from hearth.execution.lifecycle import Executor
+    from hearth.integrations.codex.subscription import CodexLiveRuntime
+    from hearth.integrations.launcher import ContainerLauncher, Sandbox
+    from hearth.residents.models import Refused
+
+    hearth, run, execution, _, receipt = manager_run(tmp_path)
+    with hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE run_management SET thread_id=NULL,turn_id=NULL WHERE run_id=?", (run.id,)
+        )
+    receipt["terminal"].update(
+        launched=False, events=[], error="sandbox_termination_unknown", exit_code=None
+    )
+    runtime = object.__new__(CodexLiveRuntime)
+    runtime.database = hearth.database
+    runtime.root = tmp_path / "runtime"
+    folder = runtime.folder(run.id)
+    folder.mkdir(parents=True)
+    sandbox = Sandbox("container", image="hearth/test@sha256:" + "a" * 64, network="test")
+    (folder / "request.json").write_text(
+        json.dumps(
+            {
+                "binding": receipt["binding"],
+                "management": {},
+                "sandbox": sandbox.document(),
+            }
+        )
+    )
+    (folder / "receipt.json").write_text(json.dumps(receipt))
+    (folder / "handle.json").write_text(
+        json.dumps(
+            {
+                "launcher": "container",
+                "id": None,
+                "cidfile": str(folder / "lost-cidfile"),
+            }
+        )
+    )
+    monkeypatch.setattr(runtime, "start", lambda *a, **k: pytest.fail("old task replayed"))
+    executor = Executor(execution, runtime)
+    execution.cancel(run.id)
+    next_task = hearth.submit(
+        "next", run.resident_id, "Next synthetic task", expires_at=int(hearth.clock()) + 600
+    )
+    replies = []
+
+    def attempt(self, *args, **kwargs):
+        assert args == ("ps", "--all", "--quiet", "--filter", "label=org.hearth.sandbox=1")
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return subprocess.CompletedProcess(args, *reply)
+
+    monkeypatch.setattr(ContainerLauncher, "attempt", attempt)
+    # A live worker, a daemon outage, any remaining container (even stopped), or
+    # unexpected daemon output must retain ownership and budget.
+    with (folder / "worker.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert runtime.inspect(run.id).status == "unknown"
+    for reply in [
+        (1, "", "daemon unavailable"),
+        (0, "b" * 64 + "\n", ""),
+        (0, "", "unexpected warning"),
+        subprocess.TimeoutExpired("docker", 5),
+    ]:
+        replies.append(reply)
+        executor.step()
+        held = hearth.run(run.id)
+        assert held.status == "interrupted" and held.finished_at is None
+        with pytest.raises(Refused, match="resident_busy"):
+            hearth.admit(next_task.task_id, reserve=10000)
+    # A receipt recording turn dispatch cannot use this no-turn recovery path.
+    changed = receipt | {"terminal": receipt["terminal"] | {"launched": True}}
+    (folder / "receipt.json").write_text(json.dumps(changed))
+    assert runtime.inspect(run.id).status == "unknown"
+    # Nor can an invalid binding be used to settle a different run.
+    changed = receipt | {"binding": receipt["binding"] | {"input_digest": "0" * 64}}
+    (folder / "receipt.json").write_text(json.dumps(changed))
+    assert runtime.inspect(run.id).status == "unknown"
+    (folder / "receipt.json").write_text(json.dumps(receipt))
+    replies.append((0, "", ""))
+    executor.step()
+    finished = hearth.run(run.id)
+    assert finished.status == "failed" and finished.finished_at is not None
+    assert finished.usage_known and finished.actual_cost == 0
+    assert runtime.receipt(run.id) == receipt
+    assert "since confirmed" in runtime.diagnostic(run.id)["message"]
+    with hearth.database.transaction() as db:
+        assert (
+            db.execute("SELECT COUNT(*) FROM run_usage WHERE run_id=?", (run.id,)).fetchone()[0]
+            == 1
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM audit WHERE kind='sandbox.absence_verified' "
+                "AND resource_id=?",
+                (run.id,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert not db.execute(
+            "SELECT 1 FROM pauses WHERE resident_id=?", (run.resident_id,)
+        ).fetchone()
+    assert executor.step() == []
+    assert hearth.admit(next_task.task_id, reserve=10000).status == "starting"
+    assert replies == []

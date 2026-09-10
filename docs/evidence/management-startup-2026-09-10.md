@@ -25,12 +25,22 @@ remain unknown.
 - The rebuilt application was deployed locally by image digest. The authenticated
   resident activity endpoint returned HTTP 200 with `Cache-Control: no-store`,
   the resident's timeline, and a fixed explanation from the bound receipt.
-- `make check` passed: 1,170 backend tests, 197 frontend tests, formatting, types,
+- `make check` passed: 1,171 backend tests, 197 frontend tests, formatting, types,
   frontend build, and installed-wheel smoke checks.
 
-The original interrupted run was preserved with its reservation held. Missing
-historical container identity is not evidence of termination, and the task was
-not replayed. This validates startup and cleanup, not a completed model task or
+The initial deployment preserved the interrupted run and its reservation. The
+follow-up recovery in ADR 0018 then measured an empty inventory with the
+application's Docker client, verified that the worker lock was free, and settled
+the saved no-turn receipt through the existing executor. The original attempt
+finished as failed with known zero usage. Its receipt was not rewritten and its
+task was not replayed.
+
+The operator's already queued next task was subsequently admitted through the
+normal authenticated start endpoint. That real Codex run completed successfully,
+including a management tool call and an output artifact, with known usage. The
+activity endpoint showed absence verification, the old failed attempt, and the
+new successful run. The daemon had no remaining sandbox containers afterward.
+This verifies the concrete recovery and a completed task; it does not complete
 the daily-observation acceptance gate.
 
 ## Activity visibility

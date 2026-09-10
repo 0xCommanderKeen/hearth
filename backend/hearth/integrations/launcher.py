@@ -29,6 +29,7 @@ Measured against Docker Desktop's Linux VM on 2026-09-09; what was measured, and
 two places it differs from what the ADR assumed, is `docs/sandbox.md`.
 """
 
+import fcntl
 import hashlib
 import json
 import os
@@ -1171,7 +1172,7 @@ def discard(
         return False
     identity = named(started)
     if identity is None:
-        return False
+        return recover_unstarted(database, folder, run_id, sandbox, receipt, clock)
     launcher = sandbox.open()
     if not launcher.stray(identity):
         # A receipt describes the attached stream, not whether its container still
@@ -1187,6 +1188,53 @@ def discard(
             {"launcher": started.get("launcher"), "container": identity},
         )
     return True
+
+
+def recover_unstarted(database, folder, run_id, sandbox, receipt, clock) -> bool:
+    """A finished no-turn worker plus an empty daemon inventory proves absence.
+
+    This is deliberately narrower than recovering an arbitrary lost identity. A
+    management receipt records dispatch intent before sending a model turn. Its
+    validated false value proves no turn was sent, but does not itself prove the
+    discovery container ended. Ask the pinned daemon about *all* Hearth containers,
+    including created and stopped ones. Never remove another run's container.
+    """
+    if (
+        receipt is None
+        or receipt.get("protocol") != "management"
+        or receipt.get("terminal", {}).get("launched") is not False
+    ):
+        return False
+    launcher = sandbox.open()
+    if not isinstance(launcher, ContainerLauncher):
+        return False
+    with (folder / "worker.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        try:
+            result = launcher.attempt(
+                "ps",
+                "--all",
+                "--quiet",
+                "--filter",
+                "label=" + LABEL + "=1",
+                timeout=STRAY_TIMEOUT,
+            )
+        except OSError, subprocess.SubprocessError:
+            return False
+        if result.returncode or result.stdout.strip() or result.stderr.strip():
+            return False
+        from hearth.work.service import _audit
+
+        with database.transaction(write=True) as db:
+            if not db.execute(
+                "SELECT 1 FROM audit WHERE kind='sandbox.absence_verified' AND resource_id=?",
+                (run_id,),
+            ).fetchone():
+                _audit(db, "sandbox.absence_verified", run_id, int(clock()), {"model_turn": False})
+        return True
 
 
 def configure(database, sandbox: Sandbox, clock=time.time) -> dict:

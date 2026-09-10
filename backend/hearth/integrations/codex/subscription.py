@@ -392,6 +392,11 @@ class CodexLiveRuntime:
                 ),
                 "sandbox_runtime_unavailable": "The container runtime could not be reached.",
             }
+            if code == "sandbox_termination_unknown" and row["finished_at"] is not None:
+                messages[code] = (
+                    "Container termination was initially unknown. Hearth has since "
+                    "confirmed container absence and settled this run."
+                )
             if code in messages:
                 return {
                     "code": code,

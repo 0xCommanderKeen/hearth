@@ -11,6 +11,8 @@ const labels: Record<string, string> = {
   "run.succeeded": "Run succeeded",
   "run.failed": "Run failed",
   "run.cancelled": "Run cancelled",
+  "run.cancel_requested": "Cancellation requested",
+  "sandbox.absence_verified": "Agent container absence confirmed",
   "run.waiting": "Run waiting",
 };
 
