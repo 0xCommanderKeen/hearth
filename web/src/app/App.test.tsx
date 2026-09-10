@@ -71,6 +71,10 @@ beforeEach(() => {
     managers: [{ id: "operator", name: "Operator" }],
   });
   vi.spyOn(Client.prototype, "inputSets").mockResolvedValue([]);
+  vi.spyOn(Client.prototype, "activity").mockResolvedValue({
+    entries: [],
+    next_before: null,
+  });
   vi.spyOn(Client.prototype, "inputSelection").mockImplementation(
     async (resident_id) => ({ resident_id, revision: 0, input_sets: [] }),
   );

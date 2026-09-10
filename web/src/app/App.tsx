@@ -15,6 +15,7 @@ import { UsageByOrigin, UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
 import { Journal } from "../features/residents/Journal";
+import { ResidentActivityLog } from "../features/residents/Activity";
 import {
   NewResident,
   ProfileProvenance,
@@ -891,6 +892,16 @@ export function App() {
               <a className="back-link" href="#residents">
                 ← All residents
               </a>
+            )}
+            {view === "resident" && current && (
+              <ResidentActivityLog
+                key={`activity:${snapshot.epoch}:${current.id}`}
+                client={client}
+                residentId={current.id}
+                residentName={current.name}
+                cursor={snapshot.cursor}
+                connected={connected}
+              />
             )}
             {((view === "resident" && current) || view === "tasks") && (
               <div

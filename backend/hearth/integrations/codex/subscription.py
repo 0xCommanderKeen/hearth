@@ -367,6 +367,46 @@ class CodexLiveRuntime:
         except OSError, ValueError, KeyError, TypeError, Refused:
             return Evidence("unknown")
 
+    def diagnostic(self, run_id):
+        """An allowlisted explanation, never raw runtime output or private bindings."""
+        from hearth.execution.usage import binding
+
+        try:
+            with self.database.transaction() as db:
+                row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+                expected = binding(db, row)
+            receipt = self.receipt(run_id)
+            encode(receipt, expected)
+            if receipt.get("protocol") != "management":
+                return None
+            code = receipt["terminal"].get("error")
+            messages = {
+                "sandbox_termination_unknown": (
+                    "Hearth could not confirm the agent container's termination. "
+                    "The run remains unresolved and its reservation stays held."
+                ),
+                "app_server_transport_failed": "The connection to the agent runtime failed.",
+                "app_server_cancelled": "The agent runtime received a cancellation request.",
+                "app_server_configuration_changed": (
+                    "The runtime configuration no longer matches this run."
+                ),
+                "sandbox_runtime_unavailable": "The container runtime could not be reached.",
+            }
+            if code == "sandbox_termination_unknown" and row["finished_at"] is not None:
+                messages[code] = (
+                    "Container termination was initially unknown. Hearth has since "
+                    "confirmed container absence and settled this run."
+                )
+            if code in messages:
+                return {
+                    "code": code,
+                    "message": messages[code],
+                    "turn_started": receipt["terminal"]["launched"],
+                }
+        except OSError, ValueError, KeyError, TypeError, Refused:
+            pass
+        return None
+
     def discard(self, run_id, request) -> None:
         """End the session a dead worker left behind. The rule is the launcher's."""
         discard(self.database, self.folder(run_id), run_id, request)

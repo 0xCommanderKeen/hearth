@@ -599,6 +599,23 @@ export type Snapshot = {
     at: number;
   }[];
 };
+export type ResidentActivity = {
+  entries: {
+    sequence: number;
+    kind: string;
+    resource_id: string;
+    at: number;
+    run_id: string | null;
+    run_status: string | null;
+    runtime_kind: string | null;
+    diagnostic?: {
+      code: string;
+      message: string;
+      turn_started: boolean;
+    } | null;
+  }[];
+  next_before: number | null;
+};
 export type UsageOrigin = {
   root_task_id: string;
   resident_id: string | null;
@@ -1053,6 +1070,12 @@ export class Client {
   journal(id: string, limit = 20, offset = 0) {
     return this.request<ResidentJournal>(
       `/api/residents/${encodeURIComponent(id)}/journal?limit=${limit}&offset=${offset}`,
+    );
+  }
+  activity(id: string, before: number | null = null) {
+    const query = before === null ? "" : `?before=${before}`;
+    return this.request<ResidentActivity>(
+      `/api/residents/${encodeURIComponent(id)}/activity${query}`,
     );
   }
   letters(id: string, limit = 20, offset = 0) {

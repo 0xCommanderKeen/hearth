@@ -580,6 +580,13 @@ def test_a_management_session_inside_a_sandbox_names_only_the_image_s_own_paths(
         # is, because the CLI reports that path back and the two have to agree.
         setting = next(part for part in command if part.startswith("model_catalog_json="))
         directory = setting.split('"')[1].rsplit("/", 1)[0]
+        # In a containerized backend only the run volume is visible to the daemon.
+        # A backend-private /tmp path works with a same-filesystem fake daemon but
+        # fails with Docker on the host, before discovery can start.
+        from pathlib import Path
+
+        assert Path(directory).parent == cli[2].parent
+        assert not Path(directory).exists()  # cleaned up after both sessions
         assert f"type=bind,source={directory},target={directory},readonly" in argv
         # The workspace the session is told to work in is the runtime's own tmpfs.
         assert argv[argv.index("--workdir") + 1] == WORKSPACE

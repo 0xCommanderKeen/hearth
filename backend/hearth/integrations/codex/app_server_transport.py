@@ -405,7 +405,13 @@ def run(
         names = config.tool_names(tools)
         config.check_auth_home(auth_home)
         deadline = time.monotonic() + timeout
-        with tempfile.TemporaryDirectory(prefix="hearth-codex-management-") as temporary:
+        # The host daemon must see a bind source at the same path as the worker.
+        # The run directory is shared by deployment; the backend's /tmp is not.
+        # Keep the workspace itself empty for the native configuration check.
+        with tempfile.TemporaryDirectory(
+            prefix="hearth-codex-management-",
+            dir=workspace.parent if launcher.kind == CONTAINER else None,
+        ) as temporary:
             catalog = config.model_catalog(binary)
             pins = {
                 "catalog_sha256": hashlib.sha256(catalog).hexdigest(),
