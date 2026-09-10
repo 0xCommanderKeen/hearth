@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Memory-conflict guidance defers updates through the journal to a later run, preserving
+  concurrent human edits and admission-pinned reads (#200).
+
 - Task, routine and declaration saves accept their full Unicode character limits in
   UTF-8 or escaped JSON while retaining finite request budgets (#199).
 

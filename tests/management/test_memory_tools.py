@@ -220,30 +220,47 @@ def test_a_stale_run_save_is_refused_and_the_human_edit_survives(tmp_path):
     assert not ok and refused["error"] == "revision_conflict"
     assert Memory(hearth).read(karen)["revision"] == 2
     assert Memory(hearth).read(karen)["text"].startswith("Operator wrote this")
-    # A refused attempt records nothing, so the same operation identity can succeed.
-    ok, saved = call(
-        "save-merged",
+    # A fresh bridge call still reads the admission pin, not the inaccessible human edit.
+    assert call("read-after-conflict", "hearth_memory_read", {}) == (True, pinned)
+    assert pinned_context(hearth, run.id)["memory"]["text"] == pinned["text"]
+    deferred = "Deferred memory update after revision_conflict: pears stay synthetic."
+    assert call("journal", "hearth_journal_write", {"text": deferred})[0]
+    assert Memory(hearth).read(karen)["revision"] == 2
+    assert Memory(hearth).read(karen)["text"] == "Operator wrote this while the run was thinking."
+    settle(app, run)
+
+    # Only a later admission exposes the edit; build the update solely from its inputs.
+    later, next_call = working_run(app, karen, "reconsider")
+    ok, latest = next_call("read", "hearth_memory_read", {})
+    assert ok and latest["revision"] == 2
+    entry = pinned_context(hearth, later.id)["journal"][0]["text"]
+    assert entry == deferred
+    merged = latest["text"] + "\n" + entry.split(": ", 1)[1]
+    ok, saved = next_call(
+        "save-reconsidered",
         "hearth_memory_save",
         {
-            "operation_id": "stale",
+            "operation_id": "reconsider",
             "resident_id": karen,
-            "text": "Operator wrote this while the run was thinking.\nThe run merged its fact.",
-            "expected_revision": 2,
+            "text": merged,
+            "expected_revision": latest["revision"],
         },
     )
     assert ok and saved["revision"] == 3
-    assert not call(
+    assert not next_call(
         "foreign",
         "hearth_memory_save",
         {
             "operation_id": "foreign",
             "resident_id": "someone-else",
             "text": "Not mine to write.",
-            "expected_revision": 3,
+            "expected_revision": saved["revision"],
         },
     )[0]
-    assert Memory(hearth).read(karen)["revision"] == 3
-    settle(app, run)
+    assert Memory(hearth).read(karen)["text"] == (
+        "Operator wrote this while the run was thinking.\npears stay synthetic."
+    )
+    settle(app, later)
 
 
 def test_the_tools_are_absent_and_refused_when_memory_is_not_writable(tmp_path):
