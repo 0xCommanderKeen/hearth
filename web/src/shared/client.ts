@@ -499,6 +499,7 @@ export function inheritStreamBaseline(
     streamBaselines.set(snapshot, baseline);
 }
 export type Task = {
+  instruction_truncated?: boolean;
   id: string;
   resident_id: string;
   instruction: string;
@@ -633,6 +634,13 @@ export function decodeSnapshot(value: unknown): Snapshot {
     !Number.isSafeInteger(s.cursor) ||
     !Array.isArray(s.residents) ||
     !Array.isArray(s.tasks) ||
+    s.tasks.some(
+      (task) =>
+        !task ||
+        typeof task !== "object" ||
+        (task.instruction_truncated !== undefined &&
+          typeof task.instruction_truncated !== "boolean"),
+    ) ||
     !Array.isArray(s.runs) ||
     !Array.isArray(s.activity) ||
     // Without the runtime table this interface would have to guess which provider
@@ -1194,6 +1202,10 @@ export class Client {
     return receipt;
   }
 
+  task(taskId: string): Promise<Task> {
+    return this.request(`/api/tasks/${encodeURIComponent(taskId)}`);
+  }
+
   async watch(
     signal: AbortSignal,
     onState: (s: Snapshot) => void,
@@ -1234,10 +1246,11 @@ export class Client {
             const chunk = await reader.read();
             if (chunk.done) break;
             buffer += decoder.decode(chunk.value, { stream: true });
-            if (buffer.length > 2_000_000)
-              throw new Error("Activity snapshot too large");
             let boundary: number;
             while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+              // Bound each frame, not a network chunk that may contain many events.
+              if (boundary > 2_000_000)
+                throw new Error("Activity snapshot too large");
               const frame = buffer.slice(0, boundary);
               buffer = buffer.slice(boundary + 2);
               const data = frame
@@ -1256,6 +1269,10 @@ export class Client {
                 onState(next);
               }
             }
+            // Retain only the incomplete frame across arbitrary read boundaries.
+            // The first LF of a split blank-line delimiter is not frame content.
+            if (buffer.length - (buffer.endsWith("\n") ? 1 : 0) > 2_000_000)
+              throw new Error("Activity snapshot too large");
           }
         } finally {
           await reader.cancel().catch(() => {});

@@ -239,7 +239,7 @@ def create_app(
                     )
                     cursor, epoch = current["cursor"], current["epoch"]
                     budget_revision = current["budget_revision"]
-                    yield f"event: {kind}\ndata: {json.dumps(current)}\n\n"
+                    yield f"event: {kind}\ndata: {json.dumps(current, ensure_ascii=False)}\n\n"
                 elif ticks % 20 == 0:
                     yield ": keepalive\n\n"
                 ticks += 1
@@ -383,6 +383,10 @@ def create_app(
     @app.get("/api/commands/{command_id}")
     def receipt(command_id: str):
         return asdict(hearth.receipt(command_id))
+
+    @app.get("/api/tasks/{task_id}")
+    def task_detail(task_id: str):
+        return asdict(hearth.task(task_id))
 
     @app.post("/api/tasks/{task_id}/start")
     def start(task_id: str):

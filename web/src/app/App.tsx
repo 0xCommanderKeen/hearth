@@ -10,6 +10,7 @@ import {
 } from "../shared/client";
 import "./style.css";
 import { RoutinePanel } from "../features/routines/Routines";
+import { TaskInstruction } from "../features/tasks/TaskInstruction";
 import { UsageByOrigin, UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
@@ -969,7 +970,11 @@ export function App() {
                               </span>
                               <time>{clock(task.created_at)}</time>
                             </div>
-                            <h3>{task.instruction}</h3>
+                            <TaskInstruction
+                              key={`${snapshot.epoch}:${task.id}`}
+                              client={client}
+                              task={task}
+                            />
                             {task.lineage && <Lineage hops={task.lineage} />}
                             {run?.memory_revision !== undefined && (
                               <small>

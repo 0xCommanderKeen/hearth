@@ -199,6 +199,8 @@ export function ContextPanel({
                     {state(run.status)} ·{" "}
                     {tasks.find((t) => t.id === run.task_id)?.instruction ??
                       `Task ${run.task_id} · instruction outside available records`}
+                    {tasks.find((t) => t.id === run.task_id)
+                      ?.instruction_truncated && "…"}
                   </a>
                   {!run.usage_known && " · usage unknown"}
                 </li>
@@ -213,7 +215,10 @@ export function ContextPanel({
           {tasks
             .filter((t) => t.status === "queued")
             .map((t) => (
-              <p key={t.id}>Queued · {t.instruction}</p>
+              <p key={t.id}>
+                Queued · {t.instruction}
+                {t.instruction_truncated && "…"}
+              </p>
             ))}
           <h3>Latest available result</h3>
           {latest ? (
