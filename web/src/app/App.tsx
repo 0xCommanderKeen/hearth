@@ -87,7 +87,7 @@ function Emblem() {
   );
 }
 
-function SummaryOutput({
+function TaskOutput({
   content,
   eyebrow,
   onClose,
@@ -106,7 +106,7 @@ function SummaryOutput({
       ref={panel}
       tabIndex={-1}
       className="output"
-      aria-label="Summary output"
+      aria-label="Task result"
     >
       <div className="section-title">
         <span className="eyebrow">{eyebrow}</span>
@@ -911,7 +911,8 @@ export function App() {
                   <section className="work-panel">
                     <h2>Assign work</h2>
                     <p>
-                      A read-only assignment. Results appear beside this panel.
+                      Describe the work to do. The resident uses its configured
+                      tools and permissions.
                     </p>
                     <form onSubmit={submit}>
                       {pending.current &&
@@ -926,7 +927,7 @@ export function App() {
                             </a>
                           </p>
                         )}
-                      <label htmlFor="instruction">The assignment</label>
+                      <label htmlFor="instruction">Task instructions</label>
                       <textarea
                         id="instruction"
                         value={instruction}
@@ -949,7 +950,7 @@ export function App() {
                       >
                         {pending.current
                           ? "Retry pending submission"
-                          : "Run summary"}{" "}
+                          : "Run task"}{" "}
                         <span>↗</span>
                       </button>
                       <small>
@@ -1156,7 +1157,7 @@ export function App() {
                                     })
                                   }
                                 >
-                                  Read summary ↗
+                                  View result ↗
                                 </button>
                               )}
                               {run && (
@@ -1210,7 +1211,7 @@ export function App() {
             {output &&
               (view === "tasks" ||
                 (view === "resident" && output.residentId === residentId)) && (
-                <SummaryOutput
+                <TaskOutput
                   key={output.content}
                   content={output.content}
                   eyebrow={resultEyebrow(snapshot.runtimes, output.runtimeKind)}

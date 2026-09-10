@@ -144,13 +144,13 @@ it("opens the gate and switches views without separate state", async () => {
     ),
   );
   fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
-  await screen.findByLabelText("The assignment");
+  await screen.findByLabelText("Task instructions");
   expect(screen.getByLabelText("Resident information").textContent).toContain(
     "Synthetic notes",
   );
   fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
   await screen.findByRole("group", { name: /Reader's home/ });
-  expect(screen.queryByLabelText("The assignment")).toBeNull();
+  expect(screen.queryByLabelText("Task instructions")).toBeNull();
 });
 
 it("freezes a pending command and retries the same request after a lost response", async () => {
@@ -164,10 +164,11 @@ it("freezes a pending command and retries the same request after a lost response
     });
   const start = vi.spyOn(Client.prototype, "start").mockResolvedValue({});
   await login();
-  fireEvent.click(screen.getByRole("button", { name: /Run summary/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByRole("alert");
   expect(
-    (screen.getByLabelText("The assignment") as HTMLTextAreaElement).disabled,
+    (screen.getByLabelText("Task instructions") as HTMLTextAreaElement)
+      .disabled,
   ).toBe(true);
   fireEvent.click(
     screen.getByRole("button", { name: /Retry pending submission/ }),
@@ -175,7 +176,8 @@ it("freezes a pending command and retries the same request after a lost response
   await waitFor(() => expect(start).toHaveBeenCalledWith("task"));
   expect(submit.mock.calls[0][0]).toEqual(submit.mock.calls[1][0]);
   expect(
-    (screen.getByLabelText("The assignment") as HTMLTextAreaElement).disabled,
+    (screen.getByLabelText("Task instructions") as HTMLTextAreaElement)
+      .disabled,
   ).toBe(false);
 });
 
@@ -243,15 +245,15 @@ it("displays run output and clears it when the operator locks the session", asyn
     content: "# Synthetic summary\nNo model was called.",
   });
   await login();
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
-  const summaryPanel = await screen.findByLabelText("Summary output");
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
+  const summaryPanel = await screen.findByLabelText("Task result");
   // The panel takes focus in an effect, which lands after it is first findable; on a
   // loaded machine that gap is real, so wait for the focus rather than for the element.
   await waitFor(() => expect(document.activeElement).toBe(summaryPanel));
   expect(screen.getByText(/No model was called/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   expect(screen.getByLabelText("Operator token")).toBeTruthy();
-  expect(screen.queryByLabelText("Summary output")).toBeNull();
+  expect(screen.queryByLabelText("Task result")).toBeNull();
 });
 
 it("credits a result to the provider that produced it, on either brain", async () => {
@@ -332,8 +334,8 @@ it("credits a result to the provider that produced it, on either brain", async (
     "Claude subscription · claude-opus-5 · claude-opus-5-api-equivalent-2026-09-07",
   );
 
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
-  await screen.findByLabelText("Summary output");
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
+  await screen.findByLabelText("Task result");
   expect(screen.getByText("CLAUDE RESULT")).toBeTruthy();
 
   // The same panel over a run the other brain worked names that one instead.
@@ -345,8 +347,8 @@ it("credits a result to the provider that produced it, on either brain", async (
     price_schedule: "gpt-6-astra-api-equivalent-2026-09-06",
   };
   await act(async () => publish(structuredClone(state)));
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
-  await screen.findByLabelText("Summary output");
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
+  await screen.findByLabelText("Task result");
   expect(screen.getByText("CODEX RESULT")).toBeTruthy();
 });
 
@@ -383,8 +385,8 @@ it("never presents a run from a retired runtime as a provider's result", async (
   expect(
     screen.getByLabelText("Runtime this run was worked by").textContent,
   ).toBe("retired Codex mock");
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
-  await screen.findByLabelText("Summary output");
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
+  await screen.findByLabelText("Task result");
   expect(screen.getByText("SIMULATED ARTIFACT")).toBeTruthy();
 });
 
@@ -394,7 +396,7 @@ it("does not leave a rejected credential signed in", async () => {
     new RequestError(401, "unauthorized"),
   );
   await login();
-  fireEvent.click(screen.getByRole("button", { name: /Run summary/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByLabelText("Operator token");
   expect(screen.queryByRole("button", { name: "Lock" })).toBeNull();
 });
@@ -430,7 +432,7 @@ it("does not restore an artifact response that arrives after locking", async () 
       }),
   );
   await login();
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   fireEvent.click(screen.getByRole("button", { name: "Lock" }));
   await act(async () => complete({ content: "late private output" }));
   fireEvent.change(screen.getByLabelText("Operator token"), {
@@ -563,7 +565,7 @@ it("lists every resident and scopes profile work to the selected resident", asyn
   );
   expect(screen.queryByText("Reader-only assignment")).toBeNull();
   expect(screen.getByText("A quiet beginning.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: /Run summary/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await waitFor(() => expect(submit).toHaveBeenCalled());
   expect(submit.mock.calls[0][0].body.resident_id).toBe("gardener");
 });
@@ -580,8 +582,8 @@ it("keeps an ambiguous submission attached to its original resident", async () =
     .mockRejectedValue(new TypeError("lost response"));
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
-  await screen.findByLabelText("The assignment");
-  fireEvent.click(screen.getByRole("button", { name: /Run summary/ }));
+  await screen.findByLabelText("Task instructions");
+  fireEvent.click(screen.getByRole("button", { name: /Run task/ }));
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
   await screen.findByRole("heading", { level: 1, name: "Residents" });
@@ -634,7 +636,7 @@ it("does not display another resident's late artifact response on a profile", as
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
   await screen.findByLabelText("Resident information");
-  fireEvent.click(screen.getByRole("button", { name: /Read summary/ }));
+  fireEvent.click(screen.getByRole("button", { name: /View result/ }));
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
   await screen.findByRole("heading", { level: 1, name: "Residents" });
   fireEvent.click(
@@ -642,7 +644,7 @@ it("does not display another resident's late artifact response on a profile", as
   );
   await screen.findByRole("heading", { level: 1, name: "Gardener" });
   await act(async () => complete({ content: "Reader private result" }));
-  expect(screen.queryByLabelText("Summary output")).toBeNull();
+  expect(screen.queryByLabelText("Task result")).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: /All residents/ }));
   await screen.findByRole("heading", { level: 1, name: "Residents" });
   fireEvent.click(screen.getByRole("link", { name: /Reader.*View resident/ }));
@@ -747,7 +749,7 @@ it("reports damaged historical skill provenance without inventing an execution h
   ];
   await login(false);
   expect(screen.getByText("Completed")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /Read summary/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /View result/ })).toBeTruthy();
   expect(screen.queryByText(/Execution is held/)).toBeNull();
   expect(screen.getByText(/Skill provenance unavailable/)).toBeTruthy();
 });

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Resident page · Hearth design study</title>
+    <link rel="stylesheet" href="./designs.css" />
+  </head>
+  <body>
+    <header class="study-bar">
+      <a class="study-brand" href="/">Hearth <span> / Design study</span></a>
+      <nav aria-label="Design variants" id="variants">
+        <button data-variant="overview">A <span>Overview</span></button
+        ><button data-variant="workspace">B <span>Workspace</span></button
+        ><button data-variant="profile">C <span>Profile</span></button>
+      </nav>
+      <span class="sample-label">Interactive prototype · sample data</span>
+    </header>
+    <div id="app"></div>
+    <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+    <div id="announcement" role="status" class="toast"></div>
+    <script type="module" src="./designs.js"></script>
+  </body>
+</html>

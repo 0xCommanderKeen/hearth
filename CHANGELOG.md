@@ -2,6 +2,8 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Correct resident task wording and add three interactive overview-and-tabs design studies.
+
 - Keep sandboxed management catalogs on the shared run volume, recognize Docker's
   explicit missing-container response, recover no-turn failures after verified daemon absence,
   and show resident activity with safe failure explanations.
