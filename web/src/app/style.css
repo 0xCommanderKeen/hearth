@@ -1516,3 +1516,85 @@ main:has(.hamlet-scene:not([hidden])) {
     border-radius: 16px 16px 0 0;
   }
 }
+
+/* Cutaways retain the village behind them; furniture is a route into records. */
+.hamlet-scene > [hidden] {
+  display: none;
+}
+.room-enter {
+  background: #477a77;
+  color: #fff8e9;
+  padding: 12px 20px;
+}
+.hamlet-room {
+  background: #fff8e9;
+  padding: 22px;
+}
+.room-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.hamlet-room h2 {
+  font-size: clamp(27px, 4vw, 40px);
+  margin: 24px 0 8px;
+}
+.room-caption,
+.room-facts {
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 80ch;
+}
+.room-canvas {
+  height: 470px;
+  width: 100%;
+  border: 1px solid #b6bda5;
+  margin-top: 18px;
+}
+.room-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.room-records {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: #dacdb6;
+  border: 1px solid #dacdb6;
+}
+.room-records a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff8e9;
+  padding: 20px 14px;
+  font-size: 13px;
+}
+.room-records a span {
+  color: #986447;
+  font-size: 11px;
+}
+.room-records a b {
+  margin-left: auto;
+}
+.room-facts {
+  color: #615644;
+}
+@media (max-width: 640px) {
+  .hamlet-room {
+    padding: 16px;
+  }
+  .room-canvas {
+    height: 350px;
+  }
+  .room-records {
+    grid-template-columns: 1fr;
+  }
+  .room-records a {
+    padding: 14px;
+  }
+}

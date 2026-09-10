@@ -355,7 +355,11 @@ export function App() {
       const section = new URLSearchParams(
         window.location.hash.split("?")[1],
       ).get("panel");
-      if (section === "journal" || section === "letters") {
+      if (
+        section === "journal" ||
+        section === "letters" ||
+        section === "work"
+      ) {
         const target = document.getElementById(`resident-${section}`);
         const details = target?.querySelector("details");
         if (details) details.open = true;
@@ -924,7 +928,11 @@ export function App() {
                     </small>
                   </section>
                 )}
-                <section className="task-panel">
+                <section
+                  className="task-panel"
+                  id="resident-work"
+                  tabIndex={-1}
+                >
                   <h2>Tasks &amp; results</h2>
                   <UsageByOrigin client={client} busy={busy} act={act} />
                   {!visibleTasks.length ? (
