@@ -259,6 +259,16 @@ db.commit()' "sha256:<the new digest>"
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d
 ```
 
+**That fourth step is a rough edge and is meant to be read as one.** Hearth has no
+command for re-pinning an image, so an operator writes the new digest into
+`system_meta.sandbox_image` by hand, with the store quiet — which is why the backup
+comes first. The refusal is the part that is designed: a store never accepts a different
+sandbox without somebody saying so.
+
+Rolling back is the same four steps with the old digest, and the store's schema is the
+thing to watch: it upgrades forward on start and does not come back down, so a rollback
+across a schema change is a *restore*, not a redeploy.
+
 The store's own schema upgrades forward on start and needs no fresh data directory,
 ever (`docs/adr/0013-forward-schema-upgrades.md`): an older store is rebuilt in place
 with the original kept beside it.
