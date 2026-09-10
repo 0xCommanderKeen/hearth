@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Routine admission rotates through at most 100 queued occurrences per pass, so persistent
+  pauses and budget waits cannot hide later healthy residents; each attempt retains the
+  existing transactional admission checks and refused work is revisited (#192).
+
 - Returning from a Hamlet selection now refits an overview to the current viewport
   and village bounds. Custom views keep their orientation and zoom while a roster
   shrink returns a departed target to the remaining village.
