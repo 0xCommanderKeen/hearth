@@ -30,9 +30,14 @@ that raced a change to the declaration is refused and shown where it was written
 carrying the whole declaration, and `python -m hearth save-resident`, behave exactly as
 they did (`docs/letters.md`).
 
-State and audit cursor are read in one SQLite transaction. Database epoch plus
-cursor identify the snapshot; reconnect fetches a complete snapshot, and SSE sends
-complete snapshots or explicit resets. The client rejects an unsupported snapshot
+State and audit cursor are read in one SQLite transaction, using one clock instant.
+Database epoch and cursor identify audit progress; `budget_revision` identifies the
+time-dependent household projection and resident-local budget dates. Conditional
+`/api/state` and `/api/events` requests supply all three; omitted budget identity
+receives a full snapshot. Local rollover refreshes connected views without adding
+audit facts, including when a run's pinned household window outlives a timezone edit.
+Reconnect fetches a complete snapshot, and SSE sends complete snapshots or explicit
+resets. Budget-only updates keep the same audit cursor and are ordinary snapshots. The client rejects an unsupported snapshot
 format and prevents an older same-epoch response replacing a newer one.
 Active work takes priority over recent history under the 100-task/run display cap.
 Artifacts are read through their checksummed metadata, not exposed as arbitrary paths.
