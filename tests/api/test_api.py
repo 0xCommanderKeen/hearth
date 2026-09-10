@@ -4,6 +4,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from hearth.api.auth import MAX_TASK_BODY
 from hearth.app import create_app
 from hearth.residents.models import Declaration
 
@@ -49,7 +50,7 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
 
 
 def test_authenticated_body_is_bounded(client):
-    response = client.post("/api/tasks", headers=AUTH, content="x" * 65_537)
+    response = client.post("/api/tasks", headers=AUTH, content="x" * (MAX_TASK_BODY + 1))
     assert response.status_code == 413
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
