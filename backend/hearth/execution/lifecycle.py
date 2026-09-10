@@ -275,9 +275,11 @@ class Execution:
             record(db, "run." + evidence.status, run_id, now)
         return self.hearth.run(run_id)
 
-    def runtime_unavailable(
-        self, run_id: str, owner_token: str, *, reason: str = "runtime_unavailable"
-    ) -> Run:
+    def runtime_unavailable(self, run_id: str, owner_token: str) -> Run:
+        """A run whose pinned runtime this instance is not configured for waits."""
+        return self.waiting(run_id, owner_token, "runtime_unavailable")
+
+    def waiting(self, run_id: str, owner_token: str, reason: str) -> Run:
         """A run this instance cannot launch, for a reason an operator can fix, waits.
 
         Two things get here. A run whose pinned runtime this instance is not configured
@@ -329,7 +331,7 @@ class Execution:
                     now,
                     {
                         "task_id": row["task_id"],
-                        "reason": "runtime_unavailable",
+                        "reason": reason,
                         "runtime_kind": row["runtime_kind"],
                     },
                 )
@@ -431,9 +433,7 @@ class Executor:
                 # subscription nobody chose for this resident
                 # (`docs/adr/0016-sandbox-per-run.md`). This resident alone is held:
                 # every other one is launched by the same pass.
-                return self.execution.runtime_unavailable(
-                    run.id, run.owner_token, reason="login_required"
-                )
+                return self.execution.waiting(run.id, run.owner_token, "login_required")
             if self.execution.prepare_start(run.id, run.owner_token):
                 try:
                     with self.execution.hearth.database.transaction() as db:

@@ -80,15 +80,17 @@ def prepare(data: Path) -> Path:
 def resident_login(data: Path, resident_id: str, kind: str) -> Path | None:
     """The resident's own login directory for one runtime kind, if it has one.
 
-    Both parts of the path are checked before they are joined. A resident id is an
-    identifier and a runtime kind is one this release knows, so neither can carry a
-    path of its own into the credentials directory.
+    Both parts of the path are checked for shape before they are joined, so neither can
+    carry a path of its own into the credentials directory. Shape and not membership:
+    a store upgraded forward may carry a runtime kind a later release retired, and such
+    a resident's work waits on the runtime it declared (ADR 0015) rather than failing
+    admission over where its login would have been if it had one.
     """
     identifier(resident_id)
-    from hearth.integrations.interface import RUNTIMES
-
-    if kind not in RUNTIMES:
-        raise Refused("runtime_configuration_invalid")
+    try:
+        identifier(kind)
+    except Refused:
+        raise Refused("runtime_configuration_invalid") from None
     directory = root(data) / resident_id / kind
     return directory if directory.is_dir() else None
 

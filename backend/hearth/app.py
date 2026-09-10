@@ -139,23 +139,29 @@ def create_app(
     # The probe for a kind is that provider's own, taken from the adapter this instance
     # opened, so nothing here names a provider and nothing reads a credential: the
     # answer is `loggedIn` and no more (`docs/adr/0016-sandbox-per-run.md`).
-    logins = Logins(data, login_probes(adapters))
+    # A quarantined copy asks no provider anything: it opened on an adapter with no
+    # binary behind it and it starts no run, so it has nothing to say about a login and
+    # says nothing rather than reporting every one of them as out.
+    logins = Logins(data, {} if restored else login_probes(adapters))
     if not restored:
         # The shelf, never a login: an operator seeds one by running that CLI's own
         # login flow with its configuration path pointed here (`docs/sandbox.md`).
         prepare(data)
         # A login that has lapsed is a configuration this operator can fix, and their
         # resident's runs are waiting on exactly that -- so it is recorded once per
-        # start, where it is discovered, exactly as an absent runtime is above.
-        with database.transaction(write=True) as db:
-            for entry in logins.lapsed():
-                _audit(
-                    db,
-                    "login.resident_lapsed",
-                    entry["resident_id"],
-                    int(hearth.clock()),
-                    {"kind": entry["kind"]},
-                )
+        # start, where it is discovered, exactly as an absent runtime is above. A
+        # household where every login works opens no transaction to say so.
+        lapsed = logins.lapsed()
+        if lapsed:
+            with database.transaction(write=True) as db:
+                for entry in lapsed:
+                    _audit(
+                        db,
+                        "login.resident_lapsed",
+                        entry["resident_id"],
+                        int(hearth.clock()),
+                        {"kind": entry["kind"]},
+                    )
     executor = Executor(execution, adapters, logins)
     inbox = Inbox(hearth)
     routines = Routines(hearth)
