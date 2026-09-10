@@ -1,0 +1,8 @@
+FROM node:26.7.0-bookworm-slim
+RUN npm install -g pnpm@11.22.0
+WORKDIR /app
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+EXPOSE 5178
+CMD ["pnpm", "dev", "--host", "0.0.0.0", "--strictPort"]

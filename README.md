@@ -24,11 +24,13 @@ uv sync --frozen
 make check
 ```
 
-Python 3.14, uv, Node 22.22+, and pnpm 11.22 are required. The backend uses FastAPI;
+Python 3.14, uv, Node 26.7+ (26.x), and pnpm 11.22 are required. The backend uses FastAPI;
 the browser uses React and TypeScript. `make check` builds one Python wheel that
 contains the compiled browser, then installs it with locked runtime dependencies
 in a temporary environment and exercises its CLI and loopback HTTP application.
 See the [standalone installation steps](docs/release.md).
+For Docker development, the [deployment runbook](deploy/README.md) builds the
+application inside Docker and adds an optional frontend container with hot reload.
 Money is represented as integer microdollars; reservations are admission policy,
 not a provider-enforced billing ceiling.
 

@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Build the application from source inside Docker, add a Compose frontend for local
+  development, and use Node 26.7 in development and CI with jsdom-owned test storage.
+
 - Review fixes keep sandbox runs held until container removal is confirmed, recheck
   protected mount targets at admission and launch, and refresh idle login-scope views;
   integration preserves all reviewed PRs and their documented real-host acceptance limits.

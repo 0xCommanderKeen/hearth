@@ -1,0 +1,13 @@
+.git
+.venv
+.hearth
+.env*
+**/.env*
+**/__pycache__
+**/node_modules
+web/dist
+backend/hearth/web
+.pytest_cache
+.ruff_cache
+logs
+docs/evidence
