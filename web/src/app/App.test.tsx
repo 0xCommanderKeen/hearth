@@ -1103,3 +1103,39 @@ it("keeps a newer command refresh when its existing stream delivers a delayed fr
   act(() => publish(following));
   expect(screen.getByText("Following stream")).toBeTruthy();
 });
+
+it("refreshes Townhall allowance from a budget-only snapshot without losing unknown holds", async () => {
+  state.budget_revision = "before";
+  state.household = {
+    revision: 0,
+    daily_limit: 10000000,
+    timezone: "Europe/Ljubljana",
+    resident_limit: 20,
+    concurrency_limit: 2,
+    resident_count: 0,
+    active_runs: 0,
+    spent: 2000000,
+    reserved: 0,
+    unknown: 1000000,
+    remaining: 7000000,
+    budget_day: "2026-09-06",
+  };
+  await login(false);
+  expect(screen.getByText("$7.0000 remaining")).toBeTruthy();
+  act(() =>
+    publish({
+      ...state,
+      budget_revision: "after",
+      household: {
+        ...state.household!,
+        spent: 0,
+        remaining: 9000000,
+        budget_day: "2026-09-07",
+      },
+    }),
+  );
+  expect(await screen.findByText("$9.0000 remaining")).toBeTruthy();
+  expect(screen.getByText("ONE HOUSEHOLD · 2026-09-07")).toBeTruthy();
+  expect(screen.getByText("$1.0000")).toBeTruthy();
+  expect(screen.getByText("Connected · Codex")).toBeTruthy();
+});

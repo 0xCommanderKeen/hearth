@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Townhall refreshes household and resident budget windows over HTTP and SSE at local
+  rollover without an audit mutation, including daylight-saving days (#197).
+
 - Out-of-range Claude costs preserve terminal output and receipts with unknown usage,
   retaining the hold without blocking unrelated runs (#196).
 

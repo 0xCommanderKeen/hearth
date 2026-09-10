@@ -553,6 +553,7 @@ export type Runtimes = {
   kinds: Record<string, { label: string; live: boolean }>;
 };
 export type Snapshot = {
+  budget_revision?: string;
   limits?: {
     tasks: number;
     runs: number;
@@ -1210,7 +1211,7 @@ export class Client {
         streamBaselines.set(initial, baseline);
         onState(initial);
         const response = await fetch(
-          `/api/events?cursor=${initial.cursor}&epoch=${encodeURIComponent(initial.epoch)}`,
+          `/api/events?cursor=${initial.cursor}&epoch=${encodeURIComponent(initial.epoch)}&budget_revision=${encodeURIComponent(initial.budget_revision ?? "")}`,
           {
             headers: { Authorization: `Bearer ${this.token}` },
             signal,

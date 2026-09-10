@@ -1,6 +1,9 @@
 """One consistent operator snapshot. Credentials and ownership tokens never leave it."""
 
+import hashlib
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
@@ -28,9 +31,11 @@ LIVE_KINDS = "(" + ", ".join(repr(kind) for kind in sorted(live_kinds())) + ")"
 
 def snapshot(hearth: Hearth) -> dict:
     with hearth.database.transaction() as db:
+        now = int(hearth.clock())
         epoch = db.execute("SELECT value FROM system_meta WHERE key = 'epoch'").fetchone()[0]
         cursor = db.execute("SELECT COALESCE(MAX(sequence), 0) FROM audit").fetchone()[0]
         residents = []
+        budget_days = []
         for row in db.execute("""SELECT r.id, r.revision, d.name, d.purpose, d.daily_limit,
                              d.budget_timezone, d.letters_accept,
                              (SELECT COALESCE(MAX(revision),0) FROM memory_revisions m
@@ -39,6 +44,14 @@ def snapshot(hearth: Hearth) -> dict:
                              JOIN declarations d ON d.resident_id = r.id AND d.revision = r.revision
                              LEFT JOIN pauses p ON p.resident_id = r.id ORDER BY r.id"""):
             resident = dict(row)
+            try:
+                day = (
+                    datetime.fromtimestamp(now, ZoneInfo(row["budget_timezone"])).date().isoformat()
+                )
+            except ZoneInfoNotFoundError, ValueError:
+                # A damaged declaration must remain observable.
+                day = None
+            budget_days.append([row["id"], day])
             lifecycle = lifecycle_summary(db, row["id"])
             resident["lifecycle"] = lifecycle
             resident["operator_paused"] = lifecycle["state"] == "paused"
@@ -121,8 +134,16 @@ def snapshot(hearth: Hearth) -> dict:
                 "SELECT sequence, kind, resource_id, at FROM audit ORDER BY sequence DESC LIMIT 30"
             )
         ]
+        household = household_state(db, now)
+        # Projection freshness is separate from audit identity. Include resident-local
+        # dates even when the household rolls at another instant. Hash the household
+        # projection too: a run's pinned window can outlive a later timezone edit.
+        budget_revision = hashlib.sha256(
+            json.dumps([household, budget_days], sort_keys=True).encode()
+        ).hexdigest()
         return {
-            "household": household_state(db, int(hearth.clock())),
+            "household": household,
+            "budget_revision": budget_revision,
             "restore_hold": bool(
                 db.execute("SELECT 1 FROM system_meta WHERE key='restore_hold'").fetchone()
             ),
