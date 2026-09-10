@@ -297,6 +297,10 @@ export type Resident = InputProvenance & {
   letters_accept?: number | boolean;
   skills?: AssignedSkill[];
   skills_error?: string | null;
+  /** Whose provider login this resident's work spends, per runtime kind: `resident`
+   * for a login of its own under the data directory, `household` for the one every
+   * other resident uses. A kind this household is not configured for is absent. */
+  logins?: Record<string, string>;
 };
 export type ResidentLifecycle = {
   resident_id: string;
@@ -526,6 +530,9 @@ export type Run = InputProvenance & {
    * where the folder is inside a sandbox; a run that was not sandboxed reached the
    * host path itself. */
   mounts?: (GrantMount & { path: string })[];
+  /** Whose provider login this run spent, pinned at admission: `resident` or
+   * `household`. Absent on a run admitted before a resident could have one. */
+  login_scope?: string;
 };
 /** Which brains this household has, and what every kind a run may carry is called.
  *

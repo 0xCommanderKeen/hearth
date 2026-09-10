@@ -1072,3 +1072,66 @@ it("leaves the village still when no letter has been written", async () => {
   await screen.findByRole("img", { name: /Reader's home/ });
   expect(screen.queryByLabelText("Recent post")).toBeNull();
 });
+
+it("says whose provider login a resident's work spends, provider by provider", async () => {
+  addReader();
+  state.runtimes = {
+    ...RUNTIMES,
+    configured: ["codex_subscription", "claude_subscription"],
+  };
+  state.residents[0].logins = {
+    codex_subscription: "resident",
+    claude_subscription: "household",
+  };
+  render(<App />);
+  fireEvent.change(screen.getByLabelText("Operator token"), {
+    target: { value: "synthetic-operator-token-for-tests" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Enter Hearth/ }));
+  await screen.findByText(/^Connected/);
+  fireEvent.click(screen.getByRole("link", { name: /View resident/ }));
+  await screen.findByLabelText("Resident information");
+  const login_facts = screen.getByLabelText("Provider login");
+  expect(login_facts.textContent).toBe(
+    "Codex: its own login · Claude: the household login",
+  );
+});
+
+it("says the household login for a resident that has none of its own", async () => {
+  addReader();
+  await login();
+  expect(screen.getByLabelText("Provider login").textContent).toBe(
+    "Codex: the household login",
+  );
+});
+
+it("says which login a finished run spent", async () => {
+  window.location.hash = "#tasks";
+  addReader();
+  state.tasks = [
+    {
+      id: "task",
+      resident_id: "reader",
+      instruction: "Read the folder",
+      status: "succeeded",
+      created_at: 1,
+    },
+  ];
+  state.runs = [
+    {
+      id: "run",
+      task_id: "task",
+      resident_id: "reader",
+      status: "succeeded",
+      artifact_id: "result",
+      actual_cost: 2000,
+      usage_known: 1,
+      cancellation_requested: 0,
+      login_scope: "resident",
+    },
+  ];
+  await login(false);
+  expect(screen.getByLabelText("Login this run spent").textContent).toBe(
+    "Spent this resident's own provider login",
+  );
+});
