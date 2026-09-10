@@ -70,6 +70,30 @@ export function createCameraController(
       if (atOverview) overview();
       else projection();
     },
+    capture() {
+      const saved = {
+        position: camera.position.clone(),
+        target: controls.target.clone(),
+        zoom: camera.zoom,
+        height,
+        atOverview,
+      };
+      return () => {
+        camera.position.copy(saved.position);
+        controls.target.copy(saved.target);
+        camera.zoom = saved.zoom;
+        height = saved.height;
+        atOverview = saved.atOverview;
+        projection();
+        controls.update();
+      };
+    },
+    focus(target: Vector3) {
+      atOverview = false;
+      camera.position.add(target.clone().sub(controls.target));
+      controls.target.copy(target);
+      controls.update();
+    },
     overview,
     zoom(factor: number) {
       atOverview = false;

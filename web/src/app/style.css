@@ -1096,7 +1096,7 @@ table.ledger {
   height: min(68vh, 760px);
   min-height: 340px;
   touch-action: none;
-  background: #e4e9d6;
+  background: #cbd5c1;
 }
 .scene-canvas canvas {
   display: block;
@@ -1358,7 +1358,7 @@ form label + button {
   outline-offset: 3px;
 }
 
-main:has(.hamlet-scene) {
+main:has(.hamlet-scene:not([hidden])) {
   max-width: none;
 }
 .scene-controls button:not(:first-child) {
@@ -1429,4 +1429,90 @@ main:has(.hamlet-scene) {
   margin: 0;
   padding: 0 18px 12px;
   font-size: 13px;
+}
+
+.hamlet-scene[hidden] {
+  display: none;
+}
+.hamlet-scene {
+  position: relative;
+}
+.village-panel {
+  position: absolute;
+  top: 110px;
+  right: 18px;
+  z-index: 5;
+  width: min(380px, 44%);
+  max-height: 510px;
+  overflow-y: auto;
+  background: #fff8e9;
+  border: 1px solid #8c7859;
+  border-top: 4px solid #986447;
+  padding: 20px;
+  box-shadow: 0 12px 36px #302b2933;
+  overscroll-behavior: contain;
+}
+.village-panel h2 {
+  margin: 12px 0;
+  font-size: 30px;
+}
+.village-panel h3 {
+  font-size: 15px;
+  margin-top: 20px;
+}
+.village-panel p,
+.village-panel li,
+.village-panel dd {
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.village-panel dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #786b55;
+  margin-top: 12px;
+}
+.village-panel dd {
+  margin: 3px 0;
+}
+.village-panel nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.village-bound {
+  display: block;
+  border-top: 1px solid #dacdb6;
+  padding-top: 12px;
+  line-height: 1.6;
+}
+.village-panel:focus-visible {
+  outline: 3px solid #785728;
+  outline-offset: 2px;
+}
+.scene-directory button small {
+  display: block;
+  font-size: 10px;
+  font-weight: normal;
+  margin-top: 3px;
+}
+.village-return {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .village-panel {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-height: 55dvh;
+    padding: 18px 22px max(22px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
 }

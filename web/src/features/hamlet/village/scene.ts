@@ -11,6 +11,7 @@ const WALKS_AT_ONCE = 3;
 export type VillageScene = {
   update(residents: Resident[], letters: LetterEvent[], epoch: string): void;
   select(id: string | null): void;
+  active(visible: boolean): void;
   overview(): void;
   zoom(factor: number): void;
   rotate(direction: number): void;
@@ -83,7 +84,16 @@ export function createVillageScene(
       node.setAttribute("aria-pressed", String(id === selected));
     });
   }
+  let restoreCamera: (() => void) | null = null;
   function select(id: string | null) {
+    if (id && id !== selected) {
+      restoreCamera ??= view.capture();
+      const anchor = names.find((name) => name.id === id)?.anchor;
+      if (anchor) view.focus(anchor.clone().setY(0));
+    } else if (!id) {
+      restoreCamera?.();
+      restoreCamera = null;
+    }
     selected = id;
     highlight();
   }
@@ -273,6 +283,7 @@ export function createVillageScene(
   canvas.addEventListener("pointercancel", pointerCancel);
   canvas.addEventListener("pointerup", pick);
   const resize = new ResizeObserver(() => {
+    if (!element.clientWidth || !element.clientHeight) return;
     const width = Math.max(1, element.clientWidth);
     const height = Math.max(1, element.clientHeight);
     view.resize(width / height);
@@ -307,7 +318,7 @@ export function createVillageScene(
       walks.push({ person, from, to, started: at });
     }
   }
-  renderer.setAnimationLoop(() => {
+  const animate = () => {
     const at = performance.now();
     if (!motion.matches) open(at);
     else {
@@ -360,7 +371,8 @@ export function createVillageScene(
       node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       if (visible) occupied.push({ x, y, w, h });
     }
-  });
+  };
+  renderer.setAnimationLoop(animate);
 
   let disposed = false;
   function dispose() {
@@ -403,7 +415,7 @@ export function createVillageScene(
         allocate = createPlotAllocator(storeEpoch ?? "", storage);
         identities = undefined;
         walked.clear();
-        selected = null;
+        select(null);
       }
       const next = JSON.stringify(
         residents
@@ -416,6 +428,9 @@ export function createVillageScene(
       }
     },
     select,
+    active(visible) {
+      if (!disposed) renderer.setAnimationLoop(visible ? animate : null);
+    },
     overview: view.overview,
     zoom: view.zoom,
     rotate: view.rotate,

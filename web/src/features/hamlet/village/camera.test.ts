@@ -73,3 +73,20 @@ it("bounds zoom and returns a removed-row pan to the remaining settlement", () =
     camera.position.clone().sub(controls.target).distanceTo(offset),
   ).toBeLessThan(1e-10);
 });
+it("restores the exact pre-selection camera after focusing different homes", () => {
+  const { camera, controls, view } = setup();
+  view.bounds(new Box3(new Vector3(-20, -1, -20), new Vector3(20, 5, 20)));
+  view.zoom(1.25);
+  view.rotate(1);
+  const position = camera.position.clone(),
+    target = controls.target.clone();
+  const restore = view.capture();
+  view.focus(new Vector3(6, 0, 6));
+  expect(controls.target).toEqual(new Vector3(6, 0, 6));
+  view.focus(new Vector3(-6, 0, -6));
+  view.resize(0.5);
+  restore();
+  expect(camera.position).toEqual(position);
+  expect(controls.target).toEqual(target);
+  expect(camera.zoom).toBe(1.25);
+});

@@ -1027,3 +1027,28 @@ it("leaves the village still when no letter has been written", async () => {
   await screen.findByRole("group", { name: /Reader's home/ });
   expect(screen.queryByLabelText("Recent post")).toBeNull();
 });
+it("ignores a late linked result after navigating to another record", async () => {
+  vi.spyOn(Client.prototype, "run").mockImplementation(async (id) => ({
+    id,
+    status: "succeeded",
+    artifact_id: id,
+  }));
+  let complete!: (value: { content: string }) => void;
+  vi.spyOn(Client.prototype, "artifact").mockImplementation(async (id) =>
+    id === "older"
+      ? new Promise((resolve) => {
+          complete = resolve;
+        })
+      : { content: "Newer requested result" },
+  );
+  window.history.replaceState(null, "", "/#runs/older");
+  await login(false);
+  await waitFor(() => expect(complete).toBeTruthy());
+  act(() => {
+    window.location.hash = "#runs/newer";
+  });
+  await screen.findByText("Newer requested result");
+  await act(async () => complete({ content: "Stale older result" }));
+  expect(screen.queryByText("Stale older result")).toBeNull();
+  expect(screen.getByText("Newer requested result")).toBeTruthy();
+});

@@ -8,7 +8,10 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
 const output = fileURLToPath(
-  new URL("../docs/evidence/hamlet-plots-2026-09-09/", import.meta.url),
+  new URL(
+    "../docs/evidence/hamlet-panels-2026-09-09/regressions/",
+    import.meta.url,
+  ),
 );
 await mkdir(output, { recursive: true });
 const fixture = `
@@ -215,55 +218,131 @@ try {
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await settled();
   await page.mouse.click(target.x, target.y);
-  await page.getByRole("status").filter({hasText:"Selected: Resident 1"}).waitFor();
-  assert.equal(await page.locator('.scene-directory button[aria-pressed="true"]').textContent(), "Select Resident 1");
+  await page.getByRole("dialog", { name: "Resident 1 at home" }).waitFor();
+  assert.match(
+    await page
+      .locator('.scene-directory button[aria-pressed="true"]')
+      .textContent(),
+    /Select Resident 1/,
+  );
+  await page.getByRole("button", { name: "Close village panel" }).click();
   results.checks.push({
     name: "keyboard-refresh-roster-drag-wheel-select",
     passed: true,
   });
   // Placement is observed on the actual model roots, independent of DOM labels.
-  const positions = () => page.evaluate(() => Object.fromEntries(window.measure.scene.children.find(c => c.type === "Group").children.filter(c => c.userData.identity).map(c => [c.userData.identity,c.position.toArray()])));
+  const positions = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        window.measure.scene.children
+          .find((c) => c.type === "Group")
+          .children.filter((c) => c.userData.identity)
+          .map((c) => [c.userData.identity, c.position.toArray()]),
+      ),
+    );
   await page.evaluate(() => window.show(5));
   await settled();
-  await page.getByRole("button", {name:"Overview",exact:true}).click();
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
   await fit("desktop-five-labels");
   const five = await positions();
-  assert.equal(await page.locator('.scene-label:visible').count(), 6);
-  await page.locator('.scene-label').filter({hasText:"Resident 2"}).click();
-  assert.equal(await page.locator('.scene-directory button[aria-pressed="true"]').textContent(), "Select Resident 2");
-  await page.getByRole("group", {name:"Building directory",exact:true}).getByRole("button",{name:"Select Townhall",exact:true}).click();
-  assert.equal(await page.locator('.scene-label.selected').textContent(), "Townhall");
-  await page.evaluate(() => window.show(6,true,{residents:[...window.currentSnapshot.residents].reverse().concat({id:"arrival",name:"Arrival",presence:"unknown"})}));
+  assert.equal(await page.locator(".scene-label:visible").count(), 6);
+  await page.locator(".scene-label").filter({ hasText: "Resident 2" }).click();
+  assert.match(
+    await page
+      .locator('.scene-directory button[aria-pressed="true"]')
+      .textContent(),
+    /Select Resident 2/,
+  );
+  await page
+    .getByRole("group", { name: "Building directory", exact: true })
+    .getByRole("button", { name: "Select Townhall", exact: true })
+    .click();
+  assert.equal(
+    await page.locator(".scene-label.selected").textContent(),
+    "Townhall",
+  );
+  await page.evaluate(() =>
+    window.show(6, true, {
+      residents: [...window.currentSnapshot.residents]
+        .reverse()
+        .concat({ id: "arrival", name: "Arrival", presence: "unknown" }),
+    }),
+  );
   await settled();
-  for(const [id,pos] of Object.entries(five)) assert.deepEqual((await positions())[id],pos);
-  await page.evaluate(() => window.show(6,true,{residents:window.currentSnapshot.residents.map(r => r.id === "synthetic-1" ? {...r,lifecycle:{state:"archived"},unresolved_runs:2}:r)}));
+  for (const [id, pos] of Object.entries(five))
+    assert.deepEqual((await positions())[id], pos);
+  await page.evaluate(() =>
+    window.show(6, true, {
+      residents: window.currentSnapshot.residents.map((r) =>
+        r.id === "synthetic-1"
+          ? { ...r, lifecycle: { state: "archived" }, unresolved_runs: 2 }
+          : r,
+      ),
+    }),
+  );
   await settled();
-  for(const [id,pos] of Object.entries(five)) if(id !== "#residents/synthetic-1") assert.deepEqual((await positions())[id],pos);
+  for (const [id, pos] of Object.entries(five))
+    if (id !== "#residents/synthetic-1")
+      assert.deepEqual((await positions())[id], pos);
   await page.getByText(/Accounting holds remain/).waitFor();
-  assert.equal(await page.getByRole("link",{name:"Archived residents & history →"}).count(),1);
+  assert.equal(
+    await page
+      .getByRole("link", { name: "Archived residents & history →" })
+      .count(),
+    1,
+  );
+  await page.getByRole("button", { name: "Close village panel" }).click();
   await page.reload();
   await ready();
-  for(const [id,pos] of Object.entries(await positions())) assert.deepEqual(pos,five[id]);
-  for(const count of [25,100]) {
-    await page.evaluate(count => window.show(count),count);
-    await page.getByRole("button",{name:"Overview",exact:true}).click();
-    await fit("desktop-"+count+"-plots");
-    await page.setViewportSize({width:390,height:844});
-    await fit("phone-"+count+"-plots");
-    assert.equal(await page.locator('.scene-directory button').count(),count+1);
-    assert(await page.locator('.scene-label:visible').count() > 0);
-    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await page.setViewportSize({width:1440,height:1050});
+  for (const [id, pos] of Object.entries(await positions()))
+    assert.deepEqual(pos, five[id]);
+  for (const count of [25, 100]) {
+    await page.evaluate((count) => window.show(count), count);
+    await page.getByRole("button", { name: "Overview", exact: true }).click();
+    await fit("desktop-" + count + "-plots");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await fit("phone-" + count + "-plots");
+    assert.equal(
+      await page.locator(".scene-directory button").count(),
+      count + 1,
+    );
+    assert((await page.locator(".scene-label:visible").count()) > 0);
+    assert(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    await page.setViewportSize({ width: 1440, height: 1050 });
   }
-  await page.evaluate(() => window.show(5,true,{epoch:"other-store",residents:[{id:"fresh",name:"Fresh home",presence:"unknown"}]}));
+  await page.evaluate(() =>
+    window.show(5, true, {
+      epoch: "other-store",
+      residents: [{ id: "fresh", name: "Fresh home", presence: "unknown" }],
+    }),
+  );
   await settled();
-  assert.deepEqual((await positions())["#residents/fresh"],five["#residents/synthetic-0"]);
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("hearth.hamlet.plots.v1")).epoch),"other-store");
-  await page.evaluate(() => localStorage.setItem("hearth.hamlet.plots.v1","{corrupt"));
-  await page.reload(); await ready();
-  await page.evaluate(() => window.show(5)); await settled();
-  assert.deepEqual((await positions())["#residents/synthetic-4"],[0,0,6]);
-  results.checks.push({name:"stable-plots-reload-archive-epoch-corrupt-label-selection-5-25-100",passed:true});
+  assert.deepEqual(
+    (await positions())["#residents/fresh"],
+    five["#residents/synthetic-0"],
+  );
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("hearth.hamlet.plots.v1")).epoch,
+    ),
+    "other-store",
+  );
+  await page.evaluate(() =>
+    localStorage.setItem("hearth.hamlet.plots.v1", "{corrupt"),
+  );
+  await page.reload();
+  await ready();
+  await page.evaluate(() => window.show(5));
+  await settled();
+  assert.deepEqual((await positions())["#residents/synthetic-4"], [0, 0, 6]);
+  results.checks.push({
+    name: "stable-plots-reload-archive-epoch-corrupt-label-selection-5-25-100",
+    passed: true,
+  });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: "Rotate left", exact: true }).click();
   await settled();
@@ -299,7 +378,9 @@ try {
   );
   await page.getByText(/3D is unavailable/).waitFor();
   assert.equal(
-    await page.getByRole("link", { name: /Resident 1 · unknown/ }).count(),
+    await page
+      .getByRole("button", { name: /Select Resident 1.*unknown/ })
+      .count(),
     1,
   );
   assert.equal(await page.locator("canvas").count(), 0);
@@ -317,7 +398,9 @@ try {
   await failed.goto("http://127.0.0.1:5193/__hamlet_check");
   await failed.getByText(/3D is unavailable/).waitFor();
   assert.equal(
-    await failed.getByRole("link", { name: /Resident 1 · unknown/ }).count(),
+    await failed
+      .getByRole("button", { name: /Select Resident 1.*unknown/ })
+      .count(),
     1,
   );
   results.checks.push({
