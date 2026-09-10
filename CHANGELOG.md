@@ -2,6 +2,11 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet labels show recorded status and disconnection in text and colour. Finite
+  letter journeys follow the rendered streets from actual doors; initial, reset and
+  reconnect history stays in timestamped Recent post, with bounded deduplication and
+  no travel for hidden views, missing homes or reduced motion.
+
 - Hamlet homes and Townhall open furnished cutaway rooms whose desks, shelves and
   letter cabinets reach existing records, with equivalent keyboard links. Room and
   village context survive record visits and snapshot updates; archive and graphics

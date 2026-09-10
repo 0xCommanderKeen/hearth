@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "./App";
+import * as clientModule from "../shared/client";
 import { Client, RequestError, type Snapshot } from "../shared/client";
 
 let state: Snapshot;
@@ -1016,8 +1017,8 @@ it("walks only the letters the snapshot reported, both ends named", async () => 
   // The operator has no home; the letter it wrote leaves from Townhall.
   expect(steps[0].textContent).toContain("Reader");
   expect(steps[0].textContent).toContain("Townhall");
-  expect(steps[0].textContent).toContain("carried the answer");
-  expect(steps[1].textContent).toContain("carried a letter");
+  expect(steps[0].textContent).toContain("answered a letter");
+  expect(steps[1].textContent).toContain("sent a letter");
 });
 
 it("leaves the village still when no letter has been written", async () => {
@@ -1051,4 +1052,54 @@ it("ignores a late linked result after navigating to another record", async () =
   await act(async () => complete({ content: "Stale older result" }));
   expect(screen.queryByText("Stale older result")).toBeNull();
   expect(screen.getByText("Newer requested result")).toBeTruthy();
+});
+
+it("keeps a newer command refresh when its existing stream delivers a delayed frame, but accepts an explicit reset", async () => {
+  const delivery = new WeakMap<Snapshot, clientModule.StreamBaseline>();
+  const observedBaseline = clientModule.streamBaseline;
+  vi.spyOn(clientModule, "streamBaseline").mockImplementation(
+    (s) => delivery.get(s) ?? observedBaseline(s),
+  );
+  await login(false);
+  const record = (cursor: number, name: string): Snapshot => ({
+    ...state,
+    cursor,
+    residents: [
+      {
+        id: "reader",
+        name,
+        presence: "ready",
+        purpose: "Synthetic",
+        daily_limit: 1000,
+      } as Snapshot["residents"][number],
+    ],
+  });
+  const initial = record(1, "Initial");
+  delivery.set(initial, initial);
+  act(() => publish(initial));
+  const refresh = record(10, "Current refresh");
+  act(() => publish(refresh));
+  expect(screen.getByText("Current refresh")).toBeTruthy();
+  const delayed = record(9, "Stale stream");
+  delivery.set(delayed, initial);
+  act(() => publish(delayed));
+  expect(screen.queryByText("Stale stream")).toBeNull();
+  expect(screen.getByText("Current refresh")).toBeTruthy();
+  const reset = record(2, "Reset baseline");
+  delivery.set(reset, reset);
+  act(() => publish(reset));
+  expect(screen.getByText("Reset baseline")).toBeTruthy();
+  const reconnect = record(3, "Reconnect baseline");
+  delivery.set(reconnect, reconnect);
+  const batchedRefresh = record(4, "Batched refresh");
+  act(() => {
+    publish(reconnect);
+    publish(batchedRefresh);
+  });
+  expect(screen.getByText("Batched refresh")).toBeTruthy();
+  expect(observedBaseline(batchedRefresh)).toBe(reconnect);
+  const following = record(5, "Following stream");
+  delivery.set(following, reconnect);
+  act(() => publish(following));
+  expect(screen.getByText("Following stream")).toBeTruthy();
 });

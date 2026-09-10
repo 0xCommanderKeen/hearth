@@ -2,14 +2,22 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createArtKit } from "./art.js";
 import { createCameraController, ZOOM_LIMITS } from "./camera";
-import { createPlotAllocator, type Plot } from "./layout";
+import {
+  createPlotAllocator,
+  streetNetwork,
+  routePosition,
+  type Point,
+  type Plot,
+} from "./layout";
 import { selectionGesture } from "./gesture";
-import type { LetterEvent, Resident } from "../../../shared/client";
+import { createActivity, letterKey, residentStatus } from "./activity";
+import { streamBaseline } from "../../../shared/client";
+import type { Snapshot, Resident } from "../../../shared/client";
 
 const WALK_MS = 4200;
 const WALKS_AT_ONCE = 3;
 export type VillageScene = {
-  update(residents: Resident[], letters: LetterEvent[], epoch: string): void;
+  update(snapshot: Snapshot, connected: boolean, visible: boolean): void;
   select(id: string | null): void;
   active(visible: boolean): void;
   overview(): void;
@@ -60,9 +68,9 @@ export function createVillageScene(
   const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let village = new THREE.Group();
   let targets: THREE.Object3D[] = [];
-  const doors = new Map<string, THREE.Vector3>();
-  let letters: LetterEvent[] = [];
-  const walked = new Set<string>();
+  const activity = createActivity();
+  let network = streetNetwork([]);
+  let visible = true;
   let identities: string | undefined;
   let epoch: string | undefined;
   let allocate = createPlotAllocator("");
@@ -104,8 +112,7 @@ export function createVillageScene(
 
   let releaseModels = () => {};
   function rebuild(residents: Resident[]) {
-    walks.forEach((walk) => scene.remove(walk.person));
-    walks.length = 0;
+    clearWalks();
     scene.remove(village);
     releaseModels();
     village = new THREE.Group();
@@ -138,10 +145,10 @@ export function createVillageScene(
       path.receiveShadow = true;
       village.add(path);
     }
-    // Every front door meets its row street; the north/south lane lies between plots.
-    for (const z of new Set(all.map((p) => p.z)))
-      street((minX + maxX) / 2, z + 3, maxX - minX - 2, 1.2);
-    street(3, (minZ + maxZ) / 2, 1.2, maxZ - minZ - 2);
+    network = streetNetwork(plots);
+    network.streets.forEach(({ x, z, width, depth }) =>
+      street(x, z, width, depth),
+    );
     const ringGeometry = new THREE.RingGeometry(2.35, 2.55, 48);
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: "#fff3b1",
@@ -186,15 +193,12 @@ export function createVillageScene(
       };
       labels.appendChild(node);
       names.push({ id: href, node, anchor: new THREE.Vector3(x, 3.6, z) });
-      street(x, z + 2.35, 0.8, 1.3);
       targets.push(object);
       village.add(object);
     }
     // Where a letter is handed over. The operator has no home in the village, so a
     // letter it wrote leaves from Townhall — the one door it actually stands at.
-    doors.clear();
     building("townhall", "lodge", 0, -6, "#townhall", "Townhall");
-    doors.set("operator", new THREE.Vector3(0, 0, -6 + 2.2));
     const square = kit.building({
       id: "square",
       kind: "square",
@@ -218,7 +222,6 @@ export function createVillageScene(
       person.position.set(x, 0, z + 2.2);
       // People and landscaping are decorative, never raycast selection targets.
       village.add(person);
-      doors.set(id, new THREE.Vector3(x, 0, z + 2.2));
     });
     [
       [minX + 1, minZ + 1],
@@ -290,43 +293,31 @@ export function createVillageScene(
     renderer.setSize(width, height);
   });
   resize.observe(element);
-  // One walk per letter event that has two doors in this village. Nothing here is
-  // scheduled, looped or embellished: the village walks what the snapshot reported and
-  // then stands still, so an empty post is an empty village rather than a busy one.
-  const walks: {
-    person: THREE.Group;
-    from: THREE.Vector3;
-    to: THREE.Vector3;
-    started: number;
-  }[] = [];
-  function open(at: number) {
-    // Oldest first, so a chain is walked in the order it happened.
-    for (let index = letters.length - 1; index >= 0; index -= 1) {
-      if (walks.length >= WALKS_AT_ONCE) return;
-      const event = letters[index];
-      const key = `${event.kind}:${event.task_id}`;
-      if (walked.has(key)) continue;
-      const from = doors.get(event.from_resident_id ?? "operator");
-      const to = doors.get(event.to_resident_id ?? "operator");
-      walked.add(key);
-      // A resident that has left the village has no door to walk to. The letter still
-      // happened and is still listed below; it is simply not drawn.
-      if (!from || !to || from === to) continue;
-      const person = kit.agent({ id: key });
-      person.position.copy(from);
-      scene.add(person);
-      walks.push({ person, from, to, started: at });
-    }
+  const walks: { person: THREE.Group; path: Point[]; started: number }[] = [];
+  function clearWalks() {
+    walks.forEach((walk) => scene.remove(walk.person));
+    walks.length = 0;
+    activity.clear();
   }
   const animate = () => {
     const at = performance.now();
-    if (!motion.matches) open(at);
-    else {
-      walks.forEach((walk) => scene.remove(walk.person));
-      walks.length = 0;
-      letters.forEach((event) => walked.add(`${event.kind}:${event.task_id}`));
-    }
-    for (let index = walks.length - 1; index >= 0; index -= 1) {
+    if (motion.matches || !visible) clearWalks();
+    else
+      while (walks.length < WALKS_AT_ONCE) {
+        const event = activity.take();
+        if (!event) break;
+        const path = network.route(
+          event.from_resident_id,
+          event.to_resident_id,
+        );
+        if (!path) continue;
+        const person = kit.agent({ id: letterKey(event) });
+        person.userData.letter = letterKey(event);
+        person.position.set(path[0].x, 0, path[0].z);
+        scene.add(person);
+        walks.push({ person, path, started: at });
+      }
+    for (let index = walks.length - 1; index >= 0; index--) {
       const walk = walks[index];
       const travelled = (at - walk.started) / WALK_MS;
       if (travelled >= 1) {
@@ -334,8 +325,10 @@ export function createVillageScene(
         walks.splice(index, 1);
         continue;
       }
-      walk.person.position.lerpVectors(walk.from, walk.to, travelled);
-      walk.person.lookAt(walk.to.x, walk.person.position.y, walk.to.z);
+      const p = routePosition(walk.path, travelled),
+        ahead = routePosition(walk.path, Math.min(1, travelled + 0.001));
+      walk.person.position.set(p.x, 0, p.z);
+      walk.person.lookAt(ahead.x, 0, ahead.z);
     }
     controls.update();
     renderer.render(scene, camera);
@@ -401,9 +394,13 @@ export function createVillageScene(
   }
   canvas.addEventListener("webglcontextlost", lost);
   return {
-    update(residents, post, storeEpoch) {
+    update(snapshot, connected, isVisible) {
       if (disposed) return;
-      letters = post;
+      const residents = snapshot.residents.filter(
+        (r) => r.lifecycle?.state !== "archived",
+      );
+      const storeEpoch = snapshot.epoch;
+      visible = isVisible;
       if (epoch !== storeEpoch) {
         epoch = storeEpoch;
         let storage: Storage | undefined;
@@ -414,7 +411,6 @@ export function createVillageScene(
         }
         allocate = createPlotAllocator(storeEpoch ?? "", storage);
         identities = undefined;
-        walked.clear();
         select(null);
       }
       const next = JSON.stringify(
@@ -426,9 +422,43 @@ export function createVillageScene(
         rebuild(residents);
         identities = next;
       }
+      const statuses = new Map(
+        residents.map((r) => [
+          `#residents/${encodeURIComponent(r.id)}`,
+          { name: r.name, ...residentStatus(r, connected) },
+        ]),
+      );
+      names.forEach(({ id, node }) => {
+        const status = statuses.get(id);
+        if (!status) return;
+        node.replaceChildren(document.createTextNode(status.name));
+        const label = document.createElement("small");
+        label.textContent = status.text;
+        node.appendChild(label);
+        node.dataset.status = status.tone;
+        node.title = `${status.name} · ${status.text}`;
+        node.setAttribute(
+          "aria-label",
+          `Select ${status.name} · ${status.text}`,
+        );
+      });
+      if (
+        activity.observe(
+          snapshot,
+          connected,
+          visible,
+          motion.matches,
+          streamBaseline(snapshot),
+        )
+      ) {
+        walks.forEach((walk) => scene.remove(walk.person));
+        walks.length = 0;
+      }
     },
     select,
-    active(visible) {
+    active(isVisible) {
+      visible = isVisible;
+      if (!visible) clearWalks();
       if (!disposed) renderer.setAnimationLoop(visible ? animate : null);
     },
     overview: view.overview,
