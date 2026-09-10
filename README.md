@@ -52,7 +52,7 @@ uv run uvicorn hearth.app:from_env --factory --host 127.0.0.1 --port 8766
 
 Open `http://127.0.0.1:8766` and enter that token. Hearth starts empty and ships no
 sample data: create a resident, assign it a task, and open its summary. The
-credential stays in browser memory for the session.
+credential is remembered in this browser across restarts until you select Lock.
 
 The Claude subscription is configured beside it, with `HEARTH_CLAUDE_BINARY` pointing
 at the pinned Claude Code CLI and `HEARTH_CLAUDE_CONFIG_DIR` at its own logged-in

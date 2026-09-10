@@ -36,18 +36,19 @@ import {
   runtimeNames,
 } from "../shared/runtimes";
 
-const SESSION_KEY = "hearth.operator-token";
+const TOKEN_KEY = "hearth.operator-token";
+// Remembered across browser restarts on this machine; Lock clears it.
 function savedToken(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY);
+    return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
 }
 function saveToken(value: string | null) {
   try {
-    if (value === null) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, value);
+    if (value === null) localStorage.removeItem(TOKEN_KEY);
+    else localStorage.setItem(TOKEN_KEY, value);
   } catch {
     /* Storage may be disabled; the current login still works. */
   }
@@ -628,8 +629,8 @@ export function App() {
             <span className="eyebrow">Welcome home</span>
             <h2>Open the gate</h2>
             <p>
-              Enter your local operator token to open Hearth. This tab stays
-              signed in across refreshes until you select Lock or close it.
+              Enter your local operator token to open Hearth. This browser stays
+              signed in across restarts until you select Lock.
             </p>
             <form onSubmit={login}>
               <label htmlFor="token">Operator token</label>

@@ -21,8 +21,8 @@ usage keeps new admission paused. Every terminal run is recorded in the inbox, w
 Hearth does not forward anywhere yet.
 
 The local control password is unrelated to Codex authentication. A successful login
-is remembered in this browser tab across refreshes; Lock or closing the tab clears
-it. The saved token is revalidated by the server after refresh. Expired or
+is remembered in this browser across restarts until you select Lock. The saved
+token is revalidated by the server when Hearth opens; a rejection clears it. Expired or
 unavailable subscription access fails visibly; no model or billing fallback is
 selected. See [the execution decision](adr/0008-native-subscription-demo.md) for
 boundaries and remaining recovery limits.

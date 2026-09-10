@@ -2,6 +2,8 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Remember the operator token across browser restarts; Lock and server rejection
+  clear it, and the login screen and setup docs describe the same behavior (#151).
 - Preserve the mock-removal plan as history, linking its delivered epic, migration
   decisions and current per-resident runtime architecture (#150).
 - Memory-conflict guidance defers updates through the journal to a later run, preserving
