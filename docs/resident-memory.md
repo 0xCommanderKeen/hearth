@@ -100,6 +100,13 @@ grant permits when it also holds one:
   `expected_revision` and `operation_id`; the stated resident is checked against the run.
 - `hearth_journal_write` writes this run's [journal entry](resident-journal.md).
 
+After `revision_conflict`, defer the memory update to a later run. Reading again in
+this run returns the same admission-pinned note, so it cannot reveal the human edit.
+Record the deferred fact and conflict in the run's journal entry, then reconsider it
+against the next run's newly pinned memory before saving. Never guess a revision or
+overwrite blindly. An uncertain reply is different: retain `operation_id` and identical
+arguments to recover the original receipt.
+
 The tools are absent from the declared tool set when the flag is false, and a call that
 arrives anyway is refused with `memory_not_writable`. Because the offered set differs,
 the pinned `tools_sha256` differs too: the tool schemas a run may use are fixed at the
@@ -113,7 +120,8 @@ invented entry. Karen carries it, and so does a resident provisioned with writab
 memory when the library holds it as an active revision and the requested set leaves room
 inside both assignment bounds. A request that leaves no room, or an etiquette left as a
 draft by an operator revising it, gets its resident without the skill rather than no
-resident at all.
+resident at all. The bundled wording seeds new library entries; existing skill revisions
+and assignments remain operator-managed and are not rewritten on upgrade.
 
 ## The transport a writable resident reaches
 

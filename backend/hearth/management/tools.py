@@ -115,7 +115,9 @@ MEMORY_TOOLS = {
         MemorySave,
         "Replace your own resident's memory note with the complete new text, supplying the "
         "revision you last read as expected_revision. A concurrent human edit wins: a conflict "
-        "means read the current note again and merge, never overwrite blindly. Retain "
+        "means defer the update to a later run. memory_read stays admission-pinned and cannot "
+        "show that edit. Record the deferred fact and conflict in your journal entry for "
+        "reconsideration next run; never guess a revision or overwrite blindly. Retain "
         "operation_id and identical arguments for uncertain retries.",
     ),
     "hearth_journal_write": (
