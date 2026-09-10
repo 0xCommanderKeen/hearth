@@ -24,6 +24,8 @@ from hearth.work.letters import (
 )
 from hearth.work.service import ACTIVE_RUNS, Hearth, configured_runtime, default_runtime
 
+TASK_PREVIEW_CHARS = 240
+
 # A run priced under a live runtime's own schedule is an API-equivalent estimate of a
 # subscription. Anything else with a price is history from a runtime that only pretended.
 LIVE_KINDS = "(" + ", ".join(repr(kind) for kind in sorted(live_kinds())) + ")"
@@ -90,6 +92,8 @@ def snapshot(hearth: Hearth) -> dict:
             )
         ]
         for task in tasks:
+            task["instruction_truncated"] = len(task["instruction"]) > TASK_PREVIEW_CHARS
+            task["instruction"] = task["instruction"][:TASK_PREVIEW_CHARS]
             # A letter says which chain it belongs to; an ordinary task is its own chain
             # and carries none, so the operator sees a breadcrumb only where one exists.
             task["lineage"] = task_lineage(db, task["id"], names)

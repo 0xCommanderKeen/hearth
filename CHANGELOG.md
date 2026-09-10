@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Activity snapshots carry marked task previews with full instructions available on demand;
+  bounded SSE frames survive combined network chunks and Unicode reconnects (#198).
+
 - Townhall refreshes household and resident budget windows over HTTP and SSE at local
   rollover without an audit mutation, including daylight-saving days (#197).
 

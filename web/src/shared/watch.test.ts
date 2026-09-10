@@ -122,3 +122,140 @@ it("delivers budget rollover at the same audit cursor and sends its initial budg
   expect(delivered.map((s) => s.cursor)).toEqual([10, 10]);
   expect(streamBaseline(delivered[0])).toBe(streamBaseline(delivered[1]));
 });
+
+it("accepts multiple bounded frames in a chunk larger than the frame limit", async () => {
+  const client = new Client("synthetic");
+  const abort = new AbortController();
+  const delivered: number[] = [];
+  vi.spyOn(client, "state").mockResolvedValue(state(0));
+  const frames = [1, 2, 3]
+    .map(
+      (cursor) =>
+        `data: ${JSON.stringify({ ...state(cursor), padding: "a".repeat(900_000) })}\n\n`,
+    )
+    .join("");
+  expect(frames.length).toBeGreaterThan(2_000_000);
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(frames));
+        },
+      }),
+    ),
+  );
+  await client.watch(
+    abort.signal,
+    (s) => {
+      delivered.push(s.cursor);
+      if (s.cursor === 3) abort.abort();
+    },
+    (connected) => {
+      if (!connected) abort.abort();
+    },
+  );
+  expect(delivered).toEqual([0, 1, 2, 3]);
+});
+
+it.each([false, true])(
+  "refuses an oversized %s completed frame even across chunks",
+  async (complete) => {
+    const client = new Client("synthetic");
+    const abort = new AbortController();
+    const delivered: number[] = [];
+    vi.spyOn(client, "state").mockResolvedValue(state(0));
+    const frame = `data: ${JSON.stringify({ ...state(1), padding: "a".repeat(2_000_000) })}${complete ? "\n\n" : ""}`;
+    const cancel = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            const bytes = new TextEncoder().encode(frame);
+            controller.enqueue(bytes.slice(0, 1_000_000));
+            controller.enqueue(bytes.slice(1_000_000));
+          },
+          cancel,
+        }),
+      ),
+    );
+    await client.watch(
+      abort.signal,
+      (s) => delivered.push(s.cursor),
+      (connected) => {
+        if (!connected) abort.abort();
+      },
+    );
+    expect(delivered).toEqual([0]);
+    expect(cancel).toHaveBeenCalledOnce();
+  },
+);
+
+it("preserves Unicode and frame separators fragmented one byte at a time", async () => {
+  const client = new Client("synthetic");
+  const abort = new AbortController();
+  const delivered: Snapshot[] = [];
+  vi.spyOn(client, "state").mockResolvedValue(state(0));
+  const next = {
+    ...state(1),
+    tasks: [
+      {
+        id: "unicode",
+        instruction: '🦔漢\nquote"',
+        resident_id: "reader",
+        status: "queued",
+        created_at: 1,
+      },
+    ],
+  };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          const bytes = new TextEncoder().encode(
+            `: keepalive\n\nevent: snapshot\ndata: ${JSON.stringify(next)}\n\n`,
+          );
+          for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+        },
+      }),
+    ),
+  );
+  await client.watch(
+    abort.signal,
+    (s) => {
+      delivered.push(s);
+      if (s.cursor === 1) abort.abort();
+    },
+    () => {},
+  );
+  expect(delivered[1]).toEqual(next);
+});
+
+it("accepts a frame exactly at the bound when its final delimiter is split", async () => {
+  const client = new Client("synthetic");
+  const abort = new AbortController();
+  const delivered: number[] = [];
+  vi.spyOn(client, "state").mockResolvedValue(state(0));
+  const prefix = `data: ${JSON.stringify(state(1))}\n: `;
+  const frame = prefix + "a".repeat(2_000_000 - prefix.length);
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(frame + "\n"));
+          controller.enqueue(new TextEncoder().encode("\n"));
+        },
+      }),
+    ),
+  );
+  await client.watch(
+    abort.signal,
+    (s) => {
+      delivered.push(s.cursor);
+      if (s.cursor === 1) abort.abort();
+    },
+    (connected) => {
+      if (!connected) abort.abort();
+    },
+  );
+  expect(delivered).toEqual([0, 1]);
+});
