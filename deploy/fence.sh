@@ -51,6 +51,24 @@ SUBNET=${HEARTH_EGRESS_SUBNET:-172.31.240.0/24}
 RESOLVER=${HEARTH_EGRESS_RESOLVER:-}
 PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
 
+# Both values are spliced into an argument list, so they are held to a shape first.
+# Nothing a resident says reaches here -- these are the operator's own `.env` -- but a
+# typo that silently became a different rule would be a fence nobody could read back.
+case "$SUBNET" in
+[0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) ;;
+*)
+    echo "HEARTH_EGRESS_SUBNET must be an IPv4 network, e.g. 172.31.240.0/24" >&2
+    exit 2
+    ;;
+esac
+case "${RESOLVER:-0.0.0.0}" in
+[0-9]*.[0-9]*.[0-9]*.[0-9]*) ;;
+*)
+    echo "HEARTH_EGRESS_RESOLVER must be an IPv4 address, or unset" >&2
+    exit 2
+    ;;
+esac
+
 # Docker's own chains are in whichever iptables variant Docker used, and a host may
 # have both. The one that has `DOCKER-USER` is the one that is live.
 iptables=""
