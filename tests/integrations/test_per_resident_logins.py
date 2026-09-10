@@ -17,7 +17,7 @@ from hearth.integrations.codex.subscription import KIND, CodexLiveRuntime
 from hearth.integrations.codex.subscription import worker as codex_worker
 from hearth.integrations.logins import Logins
 from hearth.residents.memory import Memory
-from hearth.residents.models import Declaration
+from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
@@ -234,7 +234,7 @@ def test_a_lapsed_resident_login_is_named_at_start_and_on_the_health_answer(tmp_
             headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
         ).json()
         # The one that works is not named; the one that does not is.
-        assert health["login"] == {"resident_lapsed": lapsed}
+        assert health["login"] == {"resident_lapsed": lapsed, "resident_unknown": []}
         # Nothing about a login reaches the open liveness path.
         assert "login" not in client.get("/health").json()
         # And it is asked afresh: the operator finishes the login and asks again.
@@ -243,7 +243,7 @@ def test_a_lapsed_resident_login_is_named_at_start_and_on_the_health_answer(tmp_
             "/api/health",
             headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
         ).json()
-        assert health["login"] == {"resident_lapsed": []}
+        assert health["login"] == {"resident_lapsed": [], "resident_unknown": []}
 
 
 # -- what the operator's own command says ---------------------------------
@@ -347,3 +347,72 @@ def test_a_household_run_is_never_held_by_a_resident_login_that_is_out(tmp_path)
     working = submit(hearth, "reader")
     executor.step()
     assert hearth.run(working.id).status == "succeeded"
+
+
+def test_a_held_run_says_why_it_is_waiting_once_and_not_twice_a_second(tmp_path):
+    """A run sitting at `starting` for a reason nobody wrote down is unreadable."""
+    seed_login(tmp_path, "karen")
+    hearth, executor = held_household(tmp_path, lapsed={"karen"})
+    held = submit(hearth, "karen")
+    executor.step()
+    executor.step()
+    executor.step()
+    waiting = [fact for fact in hearth.audit() if fact["kind"] == "run.waiting"]
+    assert len(waiting) == 1
+    assert waiting[0]["resource_id"] == held.id
+    assert waiting[0]["detail"]["reason"] == "login_required"
+    assert waiting[0]["detail"]["resident_id"] == "karen"
+
+
+def test_a_login_taken_away_between_the_gate_and_the_launch_never_ends_the_pass(tmp_path):
+    """The narrow race: the login was there when the run was gated and is gone now.
+
+    The launch intent is already recorded, so this run cannot be held any longer -- but
+    one resident's race must not stop every other resident's step.
+    """
+    directory = seed_login(tmp_path, "karen")
+    hearth, executor = held_household(tmp_path, lapsed=set())
+    raced = submit(hearth, "karen")
+    working = submit(hearth, "reader")
+    runtime = executor.runtimes[KIND]
+    started = runtime.start
+
+    def vanishing(run_id, instruction):
+        if run_id == raced.id:
+            (directory / "auth.json").unlink()
+            directory.rmdir()
+            raise Refused("codex_subscription_login_required")
+        return started(run_id, instruction)
+
+    runtime.start = vanishing
+    executor.step()
+    # The raced run is visibly interrupted with nothing spent, and its housemate ran.
+    assert hearth.run(raced.id).status == "interrupted"
+    assert hearth.run(working.id).status == "succeeded"
+
+
+def test_the_credentials_command_asks_the_way_the_sessions_will_be_asked(tmp_path, monkeypatch):
+    """On a burrow that sandboxes its runs, a Keychain-backed login is not a login.
+
+    The CLI on this host would answer `loggedIn: true` for that directory and every run
+    on it would still be held, so the command has to ask the question the sandbox asks.
+    """
+    import sys
+
+    from hearth.__main__ import credentials
+    from hearth.integrations.claude.config import KIND as CLAUDE_KIND
+
+    binary = tmp_path / "claude"
+    binary.write_text(
+        f"#!{sys.executable}\nimport json, sys\n"
+        "print(json.dumps({'loggedIn': True, 'authMethod': 'claude.ai'}))\n"
+    )
+    binary.chmod(0o700)
+    monkeypatch.setenv("HEARTH_CLAUDE_BINARY", str(binary))
+    # A configuration directory with no credential file in it: a Keychain login.
+    (tmp_path / "credentials" / "karen" / CLAUDE_KIND).mkdir(parents=True)
+
+    monkeypatch.delenv("HEARTH_SANDBOX", raising=False)
+    assert credentials(tmp_path)[0]["logged_in"] is True
+    monkeypatch.setenv("HEARTH_SANDBOX", "container")
+    assert credentials(tmp_path)[0]["logged_in"] is False

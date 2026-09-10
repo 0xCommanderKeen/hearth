@@ -379,16 +379,32 @@ pinned `2.1.263` on a throwaway directory: the first `auth status --json` answer
 a `backups/` behind; stamped before the probe, every answer would look stale the moment
 it was given, and three asks in a row would have started three CLIs instead of one.
 This is also the reason the *session* gets a tmpfs rather than the household's folder
-(measurement 12).
+(measurement 12). For the same reason, every path that asks -- an operator's survey as
+much as the executor's own question -- writes what it heard into the one memory, so a
+`/api/health` poll refreshes the executor's answer instead of spoiling it.
+
+The probe runs inside the executor's own pass, under its lock, so the pass does wait for
+it: one probe of a tenth of a second, at most one a minute per held resident, and up to
+`PROBE_TIMEOUT` (30 s) for a CLI that hangs. That is the cost of not launching a session
+on a login nobody could vouch for. What a held resident does *not* do is hold anybody
+else's run: the pass goes on to every other resident.
 
 **Where an operator sees it.** `GET /api/health` names every lapsed one under
 `login.resident_lapsed` (probed afresh on each ask, behind the operator's token; nothing
-about a login reaches the open `/health`). Each is audited once per start as
-`login.resident_lapsed`. Townhall's resident view says, provider by provider, whether
-that resident is on its own login or the household's, and a finished run says which it
-spent. With no server running, `python -m hearth credentials --data <dir>` lists them:
-resident, kind, path and `logged_in` -- `null` where this host has no pinned binary to
-ask with, because a login nobody probed has not lapsed.
+about a login reaches the open `/health`). Beside it, `login.resident_unknown` names the
+ones this instance could not get an answer about at all -- a provider whose CLI would not
+start has not told anybody a login lapsed, and sending an operator to run a login flow
+they do not need is a worse answer than saying nothing is known. Each *lapsed* one is
+audited once per start as `login.resident_lapsed`; a run held for a login is audited once
+per process as `run.waiting`, beside the run, because a run sitting at `starting` for a
+reason nobody wrote down is unreadable. Townhall's resident view says, provider by
+provider, whether that resident is on its own login or the household's, and a finished
+run says which it spent. With no server running,
+`python -m hearth credentials --data <dir>` lists them: resident, kind, path and
+`logged_in` -- `null` where this host has no pinned binary to ask with, because a login
+nobody probed has not lapsed. It reads `HEARTH_SANDBOX` for the same reason the server
+does, so on a burrow that sandboxes its runs it asks the stricter question the sessions
+will be asked rather than the one this host would answer.
 
 **A login never travels in a bundle** (ADR 0010): not the credential, not the directory,
 not even the fact that the exporting household gave that resident one. An imported
@@ -676,6 +692,10 @@ session now that the adapter speaks in placements.
   those tests are synthetic and no provider is reached. Nobody but the account holder
   can seed a second real login, so the two-subscription run waits on the same person the
   Claude journey does.
+- A login taken away in the moment between a run being gated and being launched is not
+  held for the operator. The launch intent is already recorded by then, so that run is
+  interrupted instead -- visibly, with nothing spent, and without ending the pass for
+  any other resident. It is the same narrow shape every start-time refusal has.
 - Codex's own lapse detection is the credential file and nothing more. `codex login
   status` would say more and Hearth does not ask it: its answer names the account. So a
   Codex login whose token has expired while its `auth.json` is still on disk reads as

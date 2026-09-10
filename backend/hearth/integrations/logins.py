@@ -210,9 +210,15 @@ class Logins:
     def survey(self) -> list[dict]:
         """Every resident login on this host and whether it is logged in, probed now.
 
-        `logged_in` is `None` for a kind this process cannot ask -- an operator command
-        run without that provider's binary in its environment. Not knowing is said, not
-        rounded to a "no": a login nobody probed has not lapsed.
+        `logged_in` is `None` where this process could not ask -- a kind with no probe
+        here, or a provider that refused to answer. Not knowing is said, not rounded to
+        a "no": a login nobody probed has not lapsed, and an operator told that one had
+        would go looking for a login flow to run again over a CLI that was missing.
+
+        Asking here also *refreshes* what the executor remembers rather than spoiling
+        it: the Claude probe writes into the directory it is asked about, so a survey
+        that left the memory alone would move the very stamp the memory is checked
+        against and make the next launch start a CLI it did not need to.
         """
         return [
             {
@@ -224,11 +230,24 @@ class Logins:
         ]
 
     def lapsed(self) -> list[dict]:
-        """The resident logins that are seeded and do not work, probed now."""
+        """The resident logins that are seeded and answered "no", probed now.
+
+        One that could not be asked is not among them: it is `unknown()`, because there
+        is a difference between a login an operator has to seed again and a provider
+        this machine cannot start.
+        """
         return [
             {"resident_id": answer["resident_id"], "kind": answer["kind"]}
             for answer in self.survey()
             if answer["logged_in"] is False
+        ]
+
+    def unknown(self, survey: list[dict] | None = None) -> list[dict]:
+        """The resident logins this instance could not get an answer about."""
+        return [
+            {"resident_id": answer["resident_id"], "kind": answer["kind"]}
+            for answer in (self.survey() if survey is None else survey)
+            if answer["logged_in"] is None
         ]
 
     def holds(self, resident_id: str, kind: str) -> bool:
@@ -236,7 +255,9 @@ class Logins:
 
         Only ever asked about a run whose admission pinned the resident's own login. A
         kind with no probe here holds nothing: Hearth does not hold work over a question
-        it cannot ask.
+        it never asked. A provider that *was* asked and could not answer does hold it,
+        which is the same direction as a "no": nothing said this login works, and a
+        session launched on it would spend a subscription to find out.
         """
         probe = self.probes.get(kind)
         if probe is None:
@@ -249,7 +270,7 @@ class Logins:
             # Admitted on the resident's own login and there is none any more. The run
             # waits for the operator rather than quietly spending the household's.
             return True
-        return self._remembered(kind, directory) is False
+        return self._remembered(kind, directory) is not True
 
     def _remembered(self, kind: str, directory: Path) -> bool | None:
         """The last answer about this directory, re-asked when it is old or it changed.
@@ -267,18 +288,24 @@ class Logins:
             at, seen, answer = remembered
             if self.clock() - at < self.refresh and _stamp(directory) == seen:
                 return answer
-        answer = self._probe(kind, directory)
-        self._answers[directory] = (self.clock(), _stamp(directory), answer)
-        return answer
+        return self._probe(kind, directory)
 
     def _probe(self, kind: str, directory: Path) -> bool | None:
+        """Ask the provider, and remember what it said about this directory.
+
+        Every path that asks goes through here, so an operator's survey and the
+        executor's own question share one memory instead of invalidating each other's.
+        """
         probe = self.probes.get(kind)
         if probe is None:
             return None
         try:
-            return bool(probe(directory))
+            answer = bool(probe(directory))
         except Refused:
             # A provider that cannot be asked -- a CLI that is gone, a configuration
             # half written -- has not said this login works, and nothing here guesses
-            # that it does.
-            return False
+            # that it does. It is *not* rounded to "logged out" either: `holds` reads
+            # that as a hold and the survey reports it as what it is, not knowing.
+            answer = None
+        self._answers[directory] = (self.clock(), _stamp(directory), answer)
+        return answer

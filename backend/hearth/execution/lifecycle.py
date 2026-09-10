@@ -279,7 +279,7 @@ class Execution:
         """A run whose pinned runtime this instance is not configured for waits."""
         return self.waiting(run_id, owner_token, "runtime_unavailable")
 
-    def waiting(self, run_id: str, owner_token: str, reason: str) -> Run:
+    def waiting(self, run_id: str, owner_token: str, reason: str, *, announce: bool = False) -> Run:
         """A run this instance cannot launch, for a reason an operator can fix, waits.
 
         Two things get here. A run whose pinned runtime this instance is not configured
@@ -306,10 +306,13 @@ class Execution:
 
         A run that was never launched is therefore left exactly as it is -- still
         waiting to start, which is the truth about it -- rather than moved to a state
-        it could never start from again. Why the runtime is absent, and which resident
-        login has lapsed, are each recorded once where they are discovered:
-        `app.configured_runtimes` and the login survey, both at start.
+        it could never start from again. `announce` writes that down once: a run that
+        sits at `starting` for a reason nobody recorded is an operator reading a
+        stopped household with nothing to read. The caller owns "once", because this
+        is asked again on every pass; the fact is written where the run is, so it is
+        beside the run and not only in a health answer somebody has to ask for.
         """
+        now = int(self.hearth.clock())
         with self.hearth.database.transaction(write=True) as db:
             row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
             if row is None or row["owner_token"] != owner_token:
@@ -317,11 +320,23 @@ class Execution:
             if row["finished_at"] is not None:
                 raise Refused("run_already_finished")
             if not row["launch_attempted"]:
+                if announce:
+                    _audit(
+                        db,
+                        "run.waiting",
+                        run_id,
+                        now,
+                        {
+                            "task_id": row["task_id"],
+                            "reason": reason,
+                            "runtime_kind": row["runtime_kind"],
+                            "resident_id": row["resident_id"],
+                        },
+                    )
                 return self.hearth.run(run_id)
             # Cancellation intent survives a wait, exactly as it survives observation.
             state = "stopping" if row["cancellation_requested"] else "interrupted"
             if row["status"] != state:
-                now = int(self.hearth.clock())
                 db.execute("UPDATE runs SET status=? WHERE id=?", (state, run_id))
                 db.execute("UPDATE tasks SET status=? WHERE id=?", (state, row["task_id"]))
                 _audit(
@@ -369,6 +384,11 @@ class Executor:
         self.execution = execution
         self.runtimes: dict[str, Runtime] = {adapter.kind: adapter for adapter in adapters}
         self.logins = logins
+        # Runs this process has already written down as held, so the fact is recorded
+        # once rather than twice a second. It is deliberately process-local: a restart
+        # says it again, which is true again, and it is the one place an operator reads
+        # after a restart anyway.
+        self._announced: set[str] = set()
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
     @property
@@ -428,12 +448,19 @@ class Executor:
         if evidence.status == "absent" and not run.launch_attempted:
             if self.held(run):
                 # A run admitted to spend its resident's own provider login, whose
-                # login has lapsed or been taken away. It waits for the operator; it
-                # does not fall back to the household's, because that would spend a
-                # subscription nobody chose for this resident
-                # (`docs/adr/0016-sandbox-per-run.md`). This resident alone is held:
-                # every other one is launched by the same pass.
-                return self.execution.waiting(run.id, run.owner_token, "login_required")
+                # login has lapsed, been taken away, or belongs to a provider this
+                # machine could not ask. It waits for the operator; it does not fall
+                # back to the household's, because that would spend a subscription
+                # nobody chose for this resident (`docs/adr/0016-sandbox-per-run.md`).
+                # Nothing else in this pass is held by it, though the pass does wait
+                # for the one probe: a provider's CLI answers in a tenth of a second
+                # (`docs/sandbox.md`) and the answer is remembered for a minute, so a
+                # held resident costs the household one probe a minute, not one a pass.
+                announce = run.id not in self._announced
+                self._announced.add(run.id)
+                return self.execution.waiting(
+                    run.id, run.owner_token, "login_required", announce=announce
+                )
             if self.execution.prepare_start(run.id, run.owner_token):
                 try:
                     with self.execution.hearth.database.transaction() as db:
@@ -443,7 +470,19 @@ class Executor:
                         raise
                     # One run's unreadable pinned context never stops the whole pass.
                     return self.execution.observe(run.id, run.owner_token, "interrupted")
-                runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
+                try:
+                    runtime.start(
+                        run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
+                    )
+                except Refused as error:
+                    if not error.code.endswith("login_required"):
+                        raise
+                    # The login was there when this run was gated a moment ago and is
+                    # not there now: an operator took it away between the two. The
+                    # launch intent is already recorded, so this run cannot be held for
+                    # them any more -- it is interrupted, visibly, with nothing spent --
+                    # but one resident's race never ends the pass for every other one.
+                    return self.execution.observe(run.id, run.owner_token, "interrupted")
                 evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
         if evidence.status in {"succeeded", "failed", "cancelled"}:
             return self.execution.finish(

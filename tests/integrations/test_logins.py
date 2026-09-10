@@ -197,14 +197,50 @@ def test_a_probe_that_writes_into_the_login_it_asks_about_is_still_remembered(tm
 
 
 def test_a_provider_that_cannot_be_asked_has_not_said_the_login_works(tmp_path):
+    """Nothing said this login works, so the run waits -- but nothing said it lapsed.
+
+    The two are different things to an operator: one sends them to run a login flow
+    again, the other to find out why a CLI will not start.
+    """
     seed(tmp_path, "reader", CODEX)
 
     def probe(_):
         raise Refused("codex_subscription_configuration_required")
 
     logins = Logins(tmp_path, {CODEX: probe})
-    assert logins.lapsed() == [{"resident_id": "reader", "kind": CODEX}]
+    assert logins.survey() == [{"resident_id": "reader", "kind": CODEX, "logged_in": None}]
+    assert logins.lapsed() == []
+    assert logins.unknown() == [{"resident_id": "reader", "kind": CODEX}]
     assert logins.holds("reader", CODEX) is True
+
+
+def test_an_operator_asking_after_the_answer_refreshes_it_rather_than_spoiling_it(tmp_path):
+    """A survey probes afresh, and the executor is not made to probe again because of it.
+
+    The Claude probe writes into the directory it asks about, so a survey that left the
+    memory alone would move the very stamp the memory is checked against, and the next
+    launch would start a CLI for nothing.
+    """
+    import os
+
+    directory = seed(tmp_path, "reader", CODEX)
+    asked = []
+    mtime = [1_000_000_000]
+
+    def probe(path):
+        asked.append(path)
+        mtime[0] += 1_000_000_000
+        os.utime(path, ns=(mtime[0], mtime[0]))
+        return True
+
+    logins = Logins(tmp_path, {CODEX: probe}, refresh=60, clock=lambda: 1000.0)
+    assert logins.holds("reader", CODEX) is False
+    assert len(asked) == 1
+    assert logins.survey() == [{"resident_id": "reader", "kind": CODEX, "logged_in": True}]
+    assert len(asked) == 2, "an operator asking is a fresh question"
+    assert logins.holds("reader", CODEX) is False
+    assert len(asked) == 2, "and it left the answer usable rather than stale"
+    assert directory.is_dir()
 
 
 def test_a_run_admitted_to_a_login_this_host_cannot_even_name_is_held(tmp_path):

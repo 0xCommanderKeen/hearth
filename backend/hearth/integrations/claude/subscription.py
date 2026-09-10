@@ -216,7 +216,7 @@ def ask(binary: Path | None, directory: Path, *arguments: str) -> str:
         raise Refused("claude_subscription_configuration_required") from None
 
 
-def login_probe(binary: Path | None, directory: Path) -> bool:
+def login_probe(binary: Path | None, directory: Path, *, contained: bool = False) -> bool:
     """Is there a Claude login in that directory? The CLI's own answer, one field of it.
 
     `auth status --json` in that configuration directory, read for `loggedIn` and
@@ -224,9 +224,17 @@ def login_probe(binary: Path | None, directory: Path) -> bool:
     resident's own directory in the same words. The rest of the answer names the
     account and is never read, logged or kept.
 
+    `contained` is what a sandbox adds: the credential has to be a *file* there,
+    because a session inside a container is given that file and nothing else of this
+    host, and a macOS Keychain does not cross the boundary (`docs/sandbox.md`). The CLI
+    on this host would answer `loggedIn: true` for such a directory and every run on it
+    would still be held, so the question has to be asked the way the sessions will be.
+
     Without the pinned binary in hand nothing can be asked; that refuses rather than
     answering "no", and the caller decides what not knowing means.
     """
+    if contained and not (Path(directory) / CREDENTIALS).is_file():
+        return False
     return logged_in(ask(binary, directory, "auth", "status", "--json"))
 
 
@@ -303,14 +311,14 @@ class ClaudeLiveRuntime:
     def probe_login(self, directory: Path) -> bool:
         """Is that directory logged in? Asked of every adapter in the same words.
 
-        A resident's own login is held to exactly the household's standard, including
-        the one thing a sandbox adds: the credential has to be a *file* there, because
-        a session inside a container is given that file and nothing else of this host,
-        and a Keychain does not cross the boundary (`docs/sandbox.md`).
+        A resident's own login is held to exactly the household's standard, and to the
+        one thing this instance's launcher adds to it.
         """
-        if self.sandbox.launcher == CONTAINER and not (Path(directory) / CREDENTIALS).is_file():
-            return False
-        return login_probe(getattr(self, "binary", None), directory)
+        return login_probe(
+            getattr(self, "binary", None),
+            directory,
+            contained=self.sandbox.launcher == CONTAINER,
+        )
 
     def folder(self, run_id):
         identifier(run_id)

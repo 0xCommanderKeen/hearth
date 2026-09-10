@@ -12,13 +12,17 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
   a resident whose own login is empty, lapsed or taken away **waits** with
   `login_required` and never falls back to the household's, because falling back would
   spend a subscription the operator did not choose. That resident is held and nobody
-  else. Each login is probed the way the household's is -- `loggedIn` and nothing more,
-  never a credential -- at start (audited once as `login.resident_lapsed`), on
-  `GET /api/health` under `login.resident_lapsed`, and before that resident's run
-  launches, with the answer remembered for a minute so a held run does not start a CLI
-  twice a second. `python -m hearth credentials --data <dir>` lists every seeded login
-  with its probe result and nothing else of the provider's answer. Townhall's resident
-  view says whose login it is on per provider, and a finished run says which it spent.
+  else, and it says so: a held run is audited once as `run.waiting`. Each login is probed
+  the way the household's is -- `loggedIn` and nothing more, never a credential -- at
+  start (a lapse audited once as `login.resident_lapsed`), on `GET /api/health` under
+  `login.resident_lapsed`, and before that resident's run launches, with the answer
+  remembered for a minute and shared between those paths so a held run does not start a
+  CLI twice a second. A provider that could not be asked at all is
+  `login.resident_unknown` rather than a lapse: its runs wait all the same, but nobody
+  is sent to run a login flow they do not need. `python -m hearth credentials --data <dir>` lists
+  every seeded login with its probe result and nothing else of the provider's answer,
+  asking the stricter question a sandboxed burrow will ask. Townhall's resident view
+  says whose login it is on per provider, and a finished run says which it spent.
   Bundles carry no login at all -- not the credential, not the directory, not the fact
   that there was one.
 

@@ -24,19 +24,31 @@ def credentials(data: Path) -> list[dict]:
     so a provider whose pinned binary is not named in the environment cannot be
     started. Not knowing is said rather than rounded down to a "no", because a login
     nobody probed has not lapsed.
+
+    The question is asked the way the *sessions* will be asked it, which on the
+    container launcher is stricter than on this host: `HEARTH_SANDBOX` is read from the
+    environment for the same reason the server reads it, so an operator running this on
+    a burrow that sandboxes its runs is not told a Keychain-backed login works when
+    every run on it will be held (`docs/sandbox.md`).
     """
     import os
 
     from hearth.integrations.interface import binary_environment, live_kinds, login_probe
+    from hearth.integrations.launcher import CONTAINER
     from hearth.integrations.logins import seeded
 
+    contained = os.environ.get("HEARTH_SANDBOX") == CONTAINER
     found = []
     for entry in seeded(data, live_kinds()):
         probe = login_probe(entry.kind)
         variable = binary_environment(entry.kind)
         named = os.environ.get(variable) if variable else None
         try:
-            answer = probe(Path(named) if named else None, entry.directory) if probe else None
+            answer = (
+                probe(Path(named) if named else None, entry.directory, contained=contained)
+                if probe
+                else None
+            )
         except Refused:
             answer = None
         found.append(

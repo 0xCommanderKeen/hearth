@@ -161,7 +161,7 @@ def encode(receipt, expected):
     return raw, hashlib.sha256(raw.encode()).hexdigest(), evidence
 
 
-def login_probe(binary: Path | None, directory: Path) -> bool:
+def login_probe(binary: Path | None, directory: Path, *, contained: bool = False) -> bool:
     """Is there a Codex login in that directory?
 
     This CLI keeps its credential in one file, and whether that file is there is the
@@ -172,7 +172,9 @@ def login_probe(binary: Path | None, directory: Path) -> bool:
     The CLI does offer a `login status` subcommand and Hearth does not run it: its
     answer is a line of prose naming the account, and nothing about an account is
     Hearth's to read. The binary is taken and not used for that reason; every kind's
-    probe is asked in the same words, and the ones that need a CLI use it.
+    probe is asked in the same words, and the ones that need a CLI use it. `contained`
+    likewise changes nothing here: the file this checks for is the same file a sandbox
+    mounts, so what is asked is already what a sandboxed session will be given.
     """
     return (Path(directory) / AUTH).is_file()
 

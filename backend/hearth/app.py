@@ -143,14 +143,30 @@ def create_app(
     # binary behind it and it starts no run, so it has nothing to say about a login and
     # says nothing rather than reporting every one of them as out.
     logins = Logins(data, {} if restored else login_probes(adapters))
+
+    def login_state() -> dict:
+        """What this instance knows about the residents holding a login of their own."""
+        answers = logins.survey()
+        return {
+            "resident_lapsed": [
+                {key: answer[key] for key in ("resident_id", "kind")}
+                for answer in answers
+                if answer["logged_in"] is False
+            ],
+            "resident_unknown": logins.unknown(answers),
+        }
+
     if not restored:
         # The shelf, never a login: an operator seeds one by running that CLI's own
         # login flow with its configuration path pointed here (`docs/sandbox.md`).
         prepare(data)
         # A login that has lapsed is a configuration this operator can fix, and their
         # resident's runs are waiting on exactly that -- so it is recorded once per
-        # start, where it is discovered, exactly as an absent runtime is above. A
-        # household where every login works opens no transaction to say so.
+        # start, where it is discovered, exactly as an absent runtime is above. Only a
+        # login the provider really answered "no" about is recorded: a provider that
+        # would not start has not told anybody a login lapsed, and a durable audit fact
+        # saying it did would send an operator to run a login flow they do not need.
+        # A household where every login works opens no transaction to say so.
         lapsed = logins.lapsed()
         if lapsed:
             with database.transaction(write=True) as db:
@@ -270,8 +286,11 @@ def create_app(
                 for missing, reason in sorted(unavailable.items())
             ],
             # A resident whose own login has lapsed: its runs wait, and nobody else's
-            # do (`docs/adr/0016-sandbox-per-run.md`).
-            "login": {"resident_lapsed": logins.lapsed()},
+            # do (`docs/adr/0016-sandbox-per-run.md`). Beside it, the ones this instance
+            # could not get an answer about at all -- a provider that would not start is
+            # not a login an operator has to seed again, and their runs wait for a
+            # different reason, so they are not reported as the same thing.
+            "login": login_state(),
         }
 
     @app.get("/api/events")
