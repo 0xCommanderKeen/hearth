@@ -76,8 +76,8 @@ function receipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt {
       ],
       input_sets: [],
       execution_profile: {
-        requested: "codex_subscription",
-        used: "inline_mock",
+        requested: "a-retired-profile",
+        used: "codex_subscription",
       },
       management_ignored: true,
     },

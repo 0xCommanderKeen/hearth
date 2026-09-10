@@ -4,16 +4,45 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
+from hearth.integrations.codex.events import MAX_STREAM
 from hearth.integrations.codex.pricing import MODEL, PRICE_SCHEDULE
 from hearth.integrations.codex.usage import UsageBinding, publish, read
-from hearth.integrations.mock.container import IMAGE, LocalDocker, container_lock
+from hearth.integrations.durable import folder_lock
 from hearth.residents.models import Refused
 from hearth.storage.artifacts import sync_directory
 
+IMAGE = "python@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6"
 LABEL = "org.hearth.codex-container"
+
+
+@contextmanager
+def container_lock(path: Path):
+    """Exclusive ownership of one durable runtime folder, following no link."""
+    with folder_lock(path, "container_lock_invalid"):
+        yield
+
+
+class LocalDocker:
+    """Only the selected local Mac socket. Never pull or forward host credentials."""
+
+    def __call__(self, *args: str) -> str:
+        result = subprocess.run(
+            ["docker", "--host", "unix://" + str(Path.home() / ".docker/run/docker.sock"), *args],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode:
+            raise OSError(f"Docker {args[0]} failed")
+        if len(result.stdout.encode()) > MAX_STREAM:
+            raise OSError("Oversized Docker evidence")
+        return result.stdout.strip()
 
 
 def digest(value: dict) -> str:

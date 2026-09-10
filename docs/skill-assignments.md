@@ -37,9 +37,9 @@ entire set and copies its order, identities, content digests and manifest into
 run-owned rows in the admission transaction, including an explicit empty set.
 Missing headers, dropped/reordered rows and changed revision content fail validation.
 
-Context version 4 is the single composition of purpose, resident-specific
-`skill_text`, ordered `skills`, pinned memory, task and synthetic notes. Inline,
-process and subscription integrations consume this shared serialized context. A run
+Context version 7 is the single composition of purpose, resident-specific
+`skill_text`, ordered `skills`, pinned memory, task and synthetic notes. The executor
+and the scoped runtime route consume that one serialized context. A run
 never joins current assignments or current catalog status into its input. Corrupt
 skill inputs are refused before launch; snapshot/run inspection expose `skills_error`
 without making all operator state unavailable. Unknown execution is not retry authority.

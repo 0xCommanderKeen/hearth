@@ -4,10 +4,23 @@ import { Client, decodeSnapshot, RequestError } from "./client";
 afterEach(() => vi.restoreAllMocks());
 
 describe("same-origin operator interface", () => {
-  it("rejects incompatible or non-simulated state before display", () => {
+  it("rejects an incompatible state format before display", () => {
     expect(() => decodeSnapshot({ schema_version: 2 })).toThrow("state format");
+    expect(() => decodeSnapshot({ schema_version: 1, epoch: 1 })).toThrow(
+      "state format",
+    );
+    // A state that does not say which runtimes this household has would leave every
+    // result to be labelled by guesswork, so it is refused rather than displayed.
     expect(() =>
-      decodeSnapshot({ schema_version: 1, simulated: false }),
+      decodeSnapshot({
+        schema_version: 1,
+        epoch: "demo",
+        cursor: 0,
+        residents: [],
+        tasks: [],
+        runs: [],
+        activity: [],
+      }),
     ).toThrow("state format");
   });
   it("never forwards credentials to external paths", async () => {
@@ -116,13 +129,38 @@ it("allows a fresh command when an expired submission was never accepted", async
   ).rejects.toMatchObject({ status: 410 });
 });
 
+it("writes the letters door and no other declaration field", async () => {
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "reader", revision: 4, declaration: {} }),
+        { status: 200 },
+      ),
+    );
+  const saved = await new Client("synthetic-test-token").setLettersDoor(
+    "reader",
+    true,
+    3,
+  );
+  const [path, options] = fetch.mock.calls[0];
+  expect(path).toBe("/api/residents/reader");
+  expect(options?.method).toBe("PUT");
+  // Only the door and the revision it was read at: a purpose or a skill text this
+  // caller never loaded cannot be restated, and so cannot be overwritten.
+  expect(JSON.parse(options?.body as string)).toEqual({
+    letters_accept: true,
+    expected_revision: 3,
+  });
+  expect(saved.revision).toBe(4);
+});
+
 it("keeps restored-state reads available but refuses mutations before fetch", async () => {
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
     async () =>
       new Response(
         JSON.stringify({
           schema_version: 1,
-          simulated: true,
           epoch: "restored",
           cursor: 1,
           restore_hold: true,
@@ -130,6 +168,13 @@ it("keeps restored-state reads available but refuses mutations before fetch", as
           tasks: [],
           runs: [],
           activity: [],
+          runtimes: {
+            default: "codex_subscription",
+            configured: ["codex_subscription"],
+            kinds: {
+              codex_subscription: { label: "Codex subscription", live: true },
+            },
+          },
         }),
       ),
   );

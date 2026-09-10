@@ -1,0 +1,26 @@
+{
+  "fixture": "Synthetic full App, real Client/watch; no runtime or live data",
+  "desktop": [
+    1440,
+    1050
+  ],
+  "mobile": [
+    390,
+    844
+  ],
+  "checks": [
+    "home and Townhall real furniture picking",
+    "six furniture record routes",
+    "room identity/camera across records and snapshot rename",
+    "disconnect/reconnect retains room",
+    "household total update",
+    "exterior camera and selection restored",
+    "mobile furniture picking",
+    "archive history and return",
+    "WebGL context loss with records and return",
+    "initial WebGL failure both rooms",
+    "no horizontal mobile overflow",
+    "no page errors"
+  ],
+  "limits": "No real-host, deployment, daily-observation or native accessibility acceptance."
+}

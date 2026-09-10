@@ -3,6 +3,7 @@ import {
   Client,
   RequestError,
   type CatalogSkill,
+  type Resident,
   type SkillChange,
   type SkillDraft,
 } from "../../shared/client";
@@ -33,9 +34,11 @@ function route() {
 }
 export function SkillCatalog({
   client,
+  residents,
   readOnly,
 }: {
   client: Client;
+  residents: Resident[];
   readOnly: boolean;
 }) {
   const [selected, setSelected] = useState(route);
@@ -85,6 +88,7 @@ export function SkillCatalog({
         key={selected}
         client={client}
         id={selected}
+        residents={residents}
         readOnly={readOnly}
       />
     );
@@ -178,10 +182,12 @@ export function SkillCatalog({
 function SkillEditor({
   client,
   id,
+  residents,
   readOnly,
 }: {
   client: Client;
   id: string;
+  residents: Resident[];
   readOnly: boolean;
 }) {
   const [saved, setSaved] = useState<CatalogSkill | null>(null);
@@ -425,6 +431,7 @@ function SkillEditor({
               key={`${saved.skill_id}:${saved.revision}`}
               client={client}
               skill={saved}
+              residents={residents}
               readOnly={readOnly || busy || retry || conflict}
               dirty={dirty}
               onPublished={() => void load()}
@@ -572,6 +579,7 @@ function SkillEditor({
                       key={`history:${prior.revision}`}
                       client={client}
                       skill={prior}
+                      residents={residents}
                       readOnly={true}
                       dirty={false}
                       onPublished={() => {}}

@@ -16,12 +16,14 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-journal-operator-token"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1000
     for resident in ("reader", "other"):
@@ -147,12 +149,15 @@ def test_a_failed_audit_writes_no_entry_and_leaves_only_an_orphan_file(system):
     assert len(orphan) == 1 and journal.archived("reader") == []
     with app.state.hearth.database.transaction(write=True) as db:
         db.execute("DROP TRIGGER fail_journal")
+    app.state.executor.step()
     # An orphan is preserved evidence, never a refusal reason.
     capture(root / "data", root / "backup")
+    run = start_run(app, "rolling-task-again")
     journal.write("reader", run.id, "Synthetic entry that rolls the first one out")
     assert sorted(path.name for path in (root / "data/memory/reader/journal").iterdir()) == orphan
     assert [entry["sequence"] for entry in journal.read("reader")["entries"]] == [2]
     assert [entry["sequence"] for entry in journal.archived("reader")] == [1]
+    app.state.executor.step()
     capture(root / "data", root / "second-backup")
 
 
@@ -306,6 +311,7 @@ def test_backup_journal_entries_cannot_cross_resident_identity(system):
     app, journal, root = system
     run = start_run(app, "task")
     journal.write("reader", run.id, "Synthetic entry")
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     with sqlite3.connect(root / "backup/hearth.db") as db:
         db.execute("UPDATE journal_entries SET resident_id='other'")
@@ -416,6 +422,7 @@ def test_a_run_still_reports_the_entry_it_wrote_after_retention_archives_it(syst
     quiet = start_run(app, "quiet")
     assert snapshot(app.state.hearth)["runs"][0]["id"] == quiet.id
     assert snapshot(app.state.hearth)["runs"][0]["journal_written"] is None
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "held")
     with Database(root / "held/hearth.db").transaction() as db:

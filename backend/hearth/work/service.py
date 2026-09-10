@@ -11,7 +11,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from hearth.authority.household import check_admission, check_creation, pin_admission
+from hearth.authority.household import DEFAULTS, check_admission, check_creation, pin_admission
 from hearth.residents.models import (
     Declaration,
     Receipt,
@@ -27,6 +27,131 @@ from hearth.storage.database import Database
 
 COMMAND_LIFETIME = 30 * 24 * 60 * 60
 ACTIVE_RUNS = "('starting', 'running', 'stopping', 'interrupted')"
+# Refusals that mean "not now", not "not ever": a bounded admission pass leaves the task
+# queued for a later one rather than reporting a fault. Anything else is a real integrity
+# or policy failure and reaches the caller.
+ADMISSION_WAITS = frozenset(
+    {
+        "resident_busy",
+        "resident_paused",
+        "resident_archived",
+        # A resident whose setup never finished can still be retried into being ready.
+        # Reporting it every pass would hold an error open for as long as the work is
+        # queued and hide any real fault the same pass hits.
+        "resident_setup_incomplete",
+        "capacity_exhausted",
+        "budget_exhausted",
+        "household_budget_exhausted",
+        "household_concurrency_limit",
+        "task_already_admitted",
+    }
+)
+
+
+def default_runtime(db: sqlite3.Connection) -> str:
+    """The runtime a resident that declares none of its own is admitted to."""
+    return db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+
+
+def configured_runtime(db: sqlite3.Connection, kind: str) -> bool:
+    """Has this store ever been configured for that runtime?
+
+    Its own default always answers yes: that is the store's own record of what it runs,
+    and it is written before any provider is reached. For any other runtime the answer
+    is the binary pin that runtime writes the first time it is configured, which is the
+    store's record that the provider was really there -- binary, version and login were
+    all checked before it was written. Nothing else in the database says so, and asking
+    the process instead would make the answer depend on which instance happens to be
+    open at the time.
+    """
+    from hearth.integrations.interface import binary_pin
+
+    if kind == default_runtime(db):
+        return True
+    pin = binary_pin(kind)
+    return pin is not None and (
+        db.execute("SELECT 1 FROM system_meta WHERE key=?", (pin,)).fetchone() is not None
+    )
+
+
+def declared_runtimes(db: sqlite3.Connection) -> set[str]:
+    """Every runtime the store's residents name for themselves, as they stand now.
+
+    The store's default is not in here: it is not a resident's choice, and it is the
+    one runtime an instance is always built for.
+    """
+    return {
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE d.runtime IS NOT NULL"
+        )
+    }
+
+
+def resident_runtime(db: sqlite3.Connection, resident_id: str) -> str:
+    """The runtime one resident's work is admitted to: its own, or the store's default.
+
+    Read wherever a resident's brain decides something -- admission, its management
+    profile, what an operator is shown -- so those answers cannot drift apart. A
+    resident with no declaration at all is answered with the default: it has not
+    chosen, and nothing of its will run until it exists anyway.
+    """
+    row = db.execute(
+        "SELECT d.runtime FROM declarations d JOIN residents r "
+        "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+        (resident_id,),
+    ).fetchone()
+    return (row[0] if row is not None else None) or default_runtime(db)
+
+
+def spend_fence(db: sqlite3.Connection, run: sqlite3.Row) -> int:
+    """The most one run may spend, in microdollars, for a provider that enforces a stop.
+
+    A reservation is an admission hold, not a cap. A run that costs more than it
+    reserved still settles at what it really cost, and what actually bounds spending is
+    the resident's day: admission refuses new work once the day is committed, and a run
+    that overspends leaves its resident held. Every path in Hearth reserves a cent,
+    while one real session costs several, so a provider fence built from the
+    reservation would stop **every** run after its first billed request -- charging the
+    household for work it then threw away. The fence is therefore what the resident may
+    still spend today, this run's own reservation included, and never less than the
+    reservation admission already promised it before anything was launched.
+
+    Read from the run's own pins -- its resident's declaration at the revision it was
+    admitted under, and its own budget day and timezone -- so a resident edited or
+    moved between runs cannot change the fence of work already admitted.
+
+    The household's whole daily limit bounds it too, because a resident may be allowed
+    more in a day than the household it lives in. What the household has already spent
+    is deliberately *not* subtracted: a fence that is too small is the harmful
+    direction -- it bills a request and then throws the work away -- while a fence
+    that is merely generous costs nothing, since Hearth's own accounting is what holds
+    the household afterwards.
+    """
+    declaration = db.execute(
+        "SELECT daily_limit FROM declarations WHERE resident_id=? AND revision=?",
+        (run["resident_id"], run["resident_revision"]),
+    ).fetchone()
+    if declaration is None:
+        return run["reserved"]
+    start = datetime.fromisoformat(run["budget_day"]).replace(
+        tzinfo=ZoneInfo(run["budget_timezone"]), fold=0
+    )
+    end = (start + timedelta(days=1)).replace(fold=0)
+    spent = db.execute(
+        "SELECT COALESCE(SUM(actual_cost), 0) FROM runs WHERE resident_id=? "
+        "AND created_at >= ? AND created_at < ? AND usage_known = 1",
+        (run["resident_id"], int(start.timestamp()), int(end.timestamp())),
+    ).fetchone()[0]
+    outstanding = db.execute(
+        "SELECT COALESCE(SUM(reserved), 0) FROM runs WHERE resident_id=? AND id != ? "
+        f"AND status IN {ACTIVE_RUNS}",
+        (run["resident_id"], run["id"]),
+    ).fetchone()[0]
+    household = db.execute("SELECT daily_limit FROM household_policy WHERE id=1").fetchone()
+    ceiling = household["daily_limit"] if household is not None else DEFAULTS["daily_limit"]
+    return max(min(declaration["daily_limit"] - spent - outstanding, ceiling), run["reserved"])
 
 
 def _audit(db: sqlite3.Connection, kind: str, resource: str, at: int, detail: dict) -> None:
@@ -61,6 +186,30 @@ class Hearth:
         self.database = database
         self.clock = clock
 
+    def declared_declaration(self, db, resident_id: str) -> Declaration | None:
+        """The declaration standing now, read inside the caller's own transaction.
+
+        A save that omits a field keeps what this returns, so the read and the write that
+        depends on it see the same revision. `None` when there is no such resident.
+        """
+        row = db.execute(
+            "SELECT d.* FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return Declaration(
+            row["name"],
+            row["purpose"],
+            row["daily_limit"],
+            row["budget_timezone"],
+            row["skill_text"],
+            bool(row["memory_writable"]),
+            bool(row["letters_accept"]),
+            row["runtime"],
+        )
+
     def declared_memory_writable(self, db, resident_id: str) -> bool:
         """The current declared memory.writable, so an omitted flag keeps what is granted."""
         row = db.execute(
@@ -69,6 +218,87 @@ class Hearth:
             (resident_id,),
         ).fetchone()
         return bool(row[0]) if row else False
+
+    def declared_runtime(self, db, resident_id: str) -> str | None:
+        """The current declared runtime, so an omitted one keeps the brain that stands.
+
+        `None` is a resident that follows the store's default, which is what most of
+        them do; `resident_runtime` is the same question with the default resolved.
+        """
+        row = db.execute(
+            "SELECT d.runtime FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return row[0] if row else None
+
+    def declared_letters_accept(self, db, resident_id: str) -> bool:
+        """The current declared letters.accept, so an omitted door keeps what is open."""
+        row = db.execute(
+            "SELECT d.letters_accept FROM declarations d JOIN residents r "
+            "ON r.id=d.resident_id AND r.revision=d.revision WHERE r.id=?",
+            (resident_id,),
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def send_letter_in_transaction(
+        self,
+        db,
+        sender_run: str,
+        to: str,
+        title: str,
+        detail: str,
+        operation_id: str,
+        *,
+        expires_at: int | None = None,
+    ) -> dict:
+        """Queue one letter for another resident, or refuse without writing anything."""
+        from hearth.work.letters import send_letter
+
+        return send_letter(
+            db,
+            self,
+            sender_run=sender_run,
+            to=to,
+            title=title,
+            detail=detail,
+            operation_id=operation_id,
+            expires_at=expires_at,
+        )
+
+    def send_operator_letter(
+        self, command_id: str, to: str, title: str, detail: str, *, expires_at: int | None = None
+    ) -> dict:
+        """Queue one letter the operator wrote, under the receiver's own door and rules."""
+        from hearth.work.letters import send_operator_letter
+
+        with self.database.transaction(write=True) as db:
+            return send_operator_letter(
+                db,
+                self,
+                command_id=command_id,
+                to=to,
+                title=title,
+                detail=detail,
+                expires_at=expires_at,
+            )
+
+    def reply_to_letter_in_transaction(
+        self, db, run_id: str, letter_id: str, text: str, operation_id: str
+    ) -> dict:
+        """Record one run's single answer to the letter it is working."""
+        from hearth.work.letters import reply_to_letter
+
+        return reply_to_letter(
+            db, self, run_id=run_id, letter_id=letter_id, text=text, operation_id=operation_id
+        )
+
+    def letters(self, resident_id: str, *, limit: int = 30, offset: int = 0) -> dict:
+        """One resident's inbox and everything it has written, for the operator."""
+        from hearth.work.letters import operator_letters
+
+        with self.database.transaction() as db:
+            return operator_letters(db, resident_id, limit=limit, offset=offset)
 
     def save_resident(
         self, resident_id: str, declaration: Declaration, *, expected_revision: int
@@ -85,6 +315,8 @@ class Hearth:
         declaration.validate()
         if type(expected_revision) is not int or expected_revision < 0:
             raise Refused("invalid_revision")
+        # Read before the revision moves: the runtime this resident declares now.
+        standing = self.declared_runtime(db, resident_id)
         now = int(self.clock())
         row = db.execute("SELECT revision FROM residents WHERE id = ?", (resident_id,)).fetchone()
         current = row[0] if row else 0
@@ -114,9 +346,20 @@ class Hearth:
                 originating_run_id=None,
                 now=now,
             )
+        if declaration.runtime is not None and declaration.runtime != standing:
+            # Moving a resident to another runtime is bounded twice: the kind has to be
+            # one this release can still start work on, and one this store has really
+            # been configured for -- otherwise the move only admits runs nothing can
+            # ever launch. Keeping the runtime that already stands is always allowed,
+            # so a resident whose kind a later release retires stays editable.
+            from hearth.integrations.interface import live
+
+            if not live(declaration.runtime) or not configured_runtime(db, declaration.runtime):
+                raise Refused("runtime_not_configured")
         writable = declaration.memory_writable
+        accepts = declaration.letters_accept
         db.execute(
-            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO declarations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 revision,
@@ -127,6 +370,8 @@ class Hearth:
                 declaration.budget_timezone,
                 declaration.skill_text,
                 int(writable),
+                int(accepts),
+                declaration.runtime,
             ),
         )
         _audit(
@@ -134,7 +379,12 @@ class Hearth:
             "resident.saved",
             resident_id,
             now,
-            {"revision": revision, "memory_writable": writable},
+            {
+                "revision": revision,
+                "memory_writable": writable,
+                "letters_accept": accepts,
+                "runtime": declaration.runtime,
+            },
         )
         return Resident(resident_id, revision, declaration)
 
@@ -182,6 +432,8 @@ class Hearth:
                     row["budget_timezone"],
                     row["skill_text"],
                     bool(row["memory_writable"]),
+                    bool(row["letters_accept"]),
+                    row["runtime"],
                 ),
             )
 
@@ -282,6 +534,11 @@ class Hearth:
             raise Refused("task_not_found")
         if task["status"] != "queued":
             raise Refused("task_already_admitted")
+        # No money is spent answering a stale question. The letter is closed as failed by
+        # the sweep that owns that write; admission only refuses to start it.
+        letter = db.execute("SELECT expires_at FROM letters WHERE task_id=?", (task_id,)).fetchone()
+        if letter is not None and now >= letter["expires_at"]:
+            raise Refused("letter_expired")
         resident_id = task["resident_id"]
         if db.execute(
             "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",
@@ -337,24 +594,47 @@ class Hearth:
             day,
             now,
             budget_timezone=declaration["budget_timezone"],
-            runtime_kind=db.execute(
-                "SELECT value FROM system_meta WHERE key='runtime_kind'"
-            ).fetchone()[0],
+            # Where this run happens is the resident's own declaration, and the store's
+            # default only where the declaration says nothing. The pin is written once,
+            # here, and a finished run keeps it whatever either of them becomes later.
+            runtime_kind=declaration["runtime"] or default_runtime(db),
         )
         db.execute(
             "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             tuple(asdict(run).values()),
         )
         pin_admission(db, now, run.id)
-        from hearth.management.authority import pin_management
+        from hearth.skills.evaluation import case_validation
 
-        pin_management(
-            db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
-        )
+        # A skill example is the resident's own work with none of its authority: it
+        # reaches no management tools at all, and carries the memory its request named
+        # rather than whatever the resident has written since.
+        example = case_validation(db, run.id)
+        if example is None:
+            from hearth.management.authority import pin_management
+
+            pin_management(
+                db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
+            )
+            from hearth.integrations.interface import manages_tools
+
+            # A run pinned to reach Hearth's own tools can only be worked by a runtime
+            # that carries them. Launching it on one that cannot would spend the
+            # resident's money on a session holding none of the authority its
+            # declaration promised, and leave a receipt no settlement can accept.
+            if (
+                not manages_tools(run.runtime_kind)
+                and db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+            ):
+                raise Refused("run_management_unsupported")
         db.execute("UPDATE tasks SET status = 'starting' WHERE id = ?", (task_id,))
-        memory = db.execute(
-            "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
-        ).fetchone()[0]
+        memory = (
+            example["memory_revision"]
+            if example is not None
+            else db.execute(
+                "SELECT MAX(revision) FROM memory_revisions WHERE resident_id=?", (resident_id,)
+            ).fetchone()[0]
+        )
         if memory is not None:
             db.execute("INSERT INTO run_memory VALUES (?,?,?)", (run.id, resident_id, memory))
         # The journal the run opens with is pinned beside its memory, in this transaction.
@@ -379,11 +659,15 @@ class Hearth:
         from hearth.integrations.interface import pricing_pin
 
         pricing = pricing_pin(run.runtime_kind, pricing_mode)
-        if pricing is not None:
-            db.execute(
-                "INSERT INTO run_pricing VALUES (?,?,?,?)",
-                (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
-            )
+        # A runtime whose evidence Hearth cannot read cannot price the work it does, and
+        # a run admitted without a pinned schedule could only ever settle at a number
+        # nobody can check. Such a runtime admits no work at all.
+        if pricing is None:
+            raise Refused("run_pricing_required")
+        db.execute(
+            "INSERT INTO run_pricing VALUES (?,?,?,?)",
+            (run.id, pricing["model"], pricing["mode"], pricing["schedule"]),
+        )
         _audit(
             db,
             "run.admitted",
@@ -400,7 +684,7 @@ class Hearth:
                 "runtime_version": run.runtime_version,
                 "input_digest": run.input_digest,
             }
-            | ({"accounting": pricing} if pricing else {}),
+            | {"accounting": pricing},
         )
         return run
 

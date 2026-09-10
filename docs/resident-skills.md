@@ -45,12 +45,11 @@ request-body limit. Oversized input is refused without changing the revision.
 Saves and their audit facts commit together; only one concurrent expected-revision
 save wins. Earlier declaration revisions remain readable.
 
-Context version 6 includes the skill text from the admitted declaration revision.
+Context version 7 includes the skill text from the admitted declaration revision.
 The executor and scoped runtime route use the same reader. An edit before launch
 authorization refuses a new launch; an already-authorized input stays pinned, and
 existing runtime evidence remains recoverable. Configuration changes revoke old
-scoped context access. MockRuntime records only the input digest and still emits a
-fixed simulated summary; this does not demonstrate a model following the skills.
+scoped context access.
 
 Current-schema backups and held restores preserve all declaration revisions and
 skill text. Persistent memory is covered separately in `resident-memory.md`.

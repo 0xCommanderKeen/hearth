@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hearth.work.letters import MAX_DETAIL, MAX_TITLE
+
 
 class TaskPost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -10,22 +12,47 @@ class TaskPost(BaseModel):
     expires_at: int
 
 
-class PolicyPost(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    enabled: bool
-    expected_revision: int = Field(ge=0)
+# What a resident declares itself to be, as opposed to the capabilities standing beside it.
+DECLARATION_FIELDS = frozenset({"name", "purpose", "daily_limit", "budget_timezone", "skill_text"})
 
 
 class DeclarationPost(BaseModel):
+    """A whole declaration, or only the capabilities beside it.
+
+    The five declaration fields travel together, so a save meaning to change what a
+    resident is always says all of it and half a declaration is refused rather than
+    merged. The capabilities are separable on purpose: a form that never learned about a
+    door cannot close it, and a control that only opens a door does not have to restate
+    the resident to do it.
+    """
+
     model_config = ConfigDict(extra="forbid", strict=True)
-    name: str
-    purpose: str
-    daily_limit: int
-    budget_timezone: str
-    skill_text: str
+    # Omitting all five keeps the resident exactly what it declares now; omitting only
+    # some of them is refused as `declaration_fields_invalid`.
+    name: str | None = None
+    purpose: str | None = None
+    daily_limit: int | None = None
+    budget_timezone: str | None = None
+    skill_text: str | None = None
     # Omitted keeps the resident's current memory.writable capability.
     memory_writable: bool | None = None
+    # Omitted keeps the resident's current letters.accept door.
+    letters_accept: bool | None = None
+    # Which runtime this resident's work is admitted to. Omitted keeps the brain the
+    # resident declares now; an explicit null is the operator saying "the store's
+    # default", which is a different statement from not mentioning it at all.
+    runtime: str | None = Field(default=None, max_length=100)
     expected_revision: int = Field(ge=0)
+
+
+class LetterPost(BaseModel):
+    """One letter the operator writes to a resident; the operator is its sender."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+    detail: str = Field(min_length=1, max_length=MAX_DETAIL)
+    # Omitted takes the household's own shelf life; a shorter one may be asked for.
+    expires_at: int | None = Field(default=None, ge=0)
 
 
 class MemoryPost(BaseModel):
@@ -34,16 +61,9 @@ class MemoryPost(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
-class ApprovalPost(BaseModel):
+class ReadPost(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    artifact_id: str = Field(min_length=1, max_length=128)
-    expires_at: int
-
-
-class DecisionPost(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    reviewed_digest: str = Field(min_length=64, max_length=64)
-    approve: bool
+    read: bool
 
 
 class RoutinePost(BaseModel):
@@ -77,3 +97,9 @@ class HouseholdPost(BaseModel):
     expected_revision: int = Field(ge=0)
     # Omitted by clients that do not govern the journal bound; the stored value stays.
     journal_limit: int | None = Field(default=None, ge=1, le=1000)
+    # Letters: how far a chain may reach (0 disables them) and how long one stays worth
+    # answering. Omitted by a client that does not govern them; the stored values stay.
+    max_letter_depth: int | None = Field(default=None, ge=0, le=5)
+    letter_ttl_seconds: int | None = Field(default=None, ge=60, le=604_800)
+    # How many letters one resident may be handed in its own day; 0 shuts the post.
+    letter_daily_limit: int | None = Field(default=None, ge=0, le=100)

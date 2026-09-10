@@ -1,11 +1,10 @@
 # Bounded Codex Astra Reader integration
 
-Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. Hearth remains mocks-only. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Real testing remains deferred. Miha subsequently selected Codex subscription authentication (ChatGPT sign-in), not API keys or API billing. Miha then selected API-equivalent pricing for subscription token usage, so the same accounting and $10/day limit can carry over to a future API switch.
+Checked official OpenAI documentation on 2026-09-06. Documentation-only research: no model calls, authentication commands, credential/config inspection, or execution of Codex tasks. This is the design record from before the runtime existed; the ordered steps below have since been implemented and the Codex subscription is now the only runtime Hearth ships ([ADR 0014](adr/0014-one-runtime-and-no-mocks.md)). Read it for the verified interface facts, not for current behaviour. User selected Codex Astra, synthetic notes, this Mac for development and $10 per day. Fresh Reader setup uses Europe/Ljubljana budget days. Miha subsequently selected Codex subscription authentication (ChatGPT sign-in), not API keys or API billing. Miha then selected API-equivalent pricing for subscription token usage, so the same accounting and $10/day limit can carry over to a future API switch.
 
-Mock integration now pins adapter kind, contract version and exact input digest
-at admission. Fresh stores can select the process mock, which participates in
-quiescent backup and held restore. These pins do not yet describe a real model or
-pricing. The remaining sequence below is the design for actual Codex execution.
+Admission pins the adapter kind, contract version and exact input digest, and those
+pins participate in quiescent backup and held restore. The sequence below is the design
+those pins were built for.
 
 The [offline event parser](codex-events.md) now records the explicit supported
 profile and its remaining real-CLI verification gates.
@@ -43,15 +42,16 @@ about implemented behavior. Keep one Codex adapter for one Reader on one burrow.
 Do not introduce a runtime marketplace, general scheduler or migration layer.
 
 1. **Make execution provenance explicit.** The current `Runtime` protocol exposes
-   start/inspect/stop and `Evidence(status, output, cost)` only. Simulation is fixed
-   in `run_context.py`, `execution.py`, `artifacts.py`, `schema.py`, `observation.py`,
-   `backup.py`, API responses and the browser snapshot validator. Before real
-   wiring, carry immutable runtime/model/version, input digest, usage provenance
-   and simulation status from admission through artifact, audit, snapshot and backup.
-   Distinguish synthetic source material from simulated execution: a real model
-   summarizing fictional notes still incurs real usage. Keep mock effects and
-   notifications visibly simulated. Define the new current schema directly and
-   use a new data directory; do not add historical upgrades.
+   start/inspect/stop and `Evidence(status, output, cost)` only. Simulation was then
+   fixed in `run_context.py`, `execution.py`, `artifacts.py`, `schema.py`,
+   `observation.py`, `backup.py`, API responses and the browser snapshot validator. Before real
+   wiring, carry immutable runtime/model/version, input digest and usage provenance
+   from admission through artifact, audit, snapshot and backup.
+   Distinguish synthetic source material from real execution: a real model
+   summarizing fictional notes still incurs real usage. Define the new current schema
+   directly and use a new data directory; do not add historical upgrades.
+   *(Shipped, then simplified: a `simulated` flag rode along with these pins until
+   2026-09-08, when one runtime made it a field that could only answer "no".)*
 2. **Prove a durable worker boundary with a fake executable.** `Executor.step()`
    currently holds its operation lock while calling `start`; the real adapter must
    return promptly so the supervisor can observe cancellation. A trusted worker
@@ -76,12 +76,10 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    cost. Test this parser with documented synthetic event fixtures, including
    interrupted and malformed streams; fixture success is not real compatibility.
 4. **Stage only Reader's pinned inputs.** The internal [staging helper](staged-input.md)
-   now publishes digest-checked synthetic context. The [container rehearsal](container-rehearsal.md)
-   verifies its unchanged permissions and durable ownership with a fixed synthetic
-   executable; the application container worker is now integrated, while actual Codex wiring remains pending. Materialize purpose, skill, task, memory
+   publishes digest-checked synthetic context. Materialize purpose, skill, task, memory
    and synthetic notes from the admitted context into an isolated per-run directory.
-   Do not mount Hearth's database, host home, other residents, operator token,
-   approval credentials or engine socket. Treat notes as data, not permission.
+   Do not mount Hearth's database, host home, other residents, operator token
+   or engine socket. Treat notes as data, not permission.
    The first summary should have no external effects or source connectors. Keep
    the trusted launch/evidence worker outside the model's writable filesystem.
 5. **Verify on the selected burrow, then enable one bounded real test explicitly.**
@@ -93,7 +91,7 @@ Do not introduce a runtime marketplace, general scheduler or migration layer.
    needed by the trusted runtime, with credentials inaccessible to generated tools.
    Then pin the installed CLI, model availability, authentication/billing mode,
    subscription usage provenance, allowance window and stop policy. Explicit real-test selection remains
-   required; neither the model choice nor passing mocks enables paid execution.
+   required; neither the model choice nor a passing test suite enables paid execution.
 
 For the first real output, use a small fictional notes fixture with known facts:
 completed work, unresolved decisions, dates, owners and next actions. Check that
@@ -115,8 +113,8 @@ cannot establish model quality or the host isolation boundary.
 - An isolated ChatGPT subscription sign-in path and accessible exact Astra model
   on that burrow, verified without exposing existing personal credentials. The
   authentication mode is selected; no API-key or fallback-model path is planned.
-- Explicit selection of a real test after mock worker checks and host evidence.
+- Explicit selection of a real test after offline worker checks and host evidence.
 
-The application supports inline and process-backed mocks. This document is an
-implementation design for real execution, not proof that a Codex adapter or
-isolation exists.
+This document is the implementation design that preceded real execution, not a
+description of the shipped adapter. See [module responsibilities](architecture.md)
+and [the subscription demo](codex-subscription-demo.md) for what runs today.

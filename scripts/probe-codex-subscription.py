@@ -20,10 +20,9 @@ from hearth.integrations.codex import events as codex_events
 from hearth.integrations.codex import pricing as codex_pricing
 from hearth.integrations.codex import usage as codex_usage
 from hearth.integrations.codex.assets import fixture_source, write_collector
-from hearth.integrations.codex.container import CodexContainer
+from hearth.integrations.codex.container import IMAGE, CodexContainer, LocalDocker
 from hearth.integrations.codex.events import CodexEvents, TokenUsage
 from hearth.integrations.codex.pricing import estimate_api_equivalent
-from hearth.integrations.mock.container import IMAGE, LocalDocker
 
 ARCHIVE_URL = "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-arm64.tgz"
 ARCHIVE_SHA512 = (

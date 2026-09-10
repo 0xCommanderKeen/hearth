@@ -4,12 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-management-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 
 
 def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         assert client.post("/api/management/bootstrap").status_code == 401
         first = client.post("/api/management/bootstrap", headers=AUTH)
         assert first.status_code == 200
@@ -21,11 +23,22 @@ def test_karen_setup_grant_and_normal_skill_preserve_operator_edits(tmp_path):
         skill = client.get("/api/skills/" + skill_id, headers=AUTH).json()
         assert skill["name"] == "Create residents"
         assert "reuse" in skill["instructions"].lower()
+        # The seeded wording proposes one dollar a day and names it a proposal, not a floor.
+        wording = " ".join(skill["instructions"].split())
+        assert "Propose $1.00 a day (1,000,000 microdollars) for a new resident" in wording
+        assert "the reported max_daily_limit is lower — then propose that limit" in wording
+        assert "Never propose less than one run of its work costs" in wording
+        assert "a starting proposal, not a floor" in wording
         assignment = client.get(f"/api/residents/{resident_id}/skills", headers=AUTH).json()
         assert assignment["skills"][0]["skill_id"] == skill_id
         path = f"/api/residents/{resident_id}/management"
         grant = client.get(path, headers=AUTH).json()
-        assert grant["enabled"] and grant["profiles"] == ["inline_mock"]
+        assert grant["enabled"] and grant["profiles"] == ["codex_subscription"]
+        # The catalog an operator grants from names each runtime as well as identifying
+        # it, so no view has to know what `codex_subscription` is called.
+        assert client.get("/api/management", headers=AUTH).json()["profiles"] == [
+            {"id": "codex_subscription", "name": "Codex subscription"}
+        ]
         assert "create_residents" in grant["capabilities"]
         disabled = {
             key: value for key, value in grant.items() if key not in {"resident_id", "revision"}
@@ -57,7 +70,7 @@ def test_private_tool_call_provisions_once_and_starts_initial_work(tmp_path):
     from hearth.management.bridge import BoundRun, Bridge
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     karen = bootstrap(hearth)
     task = hearth.submit(
@@ -84,7 +97,7 @@ def test_private_tool_call_provisions_once_and_starts_initial_work(tmp_path):
                 name="Reporter",
                 purpose="Summarize synthetic data",
                 creation_reason="Requested by operator through Karen",
-                execution_profile="inline_mock",
+                execution_profile="codex_subscription",
                 daily_limit=100000,
                 first_assignment={"instruction": "First report"},
             ),
@@ -123,7 +136,7 @@ def test_catalog_reuse_is_scoped_and_unrelated_work_is_refused(tmp_path):
     from hearth.observation.snapshot import snapshot
     from hearth.residents.models import Declaration
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     allowed = Inputs(hearth).save(
         "orchard", name="Orchard", notes=["Synthetic permitted pears"], actor="operator"
@@ -184,7 +197,7 @@ def manager_runtime(tmp_path, *, max_residents=5, max_reserve=500000):
     from hearth.management.bridge import BoundRun, Bridge
     from hearth.observation.snapshot import snapshot
 
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     karen = bootstrap(hearth)
@@ -216,7 +229,7 @@ def provision_call(call_id="call", **changes):
         name="Reporter",
         purpose="Synthetic summary",
         creation_reason="Requested setup",
-        execution_profile="inline_mock",
+        execution_profile="codex_subscription",
         daily_limit=100000,
     )
     return dict(
@@ -514,3 +527,98 @@ def test_maximum_unicode_skill_is_read_completely_and_catalog_stays_bounded(tmp_
     )
     assert catalog["success"] and _tool_response(catalog) == catalog
     assert len(json.loads(catalog["contentItems"][0]["text"])["skills"]) == 25
+
+
+def test_karen_setup_seeds_both_letter_etiquettes_and_carries_the_sender_s_one(tmp_path):
+    """Both are ordinary library entries; only the one for a grant Karen holds is attached."""
+    from hearth.management.authority import read_grant
+    from hearth.management.bootstrap import bootstrap
+    from hearth.skills.assignments import read_assignments
+    from hearth.skills.bootstrap import (
+        ANSWER_A_LETTER,
+        ANSWER_SKILL_NAME,
+        ASK_A_COLLEAGUE,
+        ASK_SKILL_NAME,
+    )
+
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
+    hearth = app.state.hearth
+    karen = bootstrap(hearth)
+    # Both are in the catalog Townhall's Skills page reads.
+    catalog = TestClient(app).get("/api/skills", headers=AUTH).json()
+    assert {ASK_SKILL_NAME, ANSWER_SKILL_NAME} <= {item["name"] for item in catalog}
+    with hearth.database.transaction() as db:
+        library = {
+            row["name"]: dict(row)
+            for row in db.execute(
+                "SELECT r.name AS name,r.instructions AS instructions,r.status AS status,"
+                "s.id AS skill_id FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision"
+            )
+        }
+        assigned = read_assignments(db, karen["resident_id"])["skills"]
+        # Instructions grant nothing: carrying the etiquette is not what permits sending.
+        assert "send_letters" in read_grant(db, karen["resident_id"])["capabilities"]
+    assert library[ASK_SKILL_NAME]["instructions"] == ASK_A_COLLEAGUE
+    assert library[ANSWER_SKILL_NAME]["instructions"] == ANSWER_A_LETTER
+    assert library[ASK_SKILL_NAME]["status"] == library[ANSWER_SKILL_NAME]["status"] == "active"
+    assert karen["ask_skill_id"] == library[ASK_SKILL_NAME]["skill_id"]
+    assert karen["answer_skill_id"] == library[ANSWER_SKILL_NAME]["skill_id"]
+    # Karen's grant carries send_letters, so she carries the asking etiquette. Her own
+    # door is shut, so the answering one waits in the library for whoever's is opened.
+    assert [item["name"] for item in assigned] == [
+        "Create residents",
+        "Create good skills",
+        "Keep a journal",
+        ASK_SKILL_NAME,
+    ]
+
+    # Repeating setup returns the original receipt and seeds no second copy of either.
+    assert bootstrap(hearth) == karen
+    with hearth.database.transaction() as db:
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT r.name AS name FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision"
+            )
+        ]
+    assert names.count(ASK_SKILL_NAME) == names.count(ANSWER_SKILL_NAME) == 1
+
+
+def test_a_letter_etiquette_written_by_hand_is_adopted_instead_of_seeded_twice(tmp_path):
+    """An operator who wrote the wording first keeps the one library entry."""
+    from hearth.management.bootstrap import bootstrap
+    from hearth.skills.bootstrap import ANSWER_SKILL_NAME, ASK_SKILL_NAME
+    from hearth.skills.catalog import Skills
+
+    hearth = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime()).state.hearth
+    by_hand = {
+        name: Skills(hearth).save(
+            "operator-etiquette-" + str(index),
+            name=name,
+            description="The operator's own wording",
+            instructions="Ask or answer plainly.",
+            actor="operator",
+        )
+        for index, name in enumerate((ASK_SKILL_NAME, ANSWER_SKILL_NAME))
+    }
+    # A same-named archived entry is not adopted; the oldest active one is.
+    stale = Skills(hearth).save(
+        "stale-ask", name=ASK_SKILL_NAME, description="Older", instructions="x", actor="operator"
+    )
+    Skills(hearth).archive(
+        "archive-stale", stale["skill_id"], expected_revision=stale["revision"], actor="operator"
+    )
+    karen = bootstrap(hearth)
+    assert karen["ask_skill_id"] == by_hand[ASK_SKILL_NAME]["skill_id"]
+    assert karen["answer_skill_id"] == by_hand[ANSWER_SKILL_NAME]["skill_id"]
+    with hearth.database.transaction() as db:
+        names = [
+            row["name"]
+            for row in db.execute(
+                "SELECT r.name AS name FROM skills s JOIN skill_revisions r "
+                "ON r.skill_id=s.id AND r.revision=s.revision WHERE r.status='active'"
+            )
+        ]
+    assert names.count(ASK_SKILL_NAME) == names.count(ANSWER_SKILL_NAME) == 1

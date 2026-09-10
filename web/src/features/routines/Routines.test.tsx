@@ -16,7 +16,6 @@ afterEach(() => {
 });
 const state: Snapshot = {
   schema_version: 1,
-  simulated: true,
   epoch: "test",
   cursor: 0,
   residents: [
@@ -33,6 +32,11 @@ const state: Snapshot = {
   tasks: [],
   runs: [],
   activity: [],
+  runtimes: {
+    default: "codex_subscription",
+    configured: ["codex_subscription"],
+    kinds: { codex_subscription: { label: "Codex subscription", live: true } },
+  },
 };
 const act = async (operation: () => Promise<unknown>) => {
   await operation();

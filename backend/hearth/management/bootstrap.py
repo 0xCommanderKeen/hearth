@@ -4,7 +4,11 @@ import json
 
 from hearth.management.authority import GrantPolicy, Management
 from hearth.residents.provisioning import Provisioning
-from hearth.skills.bootstrap import attach_authoring_skill, attach_journal_skill
+from hearth.skills.bootstrap import (
+    attach_authoring_skill,
+    attach_journal_skill,
+    attach_letter_skills,
+)
 from hearth.skills.catalog import Skills
 from hearth.work.service import Hearth, _audit
 
@@ -15,7 +19,11 @@ operator policy. Inspect the permitted resident, skill and synthetic input catal
 first. Reuse a suitable resident where possible; do not create duplicates.
 Define the purpose, success criteria and narrow resident instructions. Choose only
 available profiles, synthetic inputs and exact existing skill revisions. Allocate
-budget within the reported management policy and shared household allowance.
+budget within the reported management policy and shared household allowance. Propose
+$1.00 a day (1,000,000 microdollars) for a new resident, unless the operator names another
+number, its purpose plainly needs one, or the reported max_daily_limit is lower — then
+propose that limit. Never propose less than one run of its work costs. That is a starting
+proposal, not a floor, and the operator may lower it afterwards.
 Provision a complete resident, optional daily routine and first assignment through
 the provided management tools. Newly created residents have no management powers.
 Start the initial task when requested, inspect its status and report durable links
@@ -66,6 +74,11 @@ def bootstrap(hearth: Hearth) -> dict:
         authoring_skill_id = attach_authoring_skill(db, hearth, resident["resident_id"])
         # Karen may write memory and a journal, so she also carries the etiquette for it.
         journal_skill_id = attach_journal_skill(db, hearth, resident["resident_id"])
+        # Her grant carries send_letters below, so she carries the etiquette for writing to
+        # a colleague. Answering one follows the declared door rather than a grant, so
+        # "Answer a letter" is seeded into the library and assigned by the operator that
+        # opens a door — like any other skill, and to a resident Hearth has not guessed at.
+        letter_skill_ids = attach_letter_skills(db, hearth, resident["resident_id"])
         Management(hearth).save_in_transaction(
             db,
             resident["resident_id"],
@@ -84,6 +97,7 @@ def bootstrap(hearth: Hearth) -> dict:
                     "manage_lifecycle",
                     "assign_skills",
                     "writable_memory",
+                    "send_letters",
                 ],
             },
         )
@@ -92,6 +106,8 @@ def bootstrap(hearth: Hearth) -> dict:
             "skill_id": skill["skill_id"],
             "authoring_skill_id": authoring_skill_id,
             "journal_skill_id": journal_skill_id,
+            "ask_skill_id": letter_skill_ids["ask"],
+            "answer_skill_id": letter_skill_ids["answer"],
             "command_id": "bootstrap-karen",
             "status": "ready",
         }

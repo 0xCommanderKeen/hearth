@@ -117,7 +117,7 @@ def test_live_result_and_usage_survive_backup_without_auth_files(tmp_path, monke
         lambda *args, **kwargs: VERSION,
     )
     db = Database(data / "hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     CodexLiveRuntime(data, binary=binary, auth_home=auth)
     hearth = Hearth(db, clock=lambda: 1_788_640_000)
     hearth.save_resident(
@@ -138,11 +138,10 @@ def test_live_result_and_usage_survive_backup_without_auth_files(tmp_path, monke
         run.id, run.owner_token, encode(value, bound)[2], _usage_receipt=value
     )
     metadata, content = execution.artifact(result.artifact_id)
-    assert metadata.simulated is False and content == "A real-model summary."
+    assert content == "A real-model summary."
     assert result.actual_cost == 43482
     capture(data, tmp_path / "backup")
     manifest = verify(tmp_path / "backup")
-    assert manifest["simulated"] is False
     assert not any("auth" in name for name in manifest["files"])
     restore(tmp_path / "backup", tmp_path / "held")
     held = Database(tmp_path / "held/hearth.db")
@@ -191,7 +190,7 @@ def prepared_worker(tmp_path, monkeypatch):
     )
     binary.chmod(0o700)
     db = Database(data / "hearth.db")
-    db.initialize(runtime_kind=KIND)
+    db.initialize()
     runtime = CodexLiveRuntime(data, binary=binary, auth_home=auth)
     hearth = Hearth(db)
     hearth.save_resident(

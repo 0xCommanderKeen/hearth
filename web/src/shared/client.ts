@@ -108,7 +108,7 @@ export type ImportReceipt = ProvisionReceipt & {
       revision: number;
       outcome: string;
     }[];
-    execution_profile: { requested: string; used: string };
+    execution_profile: { requested: string; used: string; reason?: string };
     management_ignored: boolean;
   };
 };
@@ -127,7 +127,7 @@ export type ResidentProfile = {
   setup_status: string;
 };
 export type ResidentOptions = {
-  execution_profiles: { id: string; name: string; simulated: boolean }[];
+  execution_profiles: { id: string; name: string }[];
   input_sets: { input_set_id: string; name: string; synthetic: boolean }[];
   managers: { id: string; name: string }[];
 };
@@ -175,7 +175,8 @@ export type SkillValidation = {
   skill_id: string;
   candidate_revision: number;
   candidate_sha256: string;
-  evaluator_id: string | null;
+  resident_id: string | null;
+  memory_revision: number | null;
   status: "pending" | "passed" | "failed";
   reason: string | null;
   assessment: string;
@@ -193,7 +194,6 @@ export type SkillValidation = {
       artifact_id: string | null;
       artifact_sha256: string | null;
       actual_cost: number;
-      simulated: boolean;
       memory_revision?: number;
       resident_revision?: number;
       input_digest?: string;
@@ -269,21 +269,13 @@ export type Routine = {
   local_time: string;
   timezone: string;
 };
-export type Approval = {
+export type InboxNotification = {
   id: string;
-  artifact_id: string;
-  resident_id: string;
-  digest: string;
-  expires_at: number;
-  status: string;
-  payload: {
-    action: string;
-    destination: string;
-    sha256: string;
-    resident_revision: number;
-    policy_revision: number;
-    destination_revision: number;
-  };
+  kind: string;
+  resource_id: string;
+  created_at: number;
+  read_at: number | null;
+  payload: { link: string };
 };
 export type Resident = InputProvenance & {
   lifecycle?: ResidentLifecycle;
@@ -302,6 +294,7 @@ export type Resident = InputProvenance & {
   operator_paused?: number | boolean;
   control_revision?: number;
   memory_revision?: number;
+  letters_accept?: number | boolean;
   skills?: AssignedSkill[];
   skills_error?: string | null;
 };
@@ -409,26 +402,130 @@ export type ResidentDeclaration = {
     daily_limit: number;
     budget_timezone: string;
     skill_text: string;
+    // The capabilities standing beside the declaration. Hearth always answers with both;
+    // they are optional here because a body that writes a declaration may omit them, and
+    // omitting one keeps what the resident has.
+    memory_writable?: boolean;
+    letters_accept?: boolean;
   };
 };
+/** What a letter came to. A letter still open is `pending` and nothing else. */
+export type LetterState =
+  "pending" | "replied" | "unanswered" | "failed" | "expired";
+/** One hop of a chain. `sender` is null on the ordinary task a chain started from. */
+export type LetterHop = {
+  task_id: string;
+  resident_id: string;
+  resident_name: string;
+  title: string;
+  state: LetterState | null;
+  depth: number | null;
+  sender: string | null;
+  sender_name: string | null;
+};
+export type Letter = {
+  task_id: string;
+  title: string;
+  sender: string;
+  sender_resident_id: string | null;
+  sender_run_id: string | null;
+  recipient_resident_id: string;
+  parent_task_id: string | null;
+  root_task_id: string;
+  depth: number;
+  created_at: number;
+  expires_at: number;
+  status: string;
+  state: LetterState;
+  settled_at: number | null;
+  instruction: string;
+  instruction_truncated: boolean;
+  reply: {
+    resident_id: string;
+    run_id: string;
+    written_at: number;
+    text?: string;
+  } | null;
+};
+export type ResidentLetters = {
+  resident_id: string;
+  limit: number;
+  offset: number;
+  inbox: Letter[];
+  sent: Letter[];
+};
+export type LetterDraft = {
+  title: string;
+  detail: string;
+  expires_at?: number;
+};
+export type LetterReceipt = {
+  command_id: string;
+  resident_id: string;
+  task_id: string;
+  sender: string;
+  root_task_id: string;
+  depth: number;
+  expires_at: number;
+  status: string;
+};
+/** A letter written or a letter answered, both ends named. A null id is the operator. */
+export type LetterEvent = {
+  kind: "letter_sent" | "letter_replied";
+  task_id: string;
+  at: number;
+  from_resident_id: string | null;
+  to_resident_id: string | null;
+  title: string;
+  state: LetterState;
+  root_task_id: string;
+  depth: number;
+};
+// Ephemeral delivery context owned by watch, never wire data or operational state.
+// Every live snapshot carries its connection's baseline even if React batches away
+// the initial delivery. Weak keys release it with the snapshots/watch lifetime.
+export type StreamBaseline = Pick<Snapshot, "epoch" | "cursor" | "letters">;
+const streamBaselines = new WeakMap<Snapshot, StreamBaseline>();
+export function streamBaseline(snapshot: Snapshot) {
+  return streamBaselines.get(snapshot);
+}
+// A command refresh can be the last publication in a React batch containing a
+// reconnect. Keep that connection context on the snapshot the view actually sees.
+export function inheritStreamBaseline(
+  snapshot: Snapshot,
+  baseline?: StreamBaseline,
+) {
+  if (baseline && !streamBaselines.has(snapshot))
+    streamBaselines.set(snapshot, baseline);
+}
 export type Task = {
   id: string;
   resident_id: string;
   instruction: string;
   status: string;
   created_at: number;
+  lineage?: LetterHop[];
 };
 export type Run = InputProvenance & {
+  created_at?: number;
+  finished_at?: number | null;
   management?: {
     grant_revision: number;
     expires_at: number;
     calls: number;
+    /** The transport Hearth's own tools reached the session on, per runtime. */
+    protocol?: string;
   } | null;
   id: string;
   task_id: string;
   resident_id: string;
   status: string;
   artifact_id: string | null;
+  /** The runtime this run was admitted to, pinned at admission and never rewritten. */
+  runtime_kind?: string;
+  /** The model and price schedule that pin names, where the run was priced. */
+  model?: string | null;
+  price_schedule?: string | null;
   actual_cost: number | null;
   usage_known: number;
   usage_source?: string;
@@ -439,28 +536,42 @@ export type Run = InputProvenance & {
   journal_written?: number | null;
   skills?: AssignedSkill[];
   skills_error?: string | null;
+  letters_refused?: {
+    at: number;
+    reason: string;
+    details: Record<string, unknown>;
+  }[];
+};
+/** Which brains this household has, and what every kind a run may carry is called.
+ *
+ * Hearth's own registry answers both, so no view here has a provider's name written
+ * into it: a run is labelled by the kind it was pinned to and nothing else.
+ */
+export type Runtimes = {
+  default: string;
+  configured: string[];
+  kinds: Record<string, { label: string; live: boolean }>;
 };
 export type Snapshot = {
+  limits?: {
+    tasks: number;
+    runs: number;
+    activity: number;
+    notifications: number;
+    letters: number;
+  };
   provisioning?: (Omit<ProvisionReceipt, "setup"> & { name: string })[];
   household?: HouseholdPolicy;
   restore_hold?: boolean;
+  runtimes: Runtimes;
   schema_version: 1;
-  simulated: boolean;
   epoch: string;
   cursor: number;
   residents: Resident[];
   tasks: Task[];
   runs: Run[];
-  notifications?: {
-    id: string;
-    kind: string;
-    resource_id: string;
-    status: string;
-    attempts: number;
-    next_at: number;
-    reason: string | null;
-    payload: { simulated: boolean; link: string };
-  }[];
+  letters?: LetterEvent[];
+  notifications?: InboxNotification[];
   routines?: Routine[];
   occurrences?: {
     routine_id: string;
@@ -468,19 +579,33 @@ export type Snapshot = {
     status: string;
     task_id: string | null;
   }[];
-  approvals?: Approval[];
-  publication_policies?: {
-    resident_id: string;
-    revision: number;
-    enabled: number;
-  }[];
-  actions?: { id: string; status: string; reason: string | null }[];
   activity: {
     sequence: number;
     kind: string;
     resource_id: string;
     at: number;
   }[];
+};
+export type UsageOrigin = {
+  root_task_id: string;
+  resident_id: string | null;
+  instruction: string;
+  created_at: number;
+  runs: number;
+  letters: number;
+  residents_involved: string[];
+  known_cost: number;
+  unknown_runs: number;
+  active_runs: number;
+  reserved: number;
+  started_at: number;
+  last_at: number;
+};
+export type UsageOrigins = {
+  limit: number;
+  offset: number;
+  truncated: boolean;
+  origins: UsageOrigin[];
 };
 export type PendingTask = {
   id: string;
@@ -503,13 +628,19 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if (
     !s ||
     s.schema_version !== 1 ||
-    typeof s.simulated !== "boolean" ||
     typeof s.epoch !== "string" ||
     !Number.isSafeInteger(s.cursor) ||
     !Array.isArray(s.residents) ||
     !Array.isArray(s.tasks) ||
     !Array.isArray(s.runs) ||
-    !Array.isArray(s.activity)
+    !Array.isArray(s.activity) ||
+    // Without the runtime table this interface would have to guess which provider
+    // worked a run, and a wrong provider on a result is worse than no result.
+    !s.runtimes ||
+    typeof s.runtimes.default !== "string" ||
+    !Array.isArray(s.runtimes.configured) ||
+    !s.runtimes.kinds ||
+    typeof s.runtimes.kinds !== "object"
   ) {
     throw new StateFormatError(
       "This interface cannot read the server’s state format.",
@@ -545,7 +676,7 @@ export type ManagementChange = Omit<
 > & { expected_revision: number };
 export type ManagementCatalog = {
   residents: { id: string; name: string; grant: ManagementGrant }[];
-  profiles: string[];
+  profiles: { id: string; name: string }[];
   input_sets: {
     input_set_id: string;
     name: string;
@@ -810,12 +941,17 @@ export class Client {
       `/api/skill-validations/${encodeURIComponent(id)}`,
     );
   }
-  validateSkill(skillId: string, revision: number, reserve: number) {
+  validateSkill(
+    skillId: string,
+    revision: number,
+    reserve: number,
+    residentId: string,
+  ) {
     return this.request<SkillValidation>(
       `/api/skills/${encodeURIComponent(skillId)}/validations`,
       {
         method: "POST",
-        body: JSON.stringify({ revision, reserve }),
+        body: JSON.stringify({ revision, reserve, resident_id: residentId }),
       },
     );
   }
@@ -888,6 +1024,40 @@ export class Client {
       `/api/residents/${encodeURIComponent(id)}/journal?limit=${limit}&offset=${offset}`,
     );
   }
+  letters(id: string, limit = 20, offset = 0) {
+    return this.request<ResidentLetters>(
+      `/api/residents/${encodeURIComponent(id)}/letters?limit=${limit}&offset=${offset}`,
+    );
+  }
+  // The operator writes with its own hand. No grant bounds it; the receiver's door, its
+  // archive state and the household's own reach refuse the letter exactly as they would
+  // refuse a resident's, and the refusal comes back as this request's own error.
+  sendLetter(to: string, command: string, letter: LetterDraft) {
+    return this.request<LetterReceipt>(
+      `/api/residents/${encodeURIComponent(to)}/letters`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": command },
+        body: JSON.stringify(letter),
+      },
+    );
+  }
+  // Open or shut the declared letters.accept door and nothing else. The body carries the
+  // door alone, so a control that never read this resident's purpose or skill text
+  // cannot overwrite them, and the revision it saw refuses a save that raced a change to
+  // any of the declaration. The answer is the declaration that now stands.
+  setLettersDoor(id: string, accept: boolean, revision: number) {
+    return this.request<ResidentDeclaration>(
+      `/api/residents/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          letters_accept: accept,
+          expected_revision: revision,
+        }),
+      },
+    );
+  }
   saveMemory(id: string, text: string, revision: number) {
     return this.request<ResidentMemory>(
       `/api/residents/${encodeURIComponent(id)}/memory`,
@@ -915,6 +1085,11 @@ export class Client {
       method: "POST",
     });
   }
+  usageByOrigin(limit = 20, offset = 0) {
+    return this.request<UsageOrigins>(
+      `/api/usage/origins?limit=${limit}&offset=${offset}`,
+    );
+  }
   reconcileUsage(
     id: string,
     command: string,
@@ -938,6 +1113,7 @@ export class Client {
       id: string;
       status: string;
       artifact_id: string | null;
+      runtime_kind?: string;
     }>(`/api/runs/${encodeURIComponent(id)}`);
   }
   cancel(id: string) {
@@ -967,40 +1143,11 @@ export class Client {
       body: JSON.stringify(body),
     });
   }
-  publicationPolicy(resident: string, enabled: boolean, revision: number) {
-    return this.request(
-      `/api/residents/${encodeURIComponent(resident)}/publication-policy`,
-      {
-        method: "POST",
-        body: JSON.stringify({ enabled, expected_revision: revision }),
-      },
+  markNotification(id: string, read: boolean) {
+    return this.request<InboxNotification>(
+      `/api/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST", body: JSON.stringify({ read }) },
     );
-  }
-  propose(id: string, artifact: string, expires: number) {
-    return this.request<Approval>("/api/approvals", {
-      method: "POST",
-      headers: { "Idempotency-Key": id },
-      body: JSON.stringify({ artifact_id: artifact, expires_at: expires }),
-    });
-  }
-  review(id: string) {
-    return this.request<{ approval: Approval; content: string }>(
-      `/api/approvals/${encodeURIComponent(id)}`,
-    );
-  }
-  decide(approval: Approval, approve: boolean) {
-    return this.request<Approval>(
-      `/api/approvals/${encodeURIComponent(approval.id)}/decision`,
-      {
-        method: "POST",
-        body: JSON.stringify({ reviewed_digest: approval.digest, approve }),
-      },
-    );
-  }
-  execute(id: string) {
-    return this.request(`/api/approvals/${encodeURIComponent(id)}/execute`, {
-      method: "POST",
-    });
   }
 
   async submit(pending: PendingTask) {
@@ -1055,6 +1202,12 @@ export class Client {
       try {
         const initial = await this.state();
         if (signal.aborted) return;
+        let baseline: StreamBaseline = {
+          epoch: initial.epoch,
+          cursor: initial.cursor,
+          letters: initial.letters,
+        };
+        streamBaselines.set(initial, baseline);
         onState(initial);
         const response = await fetch(
           `/api/events?cursor=${initial.cursor}&epoch=${encodeURIComponent(initial.epoch)}`,
@@ -1089,7 +1242,18 @@ export class Client {
               const data = frame
                 .split("\n")
                 .find((line) => line.startsWith("data: "));
-              if (data) onState(decodeSnapshot(JSON.parse(data.slice(6))));
+              if (data) {
+                const next = decodeSnapshot(JSON.parse(data.slice(6)));
+                if (frame.split("\n").some((line) => line === "event: reset")) {
+                  baseline = {
+                    epoch: next.epoch,
+                    cursor: next.cursor,
+                    letters: next.letters,
+                  };
+                }
+                streamBaselines.set(next, baseline);
+                onState(next);
+              }
             }
           }
         } finally {

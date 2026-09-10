@@ -2,7 +2,7 @@
 
 Declarations have an explicit IANA `budget_timezone`, validated at save time.
 New declarations default to UTC unless an explicit budget zone is selected.
-Fresh mock Reader setup selects Europe/Ljubljana and a $10 daily allowance.
+Fresh Reader setup selects Europe/Ljubljana and a $10 daily allowance.
 Each new run pins its declaration revision, local budget date and timezone for
 provenance. The browser displays the resident's budget timezone.
 

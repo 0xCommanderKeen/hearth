@@ -7,12 +7,24 @@ no automatic management grant for newly provisioned residents.
 
 The operator configures each resident's enabled grant, permitted configured runtime
 profiles, named synthetic input sets, creation/work/routine capabilities, managed
-resident count, child daily allowance, per-admission reservation and tool-call
-limit. Empty input scope permits empty inputs only. The existing household limits
+resident count, child daily allowance, per-admission reservation, tool-call
+limit and, with `send_letters`, whom this resident may write to. Empty input scope
+permits empty inputs only. The existing household limits
 and resident admission checks still apply. A daily allowance limits creation
 configuration; later operator changes remain authoritative. Only authenticated
 operator HTTP actions can change grants or household limits. Skill instructions
 and model output cannot do so.
+
+The seeded **Create residents** wording tells Karen to propose **$1.00 a day**
+(1,000,000 microdollars) for a new resident unless the operator names another number, the
+resident's purpose plainly needs one, or her own reported `max_daily_limit` is lower — a
+grant tightened below a dollar is the number she follows, because the wording never
+overrides the policy she is given — and never to propose less than a single run of that
+resident's work costs. It is a proposal she makes in her own request, not a floor Hearth
+enforces: the grant's `max_daily_limit`, the household allowance and the operator's own
+edits are the actual bounds, and the operator may set a resident lower afterwards.
+The wording is seeded once, at explicit setup; a household already bootstrapped keeps the
+revision its operator has, and editing it is an ordinary skill edit.
 
 `GET /api/management` provides the operator catalog and the latest 30 durable
 operation receipts. `POST /api/management/bootstrap` performs explicit setup.
@@ -23,7 +35,7 @@ reload. Held restores expose this state read-only.
 ## Run authority and transactions
 
 Admission pins an immutable grant revision/digest and a ten-minute expiry separately
-from ordinary context version 6. Only admitted granted subscription runs select the
+from ordinary context version 7. Only admitted granted subscription runs select the
 native management adapter; Reader retains its existing read-only exec adapter.
 The trusted worker passes a private binding to the bridge, never model-visible
 owner tokens, operator credentials, database handles or auth paths. Native thread
@@ -40,8 +52,18 @@ granted run receives them even when its grant holds no capabilities at all; the 
 grant capability `writable_memory` separately governs handing that declaration to a
 provisioned or reconfigured resident. A run admitted on a writable declaration alone is
 pinned this surface with no grant behind it, is offered those three tools and nothing
-more, and is reported as holding no management authority. The offered set is what the
-admission pins: `tools_sha256` covers exactly the schemas that run may call.
+more, and is reported as holding no management authority. A run working a letter is
+pinned the same way and for the same reason: answering the question one was handed is not
+management, so it is offered the reply tool whatever it is granted, and keeps it when a
+grant it did hold is revoked mid-run. Reading one's own post follows having an end of a
+letter rather than any capability, so narrowing a grant stops the next letter and never
+hides the answer to the last one. A resident that has only ever been written to is
+pinned this surface for that reading alone, with no grant and no writable declaration
+behind it: a run pinned nothing is launched with no native surface and would be offered
+no tool at all, whatever the scope says it may read. Writing to a colleague is management — it spends the
+household's money on a resident the sender does not own — and the send tool appears only
+under a grant carrying `send_letters`. The offered set is what the admission pins:
+`tools_sha256` covers exactly the schemas that run may call.
 
 The initial tools inspect bounded catalog summaries, exact skill revisions and
 owned resident status; provision through the ordinary resident operation; and
@@ -82,12 +104,38 @@ usage once, separately from provider charges. Missing or invalid usage remains a
 visible hold. Current-data backup validates immutable grant history, admission
 bindings and runtime receipts; restore stays held and does not copy credentials.
 
+The second live runtime carries the same tools over a different transport. On
+`claude_subscription` the session is the Claude Code CLI, and Hearth's tools reach it as
+one MCP server named by a per-run `--mcp-config`: a Hearth-owned stdio shim that holds no
+credential and forwards every `tools/list` and `tools/call` over a unix socket in the
+run's own folder, answered by the trusted worker through this same bridge, with the same
+`BoundRun` authority, the same ten minutes and 64 calls, and the same one transaction per
+call. `--tools` and `--allowedTools` name exactly the `mcp__hearth__*` tools the run was
+pinned to, the session's own `init` event has to report exactly those before any call is
+answered, and the pins travel as `catalog_sha256` (the pinned build and model) and
+`tools_sha256` (the same digest of the same tool list). What was measured, and what it
+changed, is in [the Claude runtime record](claude-runtime.md).
+
 Deterministic management tests exercise real temporary SQLite authority, concurrent
 count limits, exact retries, refused escalation, revocation, ownership corruption,
 audit rollback, reuse and held backup. The worker callback test uses synthetic
 native events. These checks do not establish real provider or host isolation;
 the actual pinned binary probe and bounded real journey are recorded separately
 in the implementation checkpoint.
+
+## Writing to a colleague
+
+`send_letters` is the grant capability that permits one resident to write to another, and
+`letter_recipient_ids` optionally narrows that to a named set — at most twenty, checked for
+shape rather than existence, so an operator may write the allowlist before the recipient
+exists. It widens nothing else: the recipient's own declared `letters.accept` door still
+has to be open, and a grant cannot open it. Neither capability nor door is created by
+instruction text, and the two etiquette skills that say how to ask and how to answer are
+ordinary library entries that grant nothing. Karen's setup carries `send_letters`, the
+**Ask a colleague** skill, and **Answer a letter** seeded into the library for the operator
+that opens a door to assign. [The letters contract](letters.md) records the guards, the
+delivery path, the refusal table and the household settings, and
+[ADR 0011](adr/0011-letters-between-residents.md) records the decision.
 
 ## Shared skill authoring
 
@@ -103,28 +151,33 @@ skill content nor an example grants capabilities. Humans use the same catalog an
 conflict-aware revisions; editing an authored skill creates a draft with fresh checks.
 Existing assignments retain their exact published revisions.
 
-Authoring permission includes one visible service evaluator and its named fictional
-case inputs. This narrowly scoped helper is created through ordinary provisioning,
-has the requesting resident as creator and the operator as manager, and receives no
-management grant, routine or general input selection. Its two cases use ordinary
-serial admissions, reservations, saved artifacts and known usage under all household
-limits. Only their durable trusted task bindings permit pinning the exact draft;
-there is no model-supplied draft override. Pending validation survives the requesting
-turn, but future admissions recheck the current authoring grant and ten-minute expiry.
+The examples are the requesting resident's own work. A validation pins that resident,
+its declaration revision, the memory revision it had when it asked and the context
+version this release builds, and its two cases are admitted on it: its allowance, its
+reservations, its one run slot, under all household limits. A resident therefore cannot
+watch its own examples run — they need the slot the requesting turn is holding — so it
+reports the pending validation identity, ends its turn and reads the durable evidence in
+a later one. An operator has no allowance or slot to lend, and names the resident that
+runs them. Only the durable trusted task bindings permit pinning the exact draft; there
+is no model-supplied draft override. Pending validation survives the requesting turn,
+and future admissions recheck the current authoring grant and a one-day expiry.
 Revocation prevents new admissions; already admitted work preserves ordinary holds.
 Status waits last at most three seconds and release the database writer throughout.
 
-Fixed evaluator instructions and empty memory keep unrelated operator data out of
-examples. An operator edit that adds memory or changes that context pauses admission;
-ordinary repair to the required empty context resumes the same queued case identities.
-Budget changes and harmless declaration revisions do not permanently poison a helper.
-Unknown usage remains pending and never authorizes replacement execution.
+An example run reaches no management tools at all: admission pins none for it, whatever
+the resident is otherwise granted, and it carries exactly one candidate skill and one
+case input beside the resident's own pinned context. An operator edit to the declaration
+text the request pinned pauses admission, because the examples would then answer for a
+different resident; restoring that text resumes the same queued case identities. Budget
+and name changes are not that text and do not block. The resident's memory moves on
+freely: each case carries the revision the request named, not whatever has been written
+since. Unknown usage remains pending and never authorizes replacement execution.
 
 The structural checker verifies populated sections and two bounded examples. Normal
 and edge/adversarial cases execute the candidate using synthetic input revisions;
 allowlisted output-length, required-phrase and forbidden-phrase assertions inspect
-saved artifact bytes. Evidence distinguishes simulated runs from model execution and
-deterministic assertions from semantic assessment. There is no model grader or general
+saved artifact bytes. Evidence records deterministic assertions, not semantic
+assessment. There is no model grader or general
 quality guarantee. Publication binds the immutable candidate/content/example hashes,
 both successful case results, and a new active revision with identical instructions.
 Backup verifies this chain; held restores remain read-only. Townhall shows draft

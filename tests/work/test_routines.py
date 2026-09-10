@@ -5,12 +5,13 @@ from datetime import datetime
 
 import pytest
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.routines import Routines
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 
 def instant(value):
@@ -73,9 +74,7 @@ def test_outage_catches_only_latest_and_overlap_is_recorded(system):
         assert rows[0]["scheduled_at"] == instant("2026-10-06T07:00:00")
         assert rows[1]["status"] == "skipped_overlap"
     routines.admit_queued()
-    Executor(
-        Execution(routines.hearth, Artifacts(root / "artifacts")), MockRuntime(root / "runtime")
-    ).step()
+    Executor(Execution(routines.hearth, Artifacts(root / "artifacts")), FakeRuntime(root)).step()
     now[0] = instant("2026-10-08T12:00:00")
     assert len(routines.tick()) == 1
 

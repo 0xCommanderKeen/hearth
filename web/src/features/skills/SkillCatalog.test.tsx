@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Client, RequestError, type CatalogSkill } from "../../shared/client";
+import {
+  Client,
+  RequestError,
+  type CatalogSkill,
+  type Resident,
+} from "../../shared/client";
 import { SkillCatalog } from "./SkillCatalog";
 
 afterEach(() => {
@@ -9,6 +14,18 @@ afterEach(() => {
   vi.restoreAllMocks();
   window.location.hash = "";
 });
+const RESIDENTS = [
+  {
+    id: "karen",
+    name: "Karen",
+    purpose: "Runs the household",
+    revision: 1,
+    daily_limit: 1000000,
+    presence: "idle",
+    pause_reason: null,
+    lifecycle: { resident_id: "karen", state: "ready" as const },
+  },
+] as Resident[];
 const skill: CatalogSkill = {
   skill_id: "summary",
   revision: 1,
@@ -28,7 +45,9 @@ function setup() {
   vi.spyOn(client, "skills").mockResolvedValue([skill]);
   vi.spyOn(client, "skill").mockResolvedValue(skill);
   vi.spyOn(client, "skillHistory").mockResolvedValue([skill]);
-  render(<SkillCatalog client={client} readOnly={false} />);
+  render(
+    <SkillCatalog client={client} residents={RESIDENTS} readOnly={false} />,
+  );
   return client;
 }
 it("opens persisted instructions, safely previews Markdown and retains a stale draft", async () => {
@@ -124,7 +143,9 @@ it("shows loading failures, retry and an empty searchable catalog", async () => 
   vi.spyOn(client, "skills")
     .mockRejectedValueOnce(new Error("Unavailable"))
     .mockResolvedValue([]);
-  render(<SkillCatalog client={client} readOnly={false} />);
+  render(
+    <SkillCatalog client={client} residents={RESIDENTS} readOnly={false} />,
+  );
   expect(screen.getByText("Loading skills…")).toBeTruthy();
   await screen.findByText("Unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Retry loading skills" }));
@@ -202,7 +223,9 @@ it.each(["passed", "failed"] as const)(
     vi.spyOn(client, "skillUsers").mockResolvedValue([]);
     vi.spyOn(client, "skillHistory").mockResolvedValue([authored]);
     const read = vi.spyOn(client, "skill").mockResolvedValue(authored);
-    render(<SkillCatalog client={client} readOnly={false} />);
+    render(
+      <SkillCatalog client={client} residents={RESIDENTS} readOnly={false} />,
+    );
     await screen.findByText("Not evaluated");
     fireEvent.change(screen.getByLabelText("Markdown instructions"), {
       target: { value: "Unsaved human procedure" },
@@ -212,7 +235,8 @@ it.each(["passed", "failed"] as const)(
       skill_id: "summary",
       candidate_revision: 1,
       candidate_sha256: "digest",
-      evaluator_id: "evaluator",
+      resident_id: "karen",
+      memory_revision: 4,
       status: "pending" as const,
       reason: null,
       assessment: "pending",

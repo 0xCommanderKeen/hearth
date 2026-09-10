@@ -19,6 +19,7 @@ from hearth.skills.assignments import read_assignments
 from hearth.skills.bootstrap import KEEP_A_JOURNAL
 from hearth.storage.backup import capture, restore, verify
 
+from tests.fake_runtime import fake_runtime
 from tests.integrations.codex.test_karen_journey import NOTES, TOKEN, installed
 
 REPORT = "Write today's fictional orchard report."
@@ -127,7 +128,9 @@ def test_the_second_daily_run_refers_to_what_the_first_run_wrote(tmp_path):
     capture(tmp_path / "data", tmp_path / "backup")
     verify(tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    held = create_app(tmp_path / "held", TOKEN, supervise=False).state.hearth
+    held = create_app(
+        tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime()
+    ).state.hearth
     assert held.database.restored()
     assert (
         Journal(held).read(resident_id)["entries"] == Journal(hearth).read(resident_id)["entries"]

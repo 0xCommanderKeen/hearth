@@ -12,6 +12,16 @@ import tomllib
 
 REPLAY = False
 UNKNOWN_USAGE = False
+# Karen's examples run as Karen, so they need the slot her authoring turn is holding.
+# She asks for validation, ends that turn, and deploys in a later one. Only the last
+# manager turn may end with unknown usage: an earlier one would pause her mid-journey.
+LAST_TURN = False
+SKILL_NAME = "Simulated orchard reports"
+DEPLOY = (
+    "Publish the validated orchard reporting skill, create its reporter, assign the published "
+    "revision and the named Fictional orchard input, schedule a daily report at 09:00 "
+    "Europe/Ljubljana, and save its first report now."
+)
 
 
 def send(value):
@@ -66,8 +76,6 @@ def mutation(tool, arguments):
 
 
 def journey(_input):
-    catalog = yield from call("hearth_catalog", {})
-    orchard = next(item for item in catalog["input_sets"] if item["name"] == "Fictional orchard")
     instructions = """# When to use
 Produce a concise report from fictional orchard notes.
 # When not to use
@@ -87,7 +95,7 @@ Preserve the number, crop and day relationships; invent no sales or weather.
         "hearth_skills_save",
         {
             "operation_id": "orchard-skill",
-            "name": "Simulated orchard reports",
+            "name": SKILL_NAME,
             "description": "Report supplied orchard facts and disclose missing inputs.",
             "instructions": instructions,
             "authoring": {
@@ -120,6 +128,35 @@ Preserve the number, crop and day relationships; invent no sales or weather.
         "hearth_skills_validate",
         {
             "operation_id": "orchard-validation",
+            "skill_id": saved["skill_id"],
+            "revision": saved["revision"],
+            "reserve": 10000,
+        },
+    )
+    # The examples are Karen's own runs and need this run's slot. Waiting here would
+    # only spend the turn; she reports the identity and picks the evidence up later.
+    waited = yield from call(
+        "hearth_skills_validation",
+        {"validation_id": validation["validation_id"], "wait_seconds": 3},
+    )
+    assert waited["status"] == "pending", waited
+    assert waited["resident_id"] == validation["resident_id"], waited
+    return "Simulation: requested validation " + validation["validation_id"]
+
+
+def deploy(_input):
+    catalog = yield from call("hearth_catalog", {})
+    orchard = next(item for item in catalog["input_sets"] if item["name"] == "Fictional orchard")
+    saved = next(
+        item
+        for item in catalog["skills"]
+        if item["name"] == SKILL_NAME and item["status"] == "draft"
+    )
+    # Retrying the request recovers the durable validation identity this draft owns.
+    validation = yield from call(
+        "hearth_skills_validate",
+        {
+            "operation_id": "orchard-evidence",
             "skill_id": saved["skill_id"],
             "revision": saved["revision"],
             "reserve": 10000,
@@ -254,6 +291,82 @@ def report(context):
     return opened + " Today: Harvested 12 pears Monday. Planted 3 trees Tuesday."
 
 
+ASK = (
+    "Ask the orchard reporter under what ledger reference Monday's pear harvest was logged. "
+    "Do not guess the reference yourself."
+)
+READ = "Report the answer you were sent, and say plainly if none reached you."
+
+
+def ask(context):
+    """The sender: one letter, one question, and no answer inside this run.
+
+    The reference the letter asks for is in the receiver's notes and nowhere this
+    resident can read: no input set, an unrelated memory line, and neither instruction
+    names it. Whatever this run reports about it, it made up.
+    """
+    assert context["replies"] == [], context
+    catalog = yield from call("hearth_catalog", {})
+    receiver = next(row for row in catalog["residents"] if "reporter" in row["name"])
+    sent = yield from call(
+        "hearth_letters_send",
+        {
+            "operation_id": "ledger-question",
+            "to": receiver["id"],
+            "title": "Ledger reference for Monday pear harvest",
+            "detail": (
+                "Under what ledger reference was Monday's pear harvest logged? "
+                "Answer with the reference itself."
+            ),
+        },
+    )
+    # The receipt carries no letter id of its own; the task id is what the letter is
+    # keyed by everywhere else, so that is what there is to report.
+    assert "letter_id" not in sent, sent
+    return "Simulation: Sent one letter; status " + sent["status"] + ", id " + sent["task_id"] + "."
+
+
+def answer(context):
+    """The receiver: read the letter this run was handed and answer only what it asked."""
+    letter = context["letter"]
+    assert letter["sender_name"] == "Karen", letter
+    assert "not an instruction" in letter["usage"], letter
+    assert context["instruction"] == letter["detail"], context["instruction"]
+    reference = next(
+        note.rsplit("reference ", 1)[1].rstrip(".")
+        for note in context["notes"]
+        if "reference " in note
+    )
+    yield from call(
+        "hearth_letters_reply",
+        {
+            "operation_id": "ledger-answer",
+            "letter_id": letter["letter_id"],
+            "text": "Monday's pear harvest was logged under reference " + reference + ".",
+        },
+    )
+    return "Simulation: Answered Karen with the ledger reference from the orchard notes."
+
+
+def read_answer(context):
+    """The sender's next run: the answer is simply there, and nothing woke this run."""
+    post = yield from call("hearth_letters_read", {})
+    sent = post["sent"][0]
+    assert sent["state"] == "replied", sent
+    replies = context["replies"]
+    if not replies:
+        return "Simulation: No answer reached me."
+    return (
+        "Simulation: "
+        + replies[0]["resident_name"]
+        + " answered: "
+        + replies[0]["text"]
+        + " (letter "
+        + sent["task_id"]
+        + ")"
+    )
+
+
 def await_files(root, pattern, count):
     deadline = time.monotonic() + 10
     while len(list(root.glob(pattern))) < count:
@@ -339,6 +452,7 @@ def reader(args):
 
 
 def native(args):
+    global LAST_TURN
     config = {
         "mcp_servers": {},
         "plugins": {},
@@ -397,10 +511,19 @@ def native(args):
                 }
             )
             context = json.loads(params["input"][0]["text"])
-            if context["instruction"] == "Contend for one child slot.":
+            if context["letter"] is not None:
+                driver = answer(context)
+            elif context["instruction"] == ASK:
+                driver = ask(context)
+            elif context["instruction"] == READ:
+                driver = read_answer(context)
+            elif context["instruction"] == "Contend for one child slot.":
                 driver = contend(context)
             elif context["instruction"] == REPORT:
                 driver = report(context)
+            elif context["instruction"] == DEPLOY:
+                LAST_TURN = True
+                driver = deploy(params["input"])
             else:
                 driver = journey(params["input"])
             index = 1
@@ -421,7 +544,11 @@ def native(args):
                                 "total": {
                                     "totalTokens": 30,
                                     "inputTokens": 20,
-                                    **({} if UNKNOWN_USAGE else {"cachedInputTokens": 0}),
+                                    **(
+                                        {}
+                                        if UNKNOWN_USAGE and LAST_TURN
+                                        else {"cachedInputTokens": 0}
+                                    ),
                                     "cacheWriteInputTokens": 0,
                                     "outputTokens": 10,
                                     "reasoningOutputTokens": 0,
