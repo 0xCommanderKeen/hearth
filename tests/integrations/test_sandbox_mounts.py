@@ -218,3 +218,36 @@ def test_a_request_naming_a_mount_hearth_could_not_have_written_launches_nothing
     # The worker refuses before anything is launched and the run stays unlaunched,
     # exactly as it does for a sandbox document it cannot read.
     assert not (folder / "receipt.json").exists()
+
+
+def test_no_mount_may_carry_the_daemon_s_own_socket_into_a_sandbox(tmp_path):
+    """The grant refused this when it was written; the launch refuses it again.
+
+    A grant is written once and a daemon can be pointed somewhere new afterwards, so
+    the last gate before an argv is the one that knows which socket is root here.
+    """
+    from hearth.integrations.launcher import ContainerLauncher, Mount
+
+    launcher = ContainerLauncher(IMAGE, NETWORK, docker="docker", host="unix:///srv/podman.sock")
+    for source in ("/srv/podman.sock", "/srv", "/var/run/docker.sock", "/run"):
+        with pytest.raises(Refused, match="sandbox_mount_forbidden"):
+            launcher.arguments(
+                ["true"], env={}, mounts=(Mount(source, "/mounts/notes"),), socket=None
+            )
+    # A folder that is none of those is built into an ordinary bind mount.
+    argv = launcher.arguments(
+        ["true"], env={}, mounts=(Mount("/srv/notes", "/mounts/notes"),), socket=None
+    )
+    assert "type=bind,source=/srv/notes,target=/mounts/notes,readonly" in argv
+
+
+def test_a_request_naming_a_path_no_run_may_reach_launches_nothing(tmp_path):
+    """The static half of the grant's rules, re-applied where the argv is built."""
+    from hearth.integrations.launcher import CONTAINER, Placement, granted
+
+    for host_path in ("/etc", "/proc/self", "/", "relative", "/tmp/../etc"):
+        with pytest.raises(Refused, match="sandbox_mount_invalid"):
+            granted(
+                Placement(CONTAINER),
+                [{"name": "notes", "host_path": host_path, "mode": "ro"}],
+            )

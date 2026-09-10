@@ -289,3 +289,37 @@ def test_a_link_into_a_protected_folder_is_still_that_folder(tmp_path):
         refused = write_grant(client, who, [{"name": "store", "host_path": str(link)}])
         assert refused.status_code == 409
         assert refused.json()["error"] == "grant_mount_forbidden"
+
+
+def test_one_folder_may_not_be_reached_twice_under_two_names(tmp_path):
+    """A `ro` folder inside a `rw` one is a writable folder wearing the wrong mode."""
+    outer = tmp_path / "outer"
+    (outer / "inner").mkdir(parents=True)
+    link = tmp_path / "alias"
+    link.symlink_to(outer, target_is_directory=True)
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        for mounts in (
+            [
+                {"name": "everything", "host_path": str(outer), "mode": "rw"},
+                {"name": "secrets", "host_path": str(outer / "inner")},
+            ],
+            [
+                {"name": "outer", "host_path": str(outer)},
+                {"name": "alias", "host_path": str(link)},
+            ],
+        ):
+            refused = write_grant(client, who, mounts)
+            assert refused.status_code == 409, mounts
+            assert refused.json()["error"] == "grant_mount_forbidden"
+        # Two folders that are simply beside each other are fine.
+        (tmp_path / "beside").mkdir()
+        saved = write_grant(
+            client,
+            who,
+            [
+                {"name": "outer", "host_path": str(outer)},
+                {"name": "beside", "host_path": str(tmp_path / "beside")},
+            ],
+        )
+        assert saved.status_code == 200

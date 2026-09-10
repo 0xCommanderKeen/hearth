@@ -38,10 +38,11 @@ REPLIES_USAGE = (
 # reach and how far, so it does not have to guess at a folder or at a mode.
 MOUNTS_USAGE = (
     "The folders this run was granted, by name. Inside a sandbox each is at the path "
-    "given here; a run that is not sandboxed reaches the host path instead. A read-only "
-    "mount refuses a write; a writable one may be written and every use of it is "
-    "recorded. Nothing else of this machine is reachable, and what the household keeps "
-    "(memory, journal, letters, work) is written with the tools, never through a folder."
+    "given here and the sandbox holds nothing else of this machine; a run that is not "
+    "sandboxed reaches the host path instead. A read-only mount refuses a write; a "
+    "writable one may be written and every use of it is recorded. Work in these folders "
+    "and nowhere else, and what the household keeps (memory, journal, letters, work) is "
+    "written with the tools, never through a folder."
 )
 
 

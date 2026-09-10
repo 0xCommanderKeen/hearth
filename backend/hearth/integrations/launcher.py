@@ -94,6 +94,15 @@ OUTPUT = "/hearth/output"
 # own three above are `/hearth`; everything under here is the grant's and nothing else
 # of the host exists in the container (`docs/adr/0016-sandbox-per-run.md`).
 MOUNTS = "/mounts"
+# Where a container runtime's socket ordinarily is. It is root-equivalent on the host,
+# so nothing may ever mount it, whatever a grant written on some other day says: the
+# grant refuses it at write time and this launcher refuses it again at launch, because
+# a daemon can be pointed somewhere new long after a grant was written.
+SOCKETS = ("/var/run/docker.sock", "/run/docker.sock")
+# Paths no run may reach on any host: the root itself, the machine's own configuration
+# and the kernel's two trees. What one *installation* protects beside these is its own
+# and belongs to the grant (`management/authority.py`).
+FORBIDDEN = ("/", "/etc", "/proc", "/sys")
 # How much a directory of the run's own may hold. The CLIs write session state and
 # logs into their configuration directory; nothing a run keeps belongs there.
 SCRATCH = "64m"
@@ -116,6 +125,24 @@ STRAY_TIMEOUT = 5
 # How long the client is given to write the id of the container it created before the
 # run is treated as one whose identity was never observed.
 IDENTITY_TIMEOUT = 30
+
+
+def overlaps(path: str, other: str) -> bool:
+    """Is one of these two paths the other, or inside it? Either way round counts.
+
+    A path below a protected one reaches part of it; a path above one reaches all of
+    it, so nothing that has to keep two paths apart has to reason about which direction
+    of containment was the dangerous one.
+
+    The root is the exception that proves it: everything is under `/`, so treating it
+    the same way would refuse every path there is. What `/` covers is itself.
+    """
+    first, second = path.rstrip("/") or "/", other.rstrip("/") or "/"
+    if first == second:
+        return True
+    if first == "/" or second == "/":
+        return False
+    return first.startswith(second + "/") or second.startswith(first + "/")
 
 
 def mounted(name: str) -> str:
@@ -303,6 +330,17 @@ def granted(placement: Placement, mounts) -> list[dict]:
         # Built on both launchers so a path is checked the same way whichever one this
         # is, and placed only where placing means anything.
         placed = Mount(mount["host_path"], mounted(mount["name"]), writable=mount["mode"] == "rw")
+        # The grant refused these when it was written; they are refused again here,
+        # because a request document is read after a crash, a restore and an upgrade,
+        # and because what a launch may reach is decided where the argv is built.
+        # What this *installation* protects beside them -- its data directory, its
+        # logins, the daemon it drives -- needs configuration this worker does not
+        # carry; the runtime's own socket is checked below, where the daemon is known.
+        source = placed.source or ""
+        if source != os.path.normpath(source) or any(
+            overlaps(source, forbidden) for forbidden in FORBIDDEN
+        ):
+            raise Refused("sandbox_mount_invalid")
         if placement.contained:
             placement.place(placed)
         entries.append(dict(mount))
@@ -547,6 +585,12 @@ class ContainerLauncher:
         self.network = network
         self.docker = docker
         self.host = host
+        # Every socket a session must never be able to reach through a mount: the ones
+        # a client finds on its own, and the one this launcher was pointed at.
+        named = (
+            host[len("unix://") :] if isinstance(host, str) and host.startswith("unix://") else None
+        )
+        self.sockets = tuple(dict.fromkeys([*SOCKETS, *([named] if named else [])]))
 
     def argv(self, *arguments: str) -> list[str]:
         """The client, the daemon it is told to talk to, and the rest.
@@ -595,6 +639,15 @@ class ContainerLauncher:
             # configuration names, so the shim inside the container connects to the
             # string Hearth already wrote and no translation layer exists to disagree.
             mounts = (*mounts, Mount(str(socket), str(socket), writable=True))
+        # The last gate before an argv: nothing may mount the socket of the daemon this
+        # launcher is talking to, or the one it would find on its own. That socket is
+        # root on the host, and a grant written before an operator moved the daemon
+        # cannot be re-checked anywhere else.
+        for mount in mounts:
+            if mount.source is not None and any(
+                overlaps(mount.source, path) for path in self.sockets
+            ):
+                raise Refused("sandbox_mount_forbidden")
         return self.argv(
             "run",
             # One container, one session, removed by the runtime when it ends. Hearth

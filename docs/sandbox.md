@@ -277,12 +277,25 @@ management authority at all may still be given one to read.
 **What is refused, and when.** At write time, never at admission -- a run waiting on a
 grant nobody will fix is a resident that never works again. `grant_mount_forbidden`
 answers a relative or unnormalised path, `/`, `/etc`, `/proc`, `/sys`, this
-installation's own protected paths, and a name or a path two mounts share. The
-protected set is Hearth's data directory, the login directory of every runtime this
-instance opened, and the container runtime's socket -- and containment counts both
-ways: a mount *under* a protected path reaches part of it and a mount *above* one
-reaches all of it, so both are refused. The root is the one exception to that rule,
-because everything is under `/`; what `/` protects is itself.
+installation's own protected paths, a name two mounts share, and one folder reached
+twice -- the same path under two names, or two paths where one holds the other, because
+`/data` writable beside `/data/secrets` read-only is `/data/secrets` writable under
+another name and the audit would name only the first. The protected set is Hearth's data
+directory, the login directory of every runtime this instance opened, and the container
+runtime's socket -- and containment counts both ways: a mount *under* a protected path
+reaches part of it and a mount *above* one reaches all of it, so both are refused. The
+root is the one exception to that rule, because everything is under `/`; what `/`
+protects is itself. Every path is held to all of this as it is written *and* as it
+resolves: the daemon resolves a bind mount's source on the way in, so a symlink would
+otherwise be the way past every rule here.
+
+A grant is written once and a host changes afterwards, so the launch is a second gate.
+`granted()` re-applies what needs no configuration -- absolute, normalised, and never
+`/`, `/etc`, `/proc` or `/sys` -- and `ContainerLauncher` refuses any mount that reaches
+the socket of the daemon it is about to talk to, including the one an operator pointed
+it at after the grant was written (`sandbox_mount_forbidden`). What an installation
+protects beyond that is configuration the detached worker does not carry, and it stays
+the grant's own check.
 
 **What admission does.** `run_mounts` is written in the same transaction as the
 admission that pinned it, from the grant as it stands at that moment, with the grant's

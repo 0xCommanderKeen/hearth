@@ -323,10 +323,26 @@ def _resolve_mounts(db, hearth: Hearth, resident_id: str, bundle, paths: dict, p
     refuse a path are this household's own, so an import cannot reach anything a grant
     written by hand could not. A bundle with no folders writes no grant at all, which is
     exactly what an import did before this existed.
+
+    A repeated import is the same import: provisioning replays and returns its stored
+    receipt, so this replays too rather than writing a second grant revision -- which
+    would refuse the retry with `revision_conflict` and roll back an import that had
+    already succeeded. What the replay reports is what the store actually holds, not
+    what the second request asked for, because the first call is the answer to both.
     """
-    from hearth.management.authority import Management
+    from hearth.management.authority import Management, read_grant
 
     carried = bundle.management.mounts if bundle.management is not None else []
+    if carried:
+        existing = read_grant(db, resident_id)
+        if existing["revision"] != 0:
+            held = {mount["name"]: mount for mount in existing["mounts"]}
+            return [
+                {"name": mount.name, **held[mount.name], "outcome": "granted"}
+                if mount.name in held
+                else {"name": mount.name, "mode": mount.mode, "outcome": "mount_unresolved"}
+                for mount in carried
+            ]
     resolution, mounts = [], []
     for mount in carried:
         where = paths.get(mount.name)

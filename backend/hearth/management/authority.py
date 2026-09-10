@@ -11,19 +11,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hearth.inputs.catalog import read_input
 from hearth.integrations.interface import management_protocol
-from hearth.integrations.launcher import mounted
+from hearth.integrations.launcher import FORBIDDEN, SOCKETS, mounted, overlaps
 from hearth.residents.models import Refused, identifier
 from hearth.work.service import Hearth, _audit
 
-# Paths no grant may name, whatever an operator writes, on any host: the root itself,
-# the machine's own configuration and the kernel's two trees. Everything else a grant
-# may not reach is this installation's own and arrives through `protected_paths` --
-# Hearth's data directory, the logins and the container runtime's socket.
-FORBIDDEN = ("/", "/etc", "/proc", "/sys")
-# Where a container runtime's socket ordinarily is. It is root-equivalent on the host
-# (`docs/adr/0016-sandbox-per-run.md`), so it is refused wherever it is found, and the
-# one an operator configured explicitly is added beside these.
-SOCKETS = ("/var/run/docker.sock", "/run/docker.sock")
+# Paths no grant may name, whatever an operator writes, on any host, and where a
+# container runtime's socket ordinarily is -- both read from the launcher, which is
+# where they are refused a second time when a session is actually started. Everything
+# else a grant may not reach is this installation's own and arrives through
+# `protected_paths`: Hearth's data directory, the logins and the configured daemon.
 
 
 class Mount(BaseModel):
@@ -59,38 +55,23 @@ def protected_paths(
     return tuple(dict.fromkeys(values))
 
 
-def _within(path: str, other: str) -> bool:
-    """Is one of these two paths the other, or inside it? Either way round is refused.
-
-    A mount below a protected path reaches part of it; a mount above one reaches all
-    of it. The grant is refused for both, so no operator has to reason about which
-    direction of containment was the dangerous one.
-
-    The root is the exception that proves it: everything is under `/`, so protecting it
-    the same way would refuse every grant there is. What `/` protects is itself.
-    """
-    first, second = path.rstrip("/") or "/", other.rstrip("/") or "/"
-    if first == second:
-        return True
-    if first == "/" or second == "/":
-        return False
-    return first.startswith(second + "/") or second.startswith(first + "/")
-
-
 def check_mounts(mounts: list[Mount], protected: Iterable[str] = ()) -> None:
     """Refuse a filesystem grant nothing should ever hold, at the moment it is written.
 
     Every refusal here is `grant_mount_forbidden`: a relative or unnormalised path, a
-    path this host protects, a name two mounts share, and a path two names share --
-    which would be one folder a run could reach under two names and, inside a sandbox,
-    two bind mounts of the same source.
+    path this host protects, a name two mounts share, and one folder reached twice --
+    the same path under two names, or two paths where one holds the other. Overlap is
+    refused because the narrower grant would be a fiction: `/data` writable beside
+    `/data/secrets` read-only is `/data/secrets` writable, under another name, and the
+    audit would name only the folder that was granted `rw`.
 
-    A path is held to the protected set as it is written and as it resolves, because a
-    symlink is not an argument: the container runtime resolves the source on the way in,
-    so a link into Hearth's own data directory would mount the data directory.
+    A path is held to all of that as it is written and as it resolves, because a symlink
+    is not an argument: the container runtime resolves a mount's source on the way in,
+    so a link into Hearth's own data directory would mount the data directory, and a
+    link beside a granted folder would be that folder under a second name.
     """
     names: set[str] = set()
-    paths: set[str] = set()
+    paths: list[str] = []
     for mount in mounts:
         try:
             identifier(mount.name)
@@ -104,16 +85,19 @@ def check_mounts(mounts: list[Mount], protected: Iterable[str] = ()) -> None:
         ):
             raise Refused("grant_mount_forbidden")
         try:
-            candidates = (path, str(Path(path).resolve()))
+            resolved = str(Path(path).resolve())
         except OSError:
             # A path the filesystem cannot even resolve is not one to hand a daemon.
             raise Refused("grant_mount_forbidden") from None
-        if any(_within(one, other) for one in candidates for other in (*FORBIDDEN, *protected)):
+        candidates = (path, resolved)
+        if any(overlaps(one, other) for one in candidates for other in (*FORBIDDEN, *protected)):
             raise Refused("grant_mount_forbidden")
-        if mount.name in names or path in paths:
+        if mount.name in names or any(
+            overlaps(one, other) for one in candidates for other in paths
+        ):
             raise Refused("grant_mount_forbidden")
         names.add(mount.name)
-        paths.add(path)
+        paths += [path, resolved]
 
 
 class GrantPolicy(BaseModel):

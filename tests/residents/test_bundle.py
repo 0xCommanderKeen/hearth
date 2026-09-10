@@ -379,3 +379,29 @@ def test_a_bundle_naming_a_path_of_its_own_is_not_a_bundle(tmp_path):
     target = store(tmp_path / "target")
     with pytest.raises(Refused, match="invalid_resident_bundle"):
         Bundles(target).import_("import-mounts-4", {"bundle": bundle})
+
+
+def test_importing_the_same_bundle_twice_grants_the_folder_once(tmp_path):
+    """A lost reply is retried with the same key, and the retry is not a failure."""
+    source = store(tmp_path / "source")
+    who = seeded(source)["resident_id"]
+    granted(source, who, [{"name": "notes", "host_path": str(tmp_path), "mode": "rw"}])
+    bundle = Bundles(source).export(who)
+    here = tmp_path / "target-folder"
+    here.mkdir()
+    target = store(tmp_path / "target")
+    request = {"bundle": bundle, "mount_paths": {"notes": str(here)}}
+    first = Bundles(target).import_("import-mounts-5", request)
+    again = Bundles(target).import_("import-mounts-5", request)
+    # The retry is the first import's own receipt, and it says the same about the
+    # folder. (What it says about the catalog differs as it always has: the second
+    # pass reuses the skill and the input set the first one created.)
+    assert (again["resident_id"], again["status"]) == (first["resident_id"], "ready")
+    assert again["resolution"]["mounts"] == first["resolution"]["mounts"]
+    from hearth.management.authority import read_grant
+
+    with target.database.transaction() as db:
+        grant = read_grant(db, first["resident_id"])
+    # One grant revision, not two, and the folder is the one the first call named.
+    assert grant["revision"] == 1
+    assert grant["mounts"] == [{"name": "notes", "host_path": str(here), "mode": "rw"}]

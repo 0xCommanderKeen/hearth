@@ -210,12 +210,14 @@ def worker(folder, request, execution):
         # inside this guard, so a request document the worker cannot read leaves an
         # unlaunched receipt with its own reason rather than no receipt at all.
         sandbox = Sandbox.of(request.get("sandbox"))
+        # Recorded the moment it is known, so a run refused by anything below still says
+        # where it was admitted to execute rather than saying nothing at all.
+        box = sandbox
         launcher = sandbox.open()
         # And what it was admitted to reach on disk. Checked here, before anything is
         # launched, and surveyed so this receipt can say which writable folder was used.
         reached = granted(sandbox.placement(), request.get("mounts") or [])
         before = surveyed(reached)
-        box = sandbox
         with hearth.database.transaction() as db:
             authority = authorize(db, bound, int(hearth.clock()))
             # The pin a sandboxed session runs on is the image, whose own CLIs were
