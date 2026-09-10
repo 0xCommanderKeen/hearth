@@ -12,6 +12,13 @@ from hearth.residents.memory import MAX_MEMORY
 from hearth.residents.models import Refused
 
 MAX_BODY = 65_536
+# Character-bounded fields can take 12 JSON bytes per supplementary code point
+# (two escaped UTF-16 surrogates), versus at most four in direct UTF-8. Include
+# all string fields plus room for keys, scalar values and ordinary whitespace.
+MAX_TASK_BODY = (32_000 + 128) * 12 + 1024
+MAX_ROUTINE_BODY = (32_000 + 128 + 5 + 100) * 12 + 1024
+# Declaration.validate: name, purpose, skill_text, budget_timezone and runtime.
+MAX_DECLARATION_BODY = (100 + 8_000 + 32_000 + 100 + 100) * 12 + 1024
 
 
 class OperatorAuth:
@@ -53,6 +60,16 @@ class OperatorAuth:
             return
         body = bytearray()
         body_limit = MAX_BODY
+        if scope["method"] == "POST" and scope["path"] == "/api/tasks":
+            body_limit = MAX_TASK_BODY
+        if scope["method"] == "POST" and re.fullmatch(
+            r"/api/routines/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}", scope["path"]
+        ):
+            body_limit = MAX_ROUTINE_BODY
+        if scope["method"] == "PUT" and re.fullmatch(
+            r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}", scope["path"]
+        ):
+            body_limit = MAX_DECLARATION_BODY
         if scope["method"] == "PUT" and re.fullmatch(
             r"/api/residents/[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}/memory", scope["path"]
         ):
@@ -80,12 +97,13 @@ class OperatorAuth:
                 message = await asyncio.wait_for(receive(), timeout=15)
                 if message["type"] == "http.disconnect":
                     return
-                body.extend(message.get("body", b""))
-                if len(body) > body_limit:
+                chunk = message.get("body", b"")
+                if len(body) + len(chunk) > body_limit:
                     await JSONResponse({"error": "body_too_large"}, status_code=413)(
                         scope, receive, send
                     )
                     return
+                body.extend(chunk)
                 if not message.get("more_body", False):
                     break
         except TimeoutError:

@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Task, routine and declaration saves accept their full Unicode character limits in
+  UTF-8 or escaped JSON while retaining finite request budgets (#199).
+
 - Activity snapshots carry marked task previews with full instructions available on demand;
   bounded SSE frames survive combined network chunks and Unicode reconnects (#198).
 
