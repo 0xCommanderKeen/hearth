@@ -4,12 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.observation.snapshot import snapshot
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def test_resume_never_clears_unknown_usage_hold(hearth, tmp_path):
     run = hearth.admit(task(hearth), reserve=10_000)
     hearth.set_paused("reader", paused=True, expected_revision=0)
     execution = Execution(hearth, Artifacts(tmp_path / "artifacts"))
-    Executor(execution, MockRuntime(tmp_path / "mock-runtime", scenario="unknown_usage")).step()
+    Executor(execution, FakeRuntime(tmp_path, scenario="unknown_usage")).step()
     hearth.set_paused("reader", paused=False, expected_revision=1)
     assert hearth.run(run.id).usage_known is False or hearth.run(run.id).usage_known == 0
     state = snapshot(hearth)["residents"][0]
@@ -58,7 +59,7 @@ def test_pause_does_not_claim_active_run_stopped(hearth, tmp_path):
     run = hearth.admit(task(hearth), reserve=10_000)
     executor = Executor(
         Execution(hearth, Artifacts(tmp_path / "artifacts")),
-        MockRuntime(tmp_path / "mock-runtime", scenario="hold"),
+        FakeRuntime(tmp_path, scenario="hold"),
     )
     executor.step()
     hearth.set_paused("reader", paused=True, expected_revision=0)

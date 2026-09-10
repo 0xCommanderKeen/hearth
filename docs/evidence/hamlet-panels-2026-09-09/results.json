@@ -1,0 +1,18 @@
+{
+  "browser": "151.0.7922.34",
+  "checks": [
+    "home focus and exact close restore",
+    "on-demand result outside task window",
+    "App record return preserves renderer and camera",
+    "hidden scene stops drawing",
+    "archive selection preserved",
+    "disconnect and reconnect",
+    "record failure and return",
+    "journal deep link and explicit load",
+    "Townhall summary",
+    "mobile bottom sheet scroll and paused status",
+    "removed label restores focus to canvas"
+  ],
+  "renderers": 1,
+  "errors": []
+}

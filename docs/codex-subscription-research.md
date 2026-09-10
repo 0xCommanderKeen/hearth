@@ -2,8 +2,8 @@
 
 Official OpenAI documentation checked 2026-09-06 for issue #69. The selected route
 is **Codex with ChatGPT subscription sign-in**, model `gpt-6-astra`, on the Mac,
-with a $10/day operator limit. Execution remains mocked. API-key billing is not a
-fallback. This research did not inspect account state, credentials or user config,
+with a $10/day operator limit. Execution was still mocked when this was written.
+API-key billing is not a fallback. This research did not inspect account state, credentials or user config,
 run Codex tasks, or contact a model service.
 
 ## Supported authentication controls
@@ -76,8 +76,9 @@ This is a proposed Hearth test, not a provider guarantee:
    small flag list. Add a malicious synthetic tool-call response to prove that
    the configured probe cannot read an out-of-scope canary or contact a network
    endpoint. Keep transport compatibility distinct from full tool confinement.
-5. Mark every output simulated. Record the CLI version, effective configuration,
-   fixture protocol and container evidence; test rejection, truncation and timeout.
+5. Mark every output as coming from the fixture. Record the CLI version, effective
+   configuration, fixture protocol and container evidence; test rejection, truncation
+   and timeout.
 
 This can establish compatibility with an offline fixture for that CLI version.
 It cannot establish subscription availability, real auth refresh, actual model

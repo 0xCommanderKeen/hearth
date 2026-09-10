@@ -3,6 +3,8 @@
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-operator-token-for-skills"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 BODY = {
@@ -12,8 +14,14 @@ BODY = {
 }
 
 
+def catalog_activity(client):
+    """Audit kinds the catalog wrote; the runtime records its own configuration too."""
+    rows = client.get("/api/state", headers=AUTH).json()["activity"]
+    return [row["kind"] for row in rows if row["kind"].startswith("skill.")]
+
+
 def test_create_retry_history_and_authenticated_provenance(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         assert client.post("/api/skills", json=BODY).status_code == 401
         headers = {**AUTH, "Idempotency-Key": "create-summary"}
         response = client.post("/api/skills", headers=headers, json=BODY)
@@ -34,7 +42,7 @@ def test_create_retry_history_and_authenticated_provenance(tmp_path):
             ).status_code
             == 409
         )
-        assert len(client.get("/api/state", headers=AUTH).json()["activity"]) == 1
+        assert catalog_activity(client) == ["skill.create"]
 
 
 def test_concurrent_edits_archive_history_and_held_restore(tmp_path):
@@ -43,7 +51,7 @@ def test_concurrent_edits_archive_history_and_held_restore(tmp_path):
     from hearth.storage.backup import capture, restore
 
     data = tmp_path / "data"
-    with TestClient(create_app(data, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(data, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         receipt = client.post(
             "/api/skills", headers={**AUTH, "Idempotency-Key": "create"}, json=BODY
         ).json()
@@ -84,11 +92,12 @@ def test_concurrent_edits_archive_history_and_held_restore(tmp_path):
         ).json() == {"error": "skill_archived"}
         history = client.get(path + "/history", headers=AUTH).json()
         assert [row["revision"] for row in history] == [3, 2, 1]
-        activity = client.get("/api/state", headers=AUTH).json()["activity"]
-        assert len(activity) == 3
+        assert catalog_activity(client) == ["skill.archive", "skill.save", "skill.create"]
     capture(data, tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "restored")
-    with TestClient(create_app(tmp_path / "restored", TOKEN, supervise=False)) as restored:
+    with TestClient(
+        create_app(tmp_path / "restored", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as restored:
         assert restored.get(path + "/history", headers=AUTH).json() == history
         assert restored.get("/api/skills/operations/create", headers=AUTH).json() == receipt
         assert restored.get("/api/state", headers=AUTH).json()["restore_hold"] is True
@@ -98,7 +107,7 @@ def test_concurrent_edits_archive_history_and_held_restore(tmp_path):
 
 
 def test_validation_search_and_actor_cannot_be_forged(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         headers = {**AUTH, "Idempotency-Key": "create"}
         for invalid in [
             {"name": " "},
@@ -109,7 +118,7 @@ def test_validation_search_and_actor_cannot_be_forged(tmp_path):
             assert client.post(
                 "/api/skills", headers=headers, json={**BODY, **invalid}
             ).status_code in {409, 422}
-        assert client.get("/api/state", headers=AUTH).json()["activity"] == []
+        assert catalog_activity(client) == []
         client.post("/api/skills", headers=headers, json=BODY)
         assert len(client.get("/api/skills?query=DAILY", headers=AUTH).json()) == 1
         assert client.get("/api/skills?query=unrelated", headers=AUTH).json() == []
@@ -118,7 +127,7 @@ def test_validation_search_and_actor_cannot_be_forged(tmp_path):
 def test_duplicate_concurrent_creation_and_reopen_preserve_one_operation(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
 
         def create(_):
             return client.post(
@@ -130,17 +139,18 @@ def test_duplicate_concurrent_creation_and_reopen_preserve_one_operation(tmp_pat
         assert all(response.status_code == 201 for response in results)
         receipt = results[0].json()
         assert all(response.json() == receipt for response in results)
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         assert client.get("/api/skills/operations/same", headers=AUTH).json() == receipt
         assert len(client.get("/api/skills", headers=AUTH).json()) == 1
-        assert len(client.get("/api/state", headers=AUTH).json()["activity"]) == 1
+        assert catalog_activity(client) == ["skill.create"]
 
 
 def test_failed_audit_rolls_back_content_revision_and_receipt(tmp_path):
     import sqlite3
 
     with TestClient(
-        create_app(tmp_path, TOKEN, supervise=False), raise_server_exceptions=False
+        create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime()),
+        raise_server_exceptions=False,
     ) as client:
         with sqlite3.connect(tmp_path / "hearth.db") as db:
             db.execute(
@@ -161,7 +171,7 @@ def test_failed_audit_rolls_back_content_revision_and_receipt(tmp_path):
             ).status_code
             == 201
         )
-        assert len(client.get("/api/state", headers=AUTH).json()["activity"]) == 1
+        assert catalog_activity(client) == ["skill.create"]
 
 
 def test_changed_content_is_refused_by_inspection_and_backup(tmp_path):
@@ -172,7 +182,7 @@ def test_changed_content_is_refused_by_inspection_and_backup(tmp_path):
     from hearth.storage.backup import capture
 
     data = tmp_path / "data"
-    with TestClient(create_app(data, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(data, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         receipt = client.post(
             "/api/skills", headers={**AUTH, "Idempotency-Key": "one"}, json=BODY
         ).json()

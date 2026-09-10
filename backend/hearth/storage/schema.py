@@ -1,11 +1,25 @@
 # ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades."""
+"""The complete schema for a fresh Hearth database; no historical upgrades.
+
+`runs.runtime_kind` admits every kind in `integrations.interface.RUNTIMES`: the two
+live ones this release can start work on, and the three simulated kinds Hearth used to
+ship. The simulated ones are history a forward-upgraded store may still carry, and a
+run's own pin is the honest record of where its work happened.
+See `database.HISTORICAL_RUNTIME_KINDS`.
+
+`declarations.runtime` is the runtime one resident's work is admitted to, null for a
+resident that follows the store's default (`system_meta.runtime_kind`). It carries no
+CHECK: a store upgraded forward may hold a kind a later release retired, and refusing
+to open it would lose the resident rather than the runtime
+(`docs/adr/0015-runtime-per-resident.md`).
+"""
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
         id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, candidate_revision INTEGER NOT NULL,
         candidate_sha256 TEXT NOT NULL, manifest_sha256 TEXT NOT NULL,
-        evaluator_id TEXT REFERENCES residents(id), evaluator_revision INTEGER,
+        resident_id TEXT REFERENCES residents(id), resident_revision INTEGER,
+        memory_revision INTEGER, context_version INTEGER,
         actor TEXT NOT NULL, originating_run_id TEXT REFERENCES runs(id), grant_revision INTEGER,
         reserve INTEGER NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
         request_sha256 TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
@@ -165,20 +179,15 @@ SCHEMA = (
         daily_limit INTEGER NOT NULL CHECK(daily_limit>=0), timezone TEXT NOT NULL,
         resident_limit INTEGER NOT NULL CHECK(resident_limit BETWEEN 1 AND 1000),
         concurrency_limit INTEGER NOT NULL CHECK(concurrency_limit BETWEEN 1 AND 100),
-        journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000)
-    )""",
-    """CREATE TABLE approvals (
-        id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
-        resident_id TEXT NOT NULL REFERENCES residents(id),
-        payload TEXT NOT NULL, digest TEXT NOT NULL,
-        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending','approved','denied','expired')),
-        decided_at INTEGER
+        journal_limit INTEGER NOT NULL CHECK(journal_limit BETWEEN 1 AND 1000),
+        max_letter_depth INTEGER NOT NULL CHECK(max_letter_depth BETWEEN 0 AND 5),
+        letter_ttl_seconds INTEGER NOT NULL CHECK(letter_ttl_seconds BETWEEN 60 AND 604800),
+        letter_daily_limit INTEGER NOT NULL CHECK(letter_daily_limit BETWEEN 0 AND 100)
     )""",
     """CREATE TABLE artifacts (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
         relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
-        size INTEGER NOT NULL CHECK (size >= 0), simulated INTEGER NOT NULL CHECK (simulated IN (0,1))
+        size INTEGER NOT NULL CHECK (size >= 0)
     )""",
     """CREATE TABLE audit (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,14 +213,47 @@ SCHEMA = (
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
         skill_text TEXT NOT NULL DEFAULT '',
         memory_writable INTEGER NOT NULL DEFAULT 0 CHECK (memory_writable IN (0,1)),
+        letters_accept INTEGER NOT NULL DEFAULT 0 CHECK (letters_accept IN (0,1)),
+        runtime TEXT,
         PRIMARY KEY (resident_id, revision)
     )""",
-    """CREATE TABLE deliveries (
+    # A letter is an ordinary task with an address: who sent it, from which run and task,
+    # the root the chain rolls up to, how many hops in it is, and when it goes stale.
+    # The receiver is the task's own resident; there is no second copy of that fact.
+    # An operator writing on Hearth's own behalf has no resident and no run behind it,
+    # so both sender columns are empty together or not at all.
+    # What became of it is one word, written when the letter reaches its end: answered
+    # (`replied`), worked and left unanswered, `failed` with the run that worked it, or
+    # `expired` before anyone started it. A letter still open is `pending`, and a letter
+    # that ended says when, so the sender can read what is new since it last looked.
+    """CREATE TABLE letters (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(id),
+        sender_resident_id TEXT REFERENCES residents(id),
+        sender_run_id TEXT REFERENCES runs(id),
+        parent_task_id TEXT REFERENCES tasks(id),
+        root_task_id TEXT NOT NULL REFERENCES tasks(id),
+        depth INTEGER NOT NULL CHECK (depth > 0),
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending'
+            CHECK (state IN ('pending','replied','unanswered','failed','expired')),
+        settled_at INTEGER,
+        CHECK ((sender_resident_id IS NULL) = (sender_run_id IS NULL)),
+        CHECK ((state = 'pending') = (settled_at IS NULL))
+    )""",
+    # The answer the sender reads. One per letter, written by the run that worked it;
+    # the full run artifact stays linked for the operator.
+    """CREATE TABLE letter_replies (
+        task_id TEXT PRIMARY KEY REFERENCES letters(task_id),
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        resident_id TEXT NOT NULL REFERENCES residents(id),
+        text TEXT NOT NULL,
+        written_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE notifications (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, resource_id TEXT NOT NULL,
-        payload TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending','retry','delivered','obsolete')),
-        attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL,
-        delivered_at INTEGER, reason TEXT,
+        payload TEXT NOT NULL, created_at INTEGER NOT NULL, read_at INTEGER,
         UNIQUE(kind, resource_id)
     )""",
     """CREATE TABLE memory_revisions (
@@ -251,22 +293,6 @@ SCHEMA = (
     """CREATE TABLE pauses (
         resident_id TEXT PRIMARY KEY REFERENCES residents(id), reason TEXT NOT NULL,
         run_id TEXT NOT NULL REFERENCES runs(id), created_at INTEGER NOT NULL
-    )""",
-    """CREATE TABLE publication_actions (
-        id TEXT PRIMARY KEY REFERENCES approvals(id),
-        destination TEXT NOT NULL REFERENCES publication_targets(id),
-        digest TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('executing','unknown','completed','refused')),
-        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-        reason TEXT, receipt TEXT
-    )""",
-    """CREATE TABLE publication_policies (
-        resident_id TEXT PRIMARY KEY REFERENCES residents(id),
-        revision INTEGER NOT NULL CHECK (revision > 0),
-        enabled INTEGER NOT NULL CHECK (enabled IN (0,1))
-    )""",
-    """CREATE TABLE publication_targets (
-        id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK (revision > 0)
     )""",
     """CREATE TABLE residents (
         id TEXT PRIMARY KEY,
@@ -321,7 +347,7 @@ SCHEMA = (
         cancellation_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancellation_requested IN (0,1)),
         launch_attempted INTEGER NOT NULL DEFAULT 0 CHECK (launch_attempted IN (0,1)),
         budget_timezone TEXT NOT NULL DEFAULT 'UTC',
-        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription')),
+        runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription','claude_subscription')),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)
@@ -338,12 +364,10 @@ SCHEMA = (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), command_id TEXT NOT NULL UNIQUE,
         digest TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount >= 0),
         evidence TEXT NOT NULL, recorded_at INTEGER NOT NULL,
-        source TEXT NOT NULL CHECK (source='operator_reported_mock')
+        source TEXT NOT NULL CHECK (source='operator_reported')
     )""",
     """CREATE UNIQUE INDEX active_resident ON runs(resident_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",
     """CREATE UNIQUE INDEX active_task ON runs(task_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",
-    """CREATE UNIQUE INDEX publication_claim ON publication_actions(destination)
-        WHERE status IN ('executing','unknown')""",
 )

@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.management.bridge import BoundRun, Bridge
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-skill-authoring-operator"
 AUTH = {"Authorization": "Bearer " + TOKEN}
 INSTRUCTIONS = """# When to use
@@ -41,7 +43,7 @@ def authoring():
                 "notes": [],
                 "assertions": {
                     "max_characters": 1000,
-                    "contains": ["No synthetic inputs"],
+                    "contains": ["No notes were supplied"],
                     "excludes": ["PRIVATE_SENTINEL"],
                 },
             },
@@ -50,7 +52,7 @@ def authoring():
 
 
 def manager(tmp_path, *, capabilities=None):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     karen = client.post("/api/management/bootstrap", headers=AUTH).json()
     if capabilities is not None:
@@ -71,9 +73,14 @@ def manager(tmp_path, *, capabilities=None):
             ).status_code
             == 200
         )
+    return app, client, karen, turn(app, client, karen, "author")
+
+
+def turn(app, client, karen, name):
+    """One held native manager run for Karen. Her examples wait for it to end."""
     hearth = app.state.hearth
     task = hearth.submit(
-        "author",
+        name,
         karen["resident_id"],
         "Create a useful reporting skill",
         expires_at=int(hearth.clock()) + 600,
@@ -90,7 +97,96 @@ def manager(tmp_path, *, capabilities=None):
     runtime.scenario = "hold"
     runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
     runtime.scenario = "success"
-    return app, client, karen, bridge
+    return bridge
+
+
+def settle_karen(app, bridge):
+    """End Karen's turn the way a completed native manager turn ends it.
+
+    Her examples run as her, so they wait for this: while this run holds her one slot
+    nothing else of hers can be admitted. The receipt is a completed turn with its
+    usage counters, so she is left free rather than paused on unknown usage.
+    """
+    from dataclasses import asdict
+
+    from hearth.execution.usage import binding
+    from hearth.integrations.codex.app_server import PROTOCOL
+    from hearth.integrations.codex.pricing import MODEL
+    from hearth.integrations.codex.subscription import KIND
+    from hearth.integrations.interface import encode_receipt
+
+    from tests.fake_runtime import BINARY
+
+    hearth = app.state.hearth
+    run = hearth.run(bridge.bound.run_id)
+    # Stands in for the digests a real launch pins from the binary's own catalog.
+    catalog, tools = "b" * 64, "c" * 64
+    with hearth.database.transaction(write=True) as db:
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=?,tools_sha256=? WHERE run_id=?",
+            (catalog, tools, run.id),
+        )
+        bound = binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+    receipt = {
+        "kind": KIND,
+        "protocol": "management",
+        "binding": asdict(bound),
+        "binary": BINARY,
+        "terminal": {
+            "protocol": PROTOCOL,
+            "launched": True,
+            "cancelled": False,
+            "error": None,
+            "exit_code": 0,
+            "catalog_sha256": catalog,
+            "tools_sha256": tools,
+            "events": [
+                {
+                    "method": "thread/started",
+                    "params": {"thread": {"id": "thread", "model": MODEL}},
+                },
+                {
+                    "method": "turn/started",
+                    "params": {"threadId": "thread", "turn": {"id": "turn"}},
+                },
+                {
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "thread",
+                        "turnId": "turn",
+                        "tokenUsage": {
+                            "total": {
+                                "totalTokens": 120,
+                                "inputTokens": 100,
+                                "cachedInputTokens": 0,
+                                "cacheWriteInputTokens": 0,
+                                "outputTokens": 20,
+                                "reasoningOutputTokens": 0,
+                            }
+                        },
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread",
+                        "turnId": "turn",
+                        "turn": {
+                            "id": "turn",
+                            "status": "completed",
+                            "error": None,
+                            "items": [
+                                {"type": "agentMessage", "text": "Simulation: manager turn done."}
+                            ],
+                        },
+                    },
+                },
+            ],
+        },
+    }
+    return app.state.execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
 
 
 def call(bridge, tool, arguments, call_id):
@@ -131,8 +227,8 @@ def test_scoped_save_is_a_visible_retryable_draft_in_the_normal_skill_catalog(tm
     refused = client.put(
         "/api/residents/" + karen["resident_id"] + "/skills",
         headers={**AUTH, "Idempotency-Key": "draft-assignment"},
-        # Karen carries three bootstrap assignments, so hers is at revision 3.
-        json={"expected_revision": 3, "skills": [{"skill_id": skill["skill_id"], "revision": 1}]},
+        # Karen carries four bootstrap assignments, so hers is at revision 4.
+        json={"expected_revision": 4, "skills": [{"skill_id": skill["skill_id"], "revision": 1}]},
     )
     assert refused.status_code == 409 and refused.json()["error"] == "skill_not_active"
 
@@ -140,7 +236,7 @@ def test_scoped_save_is_a_visible_retryable_draft_in_the_normal_skill_catalog(tm
 def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp_path):
     import time
 
-    app, client, _, bridge = manager(tmp_path)
+    app, client, karen, bridge = manager(tmp_path)
     assert client.get("/api/skill-validations/unknown").status_code == 401
     assert client.post("/api/skills/unknown/validations", json={"revision": 1}).status_code == 401
     assert (
@@ -169,9 +265,16 @@ def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp
     )
     assert success, pending
     assert pending["status"] == "pending"
+    assert pending["resident_id"] == karen["resident_id"]
     path = "/api/skill-validations/" + pending["validation_id"]
     app.state.supervisor.start()
     try:
+        # Karen's own run holds her one slot, so her examples cannot start inside it.
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            assert client.get(path, headers=AUTH).json()["status"] == "pending"
+            time.sleep(0.05)
+        assert settle_karen(app, bridge).status == "succeeded"
         deadline = time.monotonic() + 6
         while time.monotonic() < deadline:
             validation = client.get(path, headers=AUTH).json()
@@ -180,9 +283,9 @@ def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp
             time.sleep(0.05)
     finally:
         app.state.supervisor.stop()
-    assert validation["status"] == "passed", validation
+    assert validation["status"] == "passed", validation["reason"]
     assert len(validation["cases"]) == 2
-    assert validation["assessment"] == "deterministic_assertions_on_simulated_runs"
+    assert validation["assessment"] == "deterministic_assertions_on_model_runs"
     for case in validation["cases"]:
         assert case["result"]["passed"] and case["result"]["actual_cost"] == 2000
         run = client.get("/api/runs/" + case["run_id"], headers=AUTH).json()
@@ -191,12 +294,24 @@ def test_validation_runs_two_accounted_examples_before_immutable_publication(tmp
             "/api/artifacts/" + case["result"]["artifact_id"], headers=AUTH
         ).json()
         assert artifact["artifact"]["sha256"] == case["result"]["artifact_sha256"]
-    grant = client.get(
-        "/api/residents/" + validation["evaluator_id"] + "/management", headers=AUTH
-    ).json()
-    assert not grant["enabled"]
+        with app.state.hearth.database.transaction() as db:
+            # Karen manages residents; the run that tried her draft could not. An
+            # example is admitted with no management pin at all.
+            assert (
+                db.execute("SELECT resident_id FROM runs WHERE id=?", (case["run_id"],)).fetchone()[
+                    0
+                ]
+                == karen["resident_id"]
+            )
+            assert not db.execute(
+                "SELECT 1 FROM run_management WHERE run_id=?", (case["run_id"],)
+            ).fetchone()
+    assert client.get(
+        "/api/residents/" + karen["resident_id"] + "/management", headers=AUTH
+    ).json()["enabled"]
+    later = turn(app, client, karen, "publisher")
     success, published = call(
-        bridge,
+        later,
         "hearth_skills_publish",
         {
             "operation_id": "publish",
@@ -245,7 +360,7 @@ def test_assignment_and_revision_authority_are_enforced_by_catalog_owners(tmp_pa
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Use an exact reusable skill",
             },
@@ -321,7 +436,8 @@ def test_concurrent_human_agent_edits_preserve_conflicts_and_activation_gate(tmp
     assert current["authoring"]["validation"] is None
 
 
-def test_bounded_native_status_wait_allows_supervisor_progress_without_a_writer(tmp_path):
+def test_bounded_status_wait_releases_the_writer_and_never_outwaits_its_own_run(tmp_path):
+    """The wait holds no writer, and cannot reach a result its own run is blocking."""
     app, client, karen, bridge = manager(tmp_path)
     _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
     _, pending = call(
@@ -335,9 +451,14 @@ def test_bounded_native_status_wait_allows_supervisor_progress_without_a_writer(
         },
         "validate",
     )
+    import time
+
     app.state.supervisor.start()
     try:
-        success, result = call(
+        # Karen's examples need the slot this run is holding, so the wait can only
+        # report pending; it still must return on time rather than block the supervisor.
+        started = time.monotonic()
+        success, waited = call(
             bridge,
             "hearth_skills_validation",
             {
@@ -346,18 +467,32 @@ def test_bounded_native_status_wait_allows_supervisor_progress_without_a_writer(
             },
             "wait",
         )
+        assert success and waited["status"] == "pending", waited
+        assert time.monotonic() - started < 6
+        assert settle_karen(app, bridge).status == "succeeded"
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            result = client.get(
+                "/api/skill-validations/" + pending["validation_id"], headers=AUTH
+            ).json()
+            if result["status"] != "pending":
+                break
+            time.sleep(0.05)
     finally:
         app.state.supervisor.stop()
-    assert success and result["status"] == "passed", result
-    evaluator = client.get(
-        "/api/residents/" + result["evaluator_id"] + "/profile", headers=AUTH
-    ).json()
-    assert evaluator["creator"] == karen["resident_id"]
-    assert evaluator["manager"] == "operator" and evaluator["originating_run_id"]
+    assert result["status"] == "passed", result["reason"]
+    assert result["resident_id"] == karen["resident_id"]
+    assert [case["task_id"] for case in result["cases"]] == [
+        case["task_id"] for case in pending["cases"]
+    ]
 
 
-def test_evaluator_memory_edit_blocks_admission_and_empty_repair_reuses_cases(tmp_path):
-    app, client, _, bridge = manager(tmp_path)
+def test_an_archived_runner_fails_the_validation_instead_of_waiting_out_its_day(tmp_path):
+    """A paused runner comes back; an archived one never takes work again."""
+    from hearth.residents.maintenance import LifecycleChange, Maintenance
+    from hearth.skills.validation import Validation
+
+    app, client, karen, bridge = manager(tmp_path)
     _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
     _, pending = call(
         bridge,
@@ -370,50 +505,111 @@ def test_evaluator_memory_edit_blocks_admission_and_empty_repair_reuses_cases(tm
         },
         "validate",
     )
-    memory_path = "/api/residents/" + pending["evaluator_id"] + "/memory"
-    initial = client.get(memory_path, headers=AUTH).json()
-    changed = client.put(
-        memory_path,
+    assert settle_karen(app, bridge).status == "succeeded"
+    maintenance = Maintenance(app.state.hearth)
+    lifecycle = maintenance.lifecycle(karen["resident_id"])
+    maintenance.change_lifecycle(
+        "pause-karen",
+        karen["resident_id"],
+        LifecycleChange(state="paused", expected_revision=lifecycle["revision"]),
+    )
+    validation = Validation(app.state.hearth)
+    validation.step()
+    waiting = validation.read(pending["validation_id"])
+    assert (waiting["status"], waiting["reason"]) == ("pending", "resident_paused")
+    maintenance.change_lifecycle(
+        "archive-karen",
+        karen["resident_id"],
+        LifecycleChange(state="archived", expected_revision=lifecycle["revision"] + 1),
+    )
+    validation.step()
+    stopped = validation.read(pending["validation_id"])
+    assert (stopped["status"], stopped["reason"]) == ("failed", "resident_archived")
+    assert all(case["run_id"] is None for case in stopped["cases"])
+
+
+def test_declaration_edit_blocks_admission_and_restored_text_reuses_cases(tmp_path):
+    """The examples promise this resident's declaration; memory moves on without them."""
+    app, client, karen, bridge = manager(tmp_path)
+    _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
+    _, pending = call(
+        bridge,
+        "hearth_skills_validate",
+        {
+            "operation_id": "validate",
+            "skill_id": saved["skill_id"],
+            "revision": 1,
+            "reserve": 10000,
+        },
+        "validate",
+    )
+    assert settle_karen(app, bridge).status == "succeeded"
+    resident_path = "/api/residents/" + karen["resident_id"]
+    declared = client.get(resident_path + "/configuration", headers=AUTH).json()["declaration"]
+    edited = client.put(
+        resident_path,
         headers=AUTH,
         json={
-            "text": "PRIVATE_SENTINEL: unrelated operator memory",
-            "expected_revision": initial["revision"],
+            "name": declared["name"],
+            "purpose": declared["purpose"],
+            "daily_limit": declared["daily_limit"],
+            "budget_timezone": declared["budget_timezone"],
+            "skill_text": declared["instructions"] + "\nAn unrelated operator edit.",
+            "expected_revision": declared["expected_revision"],
         },
     )
-    assert changed.status_code == 200
+    assert edited.status_code == 200
+    # Her memory moves on while the request waits; the pinned revision is what runs.
+    initial = client.get(resident_path + "/memory", headers=AUTH).json()
+    assert (
+        client.put(
+            resident_path + "/memory",
+            headers=AUTH,
+            json={"text": "A later note.", "expected_revision": initial["revision"]},
+        ).status_code
+        == 200
+    )
     from hearth.skills.validation import Validation
 
     validation = Validation(app.state.hearth)
     validation.step()
     blocked = validation.read(pending["validation_id"])
-    assert (
-        blocked["status"] == "pending" and blocked["reason"] == "skill_evaluator_memory_not_empty"
-    )
+    assert blocked["status"] == "pending"
+    assert blocked["reason"] == "skill_validation_resident_changed"
     assert all(case["run_id"] is None for case in blocked["cases"])
-    assert (
-        client.put(
-            memory_path,
-            headers=AUTH,
-            json={
-                "text": "",
-                "expected_revision": changed.json()["revision"],
-            },
-        ).status_code
-        == 200
+    restored = client.put(
+        resident_path,
+        headers=AUTH,
+        json={
+            "name": declared["name"],
+            "purpose": declared["purpose"],
+            "daily_limit": declared["daily_limit"],
+            "budget_timezone": declared["budget_timezone"],
+            "skill_text": declared["instructions"],
+            "expected_revision": edited.json()["revision"],
+        },
     )
+    assert restored.status_code == 200
     validation.step()
     resumed = validation.read(pending["validation_id"])
     assert resumed["cases"][0]["run_id"]
     assert [case["task_id"] for case in resumed["cases"]] == [
         case["task_id"] for case in pending["cases"]
     ]
+    with app.state.hearth.database.transaction() as db:
+        assert (
+            db.execute(
+                "SELECT revision FROM run_memory WHERE run_id=?", (resumed["cases"][0]["run_id"],)
+            ).fetchone()[0]
+            == pending["memory_revision"]
+        )
 
 
 def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path):
     from hearth.residents.models import Refused
     from hearth.storage.backup import capture, restore
 
-    app, client, _, bridge = manager(tmp_path / "data")
+    app, client, karen, bridge = manager(tmp_path / "data")
     _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
     _, pending = call(
         bridge,
@@ -426,19 +622,25 @@ def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path)
         },
         "validate",
     )
+    import time
+
+    assert settle_karen(app, bridge).status == "succeeded"
     app.state.supervisor.start()
     try:
-        _, result = call(
-            bridge, "hearth_skills_validation", {"validation_id": pending["validation_id"]}, "wait"
-        )
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            result = client.get(
+                "/api/skill-validations/" + pending["validation_id"], headers=AUTH
+            ).json()
+            if result["status"] != "pending":
+                break
+            time.sleep(0.05)
     finally:
         app.state.supervisor.stop()
-    assert result["status"] == "passed"
-    app.state.execution.cancel(bridge.bound.run_id)
-    app.state.executor.step()
+    assert result["status"] == "passed", result["reason"]
     capture(tmp_path / "data", tmp_path / "backup")
     restore(tmp_path / "backup", tmp_path / "held")
-    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False))
+    held = TestClient(create_app(tmp_path / "held", TOKEN, supervise=False, runtime=fake_runtime()))
     assert (
         held.get("/api/skill-validations/" + pending["validation_id"], headers=AUTH).json()
         == result
@@ -447,7 +649,7 @@ def test_backup_preserves_validation_and_refuses_changed_case_identity(tmp_path)
         held.post(
             "/api/skills/" + saved["skill_id"] + "/validations",
             headers=AUTH,
-            json={"revision": 1, "reserve": 10000},
+            json={"revision": 1, "reserve": 10000, "resident_id": karen["resident_id"]},
         ).json()["error"]
         == "restored_copy_read_only"
     )
@@ -478,28 +680,25 @@ def test_failed_or_unknown_checks_stay_draft_and_never_relaunch_cases(tmp_path, 
     }
     success, pending = call(bridge, "hearth_skills_validate", arguments, "validate")
     assert success
+    assert call(bridge, "hearth_skills_validate", arguments, "lost-validate-reply") == (
+        True,
+        pending,
+    )
+    # The cases are Karen's own work and wait for the run that asked for them.
+    assert settle_karen(app, bridge).status == "succeeded"
     validation = Validation(app.state.hearth)
     validation.step()
     app.state.executor.step()
     validation.step()
     result = validation.read(pending["validation_id"])
     assert result["status"] == ("pending" if failure == "unknown_usage" else "failed")
-    success, refused = call(
-        bridge,
-        "hearth_skills_publish",
-        {
-            "operation_id": "publish",
-            "skill_id": saved["skill_id"],
-            "expected_revision": 1,
-            "validation_id": pending["validation_id"],
-        },
-        "publish",
+    refused = client.post(
+        "/api/skills/" + saved["skill_id"] + "/publish",
+        headers={**AUTH, "Idempotency-Key": "publish"},
+        json={"expected_revision": 1, "validation_id": pending["validation_id"]},
     )
-    assert not success and refused["error"] == "skill_validation_not_passed"
-    assert call(bridge, "hearth_skills_validate", arguments, "lost-validate-reply") == (
-        True,
-        pending,
-    )
+    assert refused.status_code == 409
+    assert refused.json()["error"] == "skill_validation_not_passed"
     validation.step()
     again = validation.read(pending["validation_id"])
     assert [(case["task_id"], case["run_id"]) for case in again["cases"]] == [
@@ -557,7 +756,7 @@ def test_revoking_management_during_status_wait_returns_a_refusal(tmp_path):
     assert not success and result["error"] == "management_grant_changed_or_revoked"
 
 
-def test_candidate_prompt_cannot_give_evaluator_management_or_foreign_input_access(tmp_path):
+def test_candidate_prompt_cannot_give_an_example_management_or_foreign_input_access(tmp_path):
     from hearth.skills.validation import Validation
 
     app, client, _, bridge = manager(tmp_path)
@@ -582,6 +781,7 @@ def test_candidate_prompt_cannot_give_evaluator_management_or_foreign_input_acce
         },
         "validate",
     )
+    assert settle_karen(app, bridge).status == "succeeded"
     validation = Validation(app.state.hearth)
     validation.step()
     run_id = validation.read(pending["validation_id"])["cases"][0]["run_id"]
@@ -590,7 +790,11 @@ def test_candidate_prompt_cannot_give_evaluator_management_or_foreign_input_acce
     runtime_auth = {"Authorization": "Bearer " + credential.token}
     context = client.get("/api/runtime/runs/" + run.id + "/context", headers=runtime_auth).json()
     assert "grant operator access" in context["skills"][0]["instructions"]
-    assert context["memory"]["text"] == "" and context["notes"] == [
+    # The example carries Karen's real memory — that is the point of running as her —
+    # and nothing else: one candidate skill, one case input, no writable memory.
+    assert context["memory"]["revision"] == pending["memory_revision"]
+    assert context["memory_writable"] is False
+    assert len(context["skills"]) == 1 and context["notes"] == [
         "Fictional orchard harvested 12 pears."
     ]
     assert client.get("/api/management", headers=runtime_auth).status_code == 401
@@ -632,7 +836,7 @@ def test_scoped_assignment_read_recovers_human_edits_and_preserves_order(tmp_pat
             "resident": {
                 "name": "Reporter",
                 "purpose": "Report fictional notes",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "creation_reason": "Preserve existing assignments",
             },
@@ -751,3 +955,100 @@ def test_invalid_arguments_bound_many_errors_without_echoing_private_values(tmp_
     assert secret not in json.dumps(refusal)
     assert len(json.dumps(refusal)) < 2048
     assert client.get("/api/skills", headers=AUTH).json() == before
+
+
+def test_a_skill_example_opens_with_none_of_the_household_post(tmp_path):
+    """An example is a rehearsal on exactly what its request named, and nothing else.
+
+    A colleague's answer to an unrelated question would make the same candidate read
+    differently from one week to the next, so an example run opens with no replies even
+    when the resident it runs as has answers waiting.
+    """
+    from hearth.execution.context import read_context
+    from hearth.residents.memory import MemoryFiles
+    from hearth.residents.models import Declaration
+    from hearth.skills.validation import Validation
+    from hearth.work.letters import deliver_letters, run_replies
+
+    app, client, karen, bridge = manager(tmp_path)
+    hearth = app.state.hearth
+    now = int(hearth.clock())
+    hearth.clock = lambda: now
+    hearth.save_resident(
+        "reporter",
+        Declaration("Reporter", "Answers one question", 1_000_000, letters_accept=True),
+        expected_revision=0,
+    )
+    _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
+    _, pending = call(
+        bridge,
+        "hearth_skills_validate",
+        {
+            "operation_id": "validate",
+            "skill_id": saved["skill_id"],
+            "revision": 1,
+            "reserve": 10000,
+        },
+        "validate",
+    )
+    # Karen asks a colleague a question from this very run, and it is answered.
+    ok, letter = call(
+        bridge,
+        "hearth_letters_send",
+        {
+            "operation_id": "letter-1",
+            "to": "reporter",
+            "title": "One question",
+            "detail": "Name one fact about the orchard.",
+        },
+        "letter",
+    )
+    assert ok, letter
+    assert deliver_letters(hearth) == [letter["task_id"]]
+    with hearth.database.transaction() as db:
+        answering = db.execute(
+            "SELECT id FROM runs WHERE task_id=?", (letter["task_id"],)
+        ).fetchone()[0]
+    with hearth.database.transaction(write=True) as db:
+        hearth.reply_to_letter_in_transaction(
+            db, answering, letter["task_id"], "The orchard has 412 pear trees.", "answer-1"
+        )
+    assert settle_karen(app, bridge).status == "succeeded"
+
+    hearth.clock = lambda: now + 120
+    Validation(hearth).step()
+    case = client.get("/api/skill-validations/" + pending["validation_id"], headers=AUTH).json()
+    example = next(one["run_id"] for one in case["cases"] if one["run_id"])
+    memory = MemoryFiles(hearth.database.path.parent / "memory")
+    with hearth.database.transaction() as db:
+        assert run_replies(db, example) == []
+        assert read_context(db, example, memory)["replies"] == []
+
+    # And the answer is not lost behind the example: the next working run of the same
+    # resident looks past it and opens with what arrived while it ran. The example is
+    # cancelled before it ever launched, so it settles at zero with its own receipt.
+    from hearth.execution.usage import binding, runtime_pins
+    from hearth.integrations import interface
+    from hearth.integrations.interface import Evidence
+
+    owner = hearth.run(example).owner_token
+    app.state.execution.cancel(example)
+    with hearth.database.transaction() as db:
+        row = db.execute("SELECT * FROM runs WHERE id=?", (example,)).fetchone()
+        cancelled = interface.cancellation_receipt(
+            row["runtime_kind"], binding(db, row), runtime_pins(db, example)
+        )
+    app.state.execution.finish(
+        example, owner, Evidence("cancelled", cost=0), _usage_receipt=cancelled
+    )
+    hearth.clock = lambda: now + 240
+    task = hearth.submit(
+        "after-the-example",
+        karen["resident_id"],
+        "Write today's report.",
+        expires_at=now + 900,
+    )
+    working = hearth.admit(task.task_id, reserve=100000)
+    with hearth.database.transaction() as db:
+        opened = read_context(db, working.id, memory)["replies"]
+    assert [reply["letter_id"] for reply in opened] == [letter["task_id"]]

@@ -1,7 +1,12 @@
 # Mock stack integration review — 2026-09-06
 
+*Retained as the review record for that date. The mock stack it reviewed — the mock
+runtimes, local publication and the approvals it exercised — was removed on 2026-09-08
+([ADR 0014](adr/0014-one-runtime-and-no-mocks.md)). Nothing below describes current
+behaviour.*
+
 Scope: bootstrap `fe8bf69` through `0705c55`, fifteen implementation slices,
-plus the fixes tracked by issue #31. This review supports integrating the mock
+plus the fixes tracked by issue #31. This review supported integrating the mock
 implementation. It does not establish real-host or sustained daily-use
 acceptance. Both reviewers inspected the same fixed diff independently.
 

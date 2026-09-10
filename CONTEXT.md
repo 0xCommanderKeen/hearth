@@ -20,12 +20,23 @@ _Avoid_: Session (when referring to task execution).
 
 **Routine:** A recurring source of tasks with an explicit schedule.
 
-**Approval:** A human decision about one specific proposed action.
-_Avoid_: Permission to continue.
+**Letter:** One resident's bounded question to another, worked by the receiver as an
+ordinary task and answered by a reply the sender reads on its next run.
+_Avoid_: Delegation, message, chat.
+
+**Notification:** A durable record that Hearth told the household something. It is
+read or unread and is never deleted.
+_Avoid_: Delivery, alert.
 
 **Artifact:** An output of work with a durable reference and provenance.
 
 **Observation:** Evidence about activity or presence, associated with its source and freshness.
+
+**Runtime:** The provider a resident's work is admitted to and settled under. Two are
+live — the Codex subscription and the Claude subscription — and a resident declares
+which one it runs on, so one household may hold both. A finished run keeps the runtime
+it was worked by.
+_Avoid_: Model, backend, engine.
 
 **Burrow:** A machine on which residents execute.
 

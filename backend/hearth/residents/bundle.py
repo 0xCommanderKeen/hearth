@@ -32,7 +32,7 @@ from hearth.residents.provisioning import (
 from hearth.skills.assignments import read_assignments
 from hearth.skills.catalog import Skills
 from hearth.skills.catalog import content_digest as skill_digest
-from hearth.work.service import Hearth
+from hearth.work.service import Hearth, configured_runtime, default_runtime
 
 BUNDLE_VERSION = 1
 SUFFIX = ".hearth-resident.json"
@@ -239,7 +239,12 @@ def import_in_transaction(
                 "outcome": outcome,
             }
         )
-    configured = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()[0]
+    # The bundle carries the runtime the resident ran on as definition, and import
+    # keeps it where this store has that runtime. An instance that has never been
+    # configured for it gets the resident on its own default rather than a resident
+    # whose work nothing here could start; the resolution says what was asked for.
+    requested = bundle.resident.execution_profile
+    configured = requested if configured_runtime(db, requested) else default_runtime(db)
     overrides = body.overrides or ImportOverrides()
     resident = bundle.resident
     setup = {
@@ -263,7 +268,7 @@ def import_in_transaction(
     resolution["execution_profile"] = {
         "requested": resident.execution_profile,
         "used": configured,
-    }
+    } | ({} if configured == resident.execution_profile else {"reason": "runtime_not_configured"})
     resolution["management_ignored"] = bundle.management is not None
     return receipt | {"resolution": resolution}
 

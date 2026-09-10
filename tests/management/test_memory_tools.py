@@ -1,13 +1,16 @@
 """In-run memory and journal tools, and the journal the next run opens with."""
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 from hearth.app import create_app
 from hearth.authority.household import Household
 from hearth.execution.context import read_context
-from hearth.integrations.interface import Evidence
+from hearth.execution.usage import binding as usage_binding
+from hearth.integrations.codex.pricing import MODEL
+from hearth.integrations.codex.subscription import KIND
+from hearth.integrations.interface import encode_receipt
 from hearth.management.authority import Management
 from hearth.management.bootstrap import bootstrap
 from hearth.management.bridge import BoundRun, Bridge
@@ -17,12 +20,14 @@ from hearth.residents.journal import Journal
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-memory-tools-operator"
 MEMORY_TOOL_NAMES = {"hearth_memory_read", "hearth_memory_save", "hearth_journal_write"}
 
 
 def manager(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     return app, hearth, bootstrap(hearth)["resident_id"]
@@ -56,8 +61,83 @@ def working_run(app, resident_id: str, key: str):
     return run, call
 
 
+def native_terminal(pin) -> dict:
+    """The app-server evidence the management runtime seals this run's one turn with."""
+    thread, turn = pin["thread_id"], pin["turn_id"]
+    return {
+        "protocol": "codex-app-server-0.153.4",
+        "launched": True,
+        "cancelled": False,
+        "error": None,
+        "exit_code": -15,
+        "catalog_sha256": pin["catalog_sha256"],
+        "tools_sha256": pin["tools_sha256"],
+        "events": [
+            {"method": "thread/started", "params": {"thread": {"id": thread, "model": MODEL}}},
+            {"method": "turn/started", "params": {"threadId": thread, "turn": {"id": turn}}},
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread,
+                    "turnId": turn,
+                    "tokenUsage": {
+                        "total": {
+                            "totalTokens": 30,
+                            "inputTokens": 20,
+                            "outputTokens": 10,
+                            "cachedInputTokens": 0,
+                            "reasoningOutputTokens": 0,
+                        }
+                    },
+                },
+            },
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": thread,
+                    "turn": {
+                        "id": turn,
+                        "status": "completed",
+                        "error": None,
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "# Daily summary",
+                                "phase": "final_answer",
+                            }
+                        ],
+                    },
+                },
+            },
+        ],
+    }
+
+
 def settle(app, run) -> None:
-    app.state.execution.finish(run.id, run.owner_token, Evidence("succeeded", "# synthetic", 1))
+    """End the run the way its runtime does: every run is priced from a real receipt."""
+    hearth = app.state.hearth
+    with hearth.database.transaction(write=True) as db:
+        # A run that never reached pin_configuration still needs its launch pins.
+        db.execute(
+            "UPDATE run_management SET catalog_sha256=COALESCE(catalog_sha256,?), "
+            "tools_sha256=COALESCE(tools_sha256,?) WHERE run_id=?",
+            ("b" * 64, "c" * 64, run.id),
+        )
+        pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (run.id,)).fetchone()
+        bound = usage_binding(db, db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone())
+        binary = db.execute(
+            "SELECT value FROM system_meta WHERE key='codex_live_binary'"
+        ).fetchone()[0]
+    receipt = {
+        "kind": KIND,
+        "protocol": "management",
+        "binding": asdict(bound),
+        "binary": binary,
+        "terminal": native_terminal(pin),
+    }
+    app.state.execution.finish(
+        run.id, run.owner_token, encode_receipt(receipt, bound)[2], _usage_receipt=receipt
+    )
 
 
 def pinned_context(hearth, run_id: str) -> dict:
@@ -96,7 +176,7 @@ def test_a_run_saves_memory_and_a_journal_entry_and_the_next_run_opens_with_both
 
     second, next_call = working_run(app, karen, "second")
     context = pinned_context(hearth, second.id)
-    assert context["context_version"] == 6 and context["memory_writable"] is True
+    assert context["context_version"] == 9 and context["memory_writable"] is True
     assert context["memory"]["revision"] == 3 and context["memory"]["text"] == operator
     assert "orchard reporter" in context["memory"]["text"]
     assert context["journal"] == [
@@ -247,7 +327,7 @@ def test_a_manager_needs_the_grant_to_provision_a_resident_that_writes_memory(tm
             "name": "Reporter",
             "purpose": "Summarize synthetic pears",
             "creation_reason": "Requested through Karen",
-            "execution_profile": "inline_mock",
+            "execution_profile": "codex_subscription",
             "daily_limit": 100000,
             "memory_writable": True,
         },
@@ -288,7 +368,7 @@ def enable_grant(hearth, resident_id: str, capabilities: list[str]) -> None:
         resident_id,
         {
             "enabled": True,
-            "profiles": ["inline_mock"],
+            "profiles": ["codex_subscription"],
             "input_set_ids": [],
             "capabilities": capabilities,
             "expected_revision": Management(hearth).read(resident_id)["revision"],
@@ -345,7 +425,7 @@ def test_preserving_a_declared_capability_is_not_an_escalation(tmp_path):
                 "name": "Reporter",
                 "purpose": "Summarize synthetic pears",
                 "creation_reason": "Requested through Karen",
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
                 "daily_limit": 100000,
                 "memory_writable": True,
             },
@@ -476,7 +556,7 @@ def test_a_pinned_entry_that_retention_archives_is_still_read_back(tmp_path):
 
 
 def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_memory(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.save_resident(
         "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0
@@ -490,7 +570,7 @@ def test_a_reader_without_the_capability_keeps_an_empty_journal_and_no_writable_
 
 def test_a_resident_that_only_remembers_reaches_its_tools_without_management(tmp_path):
     """Writable memory admits a run to the native tools; it grants no management at all."""
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1788640000
     hearth.save_resident(
@@ -524,7 +604,7 @@ def test_a_resident_that_only_remembers_reaches_its_tools_without_management(tmp
 
 
 def test_a_resident_that_neither_manages_nor_remembers_is_pinned_no_tools(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False)
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.save_resident(
         "reader", Declaration("Reader", "Summarize synthetic notes", 100000), expected_revision=0

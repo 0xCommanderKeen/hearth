@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.models import Refused, bounded_text, identifier
-from hearth.work.service import Hearth, _audit, _queue_task
+from hearth.work.service import ADMISSION_WAITS, Hearth, _audit, _queue_task
 
 ROUTINE_RESERVATION = 10_000
 
@@ -207,20 +207,7 @@ class Routines:
             try:
                 self.hearth.admit(task, reserve=ROUTINE_RESERVATION)
             except Refused as error:
-                if (
-                    error.code
-                    not in {
-                        "resident_busy",
-                        "resident_paused",
-                        "resident_archived",
-                        "capacity_exhausted",
-                        "budget_exhausted",
-                        "household_budget_exhausted",
-                        "household_concurrency_limit",
-                        "task_already_admitted",
-                    }
-                    and first_refusal is None
-                ):
+                if error.code not in ADMISSION_WAITS and first_refusal is None:
                     first_refusal = error
         # A broken resident must not starve healthy queued residents. The caller still
         # receives the first integrity/policy error after this bounded admission pass.

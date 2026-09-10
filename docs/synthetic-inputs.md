@@ -12,13 +12,12 @@ an explicit empty manifest, in the same SQLite writer as the run and budget rese
 Editing notes or changing selection leaves admitted runs unchanged. Run history
 links to the exact historical text, not today's editor.
 
-Context version 5 includes named `inputs`, explicit `input_state` and a source-data
+Context version 7 includes named `inputs`, explicit `input_state` and a source-data
 warning, separately from purpose, resident instructions and reusable skills.
 The existing `notes` field is a deterministic flattening of those exact pins.
 There is no global fallback. Reader setup explicitly creates and selects the named
 example once; repeated setup preserves later content edits and selection changes.
-The deterministic mock formats supplied notes and labels empty inputs explicitly.
-Its output demonstrates data routing, not model summary quality.
+Empty inputs are labelled explicitly rather than silently omitted.
 
 The operator API provides GET/POST `/api/input-sets`, GET/PUT
 `/api/input-sets/{id}` (GET accepts `revision`), and GET/PUT

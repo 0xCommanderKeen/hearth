@@ -5,17 +5,16 @@ import threading
 from typing import IO
 
 from hearth.execution.lifecycle import Executor
-from hearth.observation.notifications import Notifications
 from hearth.residents.models import Refused
 from hearth.skills.validation import Validation
+from hearth.work.letters import deliver_letters, expire_letters
 from hearth.work.routines import Routines
 
 
 class Supervisor:
-    def __init__(self, executor: Executor, routines: Routines, notifications: Notifications):
+    def __init__(self, executor: Executor, routines: Routines):
         self.executor = executor
         self.routines = routines
-        self.notifications = notifications
         self.validation = Validation(executor.execution.hearth)
         self._guard = threading.Lock()
         self._stop = threading.Event()
@@ -24,8 +23,8 @@ class Supervisor:
             "supervisor": "stopped",
             "executor_error": None,
             "scheduler_error": None,
-            "notification_error": None,
             "validation_error": None,
+            "letters_error": None,
         }
 
     def health(self) -> dict:
@@ -51,8 +50,8 @@ class Supervisor:
                 supervisor="running",
                 executor_error=None,
                 scheduler_error=None,
-                notification_error=None,
                 validation_error=None,
+                letters_error=None,
             )
             self._thread = threading.Thread(
                 target=self._run, args=(lock,), name="hearth-supervisor"
@@ -84,6 +83,22 @@ class Supervisor:
         failed = False
         try:
             while not self._stop.is_set():
+                # A stale letter is closed before anything can admit it, so no money is
+                # spent answering a question that already went cold, and the letters
+                # still worth working are admitted in the same pass — delivery is the
+                # receiver working the task, and this tick is all there is to it. The
+                # lane owns its own failure: it must not stall the whole schedule.
+                try:
+                    expire_letters(self.executor.execution.hearth)
+                    deliver_letters(self.executor.execution.hearth)
+                    self._set("letters_error", None)
+                except Exception as error:
+                    self._set(
+                        "letters_error",
+                        error.code if isinstance(error, Refused) else type(error).__name__,
+                    )
+                if self._stop.is_set():
+                    break
                 try:
                     self.routines.tick()
                     if self._stop.is_set():
@@ -112,13 +127,6 @@ class Supervisor:
                     self._set("executor_error", None)
                 except Exception as error:
                     self._set("executor_error", type(error).__name__)
-                if self._stop.is_set():
-                    break
-                try:
-                    self.notifications.step()
-                    self._set("notification_error", None)
-                except Exception as error:
-                    self._set("notification_error", type(error).__name__)
                 self._stop.wait(0.5)
         except BaseException as error:
             failed = True

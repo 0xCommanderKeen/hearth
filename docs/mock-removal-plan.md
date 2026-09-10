@@ -1,6 +1,17 @@
-# Plan: remove mock from the product
+# Historical plan: remove mock from the product
 
-Status: decisions confirmed 2026-09-08; tracked as the mock-removal epic. Nothing implemented yet.
+Status: implemented by [epic #158](https://github.com/0xCommanderKeen/hearth/issues/158)
+(issues #152–#157). Decisions were confirmed on 2026-09-08; the original plan below
+is retained as history, including estimates and proposals that changed during delivery.
+
+[ADR 0014](adr/0014-one-runtime-and-no-mocks.md) records what shipped and why:
+retired runtime pins remain on historical runs, and the actual migrations differ from
+the proposed schema versions below. Its amendment records Claude joining Codex as a
+second live runtime. [ADR 0015](adr/0015-runtime-per-resident.md) defines the current
+per-resident runtime choice. Use [CONTEXT.md](../CONTEXT.md) for current domain terms
+and [the implementation checkpoint](implementation.md) for acceptance gates.
+
+## Original plan (2026-09-08)
 
 Miha's direction: Hearth runs real residents on the real Codex runtime. Mock runtimes,
 simulated labels, mock inbox/noticeboard and the "Skill evaluator" service resident make

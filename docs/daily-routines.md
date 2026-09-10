@@ -1,4 +1,4 @@
-# Daily mock routines
+# Daily routines
 
 Townhall can enable one daily synthetic summary for Reader. The API also accepts
 revisioned routines at `/api/routines/{id}` with resident, instruction, local
@@ -33,6 +33,5 @@ are refused instead of guessed.
 Verification covers concurrent ticks, restart deduplication, skipped overlap,
 bounded outage catch-up, DST gap/fold, disable/re-enable, revision conflicts,
 budget refusal, atomic rollback, and the authenticated API through the real
-background mock executor. Component tests verify schedule selection and revisioned
-disabling. Native visual inspection remains pending. Durable notification delivery
-and restore/import rehearsals are subsequent slices.
+background executor. Component tests verify schedule selection and revisioned
+disabling. Native visual inspection remains pending.

@@ -5,9 +5,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
-from hearth.integrations.interface import Evidence
 from hearth.residents.models import Declaration
 
+from tests.fake_runtime import fake_runtime
 from tests.support import seed_reader_via
 
 TOKEN = "synthetic-operator-token-for-tests"
@@ -16,7 +16,7 @@ AUTH = {"Authorization": "Bearer " + TOKEN}
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path, TOKEN, supervise=False)) as client:
+    with TestClient(create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())) as client:
         yield client
 
 
@@ -36,7 +36,15 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
     assert client.get("/api/state").status_code == 401
     assert client.post("/api/tasks", content="broken json").status_code == 401
     assert client.get("/api/state", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.get("/health").json() == {"service": "hearth", "simulated": True}
+    # Liveness names the runtimes this instance opened and nothing about the machine
+    # they were opened from: no path, no binary, no configuration directory, and no
+    # reason any provider refused -- that is the operator's own to read.
+    assert client.get("/health").json() == {
+        "service": "hearth",
+        "runtimes": [
+            {"kind": "codex_subscription", "label": "Codex subscription", "default": True}
+        ],
+    }
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 
 
@@ -56,10 +64,11 @@ def test_snapshot_has_no_owner_token(client):
     state = client.get("/api/state", headers=AUTH)
     assert state.headers["cache-control"] == "no-store"
     body = state.json()
-    assert body["simulated"] and body["schema_version"] == 1
+    assert body["schema_version"] == 1
     assert body["residents"][0]["presence"] == "starting"
     assert "owner_token" not in state.text and TOKEN not in state.text
-    assert body["cursor"] == 5
+    # The cursor is the audit sequence, and the runtime records its own configuration.
+    assert body["cursor"] == len(body["activity"]) == 6
 
 
 def test_lost_submission_response_is_reconcilable(client):
@@ -93,13 +102,12 @@ def test_start_retry_has_stable_identity_and_result_can_be_read(client):
     assert client.post(path, headers=AUTH).json()["run_id"] == first["run_id"]
     output = client.get("/api/artifacts/" + run["artifact_id"], headers=AUTH)
     assert output.status_code == 200
-    assert output.json()["artifact"]["simulated"]
-    assert "No model was called" in output.json()["content"]
+    assert "Synthetic note: drafted the Hearth foundation." in output.json()["content"]
     assert client.get("/api/artifacts/" + run["artifact_id"]).status_code == 401
 
 
 def test_cancellation_roundtrip_keeps_intent_separate_from_termination(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="hold", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("hold"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -126,7 +134,7 @@ def test_cursor_matches_transaction_and_epoch_requires_resync(client):
 
 
 def test_unknown_usage_is_visible_and_cannot_start_more_work(tmp_path):
-    app = create_app(tmp_path, TOKEN, scenario="unknown_usage", supervise=False)
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime("unknown_usage"), supervise=False)
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -159,111 +167,63 @@ def test_api_refuses_invalid_payload_without_creating_task(client):
 
 def test_demo_requires_explicit_nontrivial_operator_token(tmp_path):
     with pytest.raises(ValueError, match="operator token"):
-        create_app(tmp_path, "")
+        create_app(tmp_path, "", runtime=fake_runtime())
 
 
 def test_active_work_remains_visible_when_recent_history_is_full(client):
     seed_reader_via(client)
     hearth = client.app.state.hearth
-    execution = client.app.state.execution
+    executor = client.app.state.executor
     tick = [1000]
     hearth.clock = lambda: tick[0]
-    old = hearth.submit("old", "reader", "Still active", expires_at=5000)
-    active = hearth.admit(old.task_id, reserve=1)
     hearth.save_resident(
         "other", Declaration("Other", "Synthetic work", 1_000_000), expected_revision=0
     )
     for index in range(101):
         tick[0] += 1
         receipt = hearth.submit("new-" + str(index), "other", "Recent work", expires_at=5000)
-        run = hearth.admit(receipt.task_id, reserve=1)
-        execution.finish(run.id, run.owner_token, Evidence("failed", cost=1))
+        hearth.admit(receipt.task_id, reserve=10_000)
+        executor.step()
+    # Stamped before all of that history, so recency alone would drop it from the window.
+    tick[0] = 1000
+    old = hearth.submit("old", "reader", "Still active", expires_at=5000)
+    active = hearth.admit(old.task_id, reserve=10_000)
     state = client.get("/api/state", headers=AUTH).json()
     assert len(state["runs"]) == len(state["tasks"]) == 100
     assert any(run["id"] == active.id for run in state["runs"])
     assert any(task["id"] == old.task_id for task in state["tasks"])
 
 
-def proposal(client):
+def test_inbox_records_a_finished_run_and_only_the_operator_marks_it_read(client):
     seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     run = client.app.state.executor.step()[0]
+    notification = client.get("/api/state", headers=AUTH).json()["notifications"][0]
+    assert notification["resource_id"] == run.id and notification["read_at"] is None
+    route = "/api/notifications/" + notification["id"] + "/read"
+    assert client.post(route, json={"read": True}).status_code == 401
+    assert client.post(route, headers=AUTH, json={"read": "yes"}).status_code == 422
     assert (
         client.post(
-            "/api/residents/reader/publication-policy",
+            "/api/notifications/00000000-0000-4000-8000-000000000000/read",
             headers=AUTH,
-            json={"enabled": True, "expected_revision": 0},
+            json={"read": True},
         ).status_code
-        == 200
+        == 404
     )
-    body = {"artifact_id": run.artifact_id, "expires_at": int(time.time()) + 600}
-    headers = {**AUTH, "Idempotency-Key": "approval-request"}
-    response = client.post("/api/approvals", headers=headers, json=body)
-    assert response.status_code == 201
-    assert client.post("/api/approvals", headers=headers, json=body).json() == response.json()
-    return response.json()
-
-
-def test_mock_approval_operator_journey(client):
-    request = proposal(client)
-    route = "/api/approvals/" + request["id"]
-    assert client.get(route).status_code == 401
-    assert client.post(route + "/decision", json={}).status_code == 401
-    assert client.post(route + "/execute").status_code == 401
-    preview = client.get(route, headers=AUTH).json()
-    assert preview["approval"] == request
-    assert "No model was called" in preview["content"]
-    assert client.post(route + "/execute", headers=AUTH).status_code == 409
-    decision = {"reviewed_digest": request["digest"], "approve": True}
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "approved"
-    )
-    action = client.post(route + "/execute", headers=AUTH).json()
-    assert action["status"] == "completed"
-    assert client.post(route + "/execute", headers=AUTH).json() == action
-    state = client.get("/api/state", headers=AUTH).json()
-    assert state["approvals"][0]["status"] == "approved"
-    assert state["actions"][0]["status"] == "completed"
-    assert state["publication_policies"][0]["enabled"] == 1
-
-
-def test_mock_api_denied_and_revoked_permission_cannot_publish(client):
-    request = proposal(client)
-    route = "/api/approvals/" + request["id"]
-    decision = {"reviewed_digest": request["digest"], "approve": False}
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
-    )
-    decision["approve"] = True
-    assert (
-        client.post(route + "/decision", headers=AUTH, json=decision).json()["status"] == "denied"
-    )
-    assert client.post(route + "/execute", headers=AUTH).status_code == 409
-
-
-def test_mock_api_strict_policy_and_decision_payload(client):
-    request = proposal(client)
-    assert (
-        client.post(
-            "/api/residents/reader/publication-policy",
-            headers=AUTH,
-            json={"enabled": "false", "expected_revision": 1},
-        ).status_code
-        == 422
-    )
-    assert (
-        client.post(
-            "/api/approvals/" + request["id"] + "/decision",
-            headers=AUTH,
-            json={"reviewed_digest": "a" * 64, "approve": True},
-        ).status_code
-        == 409
+    read = client.post(route, headers=AUTH, json={"read": True})
+    assert read.status_code == 200 and read.json()["read_at"] is not None
+    assert client.get("/api/state", headers=AUTH).json()["notifications"][0]["read_at"] is not None
+    # The record stays in the inbox either way; only the mark changes.
+    assert client.post(route, headers=AUTH, json={"read": False}).json()["read_at"] is None
+    assert client.get("/api/state", headers=AUTH).json()["notifications"][0]["kind"] == (
+        "run.succeeded"
     )
 
 
-def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
-    app = create_app(tmp_path, TOKEN)
+def test_daily_routine_api_runs_through_background_executor(tmp_path):
+    app = create_app(tmp_path, TOKEN, runtime=fake_runtime())
     now = [1_788_652_800]
     app.state.hearth.clock = lambda: now[0]
     with TestClient(app) as client:
@@ -294,17 +254,15 @@ def test_daily_routine_api_runs_through_background_mock_executor(tmp_path):
         assert client.post("/api/routines/daily", headers=AUTH, json=body).status_code == 409
 
 
-def test_notification_payload_and_delivery_are_authenticated_observation(client):
+def test_notification_payload_is_authenticated_observation(client):
     seed_reader_via(client)
     receipt = task(client).json()
     client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
     client.app.state.executor.step()
     state = client.get("/api/state", headers=AUTH).json()
-    delivery = state["notifications"][0]
-    assert delivery["status"] == "pending"
-    assert delivery["payload"]["simulated"] is True
-    assert set(delivery["payload"]) == {"kind", "resource_id", "link", "simulated"}
-    assert delivery["payload"]["link"].startswith("/#run-")
+    notification = state["notifications"][0]
+    assert set(notification["payload"]) == {"kind", "resource_id", "link"}
+    assert notification["payload"]["link"].startswith("/#run-")
     assert client.get("/api/state").status_code == 401
 
 
@@ -330,8 +288,8 @@ def test_operator_pause_api_keeps_work_queued_until_revisioned_resume(client):
     assert client.post(start, headers=AUTH).status_code == 200
 
 
-def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
-    app = create_app(tmp_path, TOKEN, supervise=False, scenario="unknown_usage")
+def test_operator_reports_usage_and_snapshot_labels_source(tmp_path):
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
     with TestClient(app) as client:
         seed_reader_via(client)
         receipt = task(client).json()
@@ -343,11 +301,11 @@ def test_operator_reports_mock_usage_and_snapshot_labels_source(tmp_path):
         headers = {**AUTH, "Idempotency-Key": "report"}
         response = client.post(route, headers=headers, json=body)
         assert response.status_code == 200
-        assert response.json()["source"] == "operator_reported_mock"
+        assert response.json()["source"] == "operator_reported"
         assert "evidence" not in response.json()
         assert client.post(route, headers=headers, json=body).json() == response.json()
         state = client.get("/api/state", headers=AUTH).json()
-        assert state["runs"][0]["usage_source"] == "operator_reported_mock"
+        assert state["runs"][0]["usage_source"] == "operator_reported"
         assert state["residents"][0]["pause_reason"] is None
 
 
@@ -399,3 +357,33 @@ def test_resident_bundle_export_and_import_over_http(client, tmp_path):
         json={"bundle": bundle | {"resident": bundle["resident"] | {"memory": "m" * 100_000}}},
     )
     assert padded.status_code == 201
+
+
+def test_usage_by_origin_counts_each_run_once_and_leaves_unknown_usage_holding(tmp_path):
+    """What a question cost, gathered under the task its chain rolls up to.
+
+    A run appears at the one amount its own row records, whether the runtime settled it
+    or the operator reported it afterwards, so reconciling never counts a run twice; a
+    run whose usage is still unknown is reported as unknown and keeps its resident's hold.
+    """
+    app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime("unknown_usage"))
+    with TestClient(app) as client:
+        seed_reader_via(client)
+        receipt = task(client).json()
+        client.post("/api/tasks/" + receipt["task_id"] + "/start", headers=AUTH)
+        run = app.state.executor.step()[0]
+        assert client.get("/api/usage/origins").status_code == 401
+        origin = client.get("/api/usage/origins", headers=AUTH).json()["origins"][0]
+        assert origin["root_task_id"] == receipt["task_id"] and origin["runs"] == 1
+        assert (origin["unknown_runs"], origin["known_cost"], origin["letters"]) == (1, 0, 0)
+        assert origin["residents_involved"] == ["reader"]
+        state = client.get("/api/state", headers=AUTH).json()
+        assert state["residents"][0]["pause_reason"] == "usage_unknown"
+
+        client.post(
+            "/api/runs/" + run.id + "/usage",
+            headers={**AUTH, "Idempotency-Key": "report"},
+            json={"amount": 2000, "evidence": "Synthetic meter reading"},
+        )
+        origin = client.get("/api/usage/origins", headers=AUTH).json()["origins"][0]
+        assert (origin["runs"], origin["unknown_runs"], origin["known_cost"]) == (1, 0, 2000)

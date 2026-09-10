@@ -61,9 +61,9 @@ export function SkillExamples({
       <span className="eyebrow">EXAMPLES THAT ACTUALLY RUN</span>
       <h3>A normal case. A difficult case.</h3>
       <p>
-        These fictional inputs are executed with this exact skill in a read-only
-        evaluator. Assertions check saved output; they do not replace execution
-        or prove broad quality.
+        These fictional inputs are executed with this exact skill by the
+        resident that asks for the check, read-only. Assertions check saved
+        output; they do not replace execution or prove broad quality.
       </p>
       <div className="skill-example-grid">
         {value.examples.map((example, position) => {

@@ -4,11 +4,12 @@ from datetime import datetime
 
 import pytest
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.integrations.mock.inline import MockRuntime
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
+
+from tests.fake_runtime import FakeRuntime
 
 
 def instant(value):
@@ -21,9 +22,7 @@ def system(tmp_path):
     db.initialize()
     now = [instant("2026-09-06T12:00:00")]
     hearth = Hearth(db, clock=lambda: now[0])
-    executor = Executor(
-        Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-    )
+    executor = Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path))
     return hearth, executor, now
 
 

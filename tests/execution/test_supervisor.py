@@ -3,22 +3,25 @@
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
 from hearth.residents.models import Refused
 
+from tests.fake_runtime import fake_runtime
+
 
 @pytest.fixture
 def app(tmp_path):
-    app = create_app(tmp_path / "data", "synthetic-test-token")
+    app = create_app(tmp_path / "data", "synthetic-test-token", runtime=fake_runtime())
     yield app
     app.state.supervisor.stop()
 
 
 def test_second_api_supervisor_is_rejected_until_first_shuts_down(app, tmp_path):
-    second = create_app(tmp_path / "data", "synthetic-test-token")
+    second = create_app(tmp_path / "data", "synthetic-test-token", runtime=fake_runtime())
     with TestClient(app) as client:
         with pytest.raises(Refused, match="supervisor_busy"), TestClient(second):
             pass
@@ -34,7 +37,7 @@ def test_second_api_supervisor_is_rejected_until_first_shuts_down(app, tmp_path)
 def test_canonical_directory_alias_cannot_start_second_supervisor(app, tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(tmp_path / "data", target_is_directory=True)
-    second = create_app(alias, "synthetic-test-token")
+    second = create_app(alias, "synthetic-test-token", runtime=fake_runtime())
     app.state.supervisor.start()
     with pytest.raises(Refused, match="supervisor_busy"):
         second.state.supervisor.start()
@@ -51,7 +54,9 @@ def test_shutdown_retains_ownership_until_blocked_operation_finishes(app, tmp_pa
 
     monkeypatch.setattr(app.state.executor, "step", blocked)
     worker = app.state.supervisor
-    second = create_app(tmp_path / "data", "synthetic-test-token").state.supervisor
+    second = create_app(
+        tmp_path / "data", "synthetic-test-token", runtime=fake_runtime()
+    ).state.supervisor
     worker.start()
     stopper = None
     try:
@@ -115,9 +120,13 @@ def test_foreign_process_cannot_acquire_supervision(app, tmp_path):
             """
 import sys
 from pathlib import Path
+sys.path.insert(0, sys.argv[2])
 from hearth.app import create_app
 from hearth.residents.models import Refused
-supervisor = create_app(Path(sys.argv[1]), "synthetic-test-token").state.supervisor
+from tests.fake_runtime import fake_runtime
+supervisor = create_app(
+    Path(sys.argv[1]), "synthetic-test-token", runtime=fake_runtime()
+).state.supervisor
 try:
     supervisor.start()
     print("started")
@@ -127,6 +136,7 @@ finally:
     supervisor.stop()
 """,
             str(tmp_path / "data"),
+            str(Path(__file__).parents[2]),
         ],
         capture_output=True,
         text=True,
@@ -165,13 +175,13 @@ def test_blocked_routine_does_not_stall_an_admitted_run(tmp_path, allowance, cap
     from hearth.authority.household import Household
     from hearth.execution.lifecycle import Execution, Executor
     from hearth.execution.supervisor import Supervisor
-    from hearth.integrations.mock.inline import MockRuntime
-    from hearth.observation.notifications import MockInbox, Notifications
     from hearth.residents.models import Declaration
     from hearth.storage.artifacts import Artifacts
     from hearth.storage.database import Database
     from hearth.work.routines import Routines
     from hearth.work.service import Hearth
+
+    from tests.fake_runtime import FakeRuntime
 
     database = Database(tmp_path / "hearth.db")
     database.initialize()
@@ -203,11 +213,8 @@ def test_blocked_routine_does_not_stall_an_admitted_run(tmp_path, allowance, cap
     with pytest.raises(Refused, match=refusal):
         hearth.admit(queued, reserve=10_000)
     worker = Supervisor(
-        Executor(
-            Execution(hearth, Artifacts(tmp_path / "artifacts")), MockRuntime(tmp_path / "runtime")
-        ),
+        Executor(Execution(hearth, Artifacts(tmp_path / "artifacts")), FakeRuntime(tmp_path)),
         routines,
-        Notifications(hearth, MockInbox(tmp_path / "inbox")),
     )
     worker.start()
     try:

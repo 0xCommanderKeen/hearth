@@ -1,7 +1,6 @@
-"""One supervised lifecycle for mock execution, recovery, and terminal accounting."""
+"""One supervised lifecycle for execution, recovery, and terminal accounting."""
 
 import fcntl
-import hashlib
 import json
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -11,13 +10,14 @@ from hearth.execution.context import read_context
 from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
-from hearth.observation.notifications import enqueue
+from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
 from hearth.residents.lifecycle import check_not_archived, read_lifecycle
 from hearth.residents.memory import Memory
 from hearth.residents.models import Refused, Run, microdollars
 from hearth.skills.assignments import run_skills
 from hearth.storage.artifacts import Artifact, Artifacts
+from hearth.work.letters import settle_letter
 from hearth.work.service import ACTIVE_RUNS, Hearth, _audit
 
 
@@ -141,38 +141,14 @@ class Execution:
                 or row["status"] not in {"starting", "running", "interrupted"}
             ):
                 raise Refused("run_dispatch_inactive")
-            if usage_accounting.pricing(db, run_id) is not None and not interface.uses_receipts(
-                row["runtime_kind"]
-            ):
-                raise Refused("run_requires_codex_worker")
             revision = db.execute(
                 "SELECT revision FROM residents WHERE id=?", (row["resident_id"],)
             ).fetchone()
-            # Inline execution already pinned its declaration at prepare_start;
-            # detached workers retain their stricter prelaunch revision recheck.
-            if row["runtime_kind"] != "inline_mock" and (
-                revision is None or revision[0] != row["resident_revision"]
-            ):
+            # A detached worker rechecks the declaration it pinned before launching.
+            if revision is None or revision[0] != row["resident_revision"]:
                 raise Refused("run_declaration_changed")
             check_not_archived(db, row["resident_id"])
             yield db
-
-    def finish_from_usage(self, run_id: str, owner_token: str, journal) -> Run:
-        with self.hearth.database.transaction() as db:
-            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-            if row is None or row["owner_token"] != owner_token:
-                raise Refused("run_ownership_lost")
-            expected = usage_accounting.binding(db, row)
-        if journal.binding != expected:
-            raise Refused("run_usage_binding_mismatch")
-        try:
-            with journal.snapshot() as receipt:
-                _, _, evidence = usage_accounting.encode_receipt(receipt, expected)
-                return self.finish(run_id, owner_token, evidence, _usage_receipt=receipt)
-        except Refused:
-            raise
-        except ValueError, OSError, TypeError, KeyError:
-            raise Refused("run_usage_invalid") from None
 
     def finish(
         self, run_id: str, owner_token: str, evidence: Evidence, *, _usage_receipt=None
@@ -214,11 +190,9 @@ class Execution:
             artifact = None
             if evidence.status == "succeeded":
                 assert evidence.output is not None
-                artifact = self.artifacts.publish(
-                    run_id, evidence.output, simulated=interface.simulated(row["runtime_kind"])
-                )
+                artifact = self.artifacts.publish(run_id, evidence.output)
                 db.execute(
-                    "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?)",
                     tuple(asdict(artifact).values()),
                 )
             db.execute(
@@ -235,6 +209,17 @@ class Execution:
             )
             db.execute(
                 "UPDATE tasks SET status = ? WHERE id = ?", (evidence.status, row["task_id"])
+            )
+            # If this run was working a letter, the letter ends here too, in this same
+            # transaction: answered, worked and left unanswered, or failed with the run.
+            settle_letter(
+                db,
+                row["task_id"],
+                run_id=run_id,
+                resident_id=row["resident_id"],
+                status=evidence.status,
+                artifact_id=artifact.id if artifact else None,
+                now=now,
             )
             if evidence.cost is None:
                 changed = db.execute(
@@ -259,11 +244,61 @@ class Execution:
                     "actual_cost": evidence.cost,
                     "usage_known": evidence.cost is not None,
                     "artifact_id": artifact.id if artifact else None,
-                    "simulated": interface.simulated(row["runtime_kind"]),
                 }
                 | ({"accounting": pricing | {"receipt_sha256": receipt_digest}} if pricing else {}),
             )
-            enqueue(db, "run." + evidence.status, run_id, now)
+            record(db, "run." + evidence.status, run_id, now)
+        return self.hearth.run(run_id)
+
+    def runtime_unavailable(self, run_id: str, owner_token: str) -> Run:
+        """A run whose pinned runtime this instance is not configured for waits.
+
+        The run named its runtime at admission and that pin is where its work happens;
+        no other provider can be asked what it did, and launching it on one would be a
+        different run against the same reservation. So the run is left exactly as
+        unknown as it is -- never launched here, never retried, and never settled at a
+        number nobody can produce evidence for. A priced run settles from its own
+        provider's receipt, and there is no receipt for a session this instance cannot
+        see.
+
+        It is a wait and not an ending because the usual cause is a configuration this
+        machine is missing rather than a provider the household has lost, and work is
+        not thrown away over an environment variable: the run is worked as soon as the
+        runtime is configured again. An operator who wants it gone cancels it, and a
+        run that was never launched then settles at zero through the ordinary path, on
+        a receipt the registry builds from the store's own pins rather than from the
+        provider.
+
+        A run that was never launched is therefore left exactly as it is -- still
+        waiting to start, which is the truth about it -- rather than moved to a state
+        it could never start from again. Why the runtime is absent is recorded once,
+        where it is discovered: `app.configured_runtimes` at start.
+        """
+        with self.hearth.database.transaction(write=True) as db:
+            row = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if row is None or row["owner_token"] != owner_token:
+                raise Refused("run_ownership_lost")
+            if row["finished_at"] is not None:
+                raise Refused("run_already_finished")
+            if not row["launch_attempted"]:
+                return self.hearth.run(run_id)
+            # Cancellation intent survives a wait, exactly as it survives observation.
+            state = "stopping" if row["cancellation_requested"] else "interrupted"
+            if row["status"] != state:
+                now = int(self.hearth.clock())
+                db.execute("UPDATE runs SET status=? WHERE id=?", (state, run_id))
+                db.execute("UPDATE tasks SET status=? WHERE id=?", (state, row["task_id"]))
+                _audit(
+                    db,
+                    "run." + state,
+                    run_id,
+                    now,
+                    {
+                        "task_id": row["task_id"],
+                        "reason": "runtime_unavailable",
+                        "runtime_kind": row["runtime_kind"],
+                    },
+                )
         return self.hearth.run(run_id)
 
     def artifact(self, artifact_id: str) -> tuple[Artifact, str]:
@@ -271,9 +306,7 @@ class Execution:
             row = db.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
             if row is None:
                 raise Refused("artifact_not_found")
-            values = dict(row)
-            values["simulated"] = bool(row["simulated"])
-            artifact = Artifact(**values)
+            artifact = Artifact(**dict(row))
         return artifact, self.artifacts.read(artifact)
 
 
@@ -282,31 +315,62 @@ class Executor:
 
     Runtime adapters must make repeated start(run_id, same instruction) idempotent.
     Only confirmed terminal evidence releases resident ownership.
+
+    One store may be configured for several runtimes at once, so the executor holds
+    them by kind and every run is worked by the one its own admission pinned
+    (`docs/adr/0015-runtime-per-resident.md`). No run is ever handed to another
+    provider's adapter, whatever the store's default becomes afterwards.
     """
 
-    def __init__(self, execution: Execution, runtime: Runtime):
+    def __init__(self, execution: Execution, runtimes):
+        """`runtimes` is one runtime, or the several this instance is configured for."""
+        adapters = [runtimes] if hasattr(runtimes, "kind") else list(runtimes)
         self.execution = execution
-        self.runtime = runtime
+        self.runtimes: dict[str, Runtime] = {adapter.kind: adapter for adapter in adapters}
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
-    def _step_receipted(self, run):
+    @property
+    def runtime(self) -> Runtime:
+        """The runtime, where this instance is configured for exactly one of them.
+
+        Most are: one household, one provider. An instance configured for several has
+        no single answer and says so rather than picking one, because every question
+        worth asking of it is about a particular run's own pinned kind.
+        """
+        (only,) = self.runtimes.values()
+        return only
+
+    def _step(self, run, runtime: Runtime | None):
         if run.cancellation_requested and not run.launch_attempted:
-            with self.execution.hearth.database.transaction() as db:
-                row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
-                receipt = interface.cancellation_receipt(
-                    self.runtime.kind,
-                    usage_accounting.binding(db, row),
-                    usage_accounting.runtime_pins(db, run.id),
-                )
+            # Nothing was launched, so this settles at zero from the run's own pin,
+            # which the registry answers for whether or not that provider is
+            # configured here -- as long as the store holds the pins that receipt has
+            # to name. A store that never got them cannot prove this run's zero, and
+            # one run nobody can settle waits alone rather than ending the pass for
+            # every other resident (`docs/adr/0015-runtime-per-resident.md`). It
+            # settles as soon as the runtime is configured and writes its pin.
+            try:
+                with self.execution.hearth.database.transaction() as db:
+                    row = db.execute("SELECT * FROM runs WHERE id=?", (run.id,)).fetchone()
+                    receipt = interface.cancellation_receipt(
+                        run.runtime_kind,
+                        usage_accounting.binding(db, row),
+                        usage_accounting.runtime_pins(db, run.id),
+                    )
+            except Refused:
+                return self.execution.runtime_unavailable(run.id, run.owner_token)
             return self.execution.finish(
                 run.id, run.owner_token, Evidence("cancelled", cost=0), _usage_receipt=receipt
             )
+        if runtime is None:
+            # This instance is not configured for the runtime this run was pinned to,
+            # so nobody here can observe it, stop it or launch it. It waits, visibly.
+            return self.execution.runtime_unavailable(run.id, run.owner_token)
         if run.cancellation_requested:
-            self.runtime.stop(run.id)
-        evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
-        if evidence.status == "absent" and interface.may_start(
-            self.runtime.kind, status=run.status, launch_attempted=bool(run.launch_attempted)
-        ):
+            runtime.stop(run.id)
+        evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
+        # There is no safe detached-start replay after a lost launch reply.
+        if evidence.status == "absent" and not run.launch_attempted:
             if self.execution.prepare_start(run.id, run.owner_token):
                 try:
                     with self.execution.hearth.database.transaction() as db:
@@ -316,16 +380,14 @@ class Executor:
                         raise
                     # One run's unreadable pinned context never stops the whole pass.
                     return self.execution.observe(run.id, run.owner_token, "interrupted")
-                self.runtime.start(
-                    run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
-                )
-                evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
+                runtime.start(run.id, json.dumps(context, sort_keys=True, separators=(",", ":")))
+                evidence = runtime.inspect(run.id, expected_digest=run.input_digest)
         if evidence.status in {"succeeded", "failed", "cancelled"}:
             return self.execution.finish(
                 run.id,
                 run.owner_token,
                 evidence,
-                _usage_receipt=interface.runtime_receipt(self.runtime, run.id),
+                _usage_receipt=interface.runtime_receipt(runtime, run.id),
             )
         return self.execution.observe(
             run.id, run.owner_token, "running" if evidence.status == "running" else "interrupted"
@@ -340,19 +402,15 @@ class Executor:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise Refused("executor_busy") from None
-            if self.execution.hearth.database.runtime_kind() != self.runtime.kind:
-                raise Refused("runtime_store_mismatch")
-            if self.runtime.kind == "process_mock" and (
-                getattr(self.runtime, "boundary", None)
-                != self.execution.hearth.database.process_boundary()
-            ):
+            # The store's own default has to be one of the runtimes configured here: an
+            # instance that cannot work what this store admits next would queue work
+            # nothing is ever going to start.
+            if self.execution.hearth.database.runtime_kind() not in self.runtimes:
                 raise Refused("runtime_store_mismatch")
             results = []
             for run in self.execution.active():
-                if (run.runtime_kind, run.runtime_version) != (
-                    self.runtime.kind,
-                    self.runtime.version,
-                ):
+                runtime = self.runtimes.get(run.runtime_kind)
+                if runtime is not None and run.runtime_version != runtime.version:
                     raise Refused("runtime_run_mismatch")
                 if (
                     run.status == "starting"
@@ -373,69 +431,5 @@ class Executor:
                             self.execution.observe(run.id, run.owner_token, "interrupted")
                         )
                         continue
-                if interface.uses_receipts(self.runtime.kind):
-                    results.append(self._step_receipted(run))
-                    continue
-                with self.execution.hearth.database.transaction() as db:
-                    priced = usage_accounting.pricing(db, run.id) is not None
-                if priced:
-                    results.append(self.execution.observe(run.id, run.owner_token, "interrupted"))
-                    continue
-                evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
-                if run.cancellation_requested:
-                    if evidence.status == "running":
-                        self.runtime.stop(run.id)
-                        evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
-                    elif evidence.status == "absent":
-                        # A durable launch intent distinguishes never-started work from ambiguity.
-                        evidence = (
-                            Evidence("unknown")
-                            if run.launch_attempted
-                            else Evidence("cancelled", cost=0)
-                        )
-                elif run.status == "starting" and evidence.status == "absent":
-                    try:
-                        with self.execution.hearth.database.transaction() as db:
-                            context = read_context(db, run.id, Memory(self.execution.hearth).files)
-                    except Refused as error:
-                        if not unreadable_context(error):
-                            raise
-                        results.append(
-                            self.execution.observe(run.id, run.owner_token, "interrupted")
-                        )
-                        continue
-                    if self.execution.prepare_start(run.id, run.owner_token):
-                        instruction = json.dumps(context, sort_keys=True, separators=(",", ":"))
-                        if hashlib.sha256(instruction.encode()).hexdigest() != run.input_digest:
-                            results.append(
-                                self.execution.observe(run.id, run.owner_token, "interrupted")
-                            )
-                            continue
-                        if self.runtime.kind == "inline_mock":
-                            with self.execution.hearth.database.transaction() as db:
-                                epoch = db.execute(
-                                    "SELECT value FROM system_meta WHERE key='epoch'"
-                                ).fetchone()[0]
-                            try:
-                                # The inline simulation has no detached worker; serialize
-                                # its actual bounded start with archive here.
-                                with self.execution.dispatch_guard(
-                                    run.id,
-                                    run.owner_token,
-                                    epoch=epoch,
-                                    input_digest=run.input_digest,
-                                ):
-                                    self.runtime.start(run.id, instruction)
-                            except Refused as error:
-                                if error.code != "resident_archived":
-                                    raise
-                        else:
-                            self.runtime.start(run.id, instruction)
-                    evidence = self.runtime.inspect(run.id, expected_digest=run.input_digest)
-                if evidence.status in {"succeeded", "failed", "cancelled"}:
-                    results.append(self.execution.finish(run.id, run.owner_token, evidence))
-                elif evidence.status == "running":
-                    results.append(self.execution.observe(run.id, run.owner_token, "running"))
-                else:
-                    results.append(self.execution.observe(run.id, run.owner_token, "interrupted"))
+                results.append(self._step(run, runtime))
             return results

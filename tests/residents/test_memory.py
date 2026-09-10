@@ -18,13 +18,15 @@ from hearth.storage.backup import capture, restore
 from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
+from tests.fake_runtime import fake_runtime
+
 TOKEN = "synthetic-memory-operator-token"
 TEXT = "# Synthetic memory\r\n\r\nRemember ž and `code`.\n"
 
 
 @pytest.fixture
 def system(tmp_path):
-    app = create_app(tmp_path / "data", TOKEN, supervise=False)
+    app = create_app(tmp_path / "data", TOKEN, supervise=False, runtime=fake_runtime())
     hearth = app.state.hearth
     hearth.clock = lambda: 1000
     for resident in ("reader", "other"):
@@ -81,7 +83,7 @@ def test_admission_pins_absence_and_then_exact_revision_despite_later_edits(syst
     monkeypatch.setattr(app.state.executor.runtime, "start", capture_input)
     app.state.executor.step()
     assert inputs[0]["memory"] == pinned
-    assert inputs[0]["context_version"] == 6
+    assert inputs[0]["context_version"] == 9
 
 
 def test_concurrent_writers_have_one_winner(system):
@@ -167,6 +169,7 @@ def test_memory_history_and_pins_survive_held_backup_restore(system):
     memory.save("reader", TEXT, expected_revision=0)
     run = admit(app)
     memory.save("reader", "After admission", expected_revision=1)
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
     copy = Memory(Hearth(Database(root / "restored/hearth.db")))
@@ -262,9 +265,12 @@ def test_operator_memory_routes_read_only_runtime_and_large_bounded_text(system)
             ]
             == text
         )
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
-    with TestClient(create_app(root / "restored", TOKEN, supervise=False)) as client:
+    with TestClient(
+        create_app(root / "restored", TOKEN, supervise=False, runtime=fake_runtime())
+    ) as client:
         assert client.get("/api/residents/reader/memory", headers=auth).status_code == 200
         assert (
             client.put(
@@ -340,6 +346,7 @@ def test_backup_memory_pin_cannot_cross_resident_identity(system):
     memory.save("reader", TEXT, expected_revision=0)
     memory.save("other", "Other synthetic memory", expected_revision=0)
     run = admit(app)
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     path = root / "backup/hearth.db"
     with sqlite3.connect(path) as db:
@@ -504,6 +511,7 @@ def test_backup_and_held_restore_keep_run_authorship_and_refuse_a_relabelled_cop
     run = admit(app)
     written = run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
     memory.save("reader", "A later operator note", expected_revision=1)
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     restore(root / "backup", root / "restored")
     copy = Memory(Hearth(Database(root / "restored/hearth.db")))
@@ -582,6 +590,7 @@ def test_a_rehashed_backup_cannot_forge_or_break_run_authorship(system, tamper):
     run = admit(app)
     run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
     memory.save("reader", "A later operator note", expected_revision=1)
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     if tamper == "promote":
         # An operator revision relabelled as run-written keeps no authoring receipt.
@@ -642,6 +651,7 @@ def test_a_backup_receipt_of_any_shape_is_refused_rather_than_raised(system):
     app, memory, root = system
     run = admit(app)
     run_save(app, run.id, TEXT, expected_revision=0, operation_id="note")
+    app.state.executor.step()
     capture(root / "data", root / "backup")
     for receipt in ('{"resident_id": "reader", "revision": [1], "sha256": "x"}', "[]", "null"):
         rehash(

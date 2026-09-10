@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
+  streamBaseline,
+  inheritStreamBaseline,
   RequestError,
   StateFormatError,
   type PendingTask,
   type Snapshot,
 } from "../shared/client";
 import "./style.css";
-import { Approvals } from "../features/approvals/Approvals";
 import { RoutinePanel } from "../features/routines/Routines";
-import { UsageReport } from "../features/tasks/UsageReport";
+import { UsageByOrigin, UsageReport } from "../features/tasks/UsageReport";
 import { ResidentMaintenance } from "../features/residents/Maintenance";
 import { MemoryHistory } from "../features/residents/MemoryHistory";
 import { Journal } from "../features/residents/Journal";
@@ -23,7 +24,15 @@ import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { ImportResident } from "../features/residents/ImportResident";
+import { Letters } from "../features/letters/Letters";
+import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
+import {
+  configuredKinds,
+  resultEyebrow,
+  runtimeLabel,
+  runtimeNames,
+} from "../shared/runtimes";
 
 const SESSION_KEY = "hearth.operator-token";
 function savedToken(): string | null {
@@ -76,11 +85,11 @@ function Emblem() {
 
 function SummaryOutput({
   content,
-  simulated,
+  eyebrow,
   onClose,
 }: {
   content: string;
-  simulated: boolean;
+  eyebrow: string;
   onClose: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
@@ -96,9 +105,7 @@ function SummaryOutput({
       aria-label="Summary output"
     >
       <div className="section-title">
-        <span className="eyebrow">
-          {simulated ? "SIMULATED ARTIFACT" : "CODEX RESULT"}
-        </span>
+        <span className="eyebrow">{eyebrow}</span>
         <button className="quiet" onClick={onClose}>
           Close ×
         </button>
@@ -119,7 +126,7 @@ type Page =
   | "management"
   | "tasks"
   | "routines"
-  | "approvals"
+  | "inbox"
   | "activity"
   | "hamlet";
 
@@ -128,6 +135,8 @@ export function App() {
   const [token, setToken] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [view, setView] = useState<Page>("townhall");
+  const [visitedHamlet, setVisitedHamlet] = useState(false);
+  const recordRequest = useRef(0);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [residentId, setResidentId] = useState("");
   const [provisionId, setProvisionId] = useState("");
@@ -135,17 +144,26 @@ export function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [instruction, setInstruction] = useState("Summarize today’s notes.");
-  const [linkedApproval, setLinkedApproval] = useState<string | null>(null);
   const [output, setOutput] = useState<{
     content: string;
     residentId?: string;
+    // The runtime the run was pinned to, so the result is credited to the provider
+    // that actually produced it rather than to whatever the household runs on today.
+    runtimeKind?: string;
   } | null>(null);
   const pending = useRef<PendingTask | null>(null);
   const currentSession = useRef<Client | null>(null);
 
+  const lastStream = useRef<ReturnType<typeof streamBaseline>>(undefined);
   function publish(next: Snapshot) {
+    const delivery = streamBaseline(next);
+    const newStream = delivery && delivery !== lastStream.current;
+    if (delivery) lastStream.current = delivery;
+    else inheritStreamBaseline(next, lastStream.current);
     setSnapshot((previous) =>
-      previous?.epoch === next.epoch && previous.cursor > next.cursor
+      previous?.epoch === next.epoch &&
+      previous.cursor > next.cursor &&
+      !newStream
         ? previous
         : next,
     );
@@ -268,9 +286,11 @@ export function App() {
   }
   useEffect(() => {
     const openLinkedView = () => {
+      const request = ++recordRequest.current;
+      setOutput((previous) => (previous?.residentId ? previous : null));
       let hash: string;
       try {
-        hash = decodeURIComponent(window.location.hash).replace(
+        hash = decodeURIComponent(window.location.hash.split("?")[0]).replace(
           /^#runs\//,
           "#run-",
         );
@@ -305,15 +325,11 @@ export function App() {
           "#management",
           "#tasks",
           "#routines",
-          "#approvals",
+          "#inbox",
           "#activity",
         ].includes(hash)
       ) {
         setView(hash.slice(1) as Page);
-      }
-      if (hash.startsWith("#approval-")) {
-        setView("approvals");
-        setLinkedApproval(hash.slice(10));
       }
       if (hash.startsWith("#run-") && client) {
         setView("tasks");
@@ -323,7 +339,11 @@ export function App() {
           const content = run.artifact_id
             ? (await client.artifact(run.artifact_id)).content
             : `Run ${run.status}`;
-          if (currentSession.current === client) setOutput({ content });
+          if (
+            currentSession.current === client &&
+            request === recordRequest.current
+          )
+            setOutput({ content, runtimeKind: run.runtime_kind });
         });
       }
     };
@@ -333,11 +353,30 @@ export function App() {
   }, [client]);
   useEffect(() => {
     const hash = window.location.hash.replace(/^#runs\//, "#run-");
-    if (hash.startsWith("#approval-") || hash.startsWith("#run-"))
+    if (hash.startsWith("#run-"))
       document
         .getElementById(hash.slice(1))
         ?.scrollIntoView?.({ block: "center" });
   }, [view, snapshot]);
+  useEffect(() => {
+    if (view === "hamlet") setVisitedHamlet(true);
+    if (view === "resident") {
+      const section = new URLSearchParams(
+        window.location.hash.split("?")[1],
+      ).get("panel");
+      if (
+        section === "journal" ||
+        section === "letters" ||
+        section === "work"
+      ) {
+        const target = document.getElementById(`resident-${section}`);
+        const details = target?.querySelector("details");
+        if (details) details.open = true;
+        target?.focus();
+        target?.scrollIntoView?.({ block: "start" });
+      }
+    }
+  }, [view, residentId, snapshot?.epoch]);
   const residents = snapshot?.residents ?? [];
   const current = residents.find((r) => r.id === residentId);
   const visibleTasks = (snapshot?.tasks ?? []).filter(
@@ -357,8 +396,8 @@ export function App() {
     snapshot?.runs.filter((r) =>
       ["starting", "running", "stopping", "interrupted"].includes(r.status),
     ).length ?? 0;
-  const pendingApprovals =
-    snapshot?.approvals?.filter((a) => a.status === "pending").length ?? 0;
+  const notifications = snapshot?.notifications ?? [];
+  const unread = notifications.filter((n) => n.read_at === null).length;
   const troubledRuns =
     snapshot?.runs.filter((r) =>
       ["failed", "interrupted"].includes(r.status),
@@ -368,14 +407,8 @@ export function App() {
   const pausedResidents = residents.filter(
     (r) => r.presence === "paused" || r.pause_reason,
   );
-  const unconfirmedDeliveries =
-    snapshot?.notifications?.filter((n) => n.status === "retry").length ?? 0;
   const attentionCount =
-    pendingApprovals +
-    troubledRuns.length +
-    failedSetups.length +
-    pausedResidents.length +
-    unconfirmedDeliveries;
+    troubledRuns.length + failedSetups.length + pausedResidents.length;
 
   const pageTitle =
     view === "resident"
@@ -397,20 +430,20 @@ export function App() {
     management: "Which residents may create and assign work, within limits.",
     tasks: "Every assignment and its result.",
     routines: "Scheduled work.",
-    approvals: "Actions waiting for your decision.",
+    inbox: "Everything Hearth has told you, unread first.",
     activity: "Everything Hearth recorded, newest first.",
     hamlet: "Your residents at home.",
   }[view];
 
   const navGroups: { label?: string; pages: Page[] }[] = [
-    { pages: ["townhall", "residents", "tasks", "approvals", "activity"] },
+    { pages: ["townhall", "residents", "tasks", "inbox", "activity"] },
     { label: "Library", pages: ["skills", "inputs", "routines", "management"] },
     { label: "Village", pages: ["hamlet"] },
   ];
   const navLabel = (page: Page) =>
     page === "townhall" ? "Townhall" : page[0].toUpperCase() + page.slice(1);
   const navBadge = (page: Page) =>
-    page === "tasks" ? active : page === "approvals" ? pendingApprovals : 0;
+    page === "tasks" ? active : page === "inbox" ? unread : 0;
   const isSelected = (page: Page) =>
     view === page ||
     (page === "residents" && (view === "resident" || view === "new-resident"));
@@ -527,21 +560,21 @@ export function App() {
         </nav>
         <div className="rail-foot">
           {snapshot && (
-            <span
-              className={`chip ${connected ? (snapshot.simulated ? "sim" : "live") : "off"}`}
-            >
+            <span className={`chip ${connected ? "live" : "off"}`}>
+              {/* The chip is about this browser's own connection to Hearth; the
+                  runtimes beside it are what the household is configured for, which
+                  is not a claim that each provider is up right now. `GET /health`
+                  answers that, and only it can. */}
               {connected
-                ? snapshot.simulated
-                  ? "Connected to the simulation"
-                  : "Connected to Codex"
+                ? `Connected · ${runtimeNames(snapshot.runtimes).join(" and ")}`
                 : "Reconnecting · state may be stale"}
             </span>
           )}
           <span>
             {snapshot
-              ? snapshot.simulated
-                ? "Simulation · nothing is spent"
-                : "Codex subscription"
+              ? configuredKinds(snapshot.runtimes)
+                  .map((kind) => runtimeLabel(snapshot.runtimes, kind))
+                  .join(" · ")
               : "Local operator console"}
           </span>
           {client && (
@@ -552,6 +585,11 @@ export function App() {
         </div>
       </header>
       <main>
+        {visitedHamlet && view !== "hamlet" && snapshot && (
+          <a className="village-return" href="#hamlet">
+            ← Return to village
+          </a>
+        )}
         <div className="page-head">
           <div>
             {view === "resident" && (
@@ -617,18 +655,6 @@ export function App() {
             {view === "townhall" && attentionCount > 0 && (
               <section className="attention" aria-label="Needs your attention">
                 <ul>
-                  {pendingApprovals > 0 && (
-                    <li>
-                      <span>
-                        <strong>
-                          {pendingApprovals} approval
-                          {pendingApprovals === 1 ? "" : "s"}
-                        </strong>
-                        waiting for your decision.
-                      </span>
-                      <a href="#approvals">Review →</a>
-                    </li>
-                  )}
                   {troubledRuns.map((run) => (
                     <li key={run.id}>
                       <span>
@@ -674,18 +700,6 @@ export function App() {
                       </a>
                     </li>
                   ))}
-                  {unconfirmedDeliveries > 0 && (
-                    <li>
-                      <span>
-                        <strong>
-                          {unconfirmedDeliveries} notification
-                          {unconfirmedDeliveries === 1 ? "" : "s"}
-                        </strong>
-                        with unconfirmed delivery.
-                      </span>
-                      <a href="#activity">See inbox →</a>
-                    </li>
-                  )}
                 </ul>
               </section>
             )}
@@ -763,15 +777,18 @@ export function App() {
               <SkillCatalog
                 key={snapshot.epoch}
                 client={client}
+                residents={snapshot.residents}
                 readOnly={snapshot.restore_hold === true}
               />
             )}
-            {view === "hamlet" && (
-              <Hamlet snapshot={snapshot} connected={connected} />
+            {(visitedHamlet || view === "hamlet") && (
+              <Hamlet
+                snapshot={snapshot}
+                connected={connected}
+                active={view === "hamlet"}
+              />
             )}
-            {(view === "townhall" ||
-              view === "residents" ||
-              view === "hamlet") && (
+            {(view === "townhall" || view === "residents") && (
               <section
                 className="resident-directory"
                 aria-label="Resident directory"
@@ -832,6 +849,17 @@ export function App() {
                     </dd>
                     <dt>Budget timezone</dt>
                     <dd>{current.budget_timezone ?? "UTC"}</dd>
+                    <dt>Runtime</dt>
+                    <dd>
+                      {runtimeLabel(
+                        snapshot.runtimes,
+                        current.profile?.execution_profile,
+                      )}
+                      {current.profile?.execution_profile ===
+                      snapshot.runtimes.default
+                        ? " · the household default"
+                        : ""}
+                    </dd>
                     <dt>Declaration</dt>
                     <dd>Revision {current.revision}</dd>
                     <dt>Memory</dt>
@@ -853,9 +881,7 @@ export function App() {
                   <section className="work-panel">
                     <h2>Assign work</h2>
                     <p>
-                      {snapshot.simulated
-                        ? "A read-only assignment using the selected notes."
-                        : "A read-only assignment. Results appear beside this panel."}
+                      A read-only assignment. Results appear beside this panel.
                     </p>
                     <form onSubmit={submit}>
                       {pending.current &&
@@ -893,15 +919,16 @@ export function App() {
                       >
                         {pending.current
                           ? "Retry pending submission"
-                          : snapshot.simulated
-                            ? "Run a mock summary"
-                            : "Run summary"}{" "}
+                          : "Run summary"}{" "}
                         <span>↗</span>
                       </button>
                       <small>
-                        {snapshot.simulated
-                          ? "Mock usage only. No money is spent."
-                          : "Uses your Codex subscription. Dollar amounts are API-equivalent estimates."}
+                        Uses your{" "}
+                        {runtimeLabel(
+                          snapshot.runtimes,
+                          current.profile?.execution_profile,
+                        )}
+                        . Dollar amounts are API-equivalent estimates.
                       </small>
                     </form>
                     <small>
@@ -910,8 +937,13 @@ export function App() {
                     </small>
                   </section>
                 )}
-                <section className="task-panel">
+                <section
+                  className="task-panel"
+                  id="resident-work"
+                  tabIndex={-1}
+                >
                   <h2>Tasks &amp; results</h2>
+                  <UsageByOrigin client={client} busy={busy} act={act} />
                   {!visibleTasks.length ? (
                     <div className="empty">
                       <h3>A quiet beginning.</h3>
@@ -938,6 +970,7 @@ export function App() {
                               <time>{clock(task.created_at)}</time>
                             </div>
                             <h3>{task.instruction}</h3>
+                            {task.lineage && <Lineage hops={task.lineage} />}
                             {run?.memory_revision !== undefined && (
                               <small>
                                 {run.memory_revision === 0
@@ -967,6 +1000,33 @@ export function App() {
                                 {run.management.grant_revision} ·{" "}
                                 {run.management.calls} recorded tool calls
                               </p>
+                            )}
+                            {!!run?.letters_refused?.length && (
+                              <div aria-label="Letters this run was refused">
+                                <small>
+                                  Letters refused · nothing was written
+                                </small>
+                                <ul>
+                                  {/* Two letters can be refused in the same second for
+                                      the same reason, so the position in the run's own
+                                      evidence is what tells them apart. */}
+                                  {run.letters_refused.map((refusal, place) => (
+                                    <li key={place}>
+                                      {refusal.reason.replaceAll("_", " ")}
+                                      {Object.entries(refusal.details).map(
+                                        ([key, value]) => (
+                                          <small key={key}>
+                                            {key.replaceAll("_", " ")}:{" "}
+                                            {typeof value === "object"
+                                              ? JSON.stringify(value)
+                                              : String(value)}
+                                          </small>
+                                        ),
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                             {run?.skills_error && (
                               <p className="notice error">
@@ -1030,6 +1090,7 @@ export function App() {
                                         setOutput({
                                           content: result.content,
                                           residentId: task.resident_id,
+                                          runtimeKind: run.runtime_kind,
                                         });
                                     })
                                   }
@@ -1040,8 +1101,20 @@ export function App() {
                               {run && (
                                 <small>
                                   {run.usage_known
-                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${snapshot.simulated ? "simulated " : ""}${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported_mock" ? " · operator reported" : ""}`
+                                    ? `${((run.actual_cost ?? 0) / 1e6).toFixed(4)} ${run.usage_source?.startsWith("api_equivalent") ? "API-equivalent " : ""}USD${run.usage_source === "operator_reported" ? " · operator reported" : ""}`
                                     : "Usage not yet known"}
+                                </small>
+                              )}
+                              {run && (
+                                <small aria-label="Runtime this run was worked by">
+                                  {runtimeLabel(
+                                    snapshot.runtimes,
+                                    run.runtime_kind,
+                                  )}
+                                  {run.model ? ` · ${run.model}` : ""}
+                                  {run.price_schedule
+                                    ? ` · ${run.price_schedule}`
+                                    : ""}
                                 </small>
                               )}
                             </div>
@@ -1073,22 +1146,13 @@ export function App() {
                 act={act}
               />
             )}
-            {view === "approvals" && (
-              <Approvals
-                linkedId={linkedApproval}
-                client={client}
-                snapshot={snapshot}
-                busy={busy}
-                act={act}
-              />
-            )}
             {output &&
               (view === "tasks" ||
                 (view === "resident" && output.residentId === residentId)) && (
                 <SummaryOutput
                   key={output.content}
                   content={output.content}
-                  simulated={snapshot.simulated}
+                  eyebrow={resultEyebrow(snapshot.runtimes, output.runtimeKind)}
                   onClose={() => setOutput(null)}
                 />
               )}
@@ -1110,16 +1174,39 @@ export function App() {
                   act={act}
                   openable={openableRun}
                 />
-                <Journal
-                  key={`journal:${snapshot.epoch}:${current.id}`}
-                  client={client}
-                  resident={current}
-                  busy={busy}
-                  act={act}
-                  openable={openableRun}
-                />
+                <div id="resident-journal" tabIndex={-1}>
+                  <Journal
+                    key={`journal:${snapshot.epoch}:${current.id}`}
+                    client={client}
+                    resident={current}
+                    busy={busy}
+                    act={act}
+                    openable={openableRun}
+                  />
+                </div>
+                {/* Keyed on the resident alone, unlike its neighbours above: the
+                    others hold only server data a remount refetches, while Letters
+                    holds an unsent draft and the frozen identity of a command whose
+                    answer never arrived. Dropping those on a store swap would hand the
+                    operator a fresh command id for a letter Hearth may already hold.
+                    Its list is read on demand and reloaded by the same button. */}
+                <div id="resident-letters" tabIndex={-1}>
+                  <Letters
+                    key={`letters:${current.id}`}
+                    client={client}
+                    resident={current}
+                    residents={residents}
+                    busy={busy}
+                    readOnly={snapshot.restore_hold === true}
+                    act={act}
+                    openable={openableRun}
+                  />
+                </div>
                 {current.profile && (
-                  <ProfileProvenance profile={current.profile} />
+                  <ProfileProvenance
+                    profile={current.profile}
+                    runtimes={snapshot.runtimes}
+                  />
                 )}
                 {current.management && (
                   <section
@@ -1146,79 +1233,81 @@ export function App() {
               </div>
             )}
 
-            {(view === "activity" || view === "townhall") && (
-              <div className="two-col">
-                <section className="output inbox" aria-label="Notifications">
-                  <div className="section-title">
-                    <div>
-                      <h2>Inbox</h2>
-                    </div>
-                    <span className="eyebrow">Local delivery</span>
+            {view === "inbox" && (
+              <section className="output inbox" aria-label="Inbox">
+                <div className="section-title">
+                  <div>
+                    <h2>Inbox</h2>
                   </div>
-                  <p>
-                    Delivery status is separate from work status. These
-                    notifications stay local and never approve an action.
-                  </p>
-                  {!snapshot.notifications?.length && (
-                    <p className="muted">
-                      Results and approval requests will appear here.
-                    </p>
-                  )}
-                  <ul className="tasks">
-                    {snapshot.notifications?.map((n) => (
-                      <li key={n.id}>
-                        <h3>
-                          {n.kind === "approval.requested"
-                            ? "An action needs review"
-                            : n.kind.replace("run.", "Run ")}
-                        </h3>
-                        <p>
-                          {n.status === "retry"
-                            ? "Delivery unconfirmed; retry scheduled"
-                            : n.status === "pending"
-                              ? "Waiting for delivery confirmation"
-                              : n.status === "obsolete"
-                                ? "No longer current"
-                                : "Delivered to the local inbox"}{" "}
-                          · {n.attempts} attempts
-                        </p>
-                        {n.status !== "obsolete" && (
-                          <a
-                            href={`/#${n.kind === "approval.requested" ? "approval" : "run"}-${encodeURIComponent(n.resource_id)}`}
-                            onClick={() => {
-                              if (n.kind === "approval.requested")
-                                setView("approvals");
-                            }}
-                          >
-                            {n.kind === "approval.requested"
-                              ? "Open approval review"
-                              : "Open run and result"}
-                          </a>
+                  <span className="eyebrow">
+                    {unread} unread · showing {notifications.length}
+                  </span>
+                </div>
+                <p>
+                  Everything Hearth raises is recorded here and stays here.
+                  Reading one only marks it read.
+                </p>
+                {!notifications.length && (
+                  <p className="muted">Run results will appear here.</p>
+                )}
+                <ul className="tasks">
+                  {notifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className={n.read_at === null ? "unread" : ""}
+                    >
+                      <h3>
+                        {n.kind.replace("run.", "Run ")}
+                        {n.read_at === null && (
+                          <span className="nav-badge">New</span>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-                <section className="activity" aria-label="Recent activity">
-                  <h2>Recent activity</h2>
-                  {snapshot.activity
-                    .slice(0, view === "activity" ? 50 : 8)
-                    .map((item) => (
-                      <div key={item.sequence}>
-                        <time>{clock(item.at)}</time>
-                        <span>
-                          {item.kind
-                            .replaceAll(".", " · ")
-                            .replaceAll("_", " ")}
-                        </span>
-                        <span className="audit-sequence">#{item.sequence}</span>
-                      </div>
-                    ))}
-                  {!snapshot.activity.length && (
-                    <p className="muted">Nothing has happened yet.</p>
-                  )}
-                </section>
-              </div>
+                      </h3>
+                      <p>
+                        <time>{clock(n.created_at)}</time>
+                      </p>
+                      <a
+                        href={`/#run-${encodeURIComponent(n.resource_id)}`}
+                        onClick={() => setView("tasks")}
+                        aria-label={`Open the run ${n.resource_id} and its result`}
+                      >
+                        Open run and result
+                      </a>
+                      <button
+                        className="quiet"
+                        disabled={busy}
+                        aria-label={`Mark the ${n.kind.replace("run.", "run ")} notice for ${n.resource_id} ${n.read_at === null ? "read" : "unread"}`}
+                        onClick={() =>
+                          act(() =>
+                            client.markNotification(n.id, n.read_at === null),
+                          )
+                        }
+                      >
+                        {n.read_at === null ? "Mark read" : "Mark unread"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {(view === "activity" || view === "townhall") && (
+              <section className="activity" aria-label="Recent activity">
+                <h2>Recent activity</h2>
+                {snapshot.activity
+                  .slice(0, view === "activity" ? 50 : 8)
+                  .map((item) => (
+                    <div key={item.sequence}>
+                      <time>{clock(item.at)}</time>
+                      <span>
+                        {item.kind.replaceAll(".", " · ").replaceAll("_", " ")}
+                      </span>
+                      <span className="audit-sequence">#{item.sequence}</span>
+                    </div>
+                  ))}
+                {!snapshot.activity.length && (
+                  <p className="muted">Nothing has happened yet.</p>
+                )}
+              </section>
             )}
           </>
         )}

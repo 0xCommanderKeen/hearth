@@ -1,6 +1,7 @@
 """Definition-only resident bundles round-trip through ordinary provisioning."""
 
 import json
+from dataclasses import replace
 
 import pytest
 from hearth.inputs.catalog import Inputs
@@ -38,7 +39,7 @@ def seeded(hearth: Hearth) -> dict:
             instructions="Be concise.",
             initial_memory="Remember: pears.",
             skills=[{"skill_id": skill["skill_id"], "revision": skill["revision"]}],
-            execution_profile="inline_mock",
+            execution_profile="codex_subscription",
             input_sets=[{"input_set_id": inputs["input_set_id"]}],
             daily_limit=250_000,
             budget_timezone="Europe/Ljubljana",
@@ -92,7 +93,7 @@ def test_import_round_trip_into_fresh_store_creates_content(tmp_path):
         if key == "resident":
             expected = expected | {
                 "creation_reason": again["resident"]["creation_reason"],
-                "execution_profile": "inline_mock",
+                "execution_profile": "codex_subscription",
             }
         assert again[key] == expected
     assert again["resident"]["creation_reason"].startswith("Imported resident bundle")
@@ -198,7 +199,7 @@ def test_foreign_profile_is_substituted_and_grant_is_never_applied(tmp_path):
     assert receipt["status"] == "ready"
     assert receipt["resolution"]["execution_profile"] == {
         "requested": "codex_subscription",
-        "used": "inline_mock",
+        "used": "codex_subscription",
     }
     assert receipt["resolution"]["management_ignored"] is True
     from hearth.management.authority import read_grant
@@ -206,6 +207,47 @@ def test_foreign_profile_is_substituted_and_grant_is_never_applied(tmp_path):
     with target.database.transaction() as db:
         grant = read_grant(db, receipt["resident_id"])
     assert grant["revision"] == 0 and grant["enabled"] is False
+
+
+def test_a_bundle_carries_the_runtime_the_resident_declared(tmp_path):
+    """The brain is definition, so it travels; an instance without it says so."""
+    from hearth.integrations.claude.config import KIND as CLAUDE_KIND
+
+    from tests.fake_runtime import FakeClaudeRuntime
+
+    source = store(tmp_path / "source")
+    FakeClaudeRuntime(tmp_path / "source")
+    created = seeded(source)
+    source.save_resident(
+        created["resident_id"],
+        replace(source.resident(created["resident_id"]).declaration, runtime=CLAUDE_KIND),
+        expected_revision=1,
+    )
+    bundle = Bundles(source).export(created["resident_id"])
+    assert bundle["resident"]["execution_profile"] == CLAUDE_KIND
+
+    # An instance configured for that runtime keeps the resident on it.
+    target = store(tmp_path / "target")
+    FakeClaudeRuntime(tmp_path / "target")
+    receipt = Bundles(target).import_("import-runtime", {"bundle": bundle})
+    assert receipt["status"] == "ready"
+    assert receipt["resolution"]["execution_profile"] == {
+        "requested": CLAUDE_KIND,
+        "used": CLAUDE_KIND,
+    }
+    assert target.resident(receipt["resident_id"]).declaration.runtime == CLAUDE_KIND
+
+    # An instance that has never had it keeps the resident, on its own default,
+    # and says why rather than pretending the bundle asked for it.
+    elsewhere = store(tmp_path / "elsewhere")
+    receipt = Bundles(elsewhere).import_("import-runtime", {"bundle": bundle})
+    assert receipt["status"] == "ready"
+    assert receipt["resolution"]["execution_profile"] == {
+        "requested": CLAUDE_KIND,
+        "used": "codex_subscription",
+        "reason": "runtime_not_configured",
+    }
+    assert elsewhere.resident(receipt["resident_id"]).declaration.runtime is None
 
 
 def test_export_refuses_unknown_resident_and_exports_archived(tmp_path):
@@ -236,7 +278,7 @@ def test_karen_fixture_imports_as_ordinary_resident(tmp_path):
     receipt = Bundles(target).import_("import-karen", {"bundle": bundle})
     assert receipt["status"] == "ready"
     assert receipt["resolution"]["management_ignored"] is True
-    assert receipt["resolution"]["execution_profile"]["used"] == "inline_mock"
+    assert receipt["resolution"]["execution_profile"]["used"] == "codex_subscription"
     assert [entry["outcome"] for entry in receipt["resolution"]["skills"]] == ["created"] * 2
     with target.database.transaction() as db:
         assert read_grant(db, receipt["resident_id"])["revision"] == 0
