@@ -181,12 +181,14 @@ no device-code flag, so its browser flow has to be completed somewhere that has 
 with a forwarded port, or the resulting `.credentials.json` placed in the directory by
 hand.
 
+Run it from the **sandbox image**, whose own copies of the CLIs are the ones a session
+executes and the ones the store's pin is checked against — so a login seeded with them
+was seeded with the build the runs will use:
+
 ```sh
-# One shell inside the volume, with the pinned CLI and the login directory both on it.
-docker run --rm -it \
-    -v hearth-credentials:/credentials -v hearth-binaries:/binaries:ro \
+docker run --rm -it -v hearth-credentials:/credentials \
     -e CODEX_HOME=/credentials/codex_subscription \
-    --entrypoint /binaries/codex "$HEARTH_SANDBOX_IMAGE" login --device-auth
+    --entrypoint /usr/local/bin/codex "$HEARTH_SANDBOX_IMAGE" login --device-auth
 ```
 
 A resident may have a login of its own instead, at
