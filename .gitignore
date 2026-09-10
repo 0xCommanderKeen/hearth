@@ -8,7 +8,13 @@ dist/
 htmlcov/
 .hearth/
 .env*
+# The deployment template is not a deployment: it holds no secret and is the
+# runbook's own starting point.
+!deploy/.env.example
 node_modules/
 web/dist/
 backend/hearth/web/
 logs/
+# The pinned provider CLIs a sandbox image is built from. They are large, they are
+# not this repository's, and nothing Hearth ships downloads them.
+binaries/
