@@ -90,3 +90,72 @@ it("restores the exact pre-selection camera after focusing different homes", () 
   expect(controls.target).toEqual(target);
   expect(camera.zoom).toBe(1.25);
 });
+
+it.each([20, 40])(
+  "refits a restored overview to the current narrow aspect and bounds %s",
+  (extent) => {
+    const { camera, controls, view } = setup();
+    view.bounds(new Box3(new Vector3(-20, -1, -20), new Vector3(20, 5, 20)));
+    view.resize(1.9);
+    const restore = view.capture();
+    view.focus(new Vector3(6, 0, 6));
+    view.resize(0.5);
+    const current = new Box3(
+      new Vector3(-extent, -1, -20),
+      new Vector3(20, 5, extent),
+    );
+    view.bounds(current);
+    restore();
+    expect(controls.target).toEqual(current.getCenter(new Vector3()));
+    for (const x of [current.min.x, current.max.x])
+      for (const y of [current.min.y, current.max.y])
+        for (const z of [current.min.z, current.max.z]) {
+          const point = new Vector3(x, y, z).project(camera);
+          expect(Math.abs(point.x)).toBeLessThan(0.9);
+          expect(Math.abs(point.y)).toBeLessThan(0.9);
+          expect(Math.abs(point.z)).toBeLessThan(1);
+        }
+    expect(camera.zoom).toBe(1);
+  },
+);
+it("returns a saved custom target to the shrunken village without changing its orientation or zoom", () => {
+  const { camera, controls, view } = setup();
+  view.bounds(new Box3(new Vector3(-60, -1, -60), new Vector3(60, 5, 60)));
+  view.zoom(1.8);
+  view.rotate(1);
+  view.focus(new Vector3(50, 0, 50));
+  const offset = camera.position.clone().sub(controls.target);
+  const direction = camera.getWorldDirection(new Vector3());
+  const restore = view.capture();
+  view.focus(new Vector3(6, 0, 6));
+  view.bounds(new Box3(new Vector3(-10, -1, -10), new Vector3(10, 5, 10)));
+  view.resize(0.5);
+  restore();
+  expect(controls.target).toEqual(new Vector3(10, 0, 10));
+  expect(
+    camera.position.clone().sub(controls.target).distanceTo(offset),
+  ).toBeLessThan(1e-10);
+  expect(
+    camera.getWorldDirection(new Vector3()).distanceTo(direction),
+  ).toBeLessThan(1e-10);
+  expect(camera.zoom).toBe(1.8);
+});
+
+it("restores an intentional outside pan exactly when the settlement has not shrunk", () => {
+  const { camera, controls, view } = setup();
+  const bounds = new Box3(new Vector3(-20, -1, -20), new Vector3(20, 5, 20));
+  view.bounds(bounds);
+  view.zoom(1.25);
+  view.rotate(1);
+  view.focus(new Vector3(100, 0, -100));
+  const position = camera.position.clone(),
+    target = controls.target.clone();
+  const restore = view.capture();
+  view.focus(new Vector3(6, 0, 6));
+  view.bounds(bounds.clone());
+  view.resize(0.5);
+  restore();
+  expect(camera.position).toEqual(position);
+  expect(controls.target).toEqual(target);
+  expect(camera.zoom).toBe(1.25);
+});

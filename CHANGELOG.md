@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Returning from a Hamlet selection now refits an overview to the current viewport
+  and village bounds. Custom views keep their orientation and zoom while a roster
+  shrink returns a departed target to the remaining village.
+
 - Hamlet offers reversible lighter graphics, draws changed scenes and repaints resizing
   immediately, suspends hidden tabs/views and releases closed room contexts. Integrated
   keyboard/touch, graphics-failure and 0–100 resident browser journeys now have retained

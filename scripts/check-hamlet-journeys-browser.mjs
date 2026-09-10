@@ -9,9 +9,11 @@ import { createServer } from "../web/node_modules/vite/dist/node/index.js";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
-const output = fileURLToPath(
-  new URL("../docs/evidence/hamlet-journeys-2026-09-09/", import.meta.url),
-);
+const output =
+  process.env.HAMLET_EVIDENCE_DIR ||
+  fileURLToPath(
+    new URL("../docs/evidence/hamlet-journeys-2026-09-09/", import.meta.url),
+  );
 await mkdir(output, { recursive: true });
 const fixture = `
 import React from 'react'; import {createRoot} from 'react-dom/client';
@@ -330,6 +332,12 @@ try {
       }
     }
     for (const lighter of [false, true]) {
+      await page.bringToFront();
+      await page.waitForFunction(
+        () => !document.hidden,
+        {},
+        { polling: 100, timeout: 5000 },
+      );
       await page
         .getByRole("checkbox", { name: /Lighter graphics/ })
         .setChecked(lighter);
@@ -341,7 +349,16 @@ try {
         m.record = true;
         for (let i = 0; i < 70; i++) {
           document.querySelector('[aria-label="Rotate right"]').click();
-          await new Promise(requestAnimationFrame);
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+              () => reject(Error("Browser stopped delivering visible frames")),
+              2000,
+            );
+            requestAnimationFrame(() => {
+              clearTimeout(timeout);
+              resolve();
+            });
+          });
         }
         m.record = false;
         return m.samples.slice(10);
@@ -368,6 +385,140 @@ try {
     }
   }
   await page.getByRole("checkbox", { name: /Lighter graphics/ }).uncheck();
+  await page.reload();
+  await page.waitForFunction(() => window.stats().camera);
+  await page.getByText(/Connected · Synthetic/).waitFor();
+  // Restore an overview against the new viewport, not its old saved height.
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await directory("Reader").click();
+  await page.setViewportSize({ width: 320, height: 1050 });
+  await page.keyboard.press("Escape");
+  await settle();
+  const overviewFit = await page.evaluate(() => {
+    const { scene, camera } = window.measure,
+      THREE = window.THREE;
+    const village = scene.children.find((object) => object.isGroup);
+    const bounds = new THREE.Box3().setFromObject(village);
+    let maxX = 0,
+      maxY = 0;
+    for (const x of [bounds.min.x, bounds.max.x])
+      for (const y of [bounds.min.y, bounds.max.y])
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const point = new THREE.Vector3(x, y, z).project(camera);
+          maxX = Math.max(maxX, Math.abs(point.x));
+          maxY = Math.max(maxY, Math.abs(point.y));
+        }
+    return { maxX, maxY };
+  });
+  assert(overviewFit.maxX < 0.9 && overviewFit.maxY < 0.9);
+  await page.screenshot({
+    path: output + "restored-narrow-overview.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.evaluate(() => {
+    window.snapshot.residents = Array.from({ length: 25 }, (_, i) =>
+      window.resident("r" + i, "Resident " + i, "idle"),
+    );
+    window.publish();
+  });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".scene-directory button").length === 26,
+  );
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await settle();
+  const targetDistance = await page.evaluate(() => {
+    const { scene, camera } = window.measure,
+      THREE = window.THREE;
+    return camera.position.distanceTo(
+      new THREE.Box3()
+        .setFromObject(scene.children.find((o) => o.isGroup))
+        .getCenter(new THREE.Vector3()),
+    );
+  });
+  const canvasBounds = await page.locator(".scene-canvas canvas").boundingBox();
+  await page.keyboard.down("Shift");
+  await page.mouse.move(
+    canvasBounds.x + canvasBounds.width * 0.7,
+    canvasBounds.y + canvasBounds.height * 0.5,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    canvasBounds.x + canvasBounds.width * 0.15,
+    canvasBounds.y + canvasBounds.height * 0.5,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await settle();
+  const savedPan = await page.evaluate((distance) => {
+    const camera = window.measure.camera,
+      direction = camera.getWorldDirection(new window.THREE.Vector3());
+    return {
+      position: camera.position.toArray(),
+      target: camera.position
+        .clone()
+        .addScaledVector(direction, distance)
+        .toArray(),
+      direction: direction.toArray(),
+      zoom: camera.zoom,
+    };
+  }, targetDistance);
+  await directory("Resident 0").click();
+  await page.evaluate(() => {
+    window.snapshot.residents = [];
+    window.publish();
+  });
+  await page
+    .getByRole("dialog", { name: "Unavailable resident at home" })
+    .waitFor();
+  await page.keyboard.press("Escape");
+  await settle();
+  const restoredPan = await page.evaluate(
+    ({ distance, saved }) => {
+      const { scene, camera } = window.measure,
+        THREE = window.THREE;
+      const bounds = new THREE.Box3().setFromObject(
+        scene.children.find((o) => o.isGroup),
+      );
+      const target = camera.position
+        .clone()
+        .addScaledVector(
+          camera.getWorldDirection(new THREE.Vector3()),
+          distance,
+        );
+      const expected = bounds.clampPoint(
+        new THREE.Vector3(...saved.target),
+        new THREE.Vector3(),
+      );
+      return {
+        target: target.toArray(),
+        expected: expected.toArray(),
+        error: target.distanceTo(expected),
+        direction: camera.getWorldDirection(new THREE.Vector3()).toArray(),
+        zoom: camera.zoom,
+        moved: expected.distanceTo(new THREE.Vector3(...saved.target)),
+      };
+    },
+    { distance: targetDistance, saved: savedPan },
+  );
+  assert(
+    restoredPan.moved > 1,
+    "the saved custom target must actually leave the shrunken bounds",
+  );
+  assert(restoredPan.error < 1e-8);
+  assert.equal(restoredPan.zoom, savedPan.zoom);
+  assert(
+    restoredPan.direction.every(
+      (value, i) => Math.abs(value - savedPan.direction[i]) < 1e-10,
+    ),
+  );
+  await page.screenshot({
+    path: output + "restored-shrunken-village.png",
+    fullPage: true,
+  });
+  const cameraRestoration = { overviewFit, savedPan, restoredPan };
   await page.reload();
   await page.waitForFunction(() => window.stats().camera);
   await page.getByText(/Connected · Synthetic/).waitFor();
@@ -699,6 +850,7 @@ try {
           "1440x1050 viewport, DPR1; 70 visible camera rotations per population/mode, first 10 excluded; 60 rendered samples. CPU time wraps renderer.render, intervals are consecutive actual render start timestamps; neither is GPU execution time. Draw calls include shadows. No idle samples.",
         measurements,
         matrix,
+        cameraRestoration,
         fixture:
           "Synthetic full App, real Client/watch; no runtime or live data",
         desktop: [1440, 1050],
@@ -707,6 +859,8 @@ try {
           "16 population/viewport combinations: 0/5/25/100 by 320/390/768/1440",
           "101 buildings reachable by Tab/Enter, Escape restores each opener",
           "actual exterior canvas picking and mode/camera preservation",
+          "selection then narrow resize returns a fully fitted overview",
+          "actual custom pan then roster shrink clamps the saved target without changing direction/zoom",
           "keyboard home to work records to room journey",
           "real touch at 320/390 DPR2 with reduced motion, records and overview return",
           "actual background tabs stop exterior loop and room redraws, foreground resumes",

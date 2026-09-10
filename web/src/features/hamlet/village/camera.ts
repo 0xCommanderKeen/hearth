@@ -53,17 +53,18 @@ export function createCameraController(
     projection();
     controls.update();
   }
+  function clampTarget() {
+    // Keep the viewing direction while returning a removed-row pan to the village.
+    const target = controls.target.clone();
+    controls.target.clamp(settlement.min, settlement.max);
+    camera.position.add(controls.target.clone().sub(target));
+    controls.update();
+  }
   return {
     bounds(bounds: Box3) {
       settlement = bounds.clone();
       if (atOverview) overview();
-      else {
-        // A removed row cannot strand a panned camera outside the remaining village.
-        const target = controls.target.clone();
-        controls.target.clamp(settlement.min, settlement.max);
-        camera.position.add(controls.target.clone().sub(target));
-        controls.update();
-      }
+      else clampTarget();
     },
     resize(ratio: number) {
       aspect = ratio;
@@ -77,15 +78,22 @@ export function createCameraController(
         zoom: camera.zoom,
         height,
         atOverview,
+        bounds: settlement.clone(),
       };
       return () => {
+        if (saved.atOverview) {
+          // The available viewport and village may have changed while inspecting.
+          overview();
+          return;
+        }
         camera.position.copy(saved.position);
         controls.target.copy(saved.target);
         camera.zoom = saved.zoom;
         height = saved.height;
-        atOverview = saved.atOverview;
+        atOverview = false;
         projection();
-        controls.update();
+        if (settlement.containsBox(saved.bounds)) controls.update();
+        else clampTarget();
       };
     },
     focus(target: Vector3) {

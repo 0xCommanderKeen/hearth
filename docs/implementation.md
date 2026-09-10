@@ -29,9 +29,10 @@ keyboard, touch, reduced motion and actual graphics failures. All 16 combination
 0/5/25/100 residents and 320/390/768/1440 CSS pixels show the village without document
 overflow. Hidden views/tabs suspend rendering; closed room contexts and handlers are
 released. Normal/lighter desktop rendering measurements and remaining limits are
-recorded with the actual WebGL renderer. Frontend checks pass 173 tests, types, format,
-production build and packaged assets. The six PRs still require review/merge; physical
-phone GPUs, native accessibility, deployment and the real-host/daily gates remain open.
+recorded with the actual WebGL renderer. Frontend checks pass 177 tests, types, format,
+production build and packaged assets. [Epic #201](https://github.com/0xCommanderKeen/hearth/issues/201)
+tracks review and merge status. Physical phone GPUs, native accessibility, deployment
+and the real-host/daily gates remain open.
 
 ## Fresh-start simplification
 
