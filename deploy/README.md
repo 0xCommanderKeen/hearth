@@ -197,9 +197,20 @@ directory. `docs/sandbox.md`, *Whose login a run spends*, is the whole of it. Ch
 what is seeded without reading anything secret:
 
 ```sh
-docker compose --env-file deploy/.env -f deploy/compose.yaml \
-    run --rm --entrypoint /opt/hearth/bin/python hearth -I -m hearth credentials \
-    --data /var/lib/docker/volumes/hearth-store/_data
+docker run --rm -v hearth-store:"$store" \
+    --entrypoint /opt/hearth/bin/python "$HEARTH_IMAGE" \
+    -I -m hearth credentials --data "$store"
+```
+
+**A one-off command is `docker run`, not `docker compose run`.** The `hearth` service
+holds a fixed address on its own network so that `HEARTH_SANDBOX_SHUT` can name Hearth
+once and mean it after every restart; a second container from that service would want
+the same address and the daemon refuses it — `Address already in use` — while the
+deployment is up. Every one-off below is therefore a plain `docker run` against the same
+image and the same volumes, with `store` set to the path from `.env`:
+
+```sh
+store=${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-store/_data
 ```
 
 ## 5. First start
@@ -285,15 +296,17 @@ archived journal entries under it — and never a credential, not even the per-r
 logins that live under the data directory itself. `docs/backup-restore.md` is the whole
 of it; here it is against a running deployment:
 
-```sh
-compose="docker compose --env-file deploy/.env -f deploy/compose.yaml"
-store=/var/lib/docker/volumes/hearth-store/_data
+The `hearth-backups` volume is created and handed over by `init` with the rest, so
+these run as Hearth's own uid and not as root.
 
+```sh
 # Capture. It refuses while the executor is busy or a run is priced but not settled;
-# retry later rather than forcing it.
-$compose run --rm -v hearth-backups:/backups --entrypoint /opt/hearth/bin/python hearth \
+# retry later rather than forcing it. Quiet the store first if it refuses.
+docker run --rm -v hearth-store:"$store" -v hearth-backups:/backups \
+    --entrypoint /opt/hearth/bin/python "$HEARTH_IMAGE" \
     -I -m hearth backup --data "$store" --destination /backups/$(date +%Y-%m-%d)
-$compose run --rm -v hearth-backups:/backups --entrypoint /opt/hearth/bin/python hearth \
+docker run --rm -v hearth-backups:/backups \
+    --entrypoint /opt/hearth/bin/python "$HEARTH_IMAGE" \
     -I -m hearth verify-backup --source /backups/<name>
 ```
 

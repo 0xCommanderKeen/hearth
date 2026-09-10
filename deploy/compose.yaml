@@ -37,7 +37,7 @@ services:
       - |
         set -eu
         root=${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}
-        for name in hearth-store hearth-credentials hearth-folders; do
+        for name in hearth-store hearth-credentials hearth-folders hearth-backups; do
           chown "${HEARTH_UID:?}:${HEARTH_DOCKER_GID:?}" "$$root/$$name/_data"
           chmod 0700 "$$root/$$name/_data"
         done
@@ -48,6 +48,10 @@ services:
       - hearth-store:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-store/_data
       - hearth-credentials:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-credentials/_data
       - hearth-folders:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-folders/_data
+      # Hearth never writes here itself -- `python -m hearth backup` does, from a
+      # container of its own -- but a fresh volume belongs to root and that command
+      # runs as Hearth's uid, so this is where it stops being root's.
+      - hearth-backups:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-backups/_data
       - hearth-binaries:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-binaries/_data
 
   hearth:
@@ -165,6 +169,11 @@ volumes:
   # mode, is the grant and only the grant.
   hearth-folders:
     name: hearth-folders
+  # Where `python -m hearth backup` writes. Not mounted into the running service: a
+  # backup is taken by a command of its own, and a household Hearth could overwrite
+  # while it ran would not be a backup.
+  hearth-backups:
+    name: hearth-backups
   # The pinned provider CLIs, the same Linux builds `deploy/Dockerfile.sandbox` was
   # built from. Read-only to Hearth.
   hearth-binaries:
