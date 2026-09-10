@@ -135,8 +135,12 @@ A start measures it before any resident is admitted, records what it saw as an a
 fact `sandbox.fence` -- and *then* refuses `sandbox_network_open` if it did not hold,
 because an operator whose instance will not start needs to read which address answered.
 `GET /api/health` measures it again on the ask, afresh, like the login survey and for
-the same reason: an operator asking is asking about now. A probe that could not answer
-at all is `sandbox_fence_unmeasured` and is never read as a fence that held.
+the same reason: an operator asking is asking about now. It is not free -- a container
+start plus, for each shut address, the whole of `reach.TIMEOUT`, because a dropped
+packet is measured by waiting -- so that endpoint takes a couple of seconds on a fence
+that holds. Every address is dialled at once, so it is one `TIMEOUT` and not one per
+address. A probe that could not answer at all is `sandbox_fence_unmeasured` and is never
+read as a fence that held.
 
 **What the fence is, exactly.** `deploy/fence.sh` drops every private destination from
 the sandbox subnet in `DOCKER-USER` and the host's own addresses in `INPUT`, and leaves

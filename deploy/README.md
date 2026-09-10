@@ -234,7 +234,10 @@ curl -s -H "Authorization: Bearer $HEARTH_OPERATOR_TOKEN" localhost:8000/api/hea
 `/health` names the launcher and the image digest — bytes, not this machine — and
 nothing else. Everything about this building is behind the operator's token:
 `/api/health` names the network, the fence as measured on that very ask, every runtime
-this instance could not open and every resident whose own login has lapsed.
+this instance could not open and every resident whose own login has lapsed. It measures
+rather than remembers, so it is the slow one — a container start plus the time a dropped
+packet takes to look dropped, a couple of seconds on a fence that holds. `/health` is the
+one to point a load balancer or the compose healthcheck at.
 
 ## 6. Upgrade
 
