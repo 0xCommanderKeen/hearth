@@ -585,6 +585,7 @@ export type Snapshot = {
   runs: Run[];
   letters?: LetterEvent[];
   notifications?: InboxNotification[];
+  unread_notifications?: number;
   routines?: Routine[];
   occurrences?: {
     routine_id: string;
@@ -1196,6 +1197,12 @@ export class Client {
       method: "POST",
       body: JSON.stringify(body),
     });
+  }
+  markAllNotifications(throughCursor: number) {
+    return this.request<{ marked_read: number }>(
+      `/api/notifications/read-all?through_cursor=${throughCursor}`,
+      { method: "POST" },
+    );
   }
   markNotification(id: string, read: boolean) {
     return this.request<InboxNotification>(

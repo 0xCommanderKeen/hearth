@@ -198,6 +198,9 @@ def snapshot(hearth: Hearth) -> dict:
             # and from nothing else.
             "letters": letter_events(db),
             "activity": audit,
+            "unread_notifications": db.execute(
+                "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL"
+            ).fetchone()[0],
             "notifications": [
                 dict(row) | {"payload": json.loads(row["payload"])}
                 for row in db.execute(

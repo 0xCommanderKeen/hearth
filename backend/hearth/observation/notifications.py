@@ -107,3 +107,30 @@ class Inbox:
                     "SELECT * FROM notifications WHERE id = ?", (notification_id,)
                 ).fetchone()
             )
+
+    def mark_all(self, *, through_cursor: int) -> int:
+        """Mark the observed inbox read, preserving arrivals after that snapshot.
+
+        The audit cursor gives retries the same boundary even when new notices
+        arrive. Each changed notice and its audit fact commit together.
+        """
+        if type(through_cursor) is not int or through_cursor < 0:
+            raise Refused("invalid_notification_cursor")
+        with self.hearth.database.transaction(write=True) as db:
+            rows = db.execute(
+                "SELECT n.* FROM notifications n WHERE n.read_at IS NULL AND EXISTS "
+                "(SELECT 1 FROM audit a WHERE a.resource_id=n.id "
+                "AND a.kind='notification.recorded' AND a.sequence<=?)",
+                (through_cursor,),
+            ).fetchall()
+            now = int(self.hearth.clock())
+            for row in rows:
+                db.execute("UPDATE notifications SET read_at=? WHERE id=?", (now, row["id"]))
+                _audit(
+                    db,
+                    "notification.read",
+                    row["id"],
+                    now,
+                    {"kind": row["kind"], "resource_id": row["resource_id"]},
+                )
+            return len(rows)

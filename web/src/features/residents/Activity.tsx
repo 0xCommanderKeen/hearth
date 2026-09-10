@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Client, type ResidentActivity } from "../../shared/client";
 
 const labels: Record<string, string> = {
+  "journal.written": "Journal entry written",
+  "management.tool_completed": "Management action completed",
   "task.queued": "Task queued",
   "run.admitted": "Run admitted",
   "run.launch_requested": "Starting agent",
@@ -63,7 +65,12 @@ export function ResidentActivityLog({
       className="resident-activity"
       aria-label={`Activity for ${residentName}`}
     >
-      {!compact && <h2>Activity log</h2>}
+      {!compact && (
+        <header className="resident-tab-heading">
+          <span className="eyebrow">{residentName} / Activity</span>
+          <h2>Activity log</h2>
+        </header>
+      )}
       {!compact && (
         <p>
           Recorded events for {residentName}, newest first. Updates as work
@@ -101,40 +108,56 @@ export function ResidentActivityLog({
       )}
       {page?.entries.length === 0 && <p>No recorded activity yet.</p>}
       <ol className="journal">
-        {(compact ? page?.entries.slice(0, 4) : page?.entries)?.map((entry) => (
-          <li key={entry.sequence}>
-            <div className="memory-revision">
-              <strong>
-                {labels[entry.kind] ??
-                  entry.kind.replaceAll(".", " · ").replaceAll("_", " ")}
-              </strong>
-              <time dateTime={new Date(entry.at * 1000).toISOString()}>
-                {new Date(entry.at * 1000).toLocaleString()}
-              </time>
-            </div>
-            {entry.diagnostic ? (
-              <>
-                <p>{entry.diagnostic.message}</p>
-                {!entry.diagnostic.turn_started && (
-                  <p>No model turn was recorded as started.</p>
+        {(compact ? page?.entries.slice(0, 4) : page?.entries)?.map(
+          (entry, index) => (
+            <li key={entry.sequence}>
+              {!compact &&
+                (index === 0 ||
+                  new Date(
+                    page!.entries[index - 1].at * 1000,
+                  ).toDateString() !==
+                    new Date(entry.at * 1000).toDateString()) && (
+                  <h3 className="activity-day">
+                    {new Date(entry.at * 1000).toLocaleDateString(undefined, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </h3>
                 )}
-                <small>Reason: {entry.diagnostic.code}</small>
-              </>
-            ) : entry.kind === "run.interrupted" ? (
-              <p>
-                No confirmed outcome is available. This does not mean the run
-                succeeded or is safe to retry.
-              </p>
-            ) : null}
-            {entry.run_id && (
-              <p>
-                <a href={`#runs/${encodeURIComponent(entry.run_id)}`}>
-                  Open run →
-                </a>
-              </p>
-            )}
-          </li>
-        ))}
+              <div className="memory-revision">
+                <strong>
+                  {labels[entry.kind] ??
+                    entry.kind.replaceAll(".", " · ").replaceAll("_", " ")}
+                </strong>
+                <time dateTime={new Date(entry.at * 1000).toISOString()}>
+                  {new Date(entry.at * 1000).toLocaleString()}
+                </time>
+              </div>
+              {entry.diagnostic ? (
+                <>
+                  <p>{entry.diagnostic.message}</p>
+                  {!entry.diagnostic.turn_started && (
+                    <p>No model turn was recorded as started.</p>
+                  )}
+                  <small>Reason: {entry.diagnostic.code}</small>
+                </>
+              ) : entry.kind === "run.interrupted" ? (
+                <p>
+                  No confirmed outcome is available. This does not mean the run
+                  succeeded or is safe to retry.
+                </p>
+              ) : null}
+              {entry.run_id && (
+                <p>
+                  <a href={`#runs/${encodeURIComponent(entry.run_id)}`}>
+                    Open run →
+                  </a>
+                </p>
+              )}
+            </li>
+          ),
+        )}
       </ol>
       {!compact && page?.next_before != null && (
         <button
