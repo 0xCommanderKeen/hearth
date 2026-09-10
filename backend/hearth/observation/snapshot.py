@@ -115,7 +115,7 @@ def snapshot(hearth: Hearth) -> dict:
             # What this run could reach on disk, as it was admitted: an operator reads
             # a resident's reach off a finished run, not off configuration that has
             # moved on since (`docs/adr/0016-sandbox-per-run.md`).
-            run.update(mount_summary(db, run["id"], run=True))
+            run.update(mount_summary(db, run["id"]))
             # What the run opened with and what it wrote, never who claimed to.
             run.update(run_journal_summary(db, run["id"]))
             run["memory_written"] = run_memory_writes(db, run["id"])

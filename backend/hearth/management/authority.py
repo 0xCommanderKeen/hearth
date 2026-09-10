@@ -84,6 +84,10 @@ def check_mounts(mounts: list[Mount], protected: Iterable[str] = ()) -> None:
     path this host protects, a name two mounts share, and a path two names share --
     which would be one folder a run could reach under two names and, inside a sandbox,
     two bind mounts of the same source.
+
+    A path is held to the protected set as it is written and as it resolves, because a
+    symlink is not an argument: the container runtime resolves the source on the way in,
+    so a link into Hearth's own data directory would mount the data directory.
     """
     names: set[str] = set()
     paths: set[str] = set()
@@ -99,7 +103,12 @@ def check_mounts(mounts: list[Mount], protected: Iterable[str] = ()) -> None:
             or any(character in path for character in ",=\n\0")
         ):
             raise Refused("grant_mount_forbidden")
-        if any(_within(path, other) for other in (*FORBIDDEN, *protected)):
+        try:
+            candidates = (path, str(Path(path).resolve()))
+        except OSError:
+            # A path the filesystem cannot even resolve is not one to hand a daemon.
+            raise Refused("grant_mount_forbidden") from None
+        if any(_within(one, other) for one in candidates for other in (*FORBIDDEN, *protected)):
             raise Refused("grant_mount_forbidden")
         if mount.name in names or path in paths:
             raise Refused("grant_mount_forbidden")
@@ -326,16 +335,18 @@ def admitted_mounts(db, run_id: str) -> list[dict]:
     ]
 
 
-def mount_summary(db, identity: str, *, run: bool = False) -> dict:
-    """What an operator is shown about a filesystem grant, for a run or a resident."""
-    if run:
-        return {
-            "mounts": [
-                {key: entry[key] for key in ("name", "host_path", "mode", "path")}
-                for entry in run_mounts(db, identity)
-            ]
-        }
-    return {"mounts": read_grant(db, identity)["mounts"]}
+def mount_summary(db, run_id: str) -> dict:
+    """What an operator is shown about one run's reach: the pin, without the revision.
+
+    A resident's own folders are read from its grant, which an operator reads whole;
+    this is the finished run's answer, which is the one that cannot change afterwards.
+    """
+    return {
+        "mounts": [
+            {key: entry[key] for key in ("name", "host_path", "mode", "path")}
+            for entry in run_mounts(db, run_id)
+        ]
+    }
 
 
 def works_a_letter(db, run_id: str) -> bool:

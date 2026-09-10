@@ -242,3 +242,13 @@ def test_a_login_directory_and_the_runtime_socket_are_protected(tmp_path):
             check_mounts([GrantMount(name="x", host_path=str(path))], protected)
     # A folder beside them is nobody's business but the operator's.
     check_mounts([GrantMount(name="x", host_path=str(tmp_path / "elsewhere"))], protected)
+
+
+def test_a_link_into_a_protected_folder_is_still_that_folder(tmp_path):
+    with TestClient(open_app(tmp_path)) as client:
+        who = resident(client)
+        link = tmp_path / "shortcut"
+        link.symlink_to(tmp_path / "data", target_is_directory=True)
+        refused = write_grant(client, who, [{"name": "store", "host_path": str(link)}])
+        assert refused.status_code == 409
+        assert refused.json()["error"] == "grant_mount_forbidden"

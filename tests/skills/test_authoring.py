@@ -51,28 +51,28 @@ def authoring():
     }
 
 
-def manager(tmp_path, *, capabilities=None):
+def manager(tmp_path, *, capabilities=None, mounts=None):
+    """Karen, set up, with her grant edited before her turn opens if it is edited at all.
+
+    A grant written after a run of hers is admitted revokes that run's own calls, which
+    is the point of the pinned digest; so anything a test wants her to hold is written
+    here, before the turn.
+    """
     app = create_app(tmp_path, TOKEN, supervise=False, runtime=fake_runtime())
     client = TestClient(app)
     karen = client.post("/api/management/bootstrap", headers=AUTH).json()
-    if capabilities is not None:
+    if capabilities is not None or mounts is not None:
         path = "/api/residents/" + karen["resident_id"] + "/management"
         grant = client.get(path, headers=AUTH).json()
         policy = {
             key: value for key, value in grant.items() if key not in {"resident_id", "revision"}
         }
-        assert (
-            client.put(
-                path,
-                headers=AUTH,
-                json=policy
-                | {
-                    "expected_revision": grant["revision"],
-                    "capabilities": capabilities,
-                },
-            ).status_code
-            == 200
-        )
+        change = {"expected_revision": grant["revision"]}
+        if capabilities is not None:
+            change["capabilities"] = capabilities
+        if mounts is not None:
+            change["mounts"] = mounts
+        assert client.put(path, headers=AUTH, json=policy | change).status_code == 200
     return app, client, karen, turn(app, client, karen, "author")
 
 
@@ -1052,3 +1052,62 @@ def test_a_skill_example_opens_with_none_of_the_household_post(tmp_path):
     with hearth.database.transaction() as db:
         opened = read_context(db, working.id, memory)["replies"]
     assert [reply["letter_id"] for reply in opened] == [letter["task_id"]]
+
+
+def test_a_skill_example_reaches_none_of_the_runner_s_folders(tmp_path):
+    """An example is the resident's own work with none of its authority, folders too.
+
+    The runner holds a folder throughout, so the two case runs would carry it if the
+    rule were not there; the ordinary run admitted at the end does carry it, which is
+    what makes the comparison worth anything.
+    """
+    import time
+
+    from hearth.management.authority import run_mounts
+
+    # Beside the store rather than inside it: Hearth's own data directory is one of the
+    # places no grant may ever name.
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    app, client, karen, bridge = manager(
+        tmp_path / "data",
+        mounts=[{"name": "notes", "host_path": str(shared), "mode": "ro"}],
+    )
+    _, saved = call(bridge, "hearth_skills_save", candidate(), "save")
+    success, pending = call(
+        bridge,
+        "hearth_skills_validate",
+        {
+            "operation_id": "validate",
+            "skill_id": saved["skill_id"],
+            "revision": 1,
+            "reserve": 10000,
+        },
+        "validate",
+    )
+    assert success, pending
+    app.state.supervisor.start()
+    try:
+        assert settle_karen(app, bridge).status == "succeeded"
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            validation = client.get(
+                "/api/skill-validations/" + pending["validation_id"], headers=AUTH
+            ).json()
+            if validation["status"] != "pending":
+                break
+            time.sleep(0.05)
+    finally:
+        app.state.supervisor.stop()
+    assert validation["status"] == "passed", validation["reason"]
+    hearth = app.state.hearth
+    with hearth.database.transaction() as db:
+        for case in validation["cases"]:
+            assert run_mounts(db, case["run_id"]) == []
+    # Ordinary work for the same resident does reach it.
+    task = hearth.submit(
+        "ordinary", karen["resident_id"], "Read the folder", expires_at=int(hearth.clock()) + 600
+    )
+    run = hearth.admit(task.task_id, reserve=3000)
+    with hearth.database.transaction() as db:
+        assert [entry["name"] for entry in run_mounts(db, run.id)] == ["notes"]

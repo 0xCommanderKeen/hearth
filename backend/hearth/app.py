@@ -444,7 +444,7 @@ def create_app(
             used_inputs = input_summary(db, run_id, run=True)
             from hearth.management.authority import mount_summary
 
-            reached = mount_summary(db, run_id, run=True)
+            reached = mount_summary(db, run_id)
         return {
             **used_skills,
             **used_inputs,

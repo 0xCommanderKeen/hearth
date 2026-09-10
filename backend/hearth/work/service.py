@@ -611,8 +611,15 @@ class Hearth:
         # rather than whatever the resident has written since.
         example = case_validation(db, run.id)
         if example is None:
-            from hearth.management.authority import pin_management
+            from hearth.management.authority import pin_management, pin_mounts
 
+            # What this run reaches on disk, resolved from the grant as it stands now
+            # and never read again (`docs/adr/0016-sandbox-per-run.md`). A folder the
+            # grant names and the host does not have refuses here, before any money is
+            # reserved. A skill example gets none of it, for the same reason it gets no
+            # management tools: it is the resident's own work with none of its
+            # authority, and a folder is authority.
+            pin_mounts(db, run.id, resident_id)
             pin_management(
                 db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
             )
@@ -647,12 +654,6 @@ class Hearth:
         from hearth.inputs.selection import pin_inputs
 
         pin_inputs(db, run.id, resident_id)
-        from hearth.management.authority import pin_mounts
-
-        # What this run reaches on disk, resolved from the grant as it stands now and
-        # never read again (`docs/adr/0016-sandbox-per-run.md`). A folder the grant
-        # names and the host does not have refuses here, before any money is reserved.
-        pin_mounts(db, run.id, resident_id)
         context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
         encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
         from hearth.execution.staging import MAX_INPUT
