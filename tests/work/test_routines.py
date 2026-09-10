@@ -209,3 +209,80 @@ def test_corrupt_lifecycle_does_not_stall_healthy_due_routine(system):
     broken = next(r for r in snapshot(routines.hearth)["residents"] if r["id"] == "a-corrupt")
     assert broken["lifecycle"]["state"] == "unavailable"
     assert broken["pause_reason"] == "resident_lifecycle_corrupt"
+
+
+@pytest.mark.parametrize("wait", ["paused", "budget"])
+def test_admission_rotates_past_a_full_page_of_waits_and_revisits_them(system, wait):
+    routines, now, _ = system
+    for index in range(100):
+        routines.save(
+            f"blocked-{index:03}",
+            "reader",
+            "Synthetic blocked report",
+            local_time="09:00",
+            timezone="UTC",
+            enabled=True,
+            expected_revision=0,
+        )
+    now[0] = instant("2026-09-06T09:00:00")
+    blocked = routines.tick()
+    assert len(blocked) == 100
+    if wait == "paused":
+        routines.hearth.set_paused("reader", paused=True, expected_revision=0)
+    else:
+        routines.hearth.save_resident(
+            "reader", Declaration("Reader", "Synthetic", 1), expected_revision=1
+        )
+    routines.hearth.save_resident(
+        "healthy", Declaration("Healthy", "Synthetic", 100000), expected_revision=0
+    )
+    for index in range(2):
+        routines.save(
+            f"healthy-{index}",
+            "healthy",
+            "Synthetic healthy report",
+            local_time="09:01",
+            timezone="UTC",
+            enabled=True,
+            expected_revision=0,
+        )
+    now[0] += 60
+    healthy = routines.tick()
+    assert len(healthy) == 2
+
+    routines.admit_queued()
+    assert all(routines.hearth.task(task).status == "queued" for task in healthy)
+    routines.admit_queued()
+    assert sorted(routines.hearth.task(task).status for task in healthy) == ["queued", "starting"]
+    assert all(routines.hearth.task(task).status == "queued" for task in blocked)
+
+    # The cursor wraps, so a repaired early resident is revisited. Its remaining
+    # queued tasks still cannot bypass the run slot or reserve another allowance.
+    if wait == "paused":
+        routines.hearth.set_paused("reader", paused=False, expected_revision=1)
+    else:
+        routines.hearth.save_resident(
+            "reader", Declaration("Reader", "Synthetic", 1000000), expected_revision=2
+        )
+    routines.admit_queued()
+    with routines.hearth.database.transaction() as db:
+        assert db.execute("SELECT count(*) FROM runs").fetchone()[0] == 2
+        assert db.execute("SELECT sum(reserved) FROM runs").fetchone()[0] == 20000
+        assert db.execute("SELECT count(*) FROM audit WHERE kind='run.admitted'").fetchone()[0] == 2
+
+
+def test_admission_audit_failure_rolls_back_and_cursor_revisits_task(system):
+    routines, now, _ = system
+    now[0] = save(system)["next_at"]
+    task = routines.tick()[0]
+    with routines.hearth.database.transaction(write=True) as db:
+        db.execute("""CREATE TRIGGER failure BEFORE INSERT ON audit
+            WHEN NEW.kind='run.admitted' BEGIN SELECT RAISE(ABORT,'disk failure'); END""")
+    with pytest.raises(Exception, match="disk failure"):
+        routines.admit_queued()
+    assert routines.hearth.task(task).status == "queued"
+    with routines.hearth.database.transaction(write=True) as db:
+        assert db.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+        db.execute("DROP TRIGGER failure")
+    routines.admit_queued()
+    assert routines.hearth.task(task).status == "starting"

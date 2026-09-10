@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Routine admission rotates through at most 100 queued occurrences per pass, so persistent
+  pauses and budget waits cannot hide later healthy residents; each attempt retains the
+  existing transactional admission checks and refused work is revisited (#192).
 - The Claude journey ran for real, and two things it found are fixed. The evidence
   file `docs/evidence/claude-journey-2026-09-09.json` records three runs on
   `claude_subscription` beside a Codex default, each settled to exactly the CLI's own

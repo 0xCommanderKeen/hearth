@@ -42,6 +42,7 @@ def _latest(now: int, local_time: str, zone: ZoneInfo) -> int:
 class Routines:
     def __init__(self, hearth: Hearth):
         self.hearth = hearth
+        self._admission_cursor: tuple[int, str] | None = None
 
     def save(
         self,
@@ -194,18 +195,24 @@ class Routines:
         return tasks
 
     def admit_queued(self) -> None:
+        # Rotate through a stable occurrence key, including refusals. This is only
+        # a scheduling hint: restart begins at the oldest queued occurrence, and
+        # admission still rechecks all authority in its own transaction.
         with self.hearth.database.transaction() as db:
-            tasks = [
-                row[0]
-                for row in db.execute(
-                    "SELECT t.id FROM occurrences o JOIN tasks t "
-                    "ON t.id=o.task_id WHERE t.status='queued' ORDER BY o.scheduled_at LIMIT 100"
+            tasks = list(
+                db.execute(
+                    "SELECT t.id,o.scheduled_at,o.routine_id FROM occurrences o JOIN tasks t "
+                    "ON t.id=o.task_id WHERE t.status='queued' "
+                    "ORDER BY (o.scheduled_at,o.routine_id) <= (?,?), "
+                    "o.scheduled_at,o.routine_id LIMIT 100",
+                    self._admission_cursor or (None, None),
                 )
-            ]
+            )
         first_refusal = None
         for task in tasks:
+            self._admission_cursor = (task["scheduled_at"], task["routine_id"])
             try:
-                self.hearth.admit(task, reserve=ROUTINE_RESERVATION)
+                self.hearth.admit(task["id"], reserve=ROUTINE_RESERVATION)
             except Refused as error:
                 if error.code not in ADMISSION_WAITS and first_refusal is None:
                     first_refusal = error
