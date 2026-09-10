@@ -86,11 +86,23 @@ def hold(executable: Path, *, image: str | None = None, network: str | None = No
         (state(executable) / "networks" / network).write_text(network)
 
 
-def carry(executable: Path, path: str, content: bytes) -> str:
-    """Put one file inside the fake image and answer the sha256 it will report."""
+def carry(executable: Path, path: str, content: bytes, *, digest: str | None = None) -> str:
+    """Put one file inside the fake image and answer the sha256 it will report.
+
+    `digest` makes the fake report a hash of the caller's choosing for that file.
+    A test whose store is pinned to a CLI it does not have the bytes of -- every test
+    driving a whole instance, whose pin belongs to the fake runtime -- needs the image
+    to carry "the pinned CLI" without owning what is in it. Nothing but this fake ever
+    separates the two: a real image's own `sha256sum` reads the file.
+    """
     target = state(executable) / "image-files" / path.lstrip("/")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
+    if digest is not None:
+        claimed = state(executable) / "image-hashes" / path.lstrip("/")
+        claimed.parent.mkdir(parents=True, exist_ok=True)
+        claimed.write_text(digest)
+        return digest
     return hashlib.sha256(content).hexdigest()
 
 
@@ -177,7 +189,13 @@ def _run(root: Path, argv) -> int:
         path = root / "image-files" / command[1].lstrip("/")
         if not path.is_file():
             return 1
-        print(hashlib.sha256(path.read_bytes()).hexdigest() + "  " + command[1])
+        claimed = root / "image-hashes" / command[1].lstrip("/")
+        value = (
+            claimed.read_text().strip()
+            if claimed.is_file()
+            else hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+        print(value + "  " + command[1])
         return 0
     identity = os.urandom(32).hex()
     cidfile = _one(flags, "--cidfile")

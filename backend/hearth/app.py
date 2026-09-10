@@ -33,9 +33,11 @@ from hearth.execution.supervisor import Supervisor
 from hearth.inputs.api import mount_inputs
 from hearth.integrations.claude.config import KIND as CLAUDE_KIND
 from hearth.integrations.codex.subscription import KIND as CODEX_KIND
+from hearth.integrations.fence import Fence
+from hearth.integrations.fence import check as check_fence
 from hearth.integrations.interface import Runtime, build, live, live_kinds
 from hearth.integrations.interface import label as runtime_label
-from hearth.integrations.launcher import Sandbox, configure
+from hearth.integrations.launcher import CONTAINER, Sandbox, configure
 from hearth.integrations.logins import Logins, Probe, prepare
 from hearth.management.api import mount_management
 from hearth.management.authority import protected_paths
@@ -65,6 +67,7 @@ def create_app(
     claude_binary: Path | None = None,
     claude_config_dir: Path | None = None,
     sandbox: Sandbox | None = None,
+    fence: Fence | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
@@ -93,6 +96,9 @@ def create_app(
     # Where every run this instance starts will execute. One instance has one answer:
     # the boundary is a property of the burrow Hearth is running on, not of a resident.
     sandbox = Sandbox() if sandbox is None else sandbox
+    # What that boundary is worth is a question about the network it is on, and it is
+    # asked from inside it rather than assumed (`integrations/fence.py`).
+    fence = Fence.from_environment() if fence is None else fence
     unavailable: dict[str, str] = {}
     if runtime is not None:
         built = runtime(data)
@@ -135,6 +141,27 @@ def create_app(
     sandbox_state = (
         {"launcher": sandbox.launcher} if restored else configure(database, sandbox, hearth.clock)
     )
+    # And the fence that boundary is only as good as: measured on the sandbox network,
+    # from the image a session runs from, before a resident is admitted to it. An open
+    # one refuses `sandbox_network_open` here and this instance does not open at all
+    # (`docs/adr/0016-sandbox-per-run.md`). A quarantined copy starts no session, so it
+    # measures no network either -- there is nothing here to fence in.
+    if not restored:
+        check_fence(database, sandbox, fence, hearth.clock)
+
+    def fence_state() -> dict:
+        """What the sandbox network lets a session reach, measured on this ask.
+
+        Afresh, like the login survey and for the same reason: an operator asking is
+        asking about now, not about the morning this process started. A measurement
+        that could not be taken is reported as one that did not hold, because the one
+        thing this may never answer is a fence nobody saw.
+        """
+        try:
+            return fence.observe(sandbox)
+        except Refused as error:
+            return {"held": False, "error": error.code}
+
     # Which residents hold a provider login of their own, and whether it still works.
     # The probe for a kind is that provider's own, taken from the adapter this instance
     # opened, so nothing here names a provider and nothing reads a credential: the
@@ -280,7 +307,12 @@ def create_app(
         """
         return supervisor.health() | {
             "runtimes": opened_runtimes(),
-            "sandbox": sandbox_state | ({"network": sandbox.network} if sandbox.network else {}),
+            # The network's name, and what a session on it was just measured to
+            # reach. Both name this building rather than these bytes, so both stay
+            # behind the operator's token and neither is on the open `/health`.
+            "sandbox": sandbox_state
+            | ({"network": sandbox.network} if sandbox.network else {})
+            | ({"fence": fence_state()} if sandbox.launcher == CONTAINER and not restored else {}),
             "unavailable": [
                 {"kind": missing, "reason": reason}
                 for missing, reason in sorted(unavailable.items())
@@ -670,4 +702,5 @@ def from_env() -> FastAPI:
         if os.environ.get("HEARTH_CLAUDE_CONFIG_DIR")
         else None,
         sandbox=Sandbox.from_environment(),
+        fence=Fence.from_environment(),
     )
