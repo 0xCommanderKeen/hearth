@@ -1,4 +1,4 @@
-# Hearth itself, for a server: the release wheel, the locked dependencies, a container
+# Hearth itself, for a server: a source-built release, locked dependencies, a container
 # client to start sandboxes with, and nothing else.
 #
 # This is the *control plane*, not the sandbox. It holds the store, the authority and
@@ -9,11 +9,11 @@
 # store's provider pins are Linux binaries.
 #
 # Unlike the sandbox image, this one is built from the repository and the network:
-# nothing in it is a credential and nothing in it is pinned by a store. What it does
-# carry from the build context is the release wheel, because that wheel holds the
-# built browser (`scripts/build-web.py`) and no `pip install .` reproduces it:
+# nothing in it is a credential and nothing in it is pinned by a store. It builds
+# a wheel containing the browser from the checkout. Node and uv stay in
+# build stages, so a host only needs Docker and the pinned sandbox binaries:
 #
-#   make check                       # builds web/dist into the package and the wheel
+#   make check                       # contributor acceptance before publishing
 #   docker build -f deploy/Dockerfile -t hearth:<version> .
 #
 # `deploy/README.md` is the runbook: the network, the fence, the volumes, the logins
@@ -31,6 +31,14 @@ ARG UV=ghcr.io/astral-sh/uv@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee
 # reaches this client's argv unparsed).
 ARG DOCKER=docker@sha256:328eb399a065780c2cebe9224de003aa14084cf69efae882ac27430f921819b7
 
+FROM node:26.7.0-bookworm-slim AS browser
+RUN npm install -g pnpm@11.22.0
+WORKDIR /src/web
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm test && pnpm build
+
 FROM ${UV} AS uv
 FROM ${DOCKER} AS client
 
@@ -41,9 +49,12 @@ WORKDIR /src
 # The lock, exported with its hashes, is what the runtime environment is built from.
 COPY pyproject.toml uv.lock ./
 RUN uv export --quiet --frozen --no-dev --no-emit-project --output-file /tmp/locked.txt
-# The release wheel this repository built, with the browser inside it.
-ARG WHEEL=dist/hearth-0.1.0-py3-none-any.whl
-COPY ${WHEEL} /tmp/wheel/
+# Build the release from this checkout and the container-built browser. A new host
+# needs Docker and the source, without host Python, Node or a prebuilt wheel.
+COPY README.md ./
+COPY backend/ backend/
+COPY --from=browser /src/web/dist/ backend/hearth/web/
+RUN uv build --no-sources --wheel --out-dir /tmp/wheel
 RUN set -eux; \
     uv venv /opt/hearth --python "$(command -v python3)"; \
     uv pip sync --python /opt/hearth/bin/python --require-hashes /tmp/locked.txt; \

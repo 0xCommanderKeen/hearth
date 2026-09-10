@@ -14,6 +14,8 @@ do things in.
 | `Dockerfile` | Hearth itself: the release wheel, the locked dependencies, a container client |
 | `Dockerfile.sandbox` | the sandbox: both pinned CLIs, Hearth's bridge shim and fence probe, no package manager, no root |
 | `compose.yaml` | the deployment: volumes, networks, the runtime socket, the fence's configuration |
+| `compose.dev.yaml` | optional Node 26 frontend with hot reload against the deployed backend |
+| `Dockerfile.web` | the frontend development image with locked pnpm dependencies |
 | `.env.example` | every value the compose file wants, with what each one is for |
 | `fence.sh` | the packet filter that makes `hearth-egress` the sandbox's only network |
 
@@ -57,15 +59,41 @@ must exist in the image's own passwd file or the Claude CLI ends before its firs
 in it. `HEARTH_DOCKER_GID` is the group that owns the runtime socket, because that is
 the gid Hearth's own container runs with and therefore the gid it passes to `--user`.
 
-Hearth's own image is built from the repository, and it takes the release wheel from
-the build context because that wheel is what holds the built browser:
+Hearth's own image builds the browser with Node 26.7, runs its tests, and builds the
+Python wheel from the checkout inside Docker. Node, pnpm and uv stay in build stages;
+the deployment host needs Docker, the checkout and the pinned provider binaries.
+Contributor acceptance still runs `make check` before publishing:
 
 ```sh
-make check                 # builds web/dist into the package and the release wheel
+make check                 # contributor acceptance; host tools are needed for this command
 docker build -f deploy/Dockerfile \
     --build-arg HEARTH_UID="$HEARTH_UID" --build-arg HEARTH_GID="$HEARTH_DOCKER_GID" \
     -t hearth:<version> .
 ```
+
+### Local browser development
+
+After completing the same image, network, firewall and login setup below, add the
+development Compose file. It uses the same backend, volumes and per-run sandboxes:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml \
+    -f deploy/compose.dev.yaml up -d --build
+```
+
+Open `http://127.0.0.1:5178` and enter the configured operator token. The Node 26
+container reloads edits under `web/src`; `/api` and `/health` proxy to `hearth:8000`.
+The backend still serves the compiled frontend on `HEARTH_PORT` (8000 by default).
+Backend changes require rebuilding, pushing and selecting the application image's
+new digest before `up -d`; sandbox changes follow the deliberate upgrade steps below.
+Rebuild the frontend service after dependency changes.
+
+For a private configuration outside the checkout, pass its absolute path to
+`--env-file` in each command. Keep that file private: it contains the operator token.
+Use `logs -f`, `ps`, `stop` and `up -d` with the same Compose arguments to manage the
+stack. `down` preserves the named volumes; `down -v` deletes the household data.
+On another Linux machine, follow this runbook with that machine's socket group,
+network probes and provider login, and choose the same published image digests.
 
 **Pin both by digest.** A locally built image has no repository digest at all — that
 only exists once an image has been pushed somewhere — so push both to whatever registry
@@ -143,6 +171,25 @@ so run `fence.sh apply` from whatever this host uses to restore firewall state a
 (`iptables-persistent`, a `systemd` unit ordered after `docker.service`, your
 configuration manager). Hearth does not depend on you remembering: it measures the
 fence at every start and will not open on an open one.
+
+For a systemd Linux host, this repository includes `hearth-fence.service`. Install
+root-owned copies of the script and unit and a configuration containing only the
+network settings (never the operator token):
+
+```sh
+sudo install -d /etc/hearth /usr/local/libexec
+sudo install -m 0755 deploy/fence.sh /usr/local/libexec/hearth-fence.sh
+sudo install -m 0644 deploy/hearth-fence.service /etc/systemd/system/
+printf 'HEARTH_EGRESS_SUBNET=%s\n' "$HEARTH_EGRESS_SUBNET" | sudo tee /etc/hearth/fence.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now hearth-fence.service
+```
+
+The unit reapplies the rules after Docker starts or restarts. If this host needs
+`HEARTH_EGRESS_RESOLVER`, put it in `/etc/hearth/fence.env` too. Update the installed
+script when deploying firewall changes. To remove the fence deliberately, stop the
+Hearth stack and its runs first, disable the unit and run `fence.sh remove` with the
+old network values before removing its configuration.
 
 **On Docker Desktop** the rules live inside its Linux VM, and the way in is a
 privileged container on the host network. Its embedded resolver also forwards name
@@ -264,6 +311,23 @@ packet takes to look dropped, a couple of seconds on a fence that holds. `/healt
 one to point a load balancer or the compose healthcheck at.
 
 ## 6. Upgrade
+
+### GitHub image publishing
+
+After a push to `main` passes the `check` workflow, `publish.yml` builds that exact
+commit and publishes `ghcr.io/<owner>/hearth:sha-<commit>`. Its `deployment-image`
+artifact and job summary contain the immutable `HEARTH_IMAGE` reference. Failed
+checks and pull requests do not publish images. Builds currently target Linux amd64,
+matching the verified runtime binaries. No provider credentials enter CI.
+
+The deployment target is intentionally unconfigured until the operator selects a
+server. Selecting it must connect an authenticated rollout step after publishing,
+with pinned SSH host identity, an environment-specific configuration, a quiet-store
+handoff, backup and post-deploy health checks. Publishing alone does not redeploy a
+machine. Agent sandbox upgrades remain separate because the store pins their digest;
+an application update must not silently change that pin or interrupt running work.
+
+### Changing the sandbox image
 
 A new image digest is a deliberate act, and Hearth refuses to start on one it was not
 told about. The order is: new digest ⇒ quiet store ⇒ restart.

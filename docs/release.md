@@ -1,10 +1,13 @@
 # Standalone release installation
 
-Build and verify from a checkout with Python 3.14, uv, Node 22.22+ and pnpm 11.22:
+Build and verify from a checkout with Python 3.14, uv, Node 26.7+ (26.x) and pnpm 11.22:
 
 ```sh
 make check
 ```
+
+The browser tests disable Node's native Web Storage so jsdom supplies isolated
+browser storage. This is part of `pnpm test`; no shell flags are needed.
 
 This includes an installation into a temporary environment using the built wheel
 and hashed runtime dependencies from `uv.lock`. The check runs the CLI and actual

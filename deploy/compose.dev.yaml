@@ -1,0 +1,20 @@
+# Add to compose.yaml for browser development against the same deployed backend.
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      HEARTH_API_PROXY: http://hearth:8000
+    ports:
+      - "127.0.0.1:5178:5178"
+    volumes:
+      - ../web/src:/app/src:ro
+      - ../web/vite.config.ts:/app/vite.config.ts:ro
+      - ../web/index.html:/app/index.html:ro
+    networks:
+      - hearth
+    depends_on:
+      hearth:
+        condition: service_healthy

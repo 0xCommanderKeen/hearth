@@ -1,0 +1,14 @@
+[Unit]
+Description=Hearth agent network firewall
+Requires=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/hearth/fence.env
+ExecStart=/bin/sh /usr/local/libexec/hearth-fence.sh apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=docker.service
