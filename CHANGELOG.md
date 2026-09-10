@@ -2,6 +2,12 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hamlet homes keep their plots through arrivals, archive, reorder and reload, with
+  bounded epoch-scoped browser preferences (ADR 0017). Connected streets, projected
+  names and shared building/directory selection make the miniature navigable at
+  household sizes up to the verified 100 residents; archive history and holds remain
+  reachable.
+
 - Hamlet opens with a fitted, angled orthographic village and visible overview, zoom
   and rotation controls. Snapshot and roster updates retain the renderer and a usable
   camera; pointer drags and touch gestures never select a home. Reduced motion and

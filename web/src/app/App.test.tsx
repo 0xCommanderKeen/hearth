@@ -144,7 +144,7 @@ it("opens the gate and switches views without separate state", async () => {
     "Synthetic notes",
   );
   fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
-  await screen.findByRole("img", { name: /Reader's home/ });
+  await screen.findByRole("group", { name: /Reader's home/ });
   expect(screen.queryByLabelText("The assignment")).toBeNull();
 });
 
@@ -1024,6 +1024,6 @@ it("leaves the village still when no letter has been written", async () => {
   addReader();
   await login(false);
   fireEvent.click(screen.getByRole("link", { name: /Hamlet$/ }));
-  await screen.findByRole("img", { name: /Reader's home/ });
+  await screen.findByRole("group", { name: /Reader's home/ });
   expect(screen.queryByLabelText("Recent post")).toBeNull();
 });
