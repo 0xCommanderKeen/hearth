@@ -404,7 +404,6 @@ class BridgeServer:
         self.listing = listing(self.tools)
         self.bridge = Bridge(hearth, bound)
         self.max_calls = max_calls
-        self.seen: dict[str, tuple[str, dict]] = {}
         # Refused calls are counted so that a session asking for tools it does not have
         # cannot write audit rows without end. The bound is the run's own call limit.
         self.refusals = 0
@@ -570,7 +569,7 @@ class BridgeServer:
         return {"result": self.call(request)}
 
     def call(self, request: dict) -> dict:
-        from hearth.integrations.durable import digest, short_string
+        from hearth.integrations.durable import short_string
         from hearth.residents.models import Refused
 
         call_id = request.get("call_id")
@@ -588,16 +587,9 @@ class BridgeServer:
                 self.refusals += 1
                 self.record_refusal(call_id, tool)
             return refusal("management_tool_not_offered")
-        fingerprint = digest([tool, arguments])
-        previous = self.seen.get(call_id)
-        if previous is not None:
-            # The same call again is the same answer; the same identity carrying other
-            # arguments is a replay, and is refused rather than applied.
-            if previous[0] != fingerprint:
-                return refusal("management_call_conflict")
-            return previous[1]
-        if len(self.seen) >= self.max_calls:
-            return refusal("management_call_limit")
+        # Retries must cross the owning writer again: it checks current authority
+        # before replaying a durable receipt, rejecting a changed payload, or
+        # enforcing the call limit. A transport cache cannot decide any of those.
         try:
             result = tool_result(
                 self.bridge.call(
@@ -617,7 +609,6 @@ class BridgeServer:
             # authority it was launched with, so it ends rather than continuing.
             self.failure = "mcp_bridge_failed"
             return refusal("mcp_bridge_failed")
-        self.seen[call_id] = (fingerprint, result)
         return result
 
     def record_refusal(self, call_id: str, tool: str) -> None:
