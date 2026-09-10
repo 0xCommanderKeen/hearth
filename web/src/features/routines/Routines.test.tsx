@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { RoutinePanel } from "./Routines";
-import { Client, type Snapshot } from "../../shared/client";
+import { Client, RequestError, type Snapshot } from "../../shared/client";
 
 afterEach(() => {
   cleanup();
@@ -109,4 +109,96 @@ it("disables the displayed revision and explains existing tasks", async () => {
       }),
     ),
   );
+});
+
+it("reuses uncertain identity and reconciles the matching routine", async () => {
+  const client = new Client("synthetic-test-token");
+  const save = vi
+    .spyOn(client, "saveRoutine")
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockRejectedValueOnce(new RequestError(409, "revision conflict"));
+  const read = vi.spyOn(client, "state").mockImplementation(async () => ({
+    ...state,
+    routines: [
+      {
+        ...save.mock.calls[0][1],
+        id: save.mock.calls[0][0],
+        revision: 1,
+        enabled: 1,
+        next_at: 123,
+      },
+    ],
+  }));
+  render(
+    <RoutinePanel
+      client={client}
+      snapshot={state}
+      busy={false}
+      act={async (op) => {
+        await op().catch(() => {});
+      }}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("The daily assignment"), {
+    target: { value: "Synthetic" },
+  });
+  fireEvent.click(screen.getByText("Schedule daily routine"));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByText("Schedule daily routine"));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[1]).toEqual(save.mock.calls[0]);
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("The daily assignment") as HTMLTextAreaElement)
+        .value,
+    ).toBe(""),
+  );
+});
+
+it("preserves a concurrent edit and gives changed payloads and new schedules distinct identities", async () => {
+  const client = new Client("synthetic-test-token");
+  const save = vi
+    .spyOn(client, "saveRoutine")
+    .mockRejectedValue(new RequestError(409, "revision conflict"));
+  vi.spyOn(client, "state").mockImplementation(async () => ({
+    ...state,
+    routines: [
+      {
+        ...save.mock.calls[0][1],
+        id: save.mock.calls[0][0],
+        revision: 2,
+        enabled: 0,
+        next_at: 123,
+      },
+    ],
+  }));
+  const errors: unknown[] = [];
+  render(
+    <RoutinePanel
+      client={client}
+      snapshot={state}
+      busy={false}
+      act={async (op) => {
+        await op().catch((e) => errors.push(e));
+      }}
+    />,
+  );
+  const input = screen.getByLabelText("The daily assignment");
+  const submit = screen.getByText("Schedule daily routine");
+  fireEvent.change(input, { target: { value: "Synthetic" } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(errors).toHaveLength(1));
+  fireEvent.click(submit);
+  await waitFor(() => expect(errors).toHaveLength(2));
+  expect(save.mock.calls[1]).toEqual(save.mock.calls[0]);
+  expect((input as HTMLTextAreaElement).value).toBe("Synthetic");
+  save.mockResolvedValue({});
+  fireEvent.change(input, { target: { value: "Different assignment" } });
+  fireEvent.click(submit);
+  await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
+  expect(save.mock.calls[2][0]).not.toBe(save.mock.calls[0][0]);
+  fireEvent.change(input, { target: { value: "Different assignment" } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(4));
+  expect(save.mock.calls[3][0]).not.toBe(save.mock.calls[2][0]);
 });

@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Routine creation retains its pending identity and payload after a lost response; retries
+  reconcile an existing matching schedule while preserving concurrent edits (#193).
+
 - Routine admission rotates through at most 100 queued occurrences per pass, so persistent
   pauses and budget waits cannot hide later healthy residents; each attempt retains the
   existing transactional admission checks and refused work is revisited (#192).

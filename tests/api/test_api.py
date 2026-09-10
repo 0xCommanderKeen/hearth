@@ -387,3 +387,39 @@ def test_usage_by_origin_counts_each_run_once_and_leaves_unknown_usage_holding(t
         )
         origin = client.get("/api/usage/origins", headers=AUTH).json()["origins"][0]
         assert (origin["runs"], origin["unknown_runs"], origin["known_cost"]) == (1, 0, 2000)
+
+
+def test_uncertain_routine_creation_reconciles_without_editing_or_requeuing(client):
+    from hearth.work.routines import Routines
+
+    seed_reader_via(client)
+    now = [1_788_652_800]
+    client.app.state.hearth.clock = lambda: now[0]
+    body = {
+        "resident_id": "reader",
+        "instruction": "Synthetic daily report",
+        "local_time": "09:00",
+        "timezone": "UTC",
+        "enabled": True,
+        "expected_revision": 0,
+    }
+    # The browser loses this response after the owning API has committed.
+    assert client.post("/api/routines/pending", headers=AUTH, json=body).status_code == 200
+    assert client.post("/api/routines/pending", headers=AUTH, json=body).status_code == 409
+    state = client.get("/api/state", headers=AUTH).json()
+    assert len(state["routines"]) == 1
+    routine = state["routines"][0]
+    assert all(routine[key] == value for key, value in body.items() if key != "expected_revision")
+    now[0] = routine["next_at"]
+    scheduler = Routines(client.app.state.hearth)
+    assert len(scheduler.tick()) == 1
+    assert scheduler.tick() == []
+    assert client.post("/api/routines/pending", headers=AUTH, json=body).status_code == 409
+    changed = {**body, "enabled": False, "expected_revision": 1}
+    assert client.post("/api/routines/pending", headers=AUTH, json=changed).status_code == 200
+    assert client.post("/api/routines/pending", headers=AUTH, json=body).status_code == 409
+    state = client.get("/api/state", headers=AUTH).json()
+    assert state["routines"][0]["revision"] == 2
+    assert not state["routines"][0]["enabled"]
+    assert len(state["tasks"]) == len(state["occurrences"]) == 1
+    assert client.post("/api/routines/deliberate-new", headers=AUTH, json=body).status_code == 200

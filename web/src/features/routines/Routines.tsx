@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Client, type Snapshot } from "../../shared/client";
+import { useRef, useState } from "react";
+import { Client, RequestError, type Snapshot } from "../../shared/client";
 
 export function RoutinePanel({
   client,
@@ -12,6 +12,8 @@ export function RoutinePanel({
   busy: boolean;
   act: (operation: () => Promise<unknown>) => Promise<void>;
 }) {
+  const pending = useRef<{ id: string; payload: string } | null>(null);
+  const submitting = useRef(false);
   const routines = snapshot.routines ?? [];
   const [residentId, setResidentId] = useState("");
   const [instruction, setInstruction] = useState("");
@@ -114,19 +116,53 @@ export function RoutinePanel({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const id = crypto.randomUUID();
-            void act(() =>
-              client
-                .saveRoutine(id, {
-                  resident_id: selected,
-                  instruction,
-                  local_time: localTime,
-                  timezone,
-                  enabled: true,
-                  expected_revision: 0,
-                })
-                .then(() => setInstruction("")),
-            );
+            if (submitting.current || busy || readOnly) return;
+            const body = {
+              resident_id: selected,
+              instruction,
+              local_time: localTime,
+              timezone,
+              enabled: true,
+              expected_revision: 0,
+            };
+            const payload = JSON.stringify(body);
+            if (pending.current?.payload !== payload)
+              pending.current = { id: crypto.randomUUID(), payload };
+            const attempt = pending.current;
+            submitting.current = true;
+            void act(async () => {
+              try {
+                try {
+                  await client.saveRoutine(attempt.id, body);
+                } catch (error) {
+                  if (
+                    !(error instanceof RequestError) ||
+                    error.message !== "revision conflict"
+                  )
+                    throw error;
+                  // Creation may have committed before its response was lost. Never
+                  // replay it as an edit or replace a concurrently changed schedule.
+                  const current = (await client.state()).routines?.find(
+                    (r) => r.id === attempt.id,
+                  );
+                  if (
+                    !current ||
+                    current.resident_id !== body.resident_id ||
+                    current.instruction !== body.instruction ||
+                    current.local_time !== body.local_time ||
+                    current.timezone !== body.timezone ||
+                    Boolean(current.enabled) !== body.enabled
+                  )
+                    throw error;
+                }
+                pending.current = null;
+                setInstruction((value) =>
+                  value === body.instruction ? "" : value,
+                );
+              } finally {
+                submitting.current = false;
+              }
+            });
           }}
         >
           <h3>Schedule a daily routine</h3>
