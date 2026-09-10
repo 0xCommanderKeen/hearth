@@ -41,6 +41,8 @@ HEARTH_SANDBOX_IMAGE=<repo>@sha256:... # required for container; a tag alone is 
 HEARTH_SANDBOX_NETWORK=<name>          # required for container; the operator creates it
 HEARTH_SANDBOX_DOCKER=<docker|podman|/absolute/path>   # optional, default `docker`
 HEARTH_SANDBOX_DOCKER_HOST=unix:///…   # optional; the daemon, when it is not the default
+HEARTH_SANDBOX_SHUT=<host:port>,…      # required for container; must be unreachable
+HEARTH_SANDBOX_OPEN=<host:port>,…      # required for container; must be reachable
 ```
 
 The launcher runs the container client with a search path and nothing else in its
@@ -76,6 +78,9 @@ At start, on the `container` launcher, in this order:
 | `sandbox_network_missing` | the operator has not created that network |
 | `sandbox_image_changed` | this store is pinned to a different image digest |
 | `sandbox_binary_mismatch` | a CLI inside the image is not the one this store's binary pin names |
+| `sandbox_fence_unconfigured` | neither list of the fence below may be empty |
+| `sandbox_fence_unmeasured` | the probe in the image could not answer at all |
+| `sandbox_network_open` | the fence does not hold; the audit says which address answered |
 
 A failure to hash is not automatically a mismatch: the client's exit code 125 (and a
 client that cannot be run, and a timeout) is the daemon refusing to run the container
@@ -97,6 +102,53 @@ start rather than the next one.
 names bytes, not a machine, so it tells a reader which sandbox is deployed without
 telling a LAN peer anything about the host. The network's name stays behind the
 operator's token on `GET /api/health`, with every reason a runtime did not open.
+
+## The fence, and what Hearth will not take on trust
+
+ADR 0016 says a session's only network is the provider's, and immediately afterwards
+that *a fence Hearth cannot see holding is not one it relies on*. Enforcement is the
+operator's -- a network with that policy, `deploy/README.md` for how one is built --
+and Hearth's part is the seeing. `integrations/reach.py` is the whole of what runs on
+the sandbox network: the standard library, one TCP connection per address, one JSON
+document, started as `python3 -I -m hearth.integrations.reach` from the same pinned
+image a session runs from, as the same uid, with nothing mounted and nothing in its
+environment. `integrations/fence.py` is the half outside that reads the answers.
+
+The vocabulary is the point, because a fence is judged on it:
+
+| answer | what happened | is that a fence holding? |
+| --- | --- | --- |
+| `connected` | the handshake completed | no -- and for an *open* address it is the only yes |
+| `dropped` | nothing came back | yes: a filtered packet looks like this |
+| `no route` | the kernel would not send it | yes |
+| `refused` | a reset came back | **no**: the packet arrived, and a fence that lets it arrive is relying on nothing listening tomorrow |
+| `unresolved` | the name has no address here | no: that is not a fact about the network |
+
+`HEARTH_SANDBOX_SHUT` names what must not be reachable -- Hearth's own address, one
+address on the LAN -- and `HEARTH_SANDBOX_OPEN` what must be, which is the provider.
+Hearth derives neither: which address answers for Hearth depends on how the operator
+published it, and which address is "the LAN" is a fact about a building. Both lists are
+required on the container launcher, because an empty one is a measurement that always
+passes; an empty one refuses `sandbox_fence_unconfigured`.
+
+A start measures it before any resident is admitted, records what it saw as an audit
+fact `sandbox.fence` -- and *then* refuses `sandbox_network_open` if it did not hold,
+because an operator whose instance will not start needs to read which address answered.
+`GET /api/health` measures it again on the ask, afresh, like the login survey and for
+the same reason: an operator asking is asking about now. A probe that could not answer
+at all is `sandbox_fence_unmeasured` and is never read as a fence that held.
+
+**What the fence is, exactly.** `deploy/fence.sh` drops every private destination from
+the sandbox subnet in `DOCKER-USER` and the host's own addresses in `INPUT`, and leaves
+the rest alone. That is *nothing of this house*, not "the provider and nothing else":
+the providers are behind CDNs whose addresses rotate, so an address allowlist is a fence
+that breaks on somebody else's deploy, and saying it exactly needs an egress proxy the
+CLIs are pointed at, which is not built. ADR 0016's Measured section records the
+difference. Two other things do the work beside those rules and are worth knowing:
+Docker's own `DOCKER-ISOLATION` chains already keep one user-defined network from
+reaching another, which is most of why Hearth's own address is unreachable; and the
+daemon's embedded resolver may forward name lookups from inside the container's
+namespace, which is why the filter has a hole for exactly that address and nothing else.
 
 ## The image
 
@@ -669,29 +721,118 @@ over the bridge and run 2 quoting it back. It is not the sandbox journey and doe
 claim to be; it is the evidence that the launcher this Mac can use still settles a real
 session now that the adapter speaks in placements.
 
+## Hearth on the server, and the acceptance demo
+
+The journeys above ran Hearth in a hand-built harness. This one ran it from
+`deploy/compose.yaml`: Hearth's own image, a store on a named volume, the runtime
+socket, `hearth-egress` with `deploy/fence.sh` on it, and a fresh household.
+`deploy/README.md` is the runbook; two things about the shape are worth repeating here
+because they are measurements rather than taste.
+
+**Every volume is mounted inside Hearth at the path it has on the host.** A path Hearth
+hands the daemon -- a run's bridge socket, a login directory, a granted folder -- is
+resolved by the daemon in the *host's* filesystem, not in Hearth's, so a named volume is
+mounted at `<docker data root>/volumes/<name>/_data` on both sides. The store also has
+to be a real filesystem for `flock` and SQLite, which a bind mount from a Mac is not
+(measurement 9); a volume is both at once. That is the answer to what the harness
+worked around, and to the open question the Codex slice left about a containerized
+Hearth's own temporary directories.
+
+**Hearth is not on the sandbox network.** No service in the compose file is, which is
+why the compose file cannot create `hearth-egress` either: an operator makes it, puts
+the filter on it, and Hearth measures the result.
+
+**Measured, 2026-09-10.** Docker Desktop 27.3.1, server `linux/arm64`, kernel
+`6.10.14-linuxkit`; a fresh store on named volumes, throwaway ports, nothing on any
+other machine. `scripts/sandbox-journey.py` ->
+`docs/evidence/sandbox-journey-2026-09-10.json`.
+
+18. **The fence holds, measured from inside `hearth-egress`.** Hearth's own address on
+    its own network `dropped`, this building's router `dropped`, `chatgpt.com:443`
+    `connected`. Recorded as `sandbox.fence` at start and answered afresh on every
+    `GET /api/health`.
+19. **An instance whose fence does not hold does not open.** With `deploy/fence.sh
+    remove` and nothing else changed, the same deployment refused
+    `sandbox_network_open` on restart and stayed down, and the audit says which address
+    answered: `{"held": false, ... "192.168.1.1:80": "connected"}`. Putting the filter
+    back brought it up again on its own.
+20. **A routine run, on a resident's own login, in a per-run sandbox, settled.** The
+    scheduler's own occurrence made the task; the run succeeded at **35,542 µ$** from
+    the CLI's own numbers, in container `afc7801e...` from the pinned image, and the
+    container was gone afterwards. `login_scope` is `resident` on the run and on the
+    receipt: the resident's own directory, not the household's.
+21. **The grant is on the run and the folders are in the container; the *session* still
+    cannot open them.** `run_mounts` names `notes` (ro) and `drafts` (rw) at the grant's
+    revision, the receipt names both, and `grant.mount_rw_granted` is audited. But the
+    session reached neither -- it made no tool call at all and said so in its answer --
+    because Hearth configures the Codex CLI with `permissions.reader.filesystem./` set
+    to `deny` and `features.shell_tool` off. The mount is real and the kernel enforces
+    it (measurements 14--17); what is missing is a tool with which to use it. Making a
+    granted folder reachable by the model is a change to each provider's permission
+    profile and is its own issue.
+22. **The Claude half did not run, for the reason it has run out of since #186**:
+    `claude_subscription_login_required`, recorded in the evidence as not run. A
+    sandboxed Claude session's login is the file `.credentials.json`, and only the
+    account holder can create one against the Linux build.
+
+The demo has to reach Hearth *and* see the store, which on a burrow whose filesystem is
+volumes means a container of Hearth's own image with the store volume mounted at its own
+path. On this Mac it was this, with `$REPO` the checkout:
+
+```sh
+docker run --rm --user "$HEARTH_UID:$HEARTH_DOCKER_GID" --network hearth \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v hearth-store:/var/lib/docker/volumes/hearth-store/_data \
+    -v hearth-folders:/var/lib/docker/volumes/hearth-folders/_data \
+    -v "$REPO:$REPO" -w "$REPO" -e HEARTH_OPERATOR_TOKEN \
+    --entrypoint /opt/hearth/bin/python "$HEARTH_IMAGE" \
+    scripts/sandbox-journey.py --base http://172.30.0.2:8000 \
+        --store /var/lib/docker/volumes/hearth-store/_data \
+        --folders /var/lib/docker/volumes/hearth-folders/_data \
+        --out docs/evidence/sandbox-journey-<date>.json
+```
+
+On a Linux server it is the command in the script's own docstring: the store is a
+directory the operator can read and Hearth answers on a port.
+
+The resident's own login has to be seeded *before* the demo runs, because a login is
+resolved at admission. Provisioning derives a resident's id from its idempotency key, so
+the directory can be made before the resident exists -- which is the only order that
+works, and is why the script computes the id rather than reading it back.
+
+**The store moves between the two burrows, both ways.** `scripts/store-round-trip.py`
+-> `docs/evidence/store-round-trip-2026-09-10.json`: a Mac `process` store captured on
+the Mac and restored and *opened* on the Docker host, which answered
+`"sandbox": {"launcher": "container"}`; and this demo's store captured on the Docker
+host and opened on the Mac, which answered `"launcher": "process"` with the run and the
+image pin it arrived with. Both copies came up held, as ADR 0013 says a restored copy
+must, and neither carried a credential: the format copies `hearth.db`, `artifacts/` and
+`memory/` by name and never the tree the logins live in.
+
 ## Not yet true
 
-- No resident has run against a real model with a granted folder: the mount itself is
-  measured against the real daemon above, and the sessions that used one were the fake
-  CLI's. The journeys in this page predate the grant.
+- No resident has run against a real model *using* a granted folder. The folder is
+  granted, admitted, placed, recorded and enforced by the kernel; the session has no
+  filesystem tool with which to open it (measurement 21). That is the provider
+  permission profile's own question and not the mount's.
 - A management session's folders have the fake daemon's coverage and the transport's own
   test; its receipt names no container id, because such a run starts two, and what each
   of them was is in `handle.json` beside it.
 - No Claude session has run in a sandbox against the real model: the CLI, the login
   mount and the bridge are each measured, and the paid three-run journey waits on the
   Linux login above.
-- The network the sandbox is on is the operator's own, and Hearth does not yet measure
-  from inside it that Hearth's API and the LAN are unreachable (#189). The journey above
-  used an ordinary bridge network, so it proves the provider is reachable and nothing
-  about what else is.
-- Hearth itself is not packaged (#189). The container the journey ran in is a harness,
-  not `deploy/compose.yaml`.
-- No resident has run against a real model on a login of its own. Both adapters are
+- **Two** residents on different logins of their own have not run against a real model.
+  One has (measurement 20), on a login of its own; a second real login is a second
+  subscription and only the account holder can seed one. The two-resident acceptance is
   driven end to end with a fake CLI that reports the configuration directory it was
-  handed, which is what proves the right one reaches the session; the login files in
-  those tests are synthetic and no provider is reached. Nobody but the account holder
-  can seed a second real login, so the two-subscription run waits on the same person the
-  Claude journey does.
+  handed, which is what proves the right one reaches each session.
+- The fence is measured, not narrowed: what holds is "nothing of this house" and not
+  "the provider and nothing else". An address allowlist would break on a CDN's own
+  deploy; saying it exactly needs an egress proxy the CLIs are pointed at, which is not
+  built. ADR 0016's Measured section records the difference.
+- The fence filter is not persistent by itself: `DOCKER-USER` is rebuilt when the daemon
+  restarts, so `deploy/fence.sh apply` belongs in whatever restores firewall state at
+  boot. Nothing rests on remembering, because a start that cannot see the fence refuses.
 - A login taken away in the moment between a run being gated and being launched is not
   held for the operator. The launch intent is already recorded by then, so that run is
   interrupted instead -- visibly, with nothing spent, and without ending the pass for
@@ -702,11 +843,9 @@ session now that the adapter speaks in placements.
   present here, and the session that spends it fails at the provider rather than
   waiting. Claude's probe is the CLI's own answer and does not have that gap.
 - A **management** session in a container has the fake daemon's coverage and not a real
-  daemon's: the journey is one `codex exec` run. One thing in it is worth measuring when
-  #186 or #189 next has a real host — the model catalog Hearth generates goes in a
-  temporary directory, which on Linux is under `/tmp`, and `/tmp` inside the sandbox is
-  a tmpfs the launcher mounts over. Nested that way it is the same shape as the login
-  mount, which a real daemon does handle. It is also a *host* path, so a Hearth that is
-  itself in a container hands the daemon a path from its own filesystem, which the daemon
-  resolves in the host's — that is #189's problem, and the same one the journey harness
-  works around by mounting everything at the paths it has outside.
+  daemon's: every journey so far is one `codex exec` run. The path question it raised is
+  settled -- a containerized Hearth hands the daemon paths from the host's filesystem,
+  and `deploy/compose.yaml` answers it by mounting every volume at the path it has there
+  -- but the model catalog it generates goes in a temporary directory under `/tmp`,
+  which inside a sandbox is a tmpfs the launcher mounts over, and that nesting has still
+  only been seen with a fake daemon.

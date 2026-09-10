@@ -85,6 +85,13 @@ client's own default, `HEARTH_SANDBOX_DOCKER_HOST`. See
 [the sandbox](docs/sandbox.md) for what it pins, what it refuses and what a real
 container runtime was measured to do with it.
 
+On a server that is a whole deployment rather than two variables: `deploy/` holds
+Hearth's own image, the sandbox image, one compose file and the packet filter that makes
+the sandbox network what it claims to be, and [its runbook](deploy/README.md) is the
+order to do them in. There, `HEARTH_SANDBOX_SHUT` and `HEARTH_SANDBOX_OPEN` name what a
+session must not and must be able to reach, and Hearth measures it from inside that
+network at every start rather than taking the network's name for it.
+
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
 For browser development, `pnpm dev` from `web/` proxies its `/api` requests to the
 same local backend. Continuous integration has no subscription, so the test suite

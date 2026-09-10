@@ -2,6 +2,31 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Hearth is deployable on a Linux server as a container, and it will not open on a
+  sandbox network it cannot see holding. `deploy/Dockerfile` packages the release wheel,
+  the locked dependencies and a container client with no package manager and no root;
+  `deploy/compose.yaml` is the deployment -- a store volume, a credentials volume, a
+  folders volume, the pinned CLIs read-only, the runtime socket, `HEARTH_SANDBOX=container`
+  and both image digests as environment. Every volume is mounted inside Hearth at the
+  path it has on the host, because the daemon resolves the paths Hearth hands it in the
+  host's filesystem and not in Hearth's; Hearth is deliberately not on `hearth-egress`,
+  because a session reaches Hearth over a socket file and needs no network path to it.
+  The fence itself is measured, never assumed: `HEARTH_SANDBOX_SHUT` and
+  `HEARTH_SANDBOX_OPEN` name addresses that must and must not be reachable, and at every
+  start -- and again on every `GET /api/health` -- Hearth runs one container on the
+  sandbox network, from the pinned image, as its own uid, with nothing mounted, and asks
+  it what it reached (`integrations/reach.py`). A reset counts as reachable, because a
+  packet that arrived is not a fence. What it saw is recorded as `sandbox.fence` and
+  anything but "the provider and nothing else" refuses `sandbox_network_open` and the
+  instance does not open; an empty list refuses `sandbox_fence_unconfigured` and a probe
+  that could not answer `sandbox_fence_unmeasured`. `deploy/fence.sh` installs the packet
+  filter that makes it hold -- honestly "nothing of this house" rather than a provider
+  allowlist, and the runbook says so. `deploy/README.md` is the whole order: build and
+  pin both images, configure, make the network and the filter, seed the binaries and the
+  logins, first start, upgrade, backup and restore, and where a resident's folders live
+  on a host whose filesystem is volumes. ADR 0016 is accepted, with a Measured section
+  naming every assumption the epic contradicted.
+
 - A resident may run on a provider login of its own. `<data>/credentials/<resident
   id>/<kind>/` is a directory an operator seeds with that CLI's own login flow -- Hearth
   makes the shelf `0700` and never creates or copies a login. Admission resolves which
