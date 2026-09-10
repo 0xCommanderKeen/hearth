@@ -91,13 +91,7 @@ def test_semantically_oversized_unicode_is_refused_without_mutation(client, rout
 
 @pytest.mark.parametrize("route", ["task", "routine", "declaration"])
 def test_transport_budget_accepts_boundary_and_refuses_extra_byte(client, route):
-    from hearth.api.auth import MAX_DECLARATION_BODY, MAX_ROUTINE_BODY, MAX_TASK_BODY
-
-    limit = {
-        "task": MAX_TASK_BODY,
-        "routine": MAX_ROUTINE_BODY,
-        "declaration": MAX_DECLARATION_BODY,
-    }[route]
+    _, _, limit = ROUTES[route]
     body = json.dumps(payload(route, "漢")).encode().ljust(limit, b" ")
     before = client.get("/api/state", headers=AUTH).json()["cursor"]
     response = send(client, route, body + b" ")
@@ -111,18 +105,7 @@ def test_transport_budget_accepts_boundary_and_refuses_extra_byte(client, route)
 def test_chunked_transport_stops_at_budget_without_reading_remainder(client, route):
     import asyncio
 
-    from hearth.api.auth import MAX_DECLARATION_BODY, MAX_ROUTINE_BODY, MAX_TASK_BODY
-
-    limit = {
-        "task": MAX_TASK_BODY,
-        "routine": MAX_ROUTINE_BODY,
-        "declaration": MAX_DECLARATION_BODY,
-    }[route]
-    method, path = {
-        "task": ("POST", "/api/tasks"),
-        "routine": ("POST", "/api/routines/unicode"),
-        "declaration": ("PUT", "/api/residents/reader"),
-    }[route]
+    method, path, limit = ROUTES[route]
     reads = 0
     messages = []
 
