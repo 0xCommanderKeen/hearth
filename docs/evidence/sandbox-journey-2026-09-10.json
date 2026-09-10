@@ -1,0 +1,326 @@
+{
+  "journey": "epic-183-sandbox-per-run-acceptance",
+  "synthetic_inputs": true,
+  "real_model_called": true,
+  "host": "a Linux Docker host; Hearth in its own container from deploy/compose.yaml",
+  "data_directory": "a fresh store on a named volume, discarded after recording",
+  "health": {
+    "service": "hearth",
+    "runtimes": [
+      {
+        "kind": "codex_subscription",
+        "label": "Codex subscription",
+        "default": true
+      }
+    ],
+    "sandbox": {
+      "launcher": "container",
+      "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60"
+    }
+  },
+  "operator_health": {
+    "supervisor": "running",
+    "executor_error": null,
+    "scheduler_error": null,
+    "validation_error": null,
+    "letters_error": null,
+    "runtimes": [
+      {
+        "kind": "codex_subscription",
+        "label": "Codex subscription",
+        "default": true
+      }
+    ],
+    "sandbox": {
+      "launcher": "container",
+      "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+      "network": "hearth-egress",
+      "fence": {
+        "shut": {
+          "172.30.0.2:8000": "dropped",
+          "192.168.1.1:80": "dropped"
+        },
+        "open": {
+          "chatgpt.com:443": "connected"
+        },
+        "held": true
+      }
+    },
+    "unavailable": [
+      {
+        "kind": "claude_subscription",
+        "reason": "claude_subscription_login_required"
+      }
+    ],
+    "login": {
+      "resident_lapsed": [],
+      "resident_unknown": []
+    }
+  },
+  "kinds": {
+    "codex_subscription": {
+      "ran": true,
+      "resident_id": "57e2a243-b598-5622-9d81-d7366736ac73",
+      "provisioning": {
+        "setup": {
+          "budget_timezone": "Europe/Ljubljana",
+          "creation_reason": "Epic #183's acceptance demo (hearth#189).",
+          "daily_limit": 200000,
+          "execution_profile": "codex_subscription",
+          "first_assignment": null,
+          "initial_memory": "The orchard notes are fictional.",
+          "input_sets": [],
+          "instructions": "Answer in at most four sentences. The notes are fictional. This resident is also granted two folders: notes, read-only, and drafts, writable. If you can open them, read the notes and write your summary into drafts as summary.md; either way say plainly in your answer whether you could.",
+          "manager": "operator",
+          "memory_writable": false,
+          "name": "Fictional orchard reporter (codex_subscription)",
+          "purpose": "Summarize the fictional orchard notes each day.",
+          "routine": null,
+          "skills": []
+        },
+        "command_id": "sandbox-journey-codex_subscription",
+        "resident_id": "57e2a243-b598-5622-9d81-d7366736ac73",
+        "status": "ready",
+        "reason": null,
+        "creator": "operator",
+        "manager": "operator",
+        "originating_run_id": null,
+        "created_at": 1789032175,
+        "routine_id": null,
+        "task_id": null
+      },
+      "grant": {
+        "resident_id": "57e2a243-b598-5622-9d81-d7366736ac73",
+        "revision": 1,
+        "enabled": false,
+        "profiles": [],
+        "input_set_ids": [],
+        "capabilities": [],
+        "letter_recipient_ids": [],
+        "mounts": [
+          {
+            "name": "notes",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/notes",
+            "mode": "ro"
+          },
+          {
+            "name": "drafts",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts",
+            "mode": "rw"
+          }
+        ],
+        "max_residents": 5,
+        "max_daily_limit": 1000000,
+        "max_reserve": 500000,
+        "max_calls": 64
+      },
+      "routine": {
+        "id": "sandbox-journey-57e2a243",
+        "revision": 1,
+        "enabled": true,
+        "next_at": 1789032240
+      },
+      "routine_due_local": "2026-09-10 11:24 Europe/Ljubljana",
+      "occurrence": {
+        "routine_id": "sandbox-journey-57e2a243",
+        "scheduled_at": 1789032240,
+        "revision": 1,
+        "task_id": "8d97b52a-f1bd-4354-b2ed-ae6319b5dec6",
+        "status": "queued",
+        "created_at": 1789032240
+      },
+      "run": {
+        "id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "task_id": "8d97b52a-f1bd-4354-b2ed-ae6319b5dec6",
+        "resident_id": "57e2a243-b598-5622-9d81-d7366736ac73",
+        "resident_revision": 1,
+        "status": "succeeded",
+        "reserved": 10000,
+        "budget_day": "2026-09-10",
+        "budget_timezone": "Europe/Ljubljana",
+        "runtime_kind": "codex_subscription",
+        "runtime_version": 1,
+        "input_digest": "d9b8c858bb2773d822f2c3528eaf6e03c3d26a157b414b65a1ec6bb9a89380f3",
+        "login_scope": "resident",
+        "model": "gpt-6-astra",
+        "price_schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+        "created_at": 1789032240,
+        "actual_cost": 35542,
+        "memory_revision": 1,
+        "usage_known": 1,
+        "finished_at": 1789032248,
+        "artifact_id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "cancellation_requested": 0,
+        "usage_source": "api_equivalent_subscription",
+        "letters_refused": [],
+        "skills": [],
+        "skills_error": null,
+        "assignment_revision": null,
+        "input_sets": [],
+        "input_revision": null,
+        "inputs_error": null,
+        "input_state": "empty",
+        "management": null,
+        "mounts": [
+          {
+            "name": "notes",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/notes",
+            "mode": "ro",
+            "path": "/mounts/notes"
+          },
+          {
+            "name": "drafts",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts",
+            "mode": "rw",
+            "path": "/mounts/drafts"
+          }
+        ],
+        "journal_opened": [],
+        "journal_written": null,
+        "memory_written": []
+      },
+      "accounting": {
+        "skills": [],
+        "skills_error": null,
+        "assignment_revision": null,
+        "input_sets": [],
+        "input_revision": null,
+        "inputs_error": null,
+        "input_state": "empty",
+        "mounts": [
+          {
+            "name": "notes",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/notes",
+            "mode": "ro",
+            "path": "/mounts/notes"
+          },
+          {
+            "name": "drafts",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts",
+            "mode": "rw",
+            "path": "/mounts/drafts"
+          }
+        ],
+        "accounting": {
+          "model": "gpt-6-astra",
+          "mode": "standard",
+          "schedule": "gpt-6-astra-api-equivalent-2026-09-06",
+          "basis": "api_equivalent_estimate",
+          "receipt_sha256": "60e4c0c5f84d64a16517ba7813badd64858ee1b9d30f77f9c89fc752ba79e4ff",
+          "requests": []
+        },
+        "id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "status": "succeeded",
+        "artifact_id": "7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7",
+        "runtime_kind": "codex_subscription",
+        "runtime_version": 1,
+        "input_digest": "d9b8c858bb2773d822f2c3528eaf6e03c3d26a157b414b65a1ec6bb9a89380f3",
+        "login_scope": "resident"
+      },
+      "answer": "Today’s fictional orchard summary: 12 pears were harvested Monday, and 3 trees were planted Tuesday.\n\nI couldn’t access the notes or drafts folders, so I couldn’t save `summary.md`.",
+      "session": {
+        "run_mounts": [
+          {
+            "name": "notes",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/notes",
+            "mode": "ro",
+            "grant_revision": 1
+          },
+          {
+            "name": "drafts",
+            "host_path": "/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts",
+            "mode": "rw",
+            "grant_revision": 1
+          }
+        ],
+        "login_scope": "resident",
+        "sandbox": {
+          "container_id": "afc7801ee819242ae08aa2c878b2dbb166fd7d0c16318b4cfd43ebe9ca10e9dc",
+          "image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+          "launcher": "container",
+          "mounts": [
+            {
+              "mode": "ro",
+              "name": "notes",
+              "written": null
+            },
+            {
+              "mode": "rw",
+              "name": "drafts",
+              "written": false
+            }
+          ]
+        },
+        "handle": {
+          "cidfile": null,
+          "id": "afc7801ee819242ae08aa2c878b2dbb166fd7d0c16318b4cfd43ebe9ca10e9dc",
+          "launcher": "container",
+          "worker": 124
+        },
+        "receipt_login_scope": "resident",
+        "receipt_mounts": [
+          {
+            "mode": "ro",
+            "name": "notes",
+            "written": null
+          },
+          {
+            "mode": "rw",
+            "name": "drafts",
+            "written": false
+          }
+        ],
+        "exit_code": 0,
+        "cancelled": false,
+        "launched": true,
+        "binary_sha256": "4d76e542c222ea8c75861d8c4ade60a1a332a63255ce1c60bdaebf7c2a2869e6",
+        "cli_reported_usage": {
+          "input_tokens": 9350,
+          "cached_input_tokens": 6912,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 85,
+          "reasoning_output_tokens": 39
+        }
+      },
+      "container_afterwards": "absent",
+      "folders": {
+        "read_only_afterwards": [
+          {
+            "name": "orchard.md",
+            "bytes": 84
+          }
+        ],
+        "writable_afterwards": []
+      }
+    },
+    "claude_subscription": {
+      "ran": false,
+      "reason": "claude_subscription_login_required"
+    }
+  },
+  "sandbox_audit": [
+    {
+      "sequence": 2,
+      "kind": "sandbox.configured",
+      "resource_id": "container",
+      "at": 1789032144,
+      "detail": "{\"binaries\": [\"codex_live_binary\"], \"image\": \"sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60\", \"network\": \"hearth-egress\"}"
+    },
+    {
+      "sequence": 3,
+      "kind": "sandbox.fence",
+      "resource_id": "container",
+      "at": 1789032146,
+      "detail": "{\"held\": true, \"network\": \"hearth-egress\", \"open\": {\"chatgpt.com:443\": \"connected\"}, \"shut\": {\"172.30.0.2:8000\": \"dropped\", \"192.168.1.1:80\": \"dropped\"}}"
+    },
+    {
+      "sequence": 10,
+      "kind": "grant.mount_rw_granted",
+      "resource_id": "57e2a243-b598-5622-9d81-d7366736ac73",
+      "at": 1789032175,
+      "detail": "{\"actor\": \"operator\", \"mounts\": [{\"host_path\": \"/var/lib/docker/volumes/hearth-folders/_data/57e2a243-b598-5622-9d81-d7366736ac73/drafts\", \"name\": \"drafts\"}], \"revision\": 1}"
+    }
+  ],
+  "total_cost_microdollars": 35542,
+  "limits": "One routine run per configured runtime kind, on fictional notes. This records that a resident's session executed inside a per-run container from the pinned image, on its own login, reaching exactly the folders its grant named; that the receipt is the CLI's own stream out of that container and the run settled from the usage the CLI reported there; and that Hearth measured, from inside the sandbox network, that its own address and a LAN address are unreachable and the provider is. It is not evidence of model quality, of anything about real sources, or of a fence narrower than the one `deploy/fence.sh` installs."
+}

@@ -136,15 +136,18 @@ networks:
     ipam:
       config:
         - subnet: ${HEARTH_SUBNET:-172.30.0.0/24}
-  # The sandboxes'. Hearth is deliberately not attached to it, and the packet filter
-  # `deploy/fence.sh` installs is what stops a session on it reaching this host, this
-  # LAN or Hearth's own network. Compose creates the network; the filter is keyed to
-  # this subnet and has to be applied separately -- see `deploy/README.md`.
+  # The sandboxes'. No service here is attached to it, which is the point: a session
+  # reaches Hearth over a socket file and must have no network path to it at all. It is
+  # therefore the operator's own network, made before this file is brought up and with
+  # the packet filter `deploy/fence.sh` installs already on it (`deploy/README.md`):
+  #
+  #     docker network create --subnet "$HEARTH_EGRESS_SUBNET" hearth-egress
+  #
+  # Declared external so that a deployment brought up without it stops here, rather
+  # than at `sandbox_network_missing` after everything else has started.
   hearth-egress:
     name: hearth-egress
-    ipam:
-      config:
-        - subnet: ${HEARTH_EGRESS_SUBNET:-172.31.240.0/24}
+    external: true
 
 volumes:
   # The household: `hearth.db`, artifacts, memory, journals, run folders, and the

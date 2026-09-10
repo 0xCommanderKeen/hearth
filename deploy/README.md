@@ -105,13 +105,17 @@ container and another to the daemon is a mount of the wrong directory.
 
 ## 3. Create the networks and install the fence
 
+`hearth-egress` is the operator's own: no service in the compose file is attached to
+it, which is exactly the point, so nothing in that file can create it either. Make it
+first, with the subnet the fence will be keyed to, and let compose make its own:
+
 ```sh
+docker network create --subnet "$HEARTH_EGRESS_SUBNET" hearth-egress
 docker compose --env-file deploy/.env -f deploy/compose.yaml create
 ```
 
-That makes `hearth` (Hearth's own; nothing else is on it) and `hearth-egress` (the
-sandboxes'; Hearth is deliberately *not* on it) with the subnets `.env` names. Then
-install the filter that makes the second one a fence, as root on the Docker host:
+That leaves `hearth` (Hearth's own; nothing else is on it) beside it. Then install the
+filter that makes `hearth-egress` a fence, as root on the Docker host:
 
 ```sh
 HEARTH_EGRESS_SUBNET=172.31.240.0/24 deploy/fence.sh apply
@@ -160,8 +164,12 @@ files the sandbox image was built from, because the image's own copies are hashe
 against the store's pin at every start:
 
 ```sh
-docker run --rm -v hearth-binaries:/binaries -v "$PWD/binaries:/in:ro" \
+# `--user 0:0` only here: a fresh volume belongs to root and this is the one write
+# that has to happen before `init` hands it over.
+docker run --rm --user 0:0 -v hearth-binaries:/binaries -v "$PWD/binaries:/in:ro" \
     --entrypoint /bin/cp "$HEARTH_IMAGE" /in/codex /in/claude /binaries/
+docker run --rm --user 0:0 -v hearth-binaries:/binaries \
+    --entrypoint /bin/chmod "$HEARTH_IMAGE" 0555 /binaries/codex /binaries/claude
 ```
 
 Then the household's logins, one directory per provider, on `hearth-credentials`.
