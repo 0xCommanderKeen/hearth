@@ -136,8 +136,14 @@ def write_tiers(value: object) -> tuple[int, int] | None:
 
 
 def microdollars(value: object) -> int | None:
-    """A dollar amount the CLI reported, as microdollars; None if it is not a number."""
+    """A reported dollar amount, rounded to microdollars; unsupported costs stay unknown."""
     if type(value) is bool or not isinstance(value, int | float):
+        return None
+    # Bound before float conversion and scaling: huge integers and finite floats
+    # can overflow either step. The one-dollar margin preserves rounding at both
+    # accepted endpoints; the exact microdollar bound still applies below. This
+    # comparison also refuses NaN and infinities.
+    if not -1 <= value <= MAX_COST_MICRODOLLARS / 1_000_000 + 1:
         return None
     amount = round(float(value) * 1_000_000)
     return amount if 0 <= amount <= MAX_COST_MICRODOLLARS else None
