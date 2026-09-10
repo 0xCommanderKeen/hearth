@@ -24,10 +24,10 @@ from hearth.work.letters import (
 )
 from hearth.work.service import ACTIVE_RUNS, Hearth, configured_runtime, default_runtime
 
-# A run priced under a live runtime's own schedule is an API-equivalent estimate of a
-# subscription. Anything else with a price is history from a runtime that only pretended.
 TASK_PREVIEW_CHARS = 240
 
+# A run priced under a live runtime's own schedule is an API-equivalent estimate of a
+# subscription. Anything else with a price is history from a runtime that only pretended.
 LIVE_KINDS = "(" + ", ".join(repr(kind) for kind in sorted(live_kinds())) + ")"
 
 

@@ -37,7 +37,11 @@ def test_large_task_snapshot_keeps_full_instruction_reachable(tmp_path, unit):
         assert client.get(f"/api/tasks/{task_id}").status_code == 401
         assert client.get("/api/tasks/missing", headers=AUTH).status_code == 404
         # Detail remains accessible when the snapshot's recent-task window moves on.
-        hearth.submit("new", "reader", "Short", expires_at=int(hearth.clock()) + 3600)
+        later = max(task["created_at"] for task in state["tasks"]) + 1
+        hearth.clock = lambda: later
+        hearth.submit("new", "reader", "Short", expires_at=later + 3600)
+        recent = {task["id"] for task in client.get("/api/state", headers=AUTH).json()["tasks"]}
+        task_id = next(receipt.task_id for receipt in receipts if receipt.task_id not in recent)
         assert (
             client.get(f"/api/tasks/{task_id}", headers=AUTH).json()["instruction"] == instruction
         )

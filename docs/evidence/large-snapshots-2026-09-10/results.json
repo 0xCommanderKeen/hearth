@@ -1,0 +1,58 @@
+{
+  "browser": "151.0.7922.34",
+  "states": [
+    {
+      "cursor": 69,
+      "tasks": 65,
+      "unicode": 0
+    },
+    {
+      "cursor": 70,
+      "tasks": 66,
+      "unicode": 0
+    },
+    {
+      "cursor": 71,
+      "tasks": 67,
+      "unicode": 0
+    },
+    {
+      "cursor": 171,
+      "tasks": 100,
+      "unicode": 100
+    },
+    {
+      "cursor": 172,
+      "tasks": 100,
+      "unicode": 100
+    },
+    {
+      "cursor": 173,
+      "tasks": 100,
+      "unicode": 100
+    },
+    {
+      "cursor": 174,
+      "tasks": 100,
+      "unicode": 100
+    }
+  ],
+  "connections": [
+    true,
+    false,
+    true
+  ],
+  "requests": 2,
+  "details": 2,
+  "bytes": 361336,
+  "fragmented": 12359,
+  "disconnect": false,
+  "checks": [
+    "65 accepted 32k ASCII tasks",
+    "successive live updates",
+    "100 accepted 32k Unicode tasks",
+    "exact full content on demand",
+    "byte-fragmented production SSE",
+    "reconnect then successive updates"
+  ]
+}
