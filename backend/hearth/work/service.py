@@ -588,6 +588,9 @@ class Hearth:
         if outstanding + spent + reserve > declaration["daily_limit"]:
             raise Refused("budget_exhausted")
         check_admission(db, now, reserve)
+        from hearth.integrations.logins import scope as login_scope
+
+        kind = declaration["runtime"] or default_runtime(db)
         run = Run(
             str(uuid.uuid4()),
             task_id,
@@ -602,10 +605,15 @@ class Hearth:
             # Where this run happens is the resident's own declaration, and the store's
             # default only where the declaration says nothing. The pin is written once,
             # here, and a finished run keeps it whatever either of them becomes later.
-            runtime_kind=declaration["runtime"] or default_runtime(db),
+            runtime_kind=kind,
+            # And whose login pays for it: the resident's own directory for that kind if
+            # it has one, the household's otherwise. Resolved here, once, for the same
+            # reason -- a login seeded or taken away later belongs to the next run
+            # (`docs/adr/0016-sandbox-per-run.md`).
+            login_scope=login_scope(self.database.path.parent, resident_id, kind),
         )
         db.execute(
-            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             tuple(asdict(run).values()),
         )
         pin_admission(db, now, run.id)
@@ -695,6 +703,7 @@ class Hearth:
                 "runtime_kind": run.runtime_kind,
                 "runtime_version": run.runtime_version,
                 "input_digest": run.input_digest,
+                "login_scope": run.login_scope,
             }
             | {"accounting": pricing},
         )

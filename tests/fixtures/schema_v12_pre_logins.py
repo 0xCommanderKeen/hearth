@@ -1,29 +1,6 @@
+"""Exact schema of Hearth stores at version 12, before per-resident logins; test fixture only."""
+
 # ruff: noqa: E501
-"""The complete schema for a fresh Hearth database; no historical upgrades.
-
-`runs.runtime_kind` admits every kind in `integrations.interface.RUNTIMES`: the two
-live ones this release can start work on, and the three simulated kinds Hearth used to
-ship. The simulated ones are history a forward-upgraded store may still carry, and a
-run's own pin is the honest record of where its work happened.
-See `database.HISTORICAL_RUNTIME_KINDS`.
-
-`run_mounts` is what a run could reach on disk: the mounts its resident's grant held at
-the revision admission pinned, in the order the grant listed them, so a finished run says
-what it could see whether or not it executed inside a sandbox
-(`docs/adr/0016-sandbox-per-run.md`). A run with no filesystem grant has no rows here.
-
-`runs.login_scope` is which provider login the run was admitted to spend: the
-resident's own directory under `credentials/`, or the household's
-(`docs/adr/0016-sandbox-per-run.md`). It is resolved once, at admission, and a run
-keeps it whatever is seeded or taken away afterwards. Every run that predates the
-column spent the household's, which is what the upgrade fills.
-
-`declarations.runtime` is the runtime one resident's work is admitted to, null for a
-resident that follows the store's default (`system_meta.runtime_kind`). It carries no
-CHECK: a store upgraded forward may hold a kind a later release retired, and refusing
-to open it would lose the resident rather than the runtime
-(`docs/adr/0015-runtime-per-resident.md`).
-"""
 
 SCHEMA = (
     """CREATE TABLE skill_validations (
@@ -367,7 +344,6 @@ SCHEMA = (
         runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription','claude_subscription')),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
-        login_scope TEXT NOT NULL DEFAULT 'household' CHECK(login_scope IN ('resident','household')),
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)
     )""",
     """CREATE TABLE system_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)""",

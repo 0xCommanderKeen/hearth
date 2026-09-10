@@ -197,7 +197,7 @@ def test_fifo_payload_is_refused_without_blocking(system, tmp_path):
     assert not (tmp_path / "backup").exists()
 
 
-@pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=13"])
+@pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=14"])
 def test_incompatible_database_cannot_be_published_as_a_current_backup(system, tmp_path, change):
     hearth, executor, _, root = system
     import sqlite3

@@ -228,7 +228,7 @@ def test_initialize_is_concurrent_and_idempotent(tmp_path):
     assert Hearth(Database(path)).audit() == []
 
 
-@pytest.mark.parametrize("version", [13, 99])
+@pytest.mark.parametrize("version", [14, 99])
 def test_newer_schema_is_never_changed(hearth, version):
     with sqlite3.connect(hearth.database.path) as db:
         db.execute(f"PRAGMA user_version = {version}")

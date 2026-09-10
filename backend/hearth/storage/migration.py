@@ -41,6 +41,9 @@ FILLS: dict[tuple[str, str], str] = {
     # which is exactly what null says here: follow the default
     # (`docs/adr/0015-runtime-per-resident.md`).
     ("declarations", "runtime"): "NULL",
+    # Every run that predates per-resident logins spent the household's login, because
+    # it was the only one there was (`docs/adr/0016-sandbox-per-run.md`).
+    ("runs", "login_scope"): "'household'",
 }
 
 # (table, column) a release deliberately removed. An upgrade refuses any drop that is

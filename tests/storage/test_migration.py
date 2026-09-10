@@ -20,6 +20,7 @@ from tests.fixtures.schema_v6_pre_replies import SCHEMA as SCHEMA_V6
 from tests.fixtures.schema_v7_pre_letter_cap import SCHEMA as SCHEMA_V7
 from tests.fixtures.schema_v8_pre_letter_states import SCHEMA as SCHEMA_V8
 from tests.fixtures.schema_v11_pre_mounts import SCHEMA as SCHEMA_V11
+from tests.fixtures.schema_v12_pre_logins import SCHEMA as SCHEMA_V12
 
 
 def pre_memory_store(path, *, runtime_kind="codex_subscription"):
@@ -1131,3 +1132,81 @@ def test_a_grant_edited_in_the_file_refuses_the_mounts_upgrade(tmp_path):
     # The original is untouched, and no half-upgraded file is left behind.
     assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 11
     assert not (tmp_path / "hearth.db.upgrading").exists()
+
+
+def version_12_store(path):
+    """A version-12 store: two runs, one finished and one still waiting to start.
+
+    Version 12 is the layout before a resident could have a login of its own, so every
+    run in it spent the household's -- which is the only one that existed.
+    """
+    policy = _grant_policy(mounts=[])
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("BEGIN")
+    for statement in SCHEMA_V12:
+        db.execute(statement)
+    db.execute("INSERT INTO system_meta VALUES ('epoch', ?)", (str(uuid.uuid4()),))
+    db.execute("INSERT INTO system_meta VALUES ('runtime_kind', 'codex_subscription')")
+    db.execute("INSERT INTO residents VALUES ('karen', 1)")
+    db.execute(
+        "INSERT INTO declarations(resident_id, revision, name, purpose, daily_limit,"
+        " created_at) VALUES ('karen', 1, 'Karen', 'Synthetic', 1000000, 1)"
+    )
+    _lifecycle(db, "karen", 0, "ready")
+    db.execute(
+        "INSERT INTO household_policy VALUES "
+        "(1, 1, 10000000, 'Europe/Ljubljana', 10, 2, 30, 2, 86400, 5)"
+    )
+    db.execute(
+        "INSERT INTO management_grant_revisions VALUES ('karen', 1, ?, ?)",
+        (json.dumps(policy, sort_keys=True), _grant_digest(policy)),
+    )
+    db.execute("INSERT INTO management_grants VALUES ('karen', 1)")
+    for run_id, task_id, status, finished, launched in (
+        ("r", "t", "succeeded", 10, 1),
+        ("r2", "t2", "starting", None, 0),
+    ):
+        db.execute(
+            "INSERT INTO tasks VALUES (?, 'karen', 'Work', ?, 1)",
+            (task_id, "succeeded" if finished else "starting"),
+        )
+        db.execute(
+            "INSERT INTO runs(id, task_id, resident_id, resident_revision, owner_token, status, "
+            "reserved, budget_day, created_at, usage_known, finished_at, launch_attempted, "
+            "runtime_kind, runtime_version, input_digest) VALUES "
+            "(?, ?, 'karen', 1, ?, ?, 2000, '2026-09-10', 1, 1, ?, ?, 'codex_subscription', 1, ?)",
+            (run_id, task_id, "token-" + run_id, status, finished, launched, "a" * 64),
+        )
+    db.execute("PRAGMA user_version = 12")
+    db.commit()
+    db.close()
+
+
+def test_the_version_12_store_says_every_run_it_holds_spent_the_household_login(tmp_path):
+    path = tmp_path / "hearth.db"
+    version_12_store(path)
+    Database(path).initialize()
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert schema_matches(db)
+    # There was one login, and it was the household's. Nothing is guessed and no run is
+    # rewritten into having spent a subscription that did not exist when it ran.
+    assert [dict(row) for row in db.execute("SELECT id, login_scope FROM runs ORDER BY id")] == [
+        {"id": "r", "login_scope": "household"},
+        {"id": "r2", "login_scope": "household"},
+    ]
+    # The run context did not change with this column, so a run admitted before the
+    # upgrade is still the run it was: it starts, rather than being asked to end.
+    waiting = db.execute("SELECT status,cancellation_requested FROM runs WHERE id='r2'").fetchone()
+    assert (waiting["status"], waiting["cancellation_requested"]) == ("starting", 0)
+    upgrade = db.execute("SELECT detail FROM audit WHERE kind='database_upgraded'").fetchone()[0]
+    assert json.loads(upgrade) == {
+        "from": 12,
+        "to": SCHEMA_VERSION,
+        "kept": "hearth.db.before-v12",
+    }
+    # A store that upgraded once opens unchanged the next time.
+    Database(path).initialize()
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
