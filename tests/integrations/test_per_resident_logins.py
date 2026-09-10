@@ -15,7 +15,7 @@ from hearth.execution.context import read_context
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.integrations.codex.subscription import KIND, CodexLiveRuntime
 from hearth.integrations.codex.subscription import worker as codex_worker
-from hearth.integrations.logins import Logins
+from hearth.integrations.logins import LOGIN_REQUIRED, Logins
 from hearth.residents.memory import Memory
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
@@ -381,7 +381,9 @@ def test_a_login_taken_away_between_the_gate_and_the_launch_never_ends_the_pass(
         if run_id == raced.id:
             (directory / "auth.json").unlink()
             directory.rmdir()
-            raise Refused("codex_subscription_login_required")
+            # Exactly what a real adapter's `start` propagates from `directory_for`,
+            # asserted against the real one below.
+            raise Refused(LOGIN_REQUIRED)
         return started(run_id, instruction)
 
     runtime.start = vanishing
@@ -389,6 +391,29 @@ def test_a_login_taken_away_between_the_gate_and_the_launch_never_ends_the_pass(
     # The raced run is visibly interrupted with nothing spent, and its housemate ran.
     assert hearth.run(raced.id).status == "interrupted"
     assert hearth.run(working.id).status == "succeeded"
+
+
+def test_a_real_adapter_refuses_a_vanished_login_by_the_name_the_executor_reads(tmp_path):
+    """The one word every provider spells the same, so the executor can read it."""
+    import pytest
+
+    hearth, runtime, data, _ = household(tmp_path)
+    resident(hearth, "karen")
+    directory = seed_login(data, "karen")
+    task = hearth.submit("task-1", "karen", "Summarize", expires_at=NOW + 600)
+    run = hearth.admit(task.task_id, reserve=100_000)
+    Execution(hearth, Artifacts(data / "artifacts")).prepare_start(run.id, run.owner_token)
+    with hearth.database.transaction() as db:
+        prompt = json.dumps(
+            read_context(db, run.id, Memory(hearth).files), sort_keys=True, separators=(",", ":")
+        )
+    (directory / "auth.json").unlink()
+    directory.rmdir()
+    with pytest.raises(Refused) as error:
+        runtime.start(run.id, prompt)
+    assert error.value.code == LOGIN_REQUIRED
+    # And nothing was published for a session that was never started.
+    assert not runtime.folder(run.id).exists()
 
 
 def test_the_credentials_command_asks_the_way_the_sessions_will_be_asked(tmp_path, monkeypatch):

@@ -43,6 +43,12 @@ RESIDENT = "resident"
 HOUSEHOLD = "household"
 SCOPES = (RESIDENT, HOUSEHOLD)
 
+# What a run admitted to a resident's own login refuses with when that login is not
+# there any more. It is one word for every provider on purpose: the executor reads it
+# to tell a login that vanished under a run from anything else an adapter refuses, and
+# a third provider must not be able to spell it differently.
+LOGIN_REQUIRED = "login_required"
+
 # How stale a probe's answer may be before the next question is asked of the CLI. The
 # supervisor looks at a held run twice a second and a probe starts a provider's CLI, so
 # an answer is remembered for a while. What is *not* remembered is whether the
@@ -123,7 +129,7 @@ def directory_for(data: Path, household: Path, resident_id: str, kind: str, admi
         return Path(household)
     directory = resident_login(data, resident_id, kind)
     if directory is None:
-        raise Refused("login_required")
+        raise Refused(LOGIN_REQUIRED)
     return directory
 
 

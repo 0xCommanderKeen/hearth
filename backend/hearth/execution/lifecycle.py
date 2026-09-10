@@ -11,7 +11,7 @@ from hearth.inputs.selection import run_inputs
 from hearth.integrations import interface
 from hearth.integrations.interface import Evidence, Runtime
 from hearth.integrations.launcher import written_mounts
-from hearth.integrations.logins import RESIDENT, Logins
+from hearth.integrations.logins import LOGIN_REQUIRED, RESIDENT, Logins
 from hearth.management.authority import run_mounts
 from hearth.observation.notifications import record
 from hearth.residents.journal import JournalFiles, run_journal
@@ -385,9 +385,11 @@ class Executor:
         self.runtimes: dict[str, Runtime] = {adapter.kind: adapter for adapter in adapters}
         self.logins = logins
         # Runs this process has already written down as held, so the fact is recorded
-        # once rather than twice a second. It is deliberately process-local: a restart
-        # says it again, which is true again, and it is the one place an operator reads
-        # after a restart anyway.
+        # once rather than twice a second. Deliberately process-local, with both halves
+        # of that meant: a restart says it again, which is true again and is what an
+        # operator reads after a restart; and one run holding, being fixed and holding
+        # again inside one process says it once, because it is one run still waiting to
+        # start for one reason, not two events.
         self._announced: set[str] = set()
         self.lock_path = execution.hearth.database.path.resolve().with_suffix(".executor.lock")
 
@@ -475,7 +477,7 @@ class Executor:
                         run.id, json.dumps(context, sort_keys=True, separators=(",", ":"))
                     )
                 except Refused as error:
-                    if not error.code.endswith("login_required"):
+                    if error.code != LOGIN_REQUIRED:
                         raise
                     # The login was there when this run was gated a moment ago and is
                     # not there now: an operator took it away between the two. The
