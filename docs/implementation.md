@@ -90,7 +90,7 @@ journeys.
 | Workflow and simplicity | Full checks, fresh CLI/browser/backup rehearsal and both reviews pass | Reassess simplicity against the selected real task before expanding scope |
 | Bounded real Reader | Real subscription runs recorded (2026-09-06 demo, 2026-09-07 journal journey) | Mac isolation, exact runtime/authentication/pricing; useful output and actual read-only isolation |
 | Real recovery and daily use | Not yet demonstrated | Real cancellation/usage/restart/notification/restore, seven days and ten representative tasks, native accessibility |
-| Long-term operation | Not yet deployed | Reproducible deployment, release identity, retention and operator recovery on the intended host |
+| Long-term operation | Reproducible deployment built and run on a Linux Docker host (2026-09-10, `deploy/`, `docs/evidence/sandbox-journey-2026-09-10.json`); not deployed to the intended host | Retention and operator recovery on the intended host, and a household that is really moved there |
 
 `tests/fake_runtime.py` publishes provider-shaped receipts so the suite can exercise the
 real interpreter without a subscription. A passing suite is wiring evidence, never

@@ -21,6 +21,18 @@ does over the app-server's `dynamicTools`. The socket sits in a directory only t
 worker's user can enter, is created 0600, and every connection's peer credentials are
 checked to be that same user before a byte of it is read.
 
+**Across the sandbox boundary the split is the same and so is the check.** The shim
+runs inside the run's container, started by the CLI from the image's own interpreter,
+and the socket is bind-mounted into it at the path Hearth wrote -- which holds on a
+Linux host and not on a Mac, where a socket file cannot be bind-mounted at all
+(`docs/sandbox.md`, measurement 6). The trusted half never crosses: it stays in the
+worker, on the host, with the store. What the peer check then compares is a uid on
+either side of a namespace, so it means what it says only while the two agree on the
+number: the sandbox runs `--user <Hearth's uid>` and the container must not be started
+in a user namespace that remaps it (`docker run --userns=host` is the default; a daemon
+in `userns-remap` mode would make the session's uid something else, and the bridge
+would refuse every call rather than answer the wrong process).
+
 Nothing here decides authority. The offered tool list, the call limit and every
 refusal come from `management.bridge.authorize`, so a grant revoked mid-run is felt on
 the next call, and a run pinned without a grant (ADR 0012) reaches its own memory and
@@ -419,6 +431,16 @@ class BridgeServer:
 
     # -- lifecycle ---------------------------------------------------------
 
+    @property
+    def path(self) -> Path:
+        """The socket the session's shim connects to.
+
+        A sandboxed session reaches it because the launcher mounts this very path
+        into the container as itself, so the configuration the shim was given names
+        the same string inside and out and no translation layer can disagree with it.
+        """
+        return socket_path(self.folder)
+
     def open(self) -> None:
         self.listener = listen(socket_path(self.folder))
 
@@ -478,7 +500,10 @@ class BridgeServer:
             self._drop(next(iter(self.pending)))
         if peer_uid(connection) != os.getuid():
             # Only the user that owns the run reaches its tools, whatever the
-            # permissions elsewhere on the host happen to allow.
+            # permissions elsewhere on the host happen to allow. A sandboxed session
+            # is that same uid -- the launcher starts it as Hearth's own -- so this
+            # check holds across the boundary and is not weakened by it, as long as
+            # nothing remaps uids between the two (see this module's own docstring).
             connection.close()
             return
         connection.setblocking(False)
@@ -702,13 +727,18 @@ def pin_configuration(hearth, bound) -> dict | None:
     return pins
 
 
-def open_bridge(folder: Path, request: dict, hearth) -> BridgeServer:
+def open_bridge(folder: Path, request: dict, hearth, python: str | None = None) -> BridgeServer:
     """Everything that has to hold before a management session is launched.
 
     The tool list is read from live authority and digested; a digest that is not the
     one admission pinned means the grant, the declaration or the letter this run was
     admitted for has changed, and the run is refused here -- before the CLI is
     launched, and before a cent is spent.
+
+    `python` is the interpreter that will start the shim where the session runs: this
+    worker's own by default, and the image's when the session is a sandboxed one, in
+    which case Hearth's package is in that interpreter's own site directory. It is
+    the launcher's answer (`Placement.interpreter`) and never anything a run said.
     """
     from hearth.integrations.durable import publish
     from hearth.management.bridge import BoundRun
@@ -726,7 +756,10 @@ def open_bridge(folder: Path, request: dict, hearth) -> BridgeServer:
         raise Refused("management_configuration_changed")
     server = BridgeServer(folder, hearth=hearth, bound=bound, tools=tools, max_calls=max_calls)
     server.open()
-    publish(configuration_path(folder), configuration(sys.executable, socket_path(folder)))
+    publish(
+        configuration_path(folder),
+        configuration(python or sys.executable, socket_path(folder)),
+    )
     return server
 
 

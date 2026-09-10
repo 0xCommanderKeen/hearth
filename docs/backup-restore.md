@@ -44,7 +44,11 @@ There is intentionally no activation command or automatic hold removal.
 The restored database retains runs (including active/unknown ownership), command
 receipts, occurrence identities, usage and the inbox as it stood. This preserves
 information for reconciliation without claiming that copied execution is
-authoritative. The backup format does not include runtime credentials.
+authoritative. The backup format does not include runtime credentials -- including the
+per-resident logins that live under the data directory itself
+(`<data>/credentials/`, `docs/sandbox.md`): a backup copies `hearth.db`, `artifacts/`
+and `memory/` by name and never the tree, so a subscription never leaves the machine its
+operator seeded it on.
 Production restore requires an ownership reconciliation plan and actual host checks
 before activation.
 
@@ -54,6 +58,16 @@ artifacts, extra files, symlinks, FIFOs, traversal, busy workers and overwrite r
 An actual CLI demo → backup → restore rehearsal ran on synthetic data on 2026-09-06
 under `/private/tmp/hearth-restore-rehearsal-{source,backup,copy}`. The copy has a new
 epoch and remains held. Live disaster recovery and activation remain unproven.
+
+A store also really moved **between two burrows, both ways**, on 2026-09-10
+(`scripts/store-round-trip.py`, `docs/evidence/store-round-trip-2026-09-10.json`): a Mac
+`process` store captured on the Mac and restored and opened on a Linux Docker host,
+which answered `"sandbox": {"launcher": "container"}`; and a containerized household's
+store captured there and opened on the Mac, which answered `"launcher": "process"` with
+the run and the sandbox image pin it arrived with. Both copies came up held; neither
+carried a credential. Both sources were throwaway copies and no live household moved.
+The claim that holds is ADR 0016's: the same bytes are a household on either launcher.
+`deploy/README.md` has the commands against a containerized deployment.
 
 ## Current-schema backups
 

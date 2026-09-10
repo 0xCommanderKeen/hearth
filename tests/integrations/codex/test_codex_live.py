@@ -244,6 +244,9 @@ def test_worker_refuses_changed_persisted_launch_input(tmp_path, monkeypatch, fi
     monkeypatch.setattr(
         "hearth.integrations.codex.subscription.subprocess.Popen", unexpected_launch
     )
+    # The session itself is started through the launcher, whichever one this run was
+    # admitted under, so that is the launch the refusal has to happen before.
+    monkeypatch.setattr("hearth.integrations.launcher.subprocess.Popen", unexpected_launch)
     worker(runtime.folder(run.id))
     assert runtime.inspect(run.id).status == "unknown"
 

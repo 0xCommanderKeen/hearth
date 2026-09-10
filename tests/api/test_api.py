@@ -45,6 +45,10 @@ def test_authentication_precedes_body_parsing_and_state_reads(client):
         "runtimes": [
             {"kind": "codex_subscription", "label": "Codex subscription", "default": True}
         ],
+        # Where runs execute. On the process launcher there is nothing else to say;
+        # a sandboxed instance adds the image digest, which names bytes rather than
+        # this machine, and never the network it was told to use.
+        "sandbox": {"launcher": "process"},
     }
     assert client.get("/api/state", headers=AUTH).json()["tasks"] == []
 

@@ -26,6 +26,10 @@ Verify operational guarantees through the owning interfaces. Tests marked pendin
 | SSE gap or stale evidence | Reset snapshot / explicit unknown | `test_api.py` plus browser tests: epoch/cursor reset, unknown ownership, stale connection display |
 | Disk full or missing artifact | No false durable success | Injected write/audit failures and missing/corrupt artifact tests pass; actual-host disk exhaustion remains pending |
 | Backup and held restore | Consistent current state/files; copied work cannot execute | `test_backup.py`, `test_memory.py`, `test_skills.py` |
+| Grant names a folder nothing may reach | Refused when the grant is written, not when a run is admitted | `test_filesystem_grants.py`: the data directory, a login, the runtime socket, `/`, `/etc`, `/proc`, `/sys`, duplicates |
+| Granted folder missing at admission | The run waits; no reservation, task stays queued | `test_filesystem_grants.py`: `mount_unavailable`, then admitted once the folder is back |
+| Grant revision changes under an admitted run | The run keeps the folders it was admitted with | `test_filesystem_grants.py`: pinned `run_mounts` survive a grant that removed them |
+| A run writes into a writable folder | Recorded on the receipt and audited at settlement | `test_sandbox_mounts.py`: survey before/after, `run.mount_rw_used` from what admission pinned; kernel behaviour measured (`docs/evidence/sandbox-mounts-2026-09-09.json`) |
 
 
 Manual operator pause/resume is covered by `test_pause.py`, authenticated API tests,

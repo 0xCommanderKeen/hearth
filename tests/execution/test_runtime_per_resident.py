@@ -400,7 +400,11 @@ def test_a_second_provider_that_will_not_open_does_not_take_the_household_down(t
     with TestClient(app) as client:
         # Liveness says which brains work is handed to, and nothing about the machine
         # this instance was started on: no path, and no reason a provider refused.
-        assert client.get("/health").json() == {"service": "hearth", "runtimes": opened}
+        assert client.get("/health").json() == {
+            "service": "hearth",
+            "runtimes": opened,
+            "sandbox": {"launcher": "process"},
+        }
         # An operator whose scribe is waiting reads why behind their own token: the
         # runtime opened nowhere, and the provider's refusal says what to fix.
         health = client.get(

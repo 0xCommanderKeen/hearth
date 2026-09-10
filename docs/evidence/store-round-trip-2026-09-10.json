@@ -1,0 +1,191 @@
+{
+  "round_trip": "One store captured on one burrow and opened on the other, in both directions (ADR 0013's forward upgrade; ADR 0016's 'the same store runs on either launcher'). Both sources are throwaway copies and no live household was moved.",
+  "legs": {
+    "mac-process-capture": {
+      "host_launcher": "process",
+      "source": "/private/tmp/claude-501/-Users-miha-Life-NAS-hearth/bd5017f4-03f7-4e0d-9333-ba808a0888f3/scratchpad/mac-store",
+      "source_store": {
+        "restore_hold": false,
+        "epoch": "3d0b1d82-3c92-4394-a6c1-b609cf0b5ea8",
+        "runtime_kind": "codex_subscription",
+        "sandbox_image": null,
+        "schema_version": 13,
+        "runs": 0,
+        "credentials_present": true
+      },
+      "backup": {
+        "created_at": 1789034449,
+        "files": {
+          "hearth.db": "67d558ad6388acb546b9c85c5c6826fa5e8e7a042652a8abdace6f1c98ed3b38"
+        },
+        "format": 1,
+        "implementation_sha256": "05485878f471d088d7d77861b45e82ddfd53cf5a91f764576730b1b31f2e68fc",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 0,
+          "runs": 0,
+          "epoch": "3d0b1d82-3c92-4394-a6c1-b609cf0b5ea8"
+        }
+      },
+      "verified": {
+        "created_at": 1789034449,
+        "files": {
+          "hearth.db": "67d558ad6388acb546b9c85c5c6826fa5e8e7a042652a8abdace6f1c98ed3b38"
+        },
+        "format": 1,
+        "implementation_sha256": "05485878f471d088d7d77861b45e82ddfd53cf5a91f764576730b1b31f2e68fc",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 0,
+          "runs": 0,
+          "epoch": "3d0b1d82-3c92-4394-a6c1-b609cf0b5ea8"
+        }
+      }
+    },
+    "docker-host-restore": {
+      "host_launcher": "container",
+      "verified_on_arrival": {
+        "created_at": 1789034449,
+        "files": {
+          "hearth.db": "67d558ad6388acb546b9c85c5c6826fa5e8e7a042652a8abdace6f1c98ed3b38"
+        },
+        "format": 1,
+        "implementation_sha256": "05485878f471d088d7d77861b45e82ddfd53cf5a91f764576730b1b31f2e68fc",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 0,
+          "runs": 0,
+          "epoch": "3d0b1d82-3c92-4394-a6c1-b609cf0b5ea8"
+        }
+      },
+      "restored": {
+        "read_only": true,
+        "epoch": "51899baa-5202-4f57-a36d-79565ae1d000",
+        "source_epoch": "3d0b1d82-3c92-4394-a6c1-b609cf0b5ea8",
+        "source_schema": 13,
+        "schema": 13
+      },
+      "health": {
+        "service": "hearth",
+        "runtimes": [
+          {
+            "kind": "codex_subscription",
+            "label": "Codex subscription",
+            "default": true
+          }
+        ],
+        "sandbox": {
+          "launcher": "container"
+        }
+      },
+      "copy": {
+        "restore_hold": true,
+        "epoch": "51899baa-5202-4f57-a36d-79565ae1d000",
+        "runtime_kind": "codex_subscription",
+        "sandbox_image": null,
+        "schema_version": 13,
+        "runs": 0,
+        "credentials_present": false
+      }
+    },
+    "docker-host-capture": {
+      "host_launcher": "container",
+      "source": "/var/lib/docker/volumes/hearth-store/_data",
+      "source_store": {
+        "restore_hold": false,
+        "epoch": "6c43b522-8626-47a2-95e5-23f7c417e218",
+        "runtime_kind": "codex_subscription",
+        "sandbox_image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+        "schema_version": 13,
+        "runs": 1,
+        "credentials_present": true
+      },
+      "backup": {
+        "created_at": 1789034470,
+        "files": {
+          "artifacts/7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7.md": "4c752668a35cf88068df18b1a7ff2a3e74e58a8d553384e8593c93e7af04d710",
+          "hearth.db": "989a492ef4df4d664423dd9a51931538ebd9403a404e5d37e55cafcabde25897",
+          "memory/57e2a243-b598-5622-9d81-d7366736ac73/2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d.md": "2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d"
+        },
+        "format": 1,
+        "implementation_sha256": "9f4f5bce72f2cce60e4cc6d83ad285927c9040940e529d31152550a06866e96a",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 1,
+          "runs": 1,
+          "epoch": "6c43b522-8626-47a2-95e5-23f7c417e218"
+        }
+      },
+      "verified": {
+        "created_at": 1789034470,
+        "files": {
+          "artifacts/7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7.md": "4c752668a35cf88068df18b1a7ff2a3e74e58a8d553384e8593c93e7af04d710",
+          "hearth.db": "989a492ef4df4d664423dd9a51931538ebd9403a404e5d37e55cafcabde25897",
+          "memory/57e2a243-b598-5622-9d81-d7366736ac73/2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d.md": "2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d"
+        },
+        "format": 1,
+        "implementation_sha256": "9f4f5bce72f2cce60e4cc6d83ad285927c9040940e529d31152550a06866e96a",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 1,
+          "runs": 1,
+          "epoch": "6c43b522-8626-47a2-95e5-23f7c417e218"
+        }
+      }
+    },
+    "mac-process-restore": {
+      "host_launcher": "process",
+      "verified_on_arrival": {
+        "created_at": 1789034470,
+        "files": {
+          "artifacts/7a600842-91b4-4d0e-a4c0-ff2eb2f9cff7.md": "4c752668a35cf88068df18b1a7ff2a3e74e58a8d553384e8593c93e7af04d710",
+          "hearth.db": "989a492ef4df4d664423dd9a51931538ebd9403a404e5d37e55cafcabde25897",
+          "memory/57e2a243-b598-5622-9d81-d7366736ac73/2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d.md": "2ca85a8a6369b938c6edf248db0dd39731783fed83cdaea0dc49ae3ff2f9845d"
+        },
+        "format": 1,
+        "implementation_sha256": "9f4f5bce72f2cce60e4cc6d83ad285927c9040940e529d31152550a06866e96a",
+        "release": "0.1.0",
+        "schema": 13,
+        "verified": {
+          "artifacts": 1,
+          "runs": 1,
+          "epoch": "6c43b522-8626-47a2-95e5-23f7c417e218"
+        }
+      },
+      "restored": {
+        "read_only": true,
+        "epoch": "d3830b7e-659f-4cbb-a35b-393f1c6b91d5",
+        "source_epoch": "6c43b522-8626-47a2-95e5-23f7c417e218",
+        "source_schema": 13,
+        "schema": 13
+      },
+      "health": {
+        "service": "hearth",
+        "runtimes": [
+          {
+            "kind": "codex_subscription",
+            "label": "Codex subscription",
+            "default": true
+          }
+        ],
+        "sandbox": {
+          "launcher": "process"
+        }
+      },
+      "copy": {
+        "restore_hold": true,
+        "epoch": "d3830b7e-659f-4cbb-a35b-393f1c6b91d5",
+        "runtime_kind": "codex_subscription",
+        "sandbox_image": "sha256:3d98838f5eba82cc3ad825256bfb0a88d608ba765bdec99c3007f25462067b60",
+        "schema_version": 13,
+        "runs": 1,
+        "credentials_present": false
+      }
+    }
+  }
+}

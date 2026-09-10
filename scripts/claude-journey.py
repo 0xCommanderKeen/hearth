@@ -24,6 +24,15 @@ need is the operator's own one-off step -- see `docs/claude-runtime.md`.
         --claude-config-dir ~/private-claude-config \\
         --codex-binary /path/to/codex --codex-auth-home /path/to/codex-home \\
         --data /tmp/hearth-journey --out docs/evidence/claude-journey-<date>.json
+
+The same three runs are the sandbox's journey too (#186): set `HEARTH_SANDBOX=container`
+with an image and a network in the environment, and every session runs inside a
+container of its own, with the evidence recording each one's container id and image
+digest beside Hearth's settlement. That has to be a Linux Docker host -- the store's pin
+is the sha256 of the CLI Hearth was configured with, and the image's copy is hashed
+against it -- and the login it needs is the Linux one, a `.credentials.json` in the
+configuration directory rather than a Keychain item. `docs/sandbox.md` has the harness
+and the operator's one-off step.
 """
 
 import argparse
@@ -31,6 +40,7 @@ import json
 import os
 import secrets
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -124,11 +134,16 @@ def cli_numbers(data: Path) -> dict:
                 continue
             if event.get("type") == "result":
                 result = event
+        handle = folder / "handle.json"
         reported[folder.name] = {
             "exit_code": receipt.get("exit_code"),
             "cancelled": receipt.get("cancelled"),
             "launched": receipt.get("launched"),
             "management": receipt.get("management"),
+            # Where the session ran, and what its worker wrote down about what it
+            # started. Absent on a run that was a child of its worker.
+            "sandbox": receipt.get("sandbox"),
+            "handle": json.loads(handle.read_text()) if handle.is_file() else None,
             "result": result
             and {
                 key: result.get(key)
@@ -163,9 +178,11 @@ def main() -> None:
     instance = Instance(f"http://127.0.0.1:{args.port}")
     server = subprocess.Popen(
         [
-            "uv",
-            "run",
-            "--frozen",
+            # This interpreter, not `uv`: the journey runs from the checkout on a
+            # laptop and from inside a container on a burrow, and only one of those
+            # has uv on its path.
+            sys.executable,
+            "-m",
             "uvicorn",
             "hearth.app:from_env",
             "--factory",
@@ -176,6 +193,7 @@ def main() -> None:
         ],
         env=os.environ
         | {
+            "PYTHONPATH": str(Path(__file__).resolve().parent.parent / "backend"),
             "HEARTH_DATA": str(args.data),
             "HEARTH_OPERATOR_TOKEN": TOKEN,
             "HEARTH_CODEX_BINARY": str(args.codex_binary),
@@ -202,6 +220,10 @@ def main() -> None:
 
         record["health"] = wait_for(alive, "the instance to open", timeout=180)
         print("health:", json.dumps(record["health"]))
+        # Where this instance runs its sessions, from the instance itself rather than
+        # from what the environment said: `process` on a laptop, `container` with the
+        # image digest on a burrow (`docs/sandbox.md`).
+        record["launcher"] = record["health"].get("sandbox", {"launcher": "process"})
         if "claude_subscription" not in {row["kind"] for row in record["health"]["runtimes"]}:
             # Why it did not open is behind the operator's token, which this script holds.
             record["health"] = instance.call("/api/health")
@@ -326,22 +348,90 @@ def main() -> None:
             print("no evidence written: the journey did not reach a run")
 
 
+def sandbox_facts(data: Path) -> list[dict]:
+    """What the store recorded about the sandbox itself, read after the server stops."""
+    import sqlite3
+
+    # `as_uri` because a data directory is the operator's own path and may hold a
+    # space, a `?` or a `#`, none of which a URI reads as part of a filename.
+    db = sqlite3.connect((data / "hearth.db").as_uri() + "?mode=ro", uri=True)
+    try:
+        db.row_factory = sqlite3.Row
+        return [dict(row) for row in db.execute("SELECT * FROM audit WHERE kind LIKE 'sandbox.%'")]
+    finally:
+        db.close()
+
+
+def containers(sessions: dict) -> dict:
+    """What the daemon still holds of this journey's own containers, by id.
+
+    A sandbox is one container per run and it ends when its receipt is written, so the
+    honest answer here is that none of them is left -- but "absent" has to be a daemon
+    saying so. The client and the daemon are named the way the launcher names them
+    (`HEARTH_SANDBOX_DOCKER`, `HEARTH_SANDBOX_DOCKER_HOST`), because a question asked
+    of the wrong daemon answers "absent" about every container without having looked,
+    and this file would then claim nothing was left running.
+    """
+    client = os.environ.get("HEARTH_SANDBOX_DOCKER") or "docker"
+    host = os.environ.get("HEARTH_SANDBOX_DOCKER_HOST") or None
+    answers: dict[str, str] = {}
+    for run, session in sessions.items():
+        identity = (session.get("sandbox") or {}).get("container_id")
+        if identity is None:
+            continue
+        argv = [client, *(("--host", host) if host else ()), "inspect"]
+        try:
+            result = subprocess.run(
+                [*argv, "--type", "container", "--format", "{{.State.Status}}", identity],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            # The client itself could not be run. That is not an answer about the
+            # container, and it must not read as one.
+            answers[run] = "unasked: " + type(error).__name__
+            continue
+        answers[run] = result.stdout.strip() if result.returncode == 0 else "absent"
+    return answers
+
+
+def gathered(what: str, answer) -> object:
+    """One part of the record, or why there is none of it.
+
+    This journey has already spent real money by the time any of this is read, so
+    nothing gathered afterwards may take the evidence file down with it: a store that
+    will not open or a container client that is not there is written down as that,
+    and the runs and their settlement are still recorded.
+    """
+    try:
+        return answer()
+    except Exception as error:  # noqa: BLE001 - the failure is the answer here
+        print(f"could not read {what}:", error)
+        return {"unread": f"{type(error).__name__}: {error}"}
+
+
 def write_evidence(record: dict, args) -> None:
     """The record, with the CLI's own numbers beside Hearth's, as the evidence file."""
-    if True:
-        record["cli"] = cli_numbers(args.data)
-        record["total_cost_microdollars"] = sum(
-            row["actual_cost"] or 0 for row in record.get("runs", [])
-        )
-        record["limits"] = (
-            "Three bounded runs on fictional notes. This records that a resident declared "
-            "onto the Claude subscription completed real work, wrote its own journal over "
-            "the bridge, was read back by its next run, and settled against the CLI's own "
-            "reported cost. It is not evidence of model quality, daily adoption or anything "
-            "about real sources."
-        )
-        args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
-        print("wrote", args.out)
+    record["cli"] = gathered("the receipts", lambda: cli_numbers(args.data))
+    record["sandbox_audit"] = gathered("the sandbox audit", lambda: sandbox_facts(args.data))
+    record["containers_afterwards"] = gathered(
+        "the containers afterwards",
+        lambda: containers(record["cli"] if isinstance(record["cli"], dict) else {}),
+    )
+    record["total_cost_microdollars"] = sum(
+        row["actual_cost"] or 0 for row in record.get("runs", [])
+    )
+    record["limits"] = (
+        "Three bounded runs on fictional notes. This records that a resident declared "
+        "onto the Claude subscription completed real work, wrote its own journal over "
+        "the bridge, was read back by its next run, and settled against the CLI's own "
+        "reported cost. It is not evidence of model quality, daily adoption or anything "
+        "about real sources."
+    )
+    args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+    print("wrote", args.out)
 
 
 if __name__ == "__main__":

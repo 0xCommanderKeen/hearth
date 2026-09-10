@@ -13,7 +13,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 import pytest
-from hearth.integrations.claude.config import KIND, VERSION, budget, session_command
+from hearth.integrations.claude.config import (
+    CREDENTIALS,
+    KIND,
+    VERSION,
+    budget,
+    session_command,
+)
 from hearth.integrations.claude.pricing import MODEL, PRICE_SCHEDULE
 from hearth.integrations.claude.subscription import ClaudeLiveRuntime, encode, worker
 from hearth.integrations.codex.usage import UsageBinding
@@ -65,7 +71,22 @@ def fake_cli(path: Path, *, fixture="success", pause=0.0, version=VERSION) -> Pa
     return path
 
 
-def prepared(tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=False):
+def login(path: Path) -> Path:
+    """A configuration directory with a login in it, as one looks on Linux.
+
+    The file is what a sandboxed session is given -- the household's credential, bind
+    mounted read-only inside a configuration directory of the run's own -- and its
+    name is the one measured against the pinned CLI's Linux build
+    (`docs/claude-runtime.md`, spike 8). Nothing in it is a credential.
+    """
+    path.mkdir()
+    (path / CREDENTIALS).write_text("synthetic-only")
+    return path
+
+
+def prepared(
+    tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=False, sandbox=None
+):
     """A store with one admitted run, started, its worker left for the test to drive.
 
     `start` really publishes the request and takes the folder's lock; only the
@@ -82,14 +103,13 @@ def prepared(tmp_path, *, fixture="success", pause=0.0, reserve=100_000, detach=
     from hearth.work.service import Hearth
 
     data = tmp_path / "data"
-    config_dir = tmp_path / "private-claude-config"
-    config_dir.mkdir()
+    config_dir = login(tmp_path / "private-claude-config")
     binary = fake_cli(tmp_path / "claude", fixture=fixture, pause=pause)
     database = Database(data / "hearth.db")
     database.initialize()
     with database.transaction(write=True) as db:
         db.execute("UPDATE system_meta SET value=? WHERE key='runtime_kind'", (KIND,))
-    runtime = ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir)
+    runtime = ClaudeLiveRuntime(data, binary=binary, config_dir=config_dir, sandbox=sandbox)
     hearth = Hearth(database)
     hearth.save_resident(
         "reader", Declaration("Reader", "Synthetic notes", 10_000_000), expected_revision=0
@@ -325,8 +345,15 @@ def test_the_worker_refuses_a_changed_persisted_launch_input(tmp_path, monkeypat
     value[field] = "changed"
     path.write_text(json.dumps(value))
     launched = []
+    # Both spawns: the adapter's own detach of the worker, and -- through whichever
+    # launcher this run was admitted under -- the session itself, which is the launch
+    # the refusal has to happen before.
     monkeypatch.setattr(
         "hearth.integrations.claude.subscription.subprocess.Popen",
+        lambda *a, **kw: launched.append(a),
+    )
+    monkeypatch.setattr(
+        "hearth.integrations.launcher.subprocess.Popen",
         lambda *a, **kw: launched.append(a),
     )
     worker(runtime.folder(run.id))

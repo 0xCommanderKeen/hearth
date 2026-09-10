@@ -32,6 +32,27 @@ operation receipts. `POST /api/management/bootstrap` performs explicit setup.
 its exact `expected_revision`. Conflicts retain the browser draft until explicit
 reload. Held restores expose this state read-only.
 
+## Folders a resident reaches
+
+A grant also says what its resident reaches on disk: `mounts`, at most sixteen entries
+of `{name, host_path, mode}`, read-only unless the mode is `rw`. This half of the grant
+is not gated by `enabled` -- reaching a folder is not a management tool, and a resident
+holding no management authority at all may still be given one to read.
+
+A path is refused when the grant is written, with `grant_mount_forbidden`: a relative or
+unnormalised path; `/`, `/etc`, `/proc`, `/sys`; anything that contains or is contained
+by Hearth's own data directory, a runtime's login directory or the container runtime's
+socket; and a name or a path two mounts share. Admission resolves the list into the
+run's own `run_mounts` at the grant's revision, so a revision that removes a folder
+removes it from the next run and never from one already admitted, and a folder the host
+does not have makes the run wait (`mount_unavailable`) rather than fail. Inside a
+sandbox each is a bind mount at `/mounts/<name>`; on the process launcher the session
+reaches the host path itself and the run still records what it was granted. Granting a
+writable folder is audited `grant.mount_rw_granted`, and a run seen to have written into
+one is audited `run.mount_rw_used` when it settles. What the household keeps -- memory,
+journal, letters, work -- is still written only through the tools, in one audited
+transaction in the worker. `docs/sandbox.md` has the whole seam and its measurements.
+
 ## Run authority and transactions
 
 Admission pins an immutable grant revision/digest and a ten-minute expiry separately

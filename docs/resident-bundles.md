@@ -21,7 +21,11 @@ management: grant policy | null                              # informational; ne
 Skill and input-set identities are per-database UUIDs, so a bundle embeds their exact
 content together with the content digest the catalog already records
 (`skill_revisions.sha256`, `input_revisions.sha256`). Left out on purpose: runs, tasks,
-artifacts, usage, audit, lifecycle state, operation receipts, skill validation evidence.
+artifacts, usage, audit, lifecycle state, operation receipts, skill validation evidence,
+and the resident's provider login -- not the credential, not the directory, not even the
+fact that the exporting household gave it one. A login is a file on one machine, and the
+household that imports a resident decides whose subscription its work spends
+(`docs/sandbox.md`).
 Imported skills therefore arrive as unvalidated catalog entries. A resident with more than
 one routine cannot be exported; provisioning accepts one.
 

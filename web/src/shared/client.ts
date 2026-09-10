@@ -297,6 +297,10 @@ export type Resident = InputProvenance & {
   letters_accept?: number | boolean;
   skills?: AssignedSkill[];
   skills_error?: string | null;
+  /** Whose provider login this resident's work spends, per runtime kind: `resident`
+   * for a login of its own under the data directory, `household` for the one every
+   * other resident uses. A kind this household is not configured for is absent. */
+  logins?: Record<string, string>;
 };
 export type ResidentLifecycle = {
   resident_id: string;
@@ -542,6 +546,13 @@ export type Run = InputProvenance & {
     reason: string;
     details: Record<string, unknown>;
   }[];
+  /** What this run could reach on disk, exactly as admission pinned it. `path` is
+   * where the folder is inside a sandbox; a run that was not sandboxed reached the
+   * host path itself. */
+  mounts?: (GrantMount & { path: string })[];
+  /** Whose provider login this run spent, pinned at admission: `resident` or
+   * `household`. Absent on a run admitted before a resident could have one. */
+  login_scope?: string;
 };
 /** Which brains this household has, and what every kind a run may carry is called.
  *
@@ -667,6 +678,16 @@ export type ManagementCapability =
   | "manage_lifecycle"
   | "assign_skills"
   | "writable_memory";
+/** One folder this resident's runs reach, and how far into it they may go.
+ *
+ * Read-only unless the grant says `rw`. Where it is, is a host path an operator
+ * writes; what it is called is how the run's own context names it.
+ */
+export type GrantMount = {
+  name: string;
+  host_path: string;
+  mode: "ro" | "rw";
+};
 export type ManagementGrant = {
   resident_id: string;
   revision: number;
@@ -674,6 +695,7 @@ export type ManagementGrant = {
   profiles: string[];
   input_set_ids: string[];
   capabilities: ManagementCapability[];
+  mounts: GrantMount[];
   max_residents: number;
   max_daily_limit: number;
   max_reserve: number;

@@ -1,0 +1,169 @@
+#!/bin/sh
+# The packet filter that makes `hearth-egress` the sandbox's only network.
+#
+# ADR 0016 says a session's egress is the provider and nothing else, and that Hearth
+# does not trust the network's name for it: `integrations/fence.py` measures what a
+# container on this network can really reach, and an instance whose fence does not hold
+# refuses `sandbox_network_open` and does not open. This script is the other half --
+# what an operator installs so that the measurement passes.
+#
+# What it does, keyed to the sandbox network's subnet and nothing else on the host:
+#
+#   * every private destination is dropped -- RFC 1918, the link-local range and the
+#     carrier-grade range Tailscale uses. That covers Hearth's own network, every
+#     other container on this daemon, the LAN and the host's own addresses on it.
+#   * the host itself is dropped, which needs a rule in `INPUT` as well: a container
+#     reaching its own gateway is not forwarded traffic and `DOCKER-USER` never sees it.
+#   * everything else is left alone, which is the public internet, which is the
+#     provider.
+#
+# **What this is not.** It is not an allowlist of the provider's own addresses. The
+# provider is behind a CDN whose addresses rotate, so a list of them is a fence that
+# breaks on somebody else's deploy; expressing "the provider and nothing else" exactly
+# needs an egress proxy the CLIs are pointed at, which is not built here. What is built
+# here, and what Hearth measures, is "nothing of this house". `docs/sandbox.md` says so
+# in the same words, and the ADR's own Measured section records the difference.
+#
+# DROP, never REJECT --reject-with tcp-reset: a reset is a packet that arrived, Hearth's
+# probe reads it as `refused`, and `refused` is not a fence holding.
+#
+# **This fence is IPv4 and only IPv4.** `ip6tables` is never touched here, and Hearth's
+# own probe cannot name an IPv6 address either (`host:port` cannot hold one
+# unambiguously), so on a sandbox network created with `--ipv6` a session would have an
+# unmeasured v6 path to this host and this LAN while the measurement said the fence
+# held. That is the one way an open fence reads as holding, so: **do not enable IPv6 on
+# `hearth-egress`.** Docker does not by default. An operator who needs it has to fence
+# v6 here and give Hearth a way to measure it, and neither exists yet.
+#
+# Usage (on a Linux host, as root):
+#
+#     deploy/fence.sh apply           # install the rules
+#     deploy/fence.sh show            # what is installed
+#     deploy/fence.sh remove          # take them out again
+#
+# On Docker Desktop the rules live inside its Linux VM, and the way in is a privileged
+# container on the host network -- see `deploy/README.md`.
+#
+# Environment:
+#
+#     HEARTH_EGRESS_SUBNET    the sandbox network's subnet (compose fixes it)
+#     HEARTH_EGRESS_RESOLVER  an address to let DNS through to, when the daemon's
+#                             embedded resolver forwards from inside the container's
+#                             own namespace. Docker Desktop does (measured: without
+#                             this every name answered `unresolved`); most Linux hosts
+#                             forward from the host's namespace and need nothing here.
+
+set -eu
+
+SUBNET=${HEARTH_EGRESS_SUBNET:-172.31.240.0/24}
+RESOLVER=${HEARTH_EGRESS_RESOLVER:-}
+PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
+
+# Both values are spliced into an argument list, so they are held to a shape first.
+# Nothing a resident says reaches here -- these are the operator's own `.env` -- but a
+# value carrying a space would be word-split into extra arguments and become a rule
+# nobody wrote, which is the opposite of a fence somebody can read back.
+#
+# A `case` glob is not enough for this: every one of its wildcards matches a space, so
+# `10.0.0.0/24 -j ACCEPT` would pass one. Each field is checked on its own instead,
+# which is also what makes "no spaces" true rather than hoped for.
+digits() {
+    case "$1" in
+    "" | *[!0-9]*) return 1 ;;
+    esac
+    [ "$1" -le "$2" ]
+}
+
+address() {
+    # Exactly four dot-separated numbers, each 0-255, and nothing else in the string.
+    set -- $(printf '%s' "$1" | tr '.' ' ') # deliberately unquoted: this is the split
+    [ $# -eq 4 ] || return 1
+    for part in "$@"; do
+        digits "$part" 255 || return 1
+    done
+}
+
+network=${SUBNET%/*}
+prefix=${SUBNET#*/}
+if [ "$network" = "$SUBNET" ] || ! address "$network" || ! digits "$prefix" 32; then
+    echo "HEARTH_EGRESS_SUBNET must be an IPv4 network, e.g. 172.31.240.0/24" >&2
+    exit 2
+fi
+if [ -n "$RESOLVER" ] && ! address "$RESOLVER"; then
+    echo "HEARTH_EGRESS_RESOLVER must be an IPv4 address, or unset" >&2
+    exit 2
+fi
+
+# Docker's own chains are in whichever iptables variant Docker used, and a host may
+# have both. The one that has `DOCKER-USER` is the one that is live.
+iptables=""
+for candidate in iptables-legacy iptables-nft iptables; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+        "$candidate" -S DOCKER-USER >/dev/null 2>&1; then
+        iptables=$candidate
+        break
+    fi
+done
+if [ -z "$iptables" ]; then
+    echo "no iptables with a DOCKER-USER chain here; is this the Docker host?" >&2
+    exit 1
+fi
+
+# Every rule this script owns, as arguments, most specific first. `apply` inserts them
+# in reverse so they end up in this order; `remove` deletes them. Both are idempotent,
+# because every rule is deleted before it is inserted.
+#
+# What neither can do is find a rule this environment does not describe: the list is
+# built from `$SUBNET` and `$RESOLVER` as they are *now*, so an operator who changes
+# either and then runs `remove` leaves the previous fence in place. Take the old one out
+# before changing them, or read `show` and delete what is left by hand.
+rules() {
+    if [ -n "$RESOLVER" ]; then
+        # The daemon's own resolver, for name lookups and nothing else. A session that
+        # cannot resolve the provider cannot reach it, and Hearth would refuse.
+        echo "DOCKER-USER -s $SUBNET -d $RESOLVER -p udp --dport 53 -j RETURN"
+        echo "DOCKER-USER -s $SUBNET -d $RESOLVER -p tcp --dport 53 -j RETURN"
+        echo "INPUT -s $SUBNET -d $RESOLVER -p udp --dport 53 -j ACCEPT"
+        echo "INPUT -s $SUBNET -d $RESOLVER -p tcp --dport 53 -j ACCEPT"
+    fi
+    for destination in $PRIVATE; do
+        echo "DOCKER-USER -s $SUBNET -d $destination -j DROP"
+    done
+    # The host's own addresses, which forwarded traffic never passes through.
+    echo "INPUT -s $SUBNET -j DROP"
+}
+
+remove() {
+    rules | while read -r chain arguments; do
+        # shellcheck disable=SC2086
+        while "$iptables" -D "$chain" $arguments 2>/dev/null; do :; done
+    done
+}
+
+apply() {
+    remove
+    # Reverse, because each is inserted at the top of its chain.
+    rules | sed '1!G;h;$!d' | while read -r chain arguments; do
+        # shellcheck disable=SC2086
+        "$iptables" -I "$chain" 1 $arguments
+    done
+}
+
+case "${1:-}" in
+apply)
+    apply
+    echo "fence applied for $SUBNET with $iptables"
+    ;;
+remove)
+    remove
+    echo "fence removed for $SUBNET with $iptables"
+    ;;
+show)
+    "$iptables" -S DOCKER-USER
+    "$iptables" -S INPUT
+    ;;
+*)
+    echo "usage: $0 apply|remove|show" >&2
+    exit 2
+    ;;
+esac

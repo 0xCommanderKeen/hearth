@@ -30,6 +30,7 @@ import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
 import {
   configuredKinds,
+  providerName,
   resultEyebrow,
   runtimeLabel,
   runtimeNames,
@@ -861,6 +862,22 @@ export function App() {
                         ? " · the household default"
                         : ""}
                     </dd>
+                    {/* Whose subscription this resident's work spends, provider by
+                        provider. A resident with a login of its own is on different
+                        money from the rest of the household. */}
+                    <dt>Provider login</dt>
+                    <dd aria-label="Provider login">
+                      {configuredKinds(snapshot.runtimes)
+                        .map(
+                          (kind) =>
+                            `${providerName(snapshot.runtimes, kind)}: ${
+                              current.logins?.[kind] === "resident"
+                                ? "its own login"
+                                : "the household login"
+                            }`,
+                        )
+                        .join(" · ")}
+                    </dd>
                     <dt>Declaration</dt>
                     <dd>Revision {current.revision}</dd>
                     <dt>Memory</dt>
@@ -999,6 +1016,33 @@ export function App() {
                               </small>
                             )}
                             {run && <RunInputs run={run} />}
+                            {!!run?.mounts?.length && (
+                              <div aria-label="Folders reached by run">
+                                <small>
+                                  Folders reached · as this run was admitted
+                                </small>
+                                <ul>
+                                  {run.mounts.map((mount) => (
+                                    <li key={mount.name}>
+                                      {mount.name} ·{" "}
+                                      {mount.mode === "rw"
+                                        ? "writable"
+                                        : "read only"}
+                                      <small>
+                                        {mount.path} → {mount.host_path}
+                                      </small>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {run?.login_scope && (
+                              <small aria-label="Login this run spent">
+                                {run.login_scope === "resident"
+                                  ? "Spent this resident's own provider login"
+                                  : "Spent the household's provider login"}
+                              </small>
+                            )}
                             {run?.management && (
                               <p aria-label="Management authority used by run">
                                 Management grant revision{" "}

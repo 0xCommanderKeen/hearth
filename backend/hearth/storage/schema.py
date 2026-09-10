@@ -7,6 +7,17 @@ ship. The simulated ones are history a forward-upgraded store may still carry, a
 run's own pin is the honest record of where its work happened.
 See `database.HISTORICAL_RUNTIME_KINDS`.
 
+`run_mounts` is what a run could reach on disk: the mounts its resident's grant held at
+the revision admission pinned, in the order the grant listed them, so a finished run says
+what it could see whether or not it executed inside a sandbox
+(`docs/adr/0016-sandbox-per-run.md`). A run with no filesystem grant has no rows here.
+
+`runs.login_scope` is which provider login the run was admitted to spend: the
+resident's own directory under `credentials/`, or the household's
+(`docs/adr/0016-sandbox-per-run.md`). It is resolved once, at admission, and a run
+keeps it whatever is seeded or taken away afterwards. Every run that predates the
+column spent the household's, which is what the upgrade fills.
+
 `declarations.runtime` is the runtime one resident's work is admitted to, null for a
 resident that follows the store's default (`system_meta.runtime_kind`). It carries no
 CHECK: a store upgraded forward may hold a kind a later release retired, and refusing
@@ -144,6 +155,12 @@ SCHEMA = (
     """CREATE TABLE run_skill_sets (
         run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
         revision INTEGER NOT NULL, count INTEGER NOT NULL, sha256 TEXT NOT NULL
+    )""",
+    """CREATE TABLE run_mounts (
+        run_id TEXT NOT NULL REFERENCES runs(id), position INTEGER NOT NULL,
+        grant_revision INTEGER NOT NULL, name TEXT NOT NULL, host_path TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('ro','rw')),
+        PRIMARY KEY(run_id,position), UNIQUE(run_id,name)
     )""",
     """CREATE TABLE run_skills (
         run_id TEXT NOT NULL REFERENCES run_skill_sets(run_id), position INTEGER NOT NULL,
@@ -350,6 +367,7 @@ SCHEMA = (
         runtime_kind TEXT NOT NULL CHECK(runtime_kind IN ('inline_mock','process_mock','codex_mock','codex_subscription','claude_subscription')),
         runtime_version INTEGER NOT NULL CHECK(runtime_version = 1),
         input_digest TEXT NOT NULL,
+        login_scope TEXT NOT NULL DEFAULT 'household' CHECK(login_scope IN ('resident','household')),
         FOREIGN KEY(resident_id,resident_revision) REFERENCES declarations(resident_id,revision)
     )""",
     """CREATE TABLE system_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)""",

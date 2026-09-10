@@ -76,6 +76,22 @@ provider's own reason. The store's own default has to open or Hearth refuses to
 start; a second runtime that will not open leaves the household running and only
 its own residents' runs waiting.
 
+Where those sessions execute is `HEARTH_SANDBOX`: `process` (the default) runs the CLI
+as a child of Hearth's worker, which is what a development host does, and `container`
+runs it inside a container created for that run, from the image
+`HEARTH_SANDBOX_IMAGE` pins by digest on the network `HEARTH_SANDBOX_NETWORK`, reached
+through the client `HEARTH_SANDBOX_DOCKER` names and, where the daemon is not the
+client's own default, `HEARTH_SANDBOX_DOCKER_HOST`. See
+[the sandbox](docs/sandbox.md) for what it pins, what it refuses and what a real
+container runtime was measured to do with it.
+
+On a server that is a whole deployment rather than two variables: `deploy/` holds
+Hearth's own image, the sandbox image, one compose file and the packet filter that makes
+the sandbox network what it claims to be, and [its runbook](deploy/README.md) is the
+order to do them in. There, `HEARTH_SANDBOX_SHUT` and `HEARTH_SANDBOX_OPEN` name what a
+session must not and must be able to reach, and Hearth measures it from inside that
+network at every start rather than taking the network's name for it.
+
 Use `HEARTH_DATA` to select a separate data directory; the default is `.hearth/local`.
 For browser development, `pnpm dev` from `web/` proxies its `/api` requests to the
 same local backend. Continuous integration has no subscription, so the test suite

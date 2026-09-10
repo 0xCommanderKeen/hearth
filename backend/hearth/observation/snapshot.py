@@ -9,7 +9,8 @@ from hearth.authority.household import household_state
 from hearth.inputs.selection import input_summary
 from hearth.integrations.interface import RUNTIMES, live_kinds
 from hearth.integrations.interface import label as runtime_label
-from hearth.management.authority import management_summary
+from hearth.integrations.logins import scopes
+from hearth.management.authority import management_summary, mount_summary
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
 from hearth.residents.memory import run_memory_writes
@@ -36,6 +37,10 @@ def snapshot(hearth: Hearth) -> dict:
         now = int(hearth.clock())
         epoch = db.execute("SELECT value FROM system_meta WHERE key = 'epoch'").fetchone()[0]
         cursor = db.execute("SELECT COALESCE(MAX(sequence), 0) FROM audit").fetchone()[0]
+        # Which brains this household has, read once for the whole projection: each
+        # resident is shown whose login it is on for each of them.
+        configured = [kind for kind in live_kinds() if configured_runtime(db, kind)]
+        data = hearth.database.path.parent
         residents = []
         budget_days = []
         for row in db.execute("""SELECT r.id, r.revision, d.name, d.purpose, d.daily_limit,
@@ -68,6 +73,11 @@ def snapshot(hearth: Hearth) -> dict:
             ).fetchone()[0]
             resident["profile"] = profile_summary(db, row["id"])
             resident["management"] = management_summary(db, row["id"])
+            # Whose provider login this resident's work spends, per runtime kind: its
+            # own directory under `credentials/`, or the household's
+            # (`docs/adr/0016-sandbox-per-run.md`). Read from disk, because that is
+            # where an operator puts a login and where Hearth reads it at admission.
+            resident["logins"] = scopes(data, row["id"], configured)
             active = db.execute(
                 f"SELECT status FROM runs WHERE resident_id = ? AND status IN {ACTIVE_RUNS}",
                 (row["id"],),
@@ -101,7 +111,7 @@ def snapshot(hearth: Hearth) -> dict:
             dict(row)
             for row in db.execute(f"""SELECT runs.id AS id, task_id, resident_id,
                    resident_revision, status, reserved, budget_day, budget_timezone,
-                   runtime_kind, runtime_version, input_digest,
+                   runtime_kind, runtime_version, input_digest, login_scope,
                    -- The run's own price pin, joined once: what a run was priced under
                    -- is what the operator is shown beside its cost, and whether it was
                    -- priced at all is what decides the usage source below.
@@ -129,6 +139,10 @@ def snapshot(hearth: Hearth) -> dict:
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
             run["management"] = management_summary(db, run["id"], run=True)
+            # What this run could reach on disk, as it was admitted: an operator reads
+            # a resident's reach off a finished run, not off configuration that has
+            # moved on since (`docs/adr/0016-sandbox-per-run.md`).
+            run.update(mount_summary(db, run["id"]))
             # What the run opened with and what it wrote, never who claimed to.
             run.update(run_journal_summary(db, run["id"]))
             run["memory_written"] = run_memory_writes(db, run["id"])
@@ -158,7 +172,7 @@ def snapshot(hearth: Hearth) -> dict:
             # (`docs/adr/0015-runtime-per-resident.md`).
             "runtimes": {
                 "default": default_runtime(db),
-                "configured": [kind for kind in live_kinds() if configured_runtime(db, kind)],
+                "configured": configured,
                 "kinds": {
                     kind: {"label": runtime_label(kind), "live": spec.live}
                     for kind, spec in RUNTIMES.items()

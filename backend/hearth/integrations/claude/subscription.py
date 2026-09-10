@@ -24,6 +24,7 @@ from pathlib import Path
 
 from hearth.integrations.claude.config import (
     BINARY_PIN,
+    CREDENTIALS,
     KIND,
     MODEL,
     PROBE_TIMEOUT,
@@ -48,12 +49,30 @@ from hearth.integrations.durable import (
     unique_object,
 )
 from hearth.integrations.interface import Evidence
+from hearth.integrations.launcher import (
+    CONTAINER,
+    IMAGE_PIN,
+    LOGIN,
+    Sandbox,
+    check_image,
+    discard,
+    granted,
+    sandboxed,
+    surveyed,
+    used,
+    written_handle,
+)
+from hearth.integrations.logins import HOUSEHOLD, directory_for, spent
+from hearth.management.authority import admitted_mounts
 from hearth.residents.models import Refused, identifier
 from hearth.storage.database import Database
 from hearth.work.service import Hearth, _audit, spend_fence
 
 # The whole of one native receipt. There is no separate final-message file: the
-# session's answer is inside the stream, in the CLI's own `result` event.
+# session's answer is inside the stream, in the CLI's own `result` event. `sandbox`
+# joins them where a run has one to name, and is absent from every receipt written
+# before this seam existed (`docs/adr/0016-sandbox-per-run.md`) and from one a session
+# that was never launched left behind, which ran nowhere at all.
 RECEIPT = {"kind", "binding", "binary", "stdout", "exit_code", "cancelled", "launched"}
 # What a session that carried Hearth's own tools records beside the stream: the pins
 # it was launched under, and the code that ended its bridge if anything did. The calls
@@ -133,9 +152,12 @@ def valid_management(value) -> bool:
 def encode(receipt, expected):
     if (
         not isinstance(receipt, dict)
-        or set(receipt) not in (RECEIPT, RECEIPT | {"management"})
+        or not RECEIPT <= set(receipt)
+        or not set(receipt) <= RECEIPT | {"management", "sandbox", "login_scope"}
         or receipt["kind"] != KIND
         or receipt["binding"] != asdict(expected)
+        or not sandboxed(receipt.get("sandbox"))
+        or not spent(receipt.get("login_scope"))
     ):
         raise Refused("run_usage_invalid")
     raw = serialized(receipt)
@@ -167,20 +189,87 @@ def encode(receipt, expected):
     return raw, digest, Evidence("cancelled" if receipt["cancelled"] else "failed", cost=cost)
 
 
+def ask(binary: Path | None, directory: Path, *arguments: str) -> str:
+    """Ask the pinned CLI one question about one configuration directory.
+
+    A CLI that cannot answer is not configured. The exit code is deliberately not read:
+    `auth status --json` prints its answer and **exits 1** when the configured
+    directory holds no login (measured on the pinned 2.1.263 and on 2.1.265), so
+    treating a non-zero exit as a broken installation would tell an operator whose
+    login has lapsed to go and check the binary path. What the CLI says is the answer;
+    whether it was happy is not.
+    """
+    if binary is None:
+        raise Refused("claude_subscription_configuration_required")
+    try:
+        return subprocess.run(
+            [str(binary), *arguments],
+            env=environment(directory),
+            capture_output=True,
+            # The login answer names the account. Nothing the CLI says on either
+            # stream is kept, logged or passed on, so its diagnostics are discarded
+            # rather than inherited onto Hearth's own stderr.
+            text=True,
+            timeout=PROBE_TIMEOUT,
+            check=False,
+        ).stdout
+    except OSError, subprocess.SubprocessError:
+        # A missing, unrunnable or unanswering binary is an operator's configuration
+        # to fix, and no answer of any kind is evidence of a version or a login.
+        raise Refused("claude_subscription_configuration_required") from None
+
+
+def login_probe(binary: Path | None, directory: Path, *, contained: bool = False) -> bool:
+    """Is there a Claude login in that directory? The CLI's own answer, one field of it.
+
+    `auth status --json` in that configuration directory, read for `loggedIn` and
+    nothing else -- the same question the household's login is opened with, asked of a
+    resident's own directory in the same words. The rest of the answer names the
+    account and is never read, logged or kept.
+
+    `contained` is what a sandbox adds: the credential has to be a *file* there,
+    because a session inside a container is given that file and nothing else of this
+    host, and a macOS Keychain does not cross the boundary (`docs/sandbox.md`). The CLI
+    on this host would answer `loggedIn: true` for such a directory and every run on it
+    would still be held, so the question has to be asked the way the sessions will be.
+
+    Without the pinned binary in hand nothing can be asked; that refuses rather than
+    answering "no", and the caller decides what not knowing means.
+    """
+    if contained and not (Path(directory) / CREDENTIALS).is_file():
+        return False
+    return logged_in(ask(binary, directory, "auth", "status", "--json"))
+
+
 class ClaudeLiveRuntime:
     kind = KIND
     version = 1
 
-    def __init__(self, data: Path, *, binary: Path | None = None, config_dir: Path | None = None):
+    def __init__(
+        self,
+        data: Path,
+        *,
+        binary: Path | None = None,
+        config_dir: Path | None = None,
+        sandbox: Sandbox | None = None,
+    ):
         self.data = data.resolve()
         self.database = Database(self.data / "hearth.db")
         self.root = self.data / "claude-live"
+        # Where this instance's sessions execute. It travels in the request rather
+        # than in the worker's environment, which is a search path and nothing else.
+        self.sandbox = sandbox if sandbox is not None else Sandbox()
+        # Where this adapter keeps the credential it reads, named the same way by every
+        # runtime so nothing outside `integrations/` has to know what it is called. A
+        # quarantined copy opens no login and answers with none.
+        self.login = None
         if self.database.restored():
             return
         if binary is None or config_dir is None:
             raise Refused("claude_subscription_configuration_required")
         self.binary = binary.resolve()
         self.config_dir = config_dir.resolve()
+        self.login = self.config_dir
         # The CLI creates a config directory it is pointed at. Hearth refuses first, so
         # a missing private login is a refusal rather than a new empty login.
         if not self.config_dir.is_dir():
@@ -188,8 +277,18 @@ class ClaudeLiveRuntime:
         if self._probe("--version").strip() != VERSION:
             raise Refused("claude_subscription_version_unsupported")
         # Only `loggedIn` is read; the rest of that answer names the account and is
-        # never kept, logged or passed on.
-        if not logged_in(self._probe("auth", "status", "--json")):
+        # never kept, logged or passed on. The household's login is opened with exactly
+        # the probe a resident's own is checked with afterwards.
+        if not login_probe(self.binary, self.config_dir):
+            raise Refused("claude_subscription_login_required")
+        if self.sandbox.launcher == CONTAINER and not (self.config_dir / CREDENTIALS).is_file():
+            # A sandboxed session's login is one file mounted into a configuration
+            # directory of its own, so a login that is not a file cannot cross the
+            # boundary: on macOS the CLI keeps it in the Keychain, and a store on the
+            # container launcher whose configuration directory holds no credential
+            # would admit residents and fail every run at the mount. ADR 0016 says the
+            # Keychain stays a convenience of the `process` launcher, and this is
+            # where that is refused rather than discovered.
             raise Refused("claude_subscription_login_required")
         pin = binary_digest(self.binary)
         with self.database.transaction(write=True) as db:
@@ -210,30 +309,19 @@ class ClaudeLiveRuntime:
         self.root.mkdir(mode=0o700, exist_ok=True)
 
     def _probe(self, *arguments: str) -> str:
-        """Ask the pinned CLI one question. A CLI that cannot answer is not configured.
+        return ask(self.binary, self.config_dir, *arguments)
 
-        The exit code is deliberately not read. `auth status --json` prints its answer
-        and **exits 1** when the configured directory holds no login (measured on the
-        pinned 2.1.263 and on 2.1.265), so treating a non-zero exit as a broken
-        installation would tell an operator whose login has lapsed to go and check the
-        binary path. What the CLI says is the answer; whether it was happy is not.
+    def probe_login(self, directory: Path) -> bool:
+        """Is that directory logged in? Asked of every adapter in the same words.
+
+        A resident's own login is held to exactly the household's standard, and to the
+        one thing this instance's launcher adds to it.
         """
-        try:
-            return subprocess.run(
-                [str(self.binary), *arguments],
-                env=environment(self.config_dir),
-                capture_output=True,
-                # The login answer names the account. Nothing the CLI says on either
-                # stream is kept, logged or passed on, so its diagnostics are discarded
-                # rather than inherited onto Hearth's own stderr.
-                text=True,
-                timeout=PROBE_TIMEOUT,
-                check=False,
-            ).stdout
-        except OSError, subprocess.SubprocessError:
-            # A missing, unrunnable or unanswering binary is an operator's configuration
-            # to fix, and no answer of any kind is evidence of a version or a login.
-            raise Refused("claude_subscription_configuration_required") from None
+        return login_probe(
+            getattr(self, "binary", None),
+            directory,
+            contained=self.sandbox.launcher == CONTAINER,
+        )
 
     def folder(self, run_id):
         identifier(run_id)
@@ -270,7 +358,18 @@ class ClaudeLiveRuntime:
                         "SELECT value FROM system_meta WHERE key='epoch'"
                     ).fetchone()[0],
                     "binary": str(self.binary),
-                    "config_dir": str(self.config_dir),
+                    # Whose login pays for this session: the resident's own directory
+                    # if its admission pinned one, the household's otherwise. Read from
+                    # the run and not from configuration, so a login seeded after this
+                    # run was admitted belongs to the next one, and one taken away
+                    # refuses here rather than quietly spending the household's
+                    # (`docs/adr/0016-sandbox-per-run.md`).
+                    "config_dir": str(
+                        directory_for(
+                            self.data, self.config_dir, row["resident_id"], KIND, row["login_scope"]
+                        )
+                    ),
+                    "login_scope": row["login_scope"],
                     "sha256": db.execute(
                         "SELECT value FROM system_meta WHERE key=?", (BINARY_PIN,)
                     ).fetchone()[0],
@@ -280,6 +379,11 @@ class ClaudeLiveRuntime:
                     # Hearth's own accounting stays the authority; this only stops a
                     # session that has run away from it.
                     "budget_usd": budget(spend_fence(db, row)),
+                    "sandbox": self.sandbox.document(),
+                    # What this run was admitted to reach on disk, resolved from its
+                    # resident's grant at admission and never from anything a session
+                    # says (`docs/adr/0016-sandbox-per-run.md`).
+                    "mounts": admitted_mounts(db, run_id),
                 }
             from hearth.integrations.claude.mcp_bridge import pin_configuration
             from hearth.management.bridge import BoundRun
@@ -339,6 +443,11 @@ class ClaudeLiveRuntime:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return Evidence("running")
+            # The lock is free and no receipt was written: the worker that held this
+            # run's stream is gone, and whatever it started may not be. A container
+            # outlives the client that was attached to it, and one left running is
+            # one still spending (`docs/sandbox.md`).
+            discard(self.database, folder, run_id, request)
             return Evidence("unknown")
         except OSError, ValueError, KeyError, TypeError, Refused:
             return Evidence("unknown")
@@ -351,12 +460,23 @@ class ClaudeLiveRuntime:
             publish(folder / "cancel.json", {"cancelled": True})
 
 
-def unlaunched(request: dict, management: dict, code: str) -> dict:
-    """A management session Hearth refused to launch: no stream, no cost, no doubt."""
+def unlaunched(request: dict, management: dict, code: str, sandbox: Sandbox) -> dict:
+    """A management session Hearth refused to launch: no stream, no cost, no doubt.
+
+    It still says where it would have run, because that is what the run was admitted
+    to and a reader asking where a run happened is owed the same answer whether it got
+    as far as a container or not. The container id is `None`: none was ever created.
+    """
     return {
         "kind": KIND,
         "binding": request["binding"],
         "binary": request["sha256"],
+        "sandbox": {
+            "launcher": sandbox.launcher,
+            "container_id": None,
+            "image": sandbox.digest,
+        },
+        "login_scope": request.get("login_scope", HOUSEHOLD),
         "stdout": "",
         "exit_code": None,
         "cancelled": True,
@@ -437,9 +557,34 @@ def worker(folder, inherited_fd=None):
             or prompt_digest != request["binding"]["input_digest"]
         ):
             return
-        binary = Path(request["binary"])
-        if binary_digest(binary) != request["sha256"]:
+        try:
+            sandbox = Sandbox.of(request.get("sandbox"))
+        except Refused:
+            # Where this run was admitted to execute is Hearth's own writing, and a
+            # request this worker cannot read is not a session to launch. Nothing has
+            # started, exactly as for a changed pin above, and the run reads as
+            # unknown rather than as something a later pass may retry.
             return
+        binary = Path(request["binary"])
+        # A sandboxed session executes the image's own copy of the CLI, whose bytes
+        # every start hashes against this store's pin (`launcher.configure`); the file
+        # on this host is not the one it will open, and on a burrow it may not be here
+        # at all.
+        if sandbox.launcher != CONTAINER and binary_digest(binary) != request["sha256"]:
+            return
+        launcher = sandbox.open()
+        placement = sandbox.placement()
+        try:
+            # The folders this run was admitted with, checked again here and placed
+            # where the session will name them. Read outside the dispatch guard,
+            # because looking at what they hold is not something to do while holding
+            # the store's one write transaction.
+            reached = granted(placement, request.get("mounts") or [])
+        except Refused:
+            # A mount list this worker cannot read is not a session to launch, exactly
+            # as a sandbox document it cannot read is not one. Nothing has started.
+            return
+        before = surveyed(reached)
         workspace = folder / "workspace"
         workspace.mkdir(mode=0o700)
         management = request.get("management")
@@ -459,26 +604,43 @@ def worker(folder, inherited_fd=None):
 
             try:
                 # The bridge is opened before the launch, so a run whose authority
-                # changed since admission is refused with nothing spent on it.
-                server = open_bridge(folder, request, Hearth(database))
+                # changed since admission is refused with nothing spent on it. The
+                # configuration it writes names the interpreter that will start the
+                # shim where the session runs -- this worker's, or the image's.
+                server = open_bridge(
+                    folder,
+                    request,
+                    Hearth(database),
+                    placement.interpreter(sys.executable),
+                )
             except Refused as error:
-                publish(folder / "receipt.json", unlaunched(request, management, error.code))
+                publish(
+                    folder / "receipt.json", unlaunched(request, management, error.code, sandbox)
+                )
                 return
             except bridge_failures:
                 # A socket that cannot be bound or a configuration that cannot be
                 # written is Hearth's own failure, and it leaves a receipt rather than
                 # a run nobody can ever settle.
                 publish(
-                    folder / "receipt.json", unlaunched(request, management, "mcp_bridge_failed")
+                    folder / "receipt.json",
+                    unlaunched(request, management, "mcp_bridge_failed", sandbox),
                 )
                 return
+        # The session's own view of the two host paths in its argv: the CLI it runs,
+        # and the configuration that tells it how to start Hearth's shim. Inside a
+        # container each is a mount and nothing else on this host exists; on the
+        # process launcher each is itself and the command is byte for byte the one
+        # Hearth has always built. The socket that configuration names is mounted by
+        # the launcher itself, at the path it already has, so the shim connects to the
+        # string Hearth wrote (`launcher.ContainerLauncher.arguments`).
         command = session_command(
-            binary,
+            placement.binary(binary, "claude"),
             budget_usd=request["budget_usd"],
             tools=server.offered if server is not None else (),
-            mcp_config=configuration_path(folder) if server is not None else None,
+            mcp_config=placement.same(configuration_path(folder)) if server is not None else None,
         )
-        child = None
+        handle = None
         output = bytearray()
         cancelled = False
         eof = False
@@ -488,28 +650,50 @@ def worker(folder, inherited_fd=None):
                 request["owner"],
                 epoch=request["epoch"],
                 input_digest=prompt_digest,
-            ):
-                if binary_digest(binary) != request["sha256"]:
+            ) as db:
+                # Read inside the guard, which is already this store's one write
+                # transaction: a pin that changed while this run waited is refused
+                # here, before anything is launched, and never afterwards -- a session
+                # already running is priced from what it really said.
+                current = db.execute(
+                    "SELECT value FROM system_meta WHERE key=?", (IMAGE_PIN,)
+                ).fetchone()
+                check_image(sandbox, current[0] if current else None)
+                if sandbox.launcher != CONTAINER and binary_digest(binary) != request["sha256"]:
                     raise Refused("claude_subscription_binary_changed")
+                # The environment is built after the login is placed, because placing
+                # a path is what registers the mount that backs it.
+                home = placement.login(request["config_dir"], CREDENTIALS, LOGIN)
+                mounts = placement.mounts
                 # A regular file cannot block prompt delivery when the CLI stalls, and
                 # the prompt is context that does not belong on a command line.
                 with tempfile.TemporaryFile() as prompt:
                     prompt.write(prompt_bytes)
                     prompt.seek(0)
-                    child = subprocess.Popen(
+                    handle = launcher.start(
                         command,
+                        env=environment(home, account=not placement.contained),
                         cwd=workspace,
-                        env=environment(Path(request["config_dir"])),
                         stdin=prompt,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
+                        mounts=mounts,
+                        socket=server.path if server is not None else None,
                     )
-            assert child.stdout is not None
+            # What was started, named where the worker's own pid is named: a process
+            # group on the process launcher and a container id on the container one.
+            # Written down before the id is asked for and again after, because asking
+            # waits, and a worker that dies while waiting would otherwise leave a live
+            # container that nothing on disk names.
+            written_handle(folder, handle)
+            # Asked for after the dispatch guard has closed, because a container
+            # runtime names what it created a moment later and the guard is one write
+            # transaction over the whole store.
+            launcher.identify(handle)
+            written_handle(folder, handle)
+            assert handle.stdout is not None
             deadline = time.monotonic() + RUN_TIMEOUT
             scanned = 0
             with selectors.DefaultSelector() as selector:
-                selector.register(child.stdout, selectors.EVENT_READ)
+                selector.register(handle.stdout, selectors.EVENT_READ)
                 if server is not None:
                     # The bridge's own socket is watched in this one loop, so a tool
                     # call is answered by the same process that owns the run and
@@ -531,9 +715,9 @@ def worker(folder, inherited_fd=None):
                     # trusted, rather than refused for an event that had been written
                     # before the call was made.
                     for key, _ in ready:
-                        if key.fileobj is not child.stdout:
+                        if key.fileobj is not handle.stdout:
                             continue
-                        chunk = os.read(child.stdout.fileno(), 8192)
+                        chunk = os.read(handle.stdout.fileno(), 8192)
                         if not chunk:
                             eof = finished = True
                             break
@@ -560,41 +744,48 @@ def worker(folder, inherited_fd=None):
                         # on the bridge is answered after that.
                         break
                     for key, _ in ready:
-                        if key.fileobj is not child.stdout:
+                        if key.fileobj is not handle.stdout:
                             assert server is not None
                             server.ready(key)
         except Refused:
             cancelled = True
         finally:
-            if child is not None and eof:
-                try:
-                    child.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    eof = False
-            if child is not None and not eof:
-                # The CLI runs a Node process tree of its own, so the signal goes to
-                # the whole group the worker put it in, never to one pid.
-                try:
-                    os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
+            if handle is not None and eof and launcher.wait(handle, 1) is None:
+                eof = False
+            if handle is not None and not eof:
+                # The CLI runs a Node process tree of its own, so the signal ends the
+                # whole session the launcher started -- the process group on the host,
+                # the container and everything in it in a sandbox -- never one pid.
+                launcher.stop(handle, signal.SIGTERM)
+                if launcher.wait(handle, 5) is None:
+                    launcher.stop(handle, signal.SIGKILL)
+                    launcher.wait(handle, None)
             if server is not None:
                 server.close()
         receipt = {
             "kind": KIND,
             "binding": request["binding"],
             "binary": request["sha256"],
+            # Where this session ran, so a finished run says it rather than leaving a
+            # reader to infer it from configuration that has moved on since.
+            "sandbox": {
+                "launcher": sandbox.launcher,
+                "container_id": handle.id if handle is not None and placement.contained else None,
+                "image": sandbox.digest,
+                # What this session held on disk and what became of the writable ones,
+                # surveyed before it started and again now that it has ended.
+                "mounts": used(reached, before, surveyed(reached)),
+            },
+            # And whose login it spent. A request document written before a resident
+            # could have one of its own names none, and the household's is what such a
+            # run really used, because it was the only login there was.
+            "login_scope": request.get("login_scope", HOUSEHOLD),
             "stdout": output.decode("utf-8", errors="replace"),
-            "exit_code": child.returncode if child else None,
+            "exit_code": handle.returncode if handle else None,
             # `launched` is the only thing that can make a cancellation free, so it is
             # written from whether a process object exists, never from how it ended.
             "cancelled": cancelled,
-            "launched": child is not None,
+            "launched": handle is not None,
         }
         if management is not None:
             # A bridge that failed is recorded, never hidden: the session settles as

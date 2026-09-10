@@ -1,0 +1,183 @@
+# Hearth on a server: one control plane, one store, one sandbox network.
+#
+# `deploy/README.md` is the runbook. Everything this file needs is in `deploy/.env`
+# beside it (`.env.example` is the template); nothing here names a machine or a person,
+# and the container runtime's own socket is the one host path in it, so the same file is
+# the deployment on any Linux host with a container runtime.
+#
+# Two things about it are not obvious and both come from measurement (`docs/sandbox.md`):
+#
+#   * **Every volume is mounted at the path it has on the host.** Hearth in a container
+#     hands the daemon paths -- a run's bridge socket, a login directory, a granted
+#     folder -- and the daemon resolves them in the *host's* filesystem, not in Hearth's.
+#     A named volume's host path is `<docker data root>/volumes/<name>/_data`, so that is
+#     where it is mounted inside too, and `HEARTH_VOLUME_ROOT` is how a host with a
+#     different data root says so. The store must be on a real filesystem for `flock`
+#     and SQLite, which a bind mount from a Mac is not (measurement 9); a volume is.
+#
+#   * **Hearth is not on `hearth-egress`.** That network is the sandboxes' and no
+#     service of this file is attached to it. Hearth reaches a session over the bridge
+#     socket, which is a file, so a session needs no network path to Hearth at all --
+#     and the fence Hearth measures at start (`HEARTH_SANDBOX_SHUT`) is the check that
+#     it has none.
+
+name: hearth
+
+services:
+  # A fresh named volume belongs to root, and Hearth is not root. This is the only
+  # thing here that ever is: it hands every volume below to the uid Hearth runs as, and
+  # it ends before Hearth starts. It is idempotent, so an upgrade or a restart runs it
+  # again and changes nothing.
+  init:
+    image: ${HEARTH_IMAGE:?set HEARTH_IMAGE to the digest of the image you built}
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        root=${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}
+        for name in hearth-store hearth-credentials hearth-folders hearth-backups; do
+          chown "${HEARTH_UID:?}:${HEARTH_DOCKER_GID:?}" "$$root/$$name/_data"
+          chmod 0700 "$$root/$$name/_data"
+        done
+        # The pinned CLIs are read, never written: Hearth hashes them and hands their
+        # paths to the adapters, and the image's own copies are what a session runs.
+        chmod 0555 "$$root/hearth-binaries/_data"
+    volumes:
+      - hearth-store:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-store/_data
+      - hearth-credentials:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-credentials/_data
+      - hearth-folders:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-folders/_data
+      # Hearth never writes here itself -- `python -m hearth backup` does, from a
+      # container of its own -- but a fresh volume belongs to root and that command
+      # runs as Hearth's uid, so this is where it stops being root's.
+      - hearth-backups:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-backups/_data
+      - hearth-binaries:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-binaries/_data
+
+  hearth:
+    image: ${HEARTH_IMAGE:?set HEARTH_IMAGE to the digest of the image you built}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # The uid the sandbox image was built for, and the group that owns the runtime
+    # socket on this host (`root` on Docker Desktop, `docker` on most Linux hosts).
+    # The same uid runs every sandbox, which is what keeps the bridge's
+    # peer-credential check meaningful across the boundary (ADR 0016).
+    user: "${HEARTH_UID:?}:${HEARTH_DOCKER_GID:?}"
+    command: ["--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      HEARTH_DATA: ${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-store/_data
+      HEARTH_OPERATOR_TOKEN: ${HEARTH_OPERATOR_TOKEN:?set an operator token of 16+ characters}
+      # Where a run's session executes, and what it executes.
+      HEARTH_SANDBOX: container
+      HEARTH_SANDBOX_IMAGE: ${HEARTH_SANDBOX_IMAGE:?set the sandbox image's repository digest}
+      HEARTH_SANDBOX_NETWORK: hearth-egress
+      HEARTH_SANDBOX_DOCKER: /usr/local/bin/docker
+      # The daemon this client talks to, when the socket below is not where a client
+      # looks by default. `DOCKER_HOST` is never inherited by the detached worker.
+      HEARTH_SANDBOX_DOCKER_HOST: ${HEARTH_SANDBOX_DOCKER_HOST:-}
+      # The fence, measured from inside `hearth-egress` before any resident is
+      # admitted. `hearth` is at a fixed address on its own network below, so the
+      # first of these is Hearth's own port and does not move between restarts; the
+      # rest is this building's, and `deploy/.env.example` says how to choose it.
+      HEARTH_SANDBOX_SHUT: ${HEARTH_SANDBOX_SHUT:?name Hearth's own address and one LAN address}
+      HEARTH_SANDBOX_OPEN: ${HEARTH_SANDBOX_OPEN:?name the provider host a session must reach}
+      # The pinned provider CLIs, on a read-only volume. Hearth hashes these to pin the
+      # store, and the sandbox image's own copies are hashed against that pin at every
+      # start -- so they must be the same Linux builds the image was built from.
+      HEARTH_CODEX_BINARY: ${HEARTH_CODEX_BINARY:-}
+      HEARTH_CLAUDE_BINARY: ${HEARTH_CLAUDE_BINARY:-}
+      # The household's logins, one directory per provider, seeded by the operator with
+      # that CLI's own login flow. A resident's own login lives under the store, at
+      # `<data>/credentials/<resident id>/<kind>/` (`docs/sandbox.md`).
+      HEARTH_CODEX_AUTH_HOME: ${HEARTH_CODEX_AUTH_HOME:-}
+      HEARTH_CLAUDE_CONFIG_DIR: ${HEARTH_CLAUDE_CONFIG_DIR:-}
+    volumes:
+      # The runtime socket. This is the one host path in this file, and it is
+      # root-equivalent on the host: it is why the sandboxes and the mounts they get
+      # are Hearth's decision alone and no resident's (ADR 0016). A grant naming it is
+      # refused at write time, and the launcher refuses it again before any argv.
+      - ${HEARTH_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - hearth-store:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-store/_data
+      - hearth-credentials:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-credentials/_data
+      # The folders a grant may name. Hearth's own data directory, every login
+      # directory and the runtime socket are refused to every grant, so a resident's
+      # folders live outside all three -- here, or on any other volume an operator
+      # adds beside this one, always mounted at the path it has on the host.
+      - hearth-folders:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-folders/_data
+      - hearth-binaries:${HEARTH_VOLUME_ROOT:-/var/lib/docker/volumes}/hearth-binaries/_data:ro
+    ports:
+      # Townhall and the operator API. Bound to the loopback by default: everything
+      # here is behind the operator's token, and a household's task board is not a
+      # thing to publish to a LAN by accident.
+      - "${HEARTH_BIND:-127.0.0.1}:${HEARTH_PORT:-8000}:8000"
+    networks:
+      hearth:
+        # Fixed, so `HEARTH_SANDBOX_SHUT` can name Hearth's own address once and mean
+        # it after every restart. A sandbox is on another network and must not reach
+        # this one; that is what the fence measures.
+        ipv4_address: ${HEARTH_ADDRESS:-172.30.0.2}
+    healthcheck:
+      test:
+        - CMD
+        - /opt/hearth/bin/python
+        - -I
+        - -c
+        - |
+          import sys, urllib.request
+          with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5) as answer:
+              sys.exit(0 if answer.status == 200 else 1)
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+networks:
+  # Hearth's own. Townhall reaches it through the published port; nothing else is here.
+  hearth:
+    name: hearth
+    ipam:
+      config:
+        - subnet: ${HEARTH_SUBNET:-172.30.0.0/24}
+  # The sandboxes'. No service here is attached to it, which is the point: a session
+  # reaches Hearth over a socket file and must have no network path to it at all. It is
+  # therefore the operator's own network, made before this file is brought up and with
+  # the packet filter `deploy/fence.sh` installs already on it (`deploy/README.md`):
+  #
+  #     docker network create --subnet "$HEARTH_EGRESS_SUBNET" hearth-egress
+  #
+  # Declared external because it is not this file's to make. Compose does not check it
+  # either -- it prunes a top-level network no service references -- so a deployment
+  # brought up without it comes up and then refuses `sandbox_network_missing` at start,
+  # by name, before any resident is admitted. **Do not create it with IPv6**: the filter
+  # and Hearth's probe are both IPv4, so a v6 path would be unfenced and unmeasured.
+  hearth-egress:
+    name: hearth-egress
+    external: true
+
+volumes:
+  # The household: `hearth.db`, artifacts, memory, journals, run folders, and the
+  # per-resident logins under `credentials/`. Backed up with `python -m hearth backup`,
+  # which copies the household and never a credential (`docs/backup-restore.md`).
+  hearth-store:
+    name: hearth-store
+  # The household's own logins, one directory per provider. Deliberately not the
+  # store's: a login is not part of a backup, does not travel in a bundle, and is the
+  # one thing on this host an operator seeds by hand.
+  hearth-credentials:
+    name: hearth-credentials
+  # What residents reach on disk, when a grant says so. Nothing here is Hearth's:
+  # it is the household's own files, and which resident sees which of them, with which
+  # mode, is the grant and only the grant.
+  hearth-folders:
+    name: hearth-folders
+  # Where `python -m hearth backup` writes. Not mounted into the running service: a
+  # backup is taken by a command of its own, and a household Hearth could overwrite
+  # while it ran would not be a backup.
+  hearth-backups:
+    name: hearth-backups
+  # The pinned provider CLIs, the same Linux builds `deploy/Dockerfile.sandbox` was
+  # built from. Read-only to Hearth.
+  hearth-binaries:
+    name: hearth-binaries

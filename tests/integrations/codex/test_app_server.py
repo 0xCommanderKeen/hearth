@@ -326,12 +326,12 @@ def test_native_structured_call_is_delivered_only_after_binding_and_guard(tmp_pa
     assert evidence(result).output == "Fictional resident created."
 
 
-def run_fixture(tmp_path, scenario="success", **overrides):
+def run_fixture(tmp_path, scenario="success", cli=None, **overrides):
     from contextlib import nullcontext
 
     from hearth.integrations.codex import app_server
 
-    binary, auth, workspace = fake_cli(tmp_path, scenario)
+    binary, auth, workspace = cli or fake_cli(tmp_path, scenario)
     options = dict(
         binary=binary,
         auth_home=auth,
@@ -526,3 +526,109 @@ def test_native_receipt_files_keep_private_bounded_storage(tmp_path):
     os.link(path, tmp_path / "linked.json")
     with pytest.raises(ValueError, match="unsafe native receipt"):
         read_receipt(path)
+
+
+def test_a_management_session_inside_a_sandbox_names_only_the_image_s_own_paths(tmp_path):
+    """The worker's side stays on the host; the CLI's side is in the container.
+
+    The transport does not move: it is still stdio over the pipe the launcher hands
+    back, and the two processes this session starts are started the same way. What
+    changes is every path in them -- the CLI, the login, the generated catalog and
+    the working directory the session is told to work in.
+    """
+    from hearth.integrations.launcher import BINARIES, LOGIN, WORKSPACE, ContainerLauncher
+
+    from tests import fake_docker
+
+    digest = "sha256:" + "5" * 64
+    image, network = "ghcr.io/hearth/sandbox@" + digest, "hearth-sandbox"
+    daemon = tmp_path / "daemon"
+    daemon.mkdir()
+    docker = fake_docker.install(daemon)
+    fake_docker.hold(docker, image=image, network=network)
+    cli = fake_cli(tmp_path)
+    fake_docker.carry(docker, BINARIES["codex_live_binary"], cli[0].read_bytes())
+    seen = []
+    result = run_fixture(
+        tmp_path,
+        cli=cli,
+        launcher=ContainerLauncher(image, network, docker=str(docker)),
+        on_session=lambda handle: seen.append(handle.document()),
+    )
+    assert result["launched"] is True and result["error"] is None, result["error"]
+    assert evidence(result).cost == 700
+
+    # Both of this run's sessions are told to the caller, each of them twice: once
+    # with the file the runtime will write the id into and once with the id itself.
+    # A management worker records them, and a container whose worker dies is only
+    # findable by what was written down.
+    assert len(seen) == 4
+    assert [document["id"] is None for document in seen] == [True, False, True, False]
+    assert all(document["cidfile"] for document in seen[::2])
+    assert len({document["id"] for document in seen[1::2]}) == 2
+
+    started = [call for call in fake_docker.calls(docker) if call[:1] == ["run"]]
+    # Discovery and the session itself, both in containers of their own.
+    assert len(started) == 2
+    for argv in started:
+        command = argv[argv.index(image) + 1 :]
+        assert command[:2] == ["/usr/local/bin/codex", "app-server"]
+        assert "CODEX_HOME=" + LOGIN in argv
+        assert f"type=tmpfs,destination={LOGIN},tmpfs-size=64m" in argv
+        assert f"type=bind,source={cli[1]}/auth.json,target={LOGIN}/auth.json,readonly" in argv
+        # The catalog Hearth generated for this session is mounted where it already
+        # is, because the CLI reports that path back and the two have to agree.
+        setting = next(part for part in command if part.startswith("model_catalog_json="))
+        directory = setting.split('"')[1].rsplit("/", 1)[0]
+        assert f"type=bind,source={directory},target={directory},readonly" in argv
+        # The workspace the session is told to work in is the runtime's own tmpfs.
+        assert argv[argv.index("--workdir") + 1] == WORKSPACE
+        assert not any(str(cli[2]) in part for part in command)
+
+
+def mkdir(path):
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_a_management_session_reaches_the_folders_its_grant_named(tmp_path):
+    """A resident with management authority is confined by the same boundary.
+
+    Both of the sessions this run starts get the grant's folders, with the mode the
+    grant said, at the one place a resident's folders live (`/mounts/<name>`).
+    """
+    from hearth.integrations.launcher import BINARIES, ContainerLauncher
+
+    from tests import fake_docker
+
+    digest = "sha256:" + "6" * 64
+    image, network = "ghcr.io/hearth/sandbox@" + digest, "hearth-sandbox"
+    daemon = tmp_path / "daemon"
+    daemon.mkdir()
+    docker = fake_docker.install(daemon)
+    fake_docker.hold(docker, image=image, network=network)
+    cli = fake_cli(tmp_path)
+    fake_docker.carry(docker, BINARIES["codex_live_binary"], cli[0].read_bytes())
+    shared, drafts = tmp_path / "shared", tmp_path / "drafts"
+    shared.mkdir()
+    drafts.mkdir()
+    result = run_fixture(
+        tmp_path,
+        cli=cli,
+        launcher=ContainerLauncher(image, network, docker=str(docker)),
+        mounts=[
+            {"name": "notes", "host_path": str(shared), "mode": "ro"},
+            {"name": "drafts", "host_path": str(drafts), "mode": "rw"},
+        ],
+    )
+    assert result["launched"] is True and result["error"] is None, result["error"]
+    started = [call for call in fake_docker.calls(docker) if call[:1] == ["run"]]
+    assert len(started) == 2
+    for argv in started:
+        assert f"type=bind,source={shared},target=/mounts/notes,readonly" in argv
+        assert f"type=bind,source={drafts},target=/mounts/drafts" in argv
+    # And a mount list this transport cannot read starts nothing at all.
+    refused = run_fixture(
+        tmp_path, cli=fake_cli(mkdir(tmp_path / "again")), mounts=[{"name": "notes"}]
+    )
+    assert refused["launched"] is False and refused["error"] == "sandbox_mount_invalid"

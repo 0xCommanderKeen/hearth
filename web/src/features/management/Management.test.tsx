@@ -18,6 +18,7 @@ const grant = {
   capabilities: ["create_residents", "assign_work"] as (
     "create_residents" | "assign_work" | "routines"
   )[],
+  mounts: [{ name: "notes", host_path: "/srv/notes", mode: "ro" as const }],
   max_residents: 5,
   max_daily_limit: 1000000,
   max_reserve: 500000,
@@ -75,4 +76,54 @@ it("held copies display grants while disabling policy writes and bootstrap", asy
     ).disabled,
   ).toBe(true);
   expect(screen.queryByRole("button", { name: "Set up Karen" })).toBeNull();
+});
+
+it("edits the folders a resident reaches and sends them with the grant", async () => {
+  const client = fixture();
+  const save = vi.spyOn(client, "saveManagement").mockResolvedValue(grant);
+  render(
+    <ManagementPanel client={client} readOnly={false} onChanged={() => {}} />,
+  );
+  await screen.findByLabelText("Folder 1 name");
+  expect(
+    (screen.getByLabelText("Folder 1 path") as HTMLInputElement).value,
+  ).toBe("/srv/notes");
+  // The granted folder becomes writable, and a second one is added beside it.
+  fireEvent.change(screen.getByLabelText("Folder 1 access"), {
+    target: { value: "rw" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+  fireEvent.change(screen.getByLabelText("Folder 2 name"), {
+    target: { value: "drafts" },
+  });
+  fireEvent.change(screen.getByLabelText("Folder 2 path"), {
+    target: { value: "/srv/drafts" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save management grant" }),
+  );
+  await vi.waitFor(() => expect(save.mock.calls.length).toBe(1));
+  expect(save.mock.calls[0][1].mounts).toEqual([
+    { name: "notes", host_path: "/srv/notes", mode: "rw" },
+    { name: "drafts", host_path: "/srv/drafts", mode: "ro" },
+  ]);
+});
+it("removes a folder without touching the rest of the grant", async () => {
+  const client = fixture();
+  const save = vi.spyOn(client, "saveManagement").mockResolvedValue(grant);
+  render(
+    <ManagementPanel client={client} readOnly={false} onChanged={() => {}} />,
+  );
+  await screen.findByLabelText("Folder 1 name");
+  fireEvent.click(screen.getByRole("button", { name: "Remove folder 1" }));
+  expect(screen.queryByLabelText("Folder 1 name")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save management grant" }),
+  );
+  await vi.waitFor(() => expect(save.mock.calls.length).toBe(1));
+  expect(save.mock.calls[0][1].mounts).toEqual([]);
+  expect(save.mock.calls[0][1].capabilities).toEqual([
+    "create_residents",
+    "assign_work",
+  ]);
 });
