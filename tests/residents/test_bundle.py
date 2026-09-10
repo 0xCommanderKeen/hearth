@@ -405,3 +405,25 @@ def test_importing_the_same_bundle_twice_grants_the_folder_once(tmp_path):
     # One grant revision, not two, and the folder is the one the first call named.
     assert grant["revision"] == 1
     assert grant["mounts"] == [{"name": "notes", "host_path": str(here), "mode": "rw"}]
+
+
+def test_a_bundle_carries_no_login_and_an_imported_resident_is_on_its_new_household_s(tmp_path):
+    """A login is a file on one machine and never travels (ADR 0010, ADR 0016)."""
+    from hearth.integrations.logins import HOUSEHOLD, scope
+
+    source = store(tmp_path / "source")
+    created = seeded(source)
+    private = tmp_path / "source" / "credentials" / created["resident_id"] / "codex_subscription"
+    private.mkdir(parents=True)
+    (private / "auth.json").write_text("synthetic-only")
+
+    bundle = Bundles(source).export(created["resident_id"])
+    # Not the credential, not the directory, not even the fact that there was one.
+    assert "credential" not in json.dumps(bundle) and "login" not in json.dumps(bundle)
+
+    target = store(tmp_path / "target")
+    receipt = Bundles(target).import_("import-1", {"bundle": bundle})
+    assert receipt["status"] == "ready"
+    assert not (tmp_path / "target" / "credentials").exists()
+    # The importing household decides whose subscription this resident's work spends.
+    assert scope(tmp_path / "target", receipt["resident_id"], "codex_subscription") == HOUSEHOLD

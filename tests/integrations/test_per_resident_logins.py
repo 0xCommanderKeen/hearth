@@ -195,6 +195,92 @@ def test_the_other_runtime_reads_its_login_off_the_run_in_the_same_words(tmp_pat
     assert runtime.receipt(run.id)["login_scope"] == "resident"
 
 
+# -- what the operator's own health answer says ---------------------------
+
+
+def test_a_lapsed_resident_login_is_named_at_start_and_on_the_health_answer(tmp_path):
+    from fastapi.testclient import TestClient
+    from hearth.app import create_app
+
+    from tests.integrations.claude.test_configuration import synthetic_codex
+
+    data = tmp_path / "data"
+    Database(data / "hearth.db").initialize()
+    binary, auth = synthetic_codex(tmp_path)
+    # An operator made the directory and the login flow never finished: seeded, and
+    # empty. Nothing here is a credential.
+    (data / "credentials" / "karen" / KIND).mkdir(parents=True)
+    (data / "credentials" / "reader" / KIND).mkdir(parents=True)
+    (data / "credentials" / "reader" / KIND / "auth.json").write_text("synthetic-only")
+    app = create_app(
+        data,
+        "synthetic-operator-token-for-tests",
+        supervise=False,
+        codex_binary=binary,
+        codex_auth_home=auth,
+    )
+    lapsed = [{"resident_id": "karen", "kind": KIND}]
+    # Recorded once, where it is discovered, so the reason lives in the store and not
+    # only in somebody's terminal.
+    with Database(data / "hearth.db").transaction() as db:
+        recorded = db.execute(
+            "SELECT resource_id, detail FROM audit WHERE kind='login.resident_lapsed'"
+        ).fetchall()
+    assert [row[0] for row in recorded] == ["karen"]
+    assert '"kind": "codex_subscription"' in recorded[0][1]
+    with TestClient(app) as client:
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+        # The one that works is not named; the one that does not is.
+        assert health["login"] == {"resident_lapsed": lapsed}
+        # Nothing about a login reaches the open liveness path.
+        assert "login" not in client.get("/health").json()
+        # And it is asked afresh: the operator finishes the login and asks again.
+        (data / "credentials" / "karen" / KIND / "auth.json").write_text("synthetic-only")
+        health = client.get(
+            "/api/health",
+            headers={"Authorization": "Bearer synthetic-operator-token-for-tests"},
+        ).json()
+        assert health["login"] == {"resident_lapsed": []}
+
+
+# -- what the operator's own command says ---------------------------------
+
+
+def test_the_credentials_command_lists_the_logins_and_says_only_whether_they_work(
+    tmp_path, monkeypatch
+):
+    from hearth.__main__ import credentials
+    from hearth.integrations.claude.config import KIND as CLAUDE_KIND
+
+    monkeypatch.delenv("HEARTH_CLAUDE_BINARY", raising=False)
+    seed_login(tmp_path, "karen")
+    (tmp_path / "credentials" / "reader" / KIND).mkdir(parents=True)
+    (tmp_path / "credentials" / "karen" / CLAUDE_KIND).mkdir(parents=True)
+
+    listed = credentials(tmp_path)
+    assert [(row["resident_id"], row["kind"], row["logged_in"]) for row in listed] == [
+        # Karen's Codex login is there, and her Claude one cannot be asked about here:
+        # no server is running, so nothing can start that CLI.
+        ("karen", KIND, True),
+        ("karen", CLAUDE_KIND, None),
+        # A directory with no credential in it is a login that does not work, which is
+        # exactly what holds this resident's Codex runs.
+        ("reader", KIND, False),
+    ]
+    # Three facts and a path. Nothing of the provider's own answer -- no account, no
+    # plan, no organisation -- and nothing of the credential.
+    assert all(set(row) == {"resident_id", "kind", "path", "logged_in"} for row in listed)
+
+
+def test_the_credentials_command_says_nothing_about_a_household_without_own_logins(tmp_path):
+    from hearth.__main__ import credentials
+
+    assert credentials(tmp_path) == []
+
+
 # -- a login that has lapsed ----------------------------------------------
 
 

@@ -11,6 +11,45 @@ from hearth.storage.database import Database
 from hearth.work.service import Hearth
 
 
+def credentials(data: Path) -> list[dict]:
+    """Which residents hold a provider login of their own, and whether it still works.
+
+    One line per resident per runtime kind, and each line says three things: whose
+    login it is, which brain it is for, and whether that provider answers "logged in".
+    Nothing else of the provider's answer is read -- it names the account, the plan and
+    the organisation, and none of that is Hearth's to print -- and nothing ever reads
+    the credential itself.
+
+    `logged_in` is `null` where this command could not ask: no server is running here,
+    so a provider whose pinned binary is not named in the environment cannot be
+    started. Not knowing is said rather than rounded down to a "no", because a login
+    nobody probed has not lapsed.
+    """
+    import os
+
+    from hearth.integrations.interface import binary_environment, live_kinds, login_probe
+    from hearth.integrations.logins import seeded
+
+    found = []
+    for entry in seeded(data, live_kinds()):
+        probe = login_probe(entry.kind)
+        variable = binary_environment(entry.kind)
+        named = os.environ.get(variable) if variable else None
+        try:
+            answer = probe(Path(named) if named else None, entry.directory) if probe else None
+        except Refused:
+            answer = None
+        found.append(
+            {
+                "resident_id": entry.resident_id,
+                "kind": entry.kind,
+                "path": str(entry.directory),
+                "logged_in": answer,
+            }
+        )
+    return found
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -25,6 +64,7 @@ def main() -> None:
             "save-memory",
             "export-resident",
             "import-resident",
+            "credentials",
         ],
     )
     parser.add_argument("--data", type=Path, default=Path(".hearth"))
@@ -37,6 +77,9 @@ def main() -> None:
     parser.add_argument("--daily-limit", type=int)
     parser.add_argument("--command-id")
     args = parser.parse_args()
+    if args.command == "credentials":
+        print(json.dumps(credentials(args.data), indent=2))
+        return
     if args.command in {"export-resident", "import-resident"}:
         from hearth.management.authority import protected_paths
         from hearth.residents.bundle import Bundles, load_bundle_file

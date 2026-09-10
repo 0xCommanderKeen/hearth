@@ -17,6 +17,13 @@ name against a map the operator writes and grants exactly what the operator name
 under this household's own rules, so a path it protects refuses the import. A name the
 operator said nothing about is left out, `mount_unresolved` in the resolution, and no
 authority beyond those folders is ever carried across.
+
+A login never travels at all -- not the credential, not the directory, not even the
+fact that the exporting household gave that resident one. It is a file on one machine,
+seeded there by an operator through the provider's own login flow, and the household
+that imports a resident decides for itself whose subscription its work spends
+(`hearth.integrations.logins`). An imported resident is therefore on its new
+household's login until an operator seeds it one.
 """
 
 import hashlib
