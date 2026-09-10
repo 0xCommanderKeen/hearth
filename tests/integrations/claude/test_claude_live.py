@@ -119,6 +119,17 @@ def test_a_recorded_session_settles_with_the_answer_and_the_price_it_reported():
     assert evidence.cost == 36_580
 
 
+@pytest.mark.parametrize("error", [None, "mcp_bridge_failed", "claude_tools_changed"])
+def test_completed_management_receipts_keep_output_and_cost_but_honor_bridge_errors(error):
+    value = receipt(
+        management={"catalog_sha256": "a" * 64, "tools_sha256": "b" * 64, "error": error}
+    )
+    raw, _, evidence = encode(value, BINDING)
+    assert evidence.status == ("succeeded" if error is None else "failed")
+    assert evidence.output == "pong" and evidence.cost == 36_580
+    assert json.loads(raw)["management"]["error"] == error
+
+
 def test_the_receipt_that_commits_is_the_serialized_copy_that_was_validated():
     raw, digest, _ = encode(receipt(), BINDING)
     assert json.loads(raw) == receipt()

@@ -731,3 +731,73 @@ def test_a_session_asking_for_tools_it_has_not_got_cannot_fill_the_audit(tmp_pat
     replies = [answer(call["reply"]) for call in store.record()["calls"]]
     assert all(reply["error"] == "management_tool_not_offered" for reply in replies)
     assert len(store.rows("SELECT * FROM audit WHERE kind='management.tool_refused'")) == 2
+
+
+@pytest.mark.parametrize("usage", ["known", "invalid", "unknown"])
+def test_a_final_bridge_failure_survives_normal_cli_exit_and_settles_once(
+    tmp_path, monkeypatch, usage
+):
+    from hearth.execution.usage import by_origin
+    from hearth.integrations.claude.mcp_bridge import BridgeServer
+
+    store = Store(tmp_path)
+    store.script([])
+    run = store.run()
+    original_close = BridgeServer.close
+
+    def late_failure(server):
+        # Model the final-call failure visible only as the bridge closes, after
+        # stdout reached EOF. This exercises the worker's server.failure fallback.
+        server.failure = "mcp_bridge_failed"
+        original_close(server)
+
+    monkeypatch.setattr(BridgeServer, "close", late_failure)
+    published = store.work(run)
+    assert published["exit_code"] == 0 and published["cancelled"] is False
+    assert published["management"]["error"] == "mcp_bridge_failed"
+    if usage != "known":
+        events = [json.loads(line) for line in published["stdout"].splitlines()]
+        if usage == "invalid":
+            events[-1]["total_cost_usd"] = 9.99
+        else:
+            del events[-1]["total_cost_usd"]
+        published["stdout"] = "\n".join(json.dumps(event) for event in events) + "\n"
+        (store.runtime.folder(run.id) / "receipt.json").write_text(json.dumps(published))
+    evidence = store.runtime.inspect(run.id)
+    assert evidence.status == "failed" and evidence.output == "pong"
+    result = store.settle(run)
+    assert result.status == "failed"
+    assert result.actual_cost == (36_580 if usage == "known" else None)
+    assert bool(result.usage_known) is (usage == "known")
+    assert store.execution.artifact(result.artifact_id)[1] == "pong"
+    with pytest.raises(Refused, match="run_already_finished"):
+        store.settle(run)
+    stored = store.rows("SELECT receipt FROM run_usage WHERE run_id=?", run.id)
+    assert len(stored) == 1
+    assert json.loads(stored[0]["receipt"])["management"]["error"] == "mcp_bridge_failed"
+    with store.hearth.database.transaction() as db:
+        origin = by_origin(db)["origins"][0]
+    assert origin["known_cost"] == (36_580 if usage == "known" else 0)
+    assert origin["unknown_runs"] == (0 if usage == "known" else 1)
+    facts = store.rows("SELECT * FROM audit WHERE kind='run.failed' AND resource_id=?", run.id)
+    assert len(facts) == 1
+    from hearth.storage.backup import capture, verify
+
+    capture(store.data, tmp_path / "backup")
+    verify(tmp_path / "backup")
+    # Neither another start nor another worker can launch this run again.
+    folder = store.runtime.folder(run.id)
+    request = json.loads((folder / "request.json").read_text())
+    monkeypatch.setattr(
+        "hearth.integrations.claude.subscription.subprocess.Popen",
+        lambda *a, **kw: pytest.fail("settled bridge failure relaunched"),
+    )
+    store.runtime.start(run.id, request["prompt"])
+    worker(folder)
+    assert store.runtime.receipt(run.id) == published
+    if usage != "known":
+        task = store.hearth.submit(
+            "next", "writer", "Next", expires_at=int(store.hearth.clock()) + 600
+        )
+        with pytest.raises(Refused, match="resident_paused"):
+            store.hearth.admit(task.task_id, reserve=10_000)
