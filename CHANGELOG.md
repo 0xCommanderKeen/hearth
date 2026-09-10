@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Completed Claude turns with recorded bridge failures settle as failed, preserving
+  recoverable output and billed usage while unknown usage retains its hold (#194).
+
 - Routine creation retains its pending identity and payload after a lost response; retries
   reconcile an existing matching schedule while preserving concurrent edits (#193).
 

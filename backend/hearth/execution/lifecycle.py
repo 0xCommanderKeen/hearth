@@ -188,8 +188,7 @@ class Execution:
                 raise Refused("run_pricing_required")
             now = int(self.hearth.clock())
             artifact = None
-            if evidence.status == "succeeded":
-                assert evidence.output is not None
+            if evidence.output is not None and evidence.status in {"succeeded", "failed"}:
                 artifact = self.artifacts.publish(run_id, evidence.output)
                 db.execute(
                     "INSERT INTO artifacts VALUES (?, ?, ?, ?, ?)",

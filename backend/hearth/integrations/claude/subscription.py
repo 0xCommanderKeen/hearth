@@ -158,7 +158,10 @@ def encode(receipt, expected):
     transcript = transcript_of(receipt)
     cost = settled_cost(transcript, expected)
     if transcript.status == "completed":
-        return raw, digest, Evidence("succeeded", transcript.output, cost)
+        # A completed provider turn cannot erase Hearth's own bridge failure.
+        # Its answer and billed usage remain evidence even when the run failed.
+        failed = receipt.get("management", {}).get("error") is not None
+        return raw, digest, Evidence("failed" if failed else "succeeded", transcript.output, cost)
     # A cancelled or failed session still spent what it spent. The CLI stopping on its
     # own budget fence is the ordinary case: the turn was billed before it stopped.
     return raw, digest, Evidence("cancelled" if receipt["cancelled"] else "failed", cost=cost)
