@@ -303,7 +303,10 @@ CLAUDE_CONFIG_DIR=/path/to/private-claude-config \
 
 Until that says `"loggedIn": true`, the runtime refuses
 `claude_subscription_login_required` and this host simply does not open the Claude
-adapter. Nothing else about the directory belongs to anybody: Hearth owns it, writes
+adapter. That is the *household's* login. One resident may have a login of its own,
+seeded the same way into `<data>/credentials/<resident id>/claude_subscription/`; whose
+login a run spends, and what happens when a resident's own one lapses, is
+`docs/sandbox.md`. Nothing else about the directory belongs to anybody: Hearth owns it, writes
 into it (spike: a bounded session still writes `.claude.json`, `backups/` and an
 empty `projects/<cwd>/memory/`), and it must never be the machine's `~/.claude`.
 

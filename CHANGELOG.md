@@ -2,6 +2,26 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- A resident may run on a provider login of its own. `<data>/credentials/<resident
+  id>/<kind>/` is a directory an operator seeds with that CLI's own login flow -- Hearth
+  makes the shelf `0700` and never creates or copies a login. Admission resolves which
+  one a run spends and writes `runs.login_scope` (schema 13, forward-filled to
+  `household`: every run that predates the column spent the only login there was), the
+  worker mounts that directory rather than the household's, and the receipt says which
+  it was. The directory decides the scope and validity decides whether the run happens:
+  a resident whose own login is empty, lapsed or taken away **waits** with
+  `login_required` and never falls back to the household's, because falling back would
+  spend a subscription the operator did not choose. That resident is held and nobody
+  else. Each login is probed the way the household's is -- `loggedIn` and nothing more,
+  never a credential -- at start (audited once as `login.resident_lapsed`), on
+  `GET /api/health` under `login.resident_lapsed`, and before that resident's run
+  launches, with the answer remembered for a minute so a held run does not start a CLI
+  twice a second. `python -m hearth credentials --data <dir>` lists every seeded login
+  with its probe result and nothing else of the provider's answer. Townhall's resident
+  view says whose login it is on per provider, and a finished run says which it spent.
+  Bundles carry no login at all -- not the credential, not the directory, not the fact
+  that there was one.
+
 - What a resident may reach on disk is part of its management grant. `mounts` names at
   most sixteen folders with a mode, read-only unless the grant says `rw`, refused at
   write time (`grant_mount_forbidden`) for a relative path, for `/`, `/etc`, `/proc`,

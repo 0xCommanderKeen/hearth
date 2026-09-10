@@ -237,7 +237,9 @@ from read-only holds and holds more narrowly: a run cannot change the login it w
 given, and what it does write neither outlives it nor is visible to the next resident.
 The credential has to be valid when the run starts, because a session that needs to
 refresh it cannot write it back; keeping it fresh stays outside the sandbox, where it
-always was.
+always was. *Which* credential is mounted comes off the run itself -- the resident's own
+login or the household's, pinned at admission -- and that is *Whose login a run spends*,
+below.
 
 The Claude CLI would in fact have run under the ADR's own shape -- measured, it answers
 normally with a read-only configuration directory and simply writes nothing -- and it
@@ -329,6 +331,101 @@ a folder is describes the machine the bundle was exported from. An import resolv
 name against a map the operator writes, grants exactly those, and leaves the rest out as
 `mount_unresolved` in the resolution. The import goes through the same grant path, so
 this household's protected paths refuse an import as they refuse an edit.
+
+## Whose login a run spends
+
+A household has one login per provider, and a resident may have one of its own. Both
+are directories; the difference is only where they are and who they are for.
+
+| | the household's | a resident's own |
+| --- | --- | --- |
+| where | `HEARTH_CODEX_AUTH_HOME` / `HEARTH_CLAUDE_CONFIG_DIR`, anywhere the operator likes | `<data>/credentials/<resident id>/<kind>/`, always |
+| who seeds it | the operator, with that CLI's own login flow | the operator, with that CLI's own login flow |
+| who uses it | every resident that has none of its own | that one resident, on that one runtime kind |
+| when it is checked | when the adapter opens, or the runtime does not open at all | at start, on `GET /api/health`, and before each of that resident's runs launches |
+
+**Hearth never creates a login and never copies one.** It makes the shelf --
+`<data>/credentials`, mode `0700` -- and nothing on it. Everything Hearth ever does with
+the contents is mount them into a session and ask the CLI whether that directory is
+logged in. It never reads a credential, and the answer it keeps is one boolean.
+
+**The directory decides the scope; validity decides whether the run happens.** At
+admission, `runs.login_scope` is `resident` if `<data>/credentials/<id>/<kind>/` exists
+and `household` otherwise -- read once, so a login seeded or taken away afterwards
+belongs to the *next* run, exactly as a grant's mounts do. An **empty** directory, or one
+whose login has lapsed, is still the resident's own login: such a run waits with
+`login_required` until an operator fixes it, and never falls back to the household's.
+Falling back would spend a different subscription than the operator chose, and the point
+of a resident's own login is that its money and the household's are different money.
+
+**Which login a run spent is on the run and on its receipt.** `runs.login_scope` is
+Hearth's own record of what it admitted, and the receipt's `login_scope` is the worker's
+statement of what it launched with; the operator API and Townhall read the run's, for
+the same reason a writable folder is audited from `run_mounts` and not from the receipt.
+A run admitted before this column existed reads as `household`, which is what it really
+spent, because it was the only login there was.
+
+**A lapsed login holds one resident and nobody else.** The probe answer is remembered
+for a minute (`logins.REFRESH`), because the supervisor looks at a held run twice a
+second and a probe starts a CLI; whether the directory is still *there* is asked every
+time. Every other resident in the household is launched by the same pass. Nothing is
+spent and nothing is thrown away: the held run was never launched, and it runs as soon
+as the login works again.
+
+**Where an operator sees it.** `GET /api/health` names every lapsed one under
+`login.resident_lapsed` (probed afresh on each ask, behind the operator's token; nothing
+about a login reaches the open `/health`). Each is audited once per start as
+`login.resident_lapsed`. Townhall's resident view says, provider by provider, whether
+that resident is on its own login or the household's, and a finished run says which it
+spent. With no server running, `python -m hearth credentials --data <dir>` lists them:
+resident, kind, path and `logged_in` -- `null` where this host has no pinned binary to
+ask with, because a login nobody probed has not lapsed.
+
+**A login never travels in a bundle** (ADR 0010): not the credential, not the directory,
+not even the fact that the exporting household gave that resident one. An imported
+resident is on its new household's login until an operator seeds it one.
+
+### Seeding one, per kind
+
+Point the CLI's own configuration path at the directory and run its own login flow.
+Nothing else puts a login there, and Hearth refuses to invent one.
+
+```sh
+mkdir -p -m 700 <data>/credentials/<resident id>/codex_subscription
+CODEX_HOME=<data>/credentials/<resident id>/codex_subscription /path/to/codex login
+```
+
+```sh
+mkdir -p -m 700 <data>/credentials/<resident id>/claude_subscription
+CLAUDE_CONFIG_DIR=<data>/credentials/<resident id>/claude_subscription \
+  ~/.local/share/claude/versions/2.1.263 auth login
+```
+
+**The headless options each CLI offers**, read from the pinned builds on 2026-09-10
+(`codex-cli 0.153.4`, `2.1.263 (Claude Code)`):
+
+- **Codex** `login` takes `--device-auth` for a host with no browser of its own, and
+  `--with-api-key` / `--with-access-token`, each reading the secret from stdin, for a
+  host where the operator already holds one. `codex login status` says whether it
+  worked; on an empty `CODEX_HOME` it answers `Not logged in` and exits 1 (measured).
+  **Hearth does not run it**: its logged-in answer is a line of prose naming the
+  account, and Hearth's own probe is the presence of `auth.json`, which is exactly what
+  the household's login is checked for when the adapter opens.
+- **Claude** `auth login` takes `--claudeai` (the default subscription flow), `--console`
+  (API billing instead, which is not what this pin is for), `--email` to pre-populate
+  the login page, and `--sso`. There is **no device-code flag** on this build, so a
+  server with no browser needs the browser flow completed somewhere that has one -- with
+  a forwarded port, or by the operator placing the resulting `.credentials.json` in the
+  directory by hand. Hearth's own probe is `auth status --json`, read for `loggedIn` and
+  nothing else; on the container launcher the credential also has to be a *file* there,
+  because a Keychain does not cross the boundary (measurement 11).
+
+Verify without reading anything secret -- the answer also names the account, and only
+`loggedIn` is ever Hearth's business:
+
+```sh
+python -m hearth credentials --data <data>
+```
 
 ## Measured, 2026-09-09, a granted folder against the real daemon
 
@@ -558,6 +655,17 @@ session now that the adapter speaks in placements.
   about what else is.
 - Hearth itself is not packaged (#189). The container the journey ran in is a harness,
   not `deploy/compose.yaml`.
+- No resident has run against a real model on a login of its own. Both adapters are
+  driven end to end with a fake CLI that reports the configuration directory it was
+  handed, which is what proves the right one reaches the session; the login files in
+  those tests are synthetic and no provider is reached. Nobody but the account holder
+  can seed a second real login, so the two-subscription run waits on the same person the
+  Claude journey does.
+- Codex's own lapse detection is the credential file and nothing more. `codex login
+  status` would say more and Hearth does not ask it: its answer names the account. So a
+  Codex login whose token has expired while its `auth.json` is still on disk reads as
+  present here, and the session that spends it fails at the provider rather than
+  waiting. Claude's probe is the CLI's own answer and does not have that gap.
 - A **management** session in a container has the fake daemon's coverage and not a real
   daemon's: the journey is one `codex exec` run. One thing in it is worth measuring when
   #186 or #189 next has a real host — the model catalog Hearth generates goes in a
