@@ -2,12 +2,21 @@
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import uvicorn
+from hearth.app import create_app
+from hearth.channels.chat.config import Secrets
+from hearth.channels.worker import Worker
+from hearth.residents.models import Declaration
+
+from tests.fake_runtime import fake_runtime
 
 
 @pytest.fixture
@@ -119,6 +128,151 @@ def test_response_bound_and_missing_auth(server):
     result = run(server, "list")
     assert "communications_response_too_large" in result.stderr
     assert len(result.stderr) < 3000
+
+
+def test_cli_setup_reload_revision_and_revoke_use_real_owner(tmp_path):
+    root = tmp_path / "secrets"
+    root.mkdir(mode=0o700)
+    app = create_app(
+        tmp_path / "data",
+        "synthetic-cli-operator-token",
+        supervise=False,
+        runtime=fake_runtime(),
+        communications=lambda hearth: Worker(hearth, Secrets(root), {}),
+    )
+    app.state.hearth.save_resident(
+        "herald", Declaration("Herald", "Synthetic setup", 10_000_000), expected_revision=0
+    )
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    owner = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(target=lambda: owner.run(sockets=[listener]))
+    thread.start()
+    server = {"url": f"http://127.0.0.1:{listener.getsockname()[1]}"}
+    try:
+        deadline = time.monotonic() + 5
+        while not owner.started:
+            assert thread.is_alive() and time.monotonic() < deadline
+            time.sleep(0.01)
+        destination = {"connection_id": "bot", "guild_id": "100", "channel_id": "200"}
+        values = [
+            ("connection", "bot", {"transport": "discord", "bot_id": "300", "secret_ref": "bot"}),
+            (
+                "route",
+                "room",
+                {
+                    "connection_id": "bot",
+                    "resident_id": "herald",
+                    "address": {"guild_id": "100", "channel_id": "200"},
+                    "sender_policy": "guild_channel_humans",
+                },
+            ),
+            (
+                "grant",
+                "herald",
+                {
+                    "read": [destination],
+                    "listen": [destination],
+                    "reply": [destination],
+                    "post": [],
+                },
+            ),
+        ]
+        for kind, identity, value in values:
+            source = tmp_path / f"{kind}.json"
+            source.write_text(json.dumps(value))
+            args = (
+                "save",
+                "--kind",
+                kind,
+                "--id",
+                identity,
+                "--expected-revision",
+                "0",
+                "--file",
+                str(source),
+            )
+            result = run(server, *args)
+            assert result.returncode == 0, result.stderr
+            assert json.loads(result.stdout) == {"id": identity, "revision": 1}
+            assert run(server, *args).returncode != 0
+        result = run(server, "list", "--section", "configuration")
+        config = json.loads(result.stdout)
+        assert len(config["configuration"]) == 3
+        assert config["health"]["communications"] == "stopped"
+        assert str(root) not in result.stdout
+        assert run(server, "activate", "--id", "bot", "--expected-revision", "0").returncode != 0
+        (root / "bot").write_text("synthetic-local-bot-token")
+        (root / "bot").chmod(0o600)
+        source = tmp_path / "connection.json"
+        source.write_text(json.dumps(values[0][2] | {"state": "active"}))
+        result = run(
+            server,
+            "save",
+            "--kind",
+            "connection",
+            "--id",
+            "bot",
+            "--expected-revision",
+            "1",
+            "--file",
+            str(source),
+        )
+        assert result.returncode == 0, result.stderr
+        result = run(
+            server,
+            "activate",
+            "--id",
+            "bot",
+            "--expected-revision",
+            "0",
+            "--old-consumer-stopped",
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {"connection_id": "bot", "revision": 1}
+        for kind, identity, _ in reversed(values):
+            result = run(
+                server,
+                "revoke",
+                "--kind",
+                kind,
+                "--id",
+                identity,
+                "--expected-revision",
+                "2" if kind == "connection" else "1",
+            )
+            assert result.returncode == 0, result.stderr
+        config = json.loads(run(server, "list", "--section", "configuration").stdout)
+        for item in config["configuration"]:
+            assert item["value"]["revision"] == (3 if item["kind"] == "connection" else 2)
+            if item["kind"] == "grant":
+                assert all(
+                    item["value"][power] == [] for power in ("read", "listen", "reply", "post")
+                )
+            else:
+                assert item["value"]["state"] == "disabled"
+        source = tmp_path / "invalid.json"
+        source.write_text('{"token":"NEVER_ECHO_THIS"}')
+        result = run(
+            server,
+            "save",
+            "--kind",
+            "connection",
+            "--id",
+            "other",
+            "--expected-revision",
+            "0",
+            "--file",
+            str(source),
+        )
+        assert result.returncode != 0 and "NEVER_ECHO_THIS" not in result.stderr
+        assert "synthetic-cli-operator-token" not in result.stderr
+        assert "synthetic-local-bot-token" not in json.dumps(config)
+    finally:
+        owner.should_exit = True
+        thread.join(10)
+        listener.close()
+        assert not thread.is_alive()
 
 
 @pytest.mark.parametrize(

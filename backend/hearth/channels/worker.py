@@ -42,6 +42,7 @@ class Worker:
         self._guard = threading.Lock()
         self._io_guard = threading.RLock()
         self._health = {"communications": "stopped", "error": None}
+        self._credentials = {}
         self._offset = 0
         self._reply_after = ""
         self._admit_after = ""
@@ -52,6 +53,7 @@ class Worker:
     def health(self):
         with self._guard:
             result: dict = dict(self._health)
+            result["credentials"] = {key: dict(value) for key, value in self._credentials.items()}
         result["connections"] = {
             key: adapter.health()
             for key, (_, _, _, adapter) in list(self._sessions.items())
@@ -222,7 +224,13 @@ class Worker:
         if self.secrets is None or connection["transport"] not in self.factories:
             self._drop(identity)
             raise Refused("communications_transport_unavailable")
-        secret = self.secrets.resolve(connection["secret_ref"])
+        try:
+            secret = self.secrets.resolve(connection["secret_ref"])
+        except Refused:
+            self._credential_state(identity, connection, "invalid")
+            self._drop(identity)
+            raise
+        self._credential_state(identity, connection, "missing" if secret is None else "configured")
         if secret is None:
             self._drop(identity)
             raise Refused("communications_pending")
@@ -252,6 +260,14 @@ class Worker:
         except BaseException:
             stack.close()
             raise
+
+    def _credential_state(self, identity, connection, state):
+        with self._guard:
+            self._credentials[identity] = {
+                "state": state,
+                "checked_at": int(self.hearth.clock()),
+                "revision": connection["revision"],
+            }
 
     def _check_secret(self, identity, connection):
         value = self.secrets.resolve(connection["secret_ref"]) if self.secrets is not None else None

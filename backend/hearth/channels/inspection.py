@@ -87,6 +87,14 @@ class Inspection:
                     "WHERE kind IN ('connection','route') ORDER BY kind,id LIMIT 528"
                 )
             ]
+            progress = [
+                dict(r)
+                for r in db.execute(
+                    "SELECT connection_id,guild_id,channel_id,cursor,through_id,updated_at "
+                    "FROM communications_cursors ORDER BY connection_id,guild_id,channel_id "
+                    "LIMIT 512"
+                )
+            ]
             result = self.redact(
                 db,
                 {
@@ -97,6 +105,7 @@ class Inspection:
                     else None,
                     "bindings": bindings,
                     "schedule": schedules,
+                    "poll_progress": progress,
                     "health": self.worker.health(),
                     "retention": RETENTION,
                 },

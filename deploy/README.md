@@ -15,6 +15,7 @@ do things in.
 | `Dockerfile.sandbox` | the sandbox: both pinned CLIs, Hearth's bridge shim and fence probe, no package manager, no root |
 | `compose.yaml` | the deployment: volumes, networks, the runtime socket, the fence's configuration |
 | `compose.dev.yaml` | optional Node 26 frontend with hot reload against the deployed backend |
+| `compose.communications.yaml` | opt-in backend-only protected Discord credential directory |
 | `Dockerfile.web` | the frontend development image with locked pnpm dependencies |
 | `.env.example` | every value the compose file wants, with what each one is for |
 | `fence.sh` | the packet filter that makes `hearth-egress` the sandbox's only network |
@@ -418,3 +419,20 @@ volumes:
 and granted by that path, `ro` unless the resident is meant to write. What a run
 reached is on the run itself, and a writable folder that was really written is audited
 as `run.mount_rw_used`.
+
+## 9. Optional Discord communications
+
+Follow [Discord setup](../docs/discord-setup.md) after selecting the actual bot,
+channels, resident/runtime, protected credential directory, host and allowance.
+`compose.communications.yaml` adds only the explicit protected directory to the
+backend at its identical host path. Use mode 0700 owned by `HEARTH_UID`, token files
+mode 0600, and a private environment file containing the directory path under
+`HEARTH_COMMUNICATIONS_SECRETS`. The directory is outside the store and repository;
+it never enters a sandbox, backup or resident declaration. Existing deployments
+remain without a communications resolver unless this override is selected.
+
+Verify backend DNS/TLS egress to Discord separately from sandbox egress. A bot
+appearing offline is compatible with REST polling. Reload and settings reads make
+no network request; explicit probe and enabled polling run under the sole backend
+owner. Configuration saves do not replace explicit old-consumer-stopped activation.
+Restored copies remain held and never resolve the directory or contact Discord.

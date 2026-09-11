@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Client, RequestError } from "../../shared/client";
+import {
+  Client,
+  RequestError,
+  type Resident,
+  type Runtimes,
+} from "../../shared/client";
 import {
   api,
   time,
@@ -41,10 +46,14 @@ export function Communications({
   client,
   readOnly,
   residentId,
+  residents,
+  runtimes,
 }: {
   client: Client;
   readOnly: boolean;
   residentId?: string;
+  residents?: Resident[];
+  runtimes?: Runtimes;
 }) {
   const [section, setSection] = useState<Section>("Conversations");
   return (
@@ -80,6 +89,8 @@ export function Communications({
           client={client}
           readOnly={readOnly}
           residentId={residentId}
+          residents={residents}
+          runtimes={runtimes}
         />
       ) : section === "Usage" ? (
         <UsageList client={client} />

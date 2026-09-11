@@ -80,7 +80,9 @@ def main() -> None:
             "communications",
         ],
     )
-    parser.add_argument("action", nargs="?", choices=["list", "inspect", "probe"])
+    parser.add_argument(
+        "action", nargs="?", choices=["list", "inspect", "probe", "save", "revoke", "activate"]
+    )
     parser.add_argument(
         "--section",
         choices=["configuration", "conversations", "deliveries", "forwarding", "usage"],
@@ -88,7 +90,11 @@ def main() -> None:
     )
     parser.add_argument("--id", dest="identity")
     parser.add_argument("--route")
-    parser.add_argument("--kind", choices=["reply", "announcement", "notification"])
+    parser.add_argument(
+        "--kind", choices=["reply", "announcement", "notification", "connection", "route", "grant"]
+    )
+    parser.add_argument("--file", type=Path, help="Non-secret communications configuration JSON")
+    parser.add_argument("--old-consumer-stopped", action="store_true")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--after", default="")

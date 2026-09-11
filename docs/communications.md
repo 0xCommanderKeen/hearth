@@ -781,3 +781,40 @@ resolution are available in Townhall/API; this CLI slice does not duplicate thei
 mutation forms. No live credential, source, resident runtime or real-host gate was
 selected by this slice. Discord-specific setup and independently selected live
 acceptance remain #244.
+
+### Discord setup delivered by #244
+
+[Discord setup](discord-setup.md) documents guild bot installation, narrow channel
+permissions and Message Content access, protected token seeding, resident/runtime
+selection and explicit activation. Shared Settings adds a selected-channel form
+with independent read/listen/reply/post controls and the `guild_channel_humans`
+policy. The existing Conversations, Announcements, Notification deliveries,
+Letters and Inbox retain their separate meanings.
+
+`create_app(communications_secrets=Path(...))` and
+`HEARTH_COMMUNICATIONS_SECRETS` opt into the protected backend resolver. The root is
+validated and added to mount protection before workers start; no secret file is
+read at construction or render. Held stores ignore the resolver. The opt-in
+Compose override mounts that root read-only only into the backend at its identical
+host path. There is no default token directory or credential copy.
+
+The common CLI additionally supports `save --kind connection|route|grant --id ...
+--expected-revision ... --file ...`, `activate --old-consumer-stopped`, and `revoke`.
+All use the authenticated running server. Save accepts bounded strict non-secret
+JSON; revoke calls `POST /configuration/{kind}/{id}/revoke` with an expected revision.
+The Configuration owner disables a route/connection or clears all four grant
+lists, rechecking the revision and refusing queued invalid effects in its existing
+save transaction. Dispatched and unknown evidence is never rewritten.
+
+Configuration GET additionally exposes bounded durable `poll_progress` and cached
+`health.credentials` with state, timestamp and checked configuration revision.
+Configured means the protected file was readable, not that authentication succeeded.
+Missing cache entries mean unknown; previous-revision evidence is stale. Cursor
+progress is a persisted baseline/scan/progress observation, not a heartbeat or a
+claim that a rate-limited channel is current. These projections require no schema
+change, credential reads or transport construction.
+
+The installed-wheel and actual Docker loopback journeys, browser forms and real
+SQLite CLI tests are synthetic wiring evidence only. #244's actual Discord/runtime
+acceptance remains open until the operator selects its concrete live inputs; #233
+and daily-observation gates are unchanged.

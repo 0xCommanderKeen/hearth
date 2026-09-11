@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Client, RequestError } from "../../shared/client";
+import { DiscordSetup } from "./DiscordSetup";
+import {
+  Client,
+  RequestError,
+  type Resident,
+  type Runtimes,
+} from "../../shared/client";
 import {
   api,
   time,
@@ -13,10 +19,14 @@ export function CommunicationSettings({
   client,
   readOnly,
   residentId,
+  residents = [],
+  runtimes,
 }: {
   client: Client;
   readOnly: boolean;
   residentId?: string;
+  residents?: Resident[];
+  runtimes?: Runtimes;
 }) {
   const [data, setData] = useState<Status | null>(null);
   const [forwarding, setForwarding] = useState<Forwarding[]>([]);
@@ -93,7 +103,7 @@ export function CommunicationSettings({
   };
   const held = readOnly || !!data?.read_only;
   async function write(path: string, body: unknown, method = "POST") {
-    if (held) return;
+    if (held) return false;
     setBusy(true);
     setError("");
     setMessage("");
@@ -101,12 +111,14 @@ export function CommunicationSettings({
       const result = await api(client).write(path, body, method);
       setMessage(`Action recorded. ${result ? JSON.stringify(result) : ""}`);
       await load();
+      return true;
     } catch (e) {
       setError(
         e instanceof RequestError && e.status === 409
           ? `${e.message}. Reload settings to review the current revision; your edit has not been silently rebased.`
           : String(e),
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -117,7 +129,9 @@ export function CommunicationSettings({
       <p>
         Only non-secret installation references belong here. Credentials are
         managed outside Hearth's declarations and repository. Reload reads
-        cached local diagnostics; only an explicit probe contacts a transport.
+        cached local diagnostics and never contacts a transport. A probe
+        explicitly requests a check; an active worker may poll or deliver
+        independently.
       </p>
       <button disabled={busy} onClick={() => void load()}>
         Reload settings
@@ -141,6 +155,25 @@ export function CommunicationSettings({
       )}
       {data && (
         <>
+          <DiscordSetup
+            configs={configs}
+            status={data}
+            residents={residents}
+            runtimes={runtimes}
+            residentId={residentId}
+            disabled={held || busy}
+            onEdit={(item) => {
+              setEdit(item);
+              setForwardEdit(null);
+            }}
+            onSave={(kind, id, revision, value) =>
+              write(
+                `/configuration/${kind}/${encodeURIComponent(id)}`,
+                { expected_revision: revision, value },
+                "PUT",
+              )
+            }
+          />
           <p>{data.retention}</p>
           <h4>Cached health</h4>
           <pre>{JSON.stringify(data.health, null, 2)}</pre>

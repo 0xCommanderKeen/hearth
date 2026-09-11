@@ -1,0 +1,14 @@
+# Opt in only after selecting the bot, channels, host and protected directory.
+# This path must be identical inside the backend and on the Docker host so the
+# existing mount protection also refuses it to resident sandboxes.
+services:
+  hearth:
+    environment:
+      HEARTH_COMMUNICATIONS_SECRETS: ${HEARTH_COMMUNICATIONS_SECRETS:?select a protected absolute directory outside the store and repository}
+    volumes:
+      - type: bind
+        source: ${HEARTH_COMMUNICATIONS_SECRETS:?select a protected absolute directory}
+        target: ${HEARTH_COMMUNICATIONS_SECRETS:?select a protected absolute directory}
+        read_only: true
+        bind:
+          create_host_path: false

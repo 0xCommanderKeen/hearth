@@ -70,6 +70,7 @@ def create_app(
     sandbox: Sandbox | None = None,
     fence: Fence | None = None,
     communications: Callable[[Hearth], Worker] | None = None,
+    communications_secrets: Path | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
@@ -211,9 +212,18 @@ def create_app(
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
-    communications_worker = (
-        communications(hearth) if communications and not restored else Worker(hearth)
-    )
+    if communications and not restored:
+        communications_worker = communications(hearth)
+    elif communications_secrets is not None and not restored:
+        from hearth.channels.chat.config import Configuration, Secrets
+
+        secrets = Secrets(communications_secrets)
+        # Register the protected root before API access or either worker can admit
+        # work. Construction validates location only; file contents stay unloaded.
+        Configuration(hearth, secrets)
+        communications_worker = Worker(hearth, secrets)
+    else:
+        communications_worker = Worker(hearth)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -763,4 +773,7 @@ def from_env() -> FastAPI:
         else None,
         sandbox=Sandbox.from_environment(),
         fence=Fence.from_environment(),
+        communications_secrets=Path(os.environ["HEARTH_COMMUNICATIONS_SECRETS"])
+        if os.environ.get("HEARTH_COMMUNICATIONS_SECRETS")
+        else None,
     )

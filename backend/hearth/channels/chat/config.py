@@ -58,11 +58,31 @@ class Configuration:
             return
         data = hearth.database.path.parent.resolve()
         root = secrets.root.resolve()
+        if root != secrets.root:
+            raise Refused("communications_secret_location_forbidden")
         if root.is_relative_to(data) or data.is_relative_to(root):
             raise Refused("communications_secret_location_forbidden")
         if any((parent / ".git").exists() for parent in (root, *root.parents)):
             raise Refused("communications_secret_location_forbidden")
         hearth.mount_protected = (*hearth.mount_protected, str(secrets.root))
+
+    def revoke(self, kind: str, identity: str, *, expected_revision: int) -> dict:
+        models = {"connection": Connection, "route": Route, "grant": Grant}
+        if kind not in models:
+            raise Refused("communications_configuration_invalid")
+        with self.hearth.database.transaction() as db:
+            value = read(db, kind, identity)
+        if value is None:
+            raise Refused("communications_configuration_missing")
+        if value["revision"] != expected_revision:
+            raise Refused("revision_conflict")
+        value.pop("revision")
+        value = {} if kind == "grant" else value | {"state": "disabled"}
+        # save rechecks the caller's revision in its writer and refuses queued
+        # effects there; a concurrent edit can never be overwritten by this read.
+        return self.save(
+            kind, identity, models[kind].model_validate(value), expected_revision=expected_revision
+        )
 
     def save(self, kind: str, identity: str, value, *, expected_revision: int) -> dict:
         identifier(identity)

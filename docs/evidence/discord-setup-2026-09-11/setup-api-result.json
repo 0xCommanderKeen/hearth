@@ -1,0 +1,180 @@
+{
+  "checks": [
+    "existing generic Discord bot ref creation",
+    "actual resident/runtime references",
+    "dedicated numeric channel any-human route creation",
+    "four distinct grants no implicit authority",
+    "explicit activation with stopped worker probe disabled",
+    "reload immutable binding",
+    "keyboard submission",
+    "concurrent revision conflict and explicit reload",
+    "scope and route revoke",
+    "390px no overflow",
+    "no token DOM leakage",
+    "resident settings deep link",
+    "no external worker or probe",
+    "actual backup/held restore all write controls disabled"
+  ],
+  "writes": [
+    {
+      "path": "/api/communications/configuration/connection/discord-bot",
+      "body": {
+        "expected_revision": 0,
+        "value": {
+          "transport": "discord",
+          "bot_id": "100",
+          "secret_ref": "test_slot",
+          "state": "active",
+          "label": "Synthetic Discord bot"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-bot",
+        "revision": 1
+      }
+    },
+    {
+      "path": "/api/communications/configuration/route/discord-route",
+      "body": {
+        "expected_revision": 0,
+        "value": {
+          "connection_id": "discord-bot",
+          "resident_id": "actual-herald",
+          "address": {
+            "guild_id": "200",
+            "channel_id": "300"
+          },
+          "label": "Synthetic test channel",
+          "state": "active",
+          "mode": "dedicated",
+          "sender_policy": "guild_channel_humans",
+          "operator_ids": []
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-route",
+        "revision": 1
+      }
+    },
+    {
+      "path": "/api/communications/configuration/grant/actual-herald",
+      "body": {
+        "expected_revision": 0,
+        "value": {
+          "read": [
+            {
+              "connection_id": "discord-bot",
+              "guild_id": "200",
+              "channel_id": "300"
+            }
+          ],
+          "listen": [
+            {
+              "connection_id": "discord-bot",
+              "guild_id": "200",
+              "channel_id": "300"
+            }
+          ],
+          "reply": [
+            {
+              "connection_id": "discord-bot",
+              "guild_id": "200",
+              "channel_id": "300"
+            }
+          ],
+          "post": [
+            {
+              "connection_id": "discord-bot",
+              "guild_id": "200",
+              "channel_id": "300"
+            }
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "actual-herald",
+        "revision": 1
+      }
+    },
+    {
+      "path": "/api/communications/connections/discord-bot/activate",
+      "body": {
+        "expected_revision": 0,
+        "old_consumer_stopped": true
+      },
+      "status": 200,
+      "response": {
+        "connection_id": "discord-bot",
+        "revision": 1
+      }
+    },
+    {
+      "path": "/api/communications/configuration/route/discord-route",
+      "body": {
+        "expected_revision": 1,
+        "value": {
+          "connection_id": "discord-bot",
+          "resident_id": "actual-herald",
+          "address": {
+            "guild_id": "200",
+            "channel_id": "300"
+          },
+          "label": "Browser stale label",
+          "state": "active",
+          "mode": "dedicated",
+          "sender_policy": "guild_channel_humans",
+          "operator_ids": []
+        }
+      },
+      "status": 409,
+      "response": {
+        "error": "revision_conflict"
+      }
+    },
+    {
+      "path": "/api/communications/configuration/grant/actual-herald",
+      "body": {
+        "expected_revision": 1,
+        "value": {
+          "read": [],
+          "listen": [],
+          "reply": [],
+          "post": []
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "actual-herald",
+        "revision": 2
+      }
+    },
+    {
+      "path": "/api/communications/configuration/route/discord-route",
+      "body": {
+        "expected_revision": 2,
+        "value": {
+          "connection_id": "discord-bot",
+          "resident_id": "actual-herald",
+          "address": {
+            "guild_id": "200",
+            "channel_id": "300"
+          },
+          "state": "disabled",
+          "mode": "dedicated",
+          "sender_policy": "guild_channel_humans",
+          "operator_ids": [],
+          "label": "Concurrent label"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-route",
+        "revision": 3
+      }
+    }
+  ],
+  "page_errors": []
+}

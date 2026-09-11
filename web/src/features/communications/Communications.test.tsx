@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { Client, RequestError } from "../../shared/client";
 import { Communications, DeliveryDetail } from "./Communications";
@@ -470,7 +471,10 @@ it("disables probing with a stopped worker and omits inactive or ungranted route
     true,
   );
   expect(
-    screen.queryByRole("option", { name: "Synthetic channel" }),
+    within(screen.getByLabelText("Probe route for local")).queryByRole(
+      "option",
+      { name: "Synthetic channel" },
+    ),
   ).toBeNull();
   expect(
     screen.getByText("Probing requires a running communications worker."),
