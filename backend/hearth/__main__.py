@@ -77,8 +77,23 @@ def main() -> None:
             "export-resident",
             "import-resident",
             "credentials",
+            "communications",
         ],
     )
+    parser.add_argument("action", nargs="?", choices=["list", "inspect", "probe"])
+    parser.add_argument(
+        "--section",
+        choices=["configuration", "conversations", "deliveries", "forwarding", "usage"],
+        default="conversations",
+    )
+    parser.add_argument("--id", dest="identity")
+    parser.add_argument("--route")
+    parser.add_argument("--kind", choices=["reply", "announcement", "notification"])
+    parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--after", default="")
+    parser.add_argument("--before")
+    parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--data", type=Path, default=Path(".hearth"))
     parser.add_argument("--source", type=Path)
     parser.add_argument("--destination", type=Path)
@@ -89,6 +104,14 @@ def main() -> None:
     parser.add_argument("--daily-limit", type=int)
     parser.add_argument("--command-id")
     args = parser.parse_args()
+    if args.command == "communications":
+        from hearth.channels.cli import communications
+
+        try:
+            print(json.dumps(communications(args), ensure_ascii=True, indent=2))
+        except Refused as error:
+            parser.error(error.code)
+        return
     if args.command == "credentials":
         print(json.dumps(credentials(args.data), indent=2))
         return

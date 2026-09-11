@@ -1,0 +1,7 @@
+[
+  "pending activation/probe disabled even after acknowledgement",
+  "disabled activation/probe disabled even after acknowledgement",
+  "stopped worker probe disabled",
+  "unactivated binding probe disabled",
+  "all fixture requests GET; no probe, activation or mutation"
+]

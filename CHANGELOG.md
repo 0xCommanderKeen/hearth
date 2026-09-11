@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Expose authenticated bounded Communications views and CLI inspection, revisioned
+  installation controls and owned explicit probes, with truthful unknown-delivery
+  reconciliation and independent source-run usage (#247).
+
 - Forward opt-in operator run notices through the owned Discord worker, with bounded
   selection, pinned safe destinations/URLs, independent Inbox state and honest receipts (#243).
 

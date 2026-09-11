@@ -40,6 +40,7 @@ class Worker:
         self._stop = threading.Event()
         self._thread = None
         self._guard = threading.Lock()
+        self._io_guard = threading.RLock()
         self._health = {"communications": "stopped", "error": None}
         self._offset = 0
         self._reply_after = ""
@@ -81,6 +82,10 @@ class Worker:
         return self
 
     def __exit__(self, *exc):
+        with self._io_guard:
+            return self._exit(*exc)
+
+    def _exit(self, *exc):
         failure = None
         try:
             for key in list(self._sessions):
@@ -191,6 +196,25 @@ class Worker:
                 error.seconds,
                 getattr(error, "code", "rate_limited"),
             )
+        elif isinstance(error, Refused):
+            code = (
+                error.code
+                if error.code
+                in {
+                    "communications_transport_unavailable",
+                    "communications_pending",
+                    "communications_secret_invalid",
+                    "communications_secret_reference_invalid",
+                    "communications_secret_changed",
+                    "delivery_installation_not_owned",
+                    "delivery_worker_owned",
+                    "communications_route_inactive",
+                    "communications_scope_denied",
+                    "communications_route_changed",
+                }
+                else "route_unavailable"
+            )
+            self._schedule(kind, identity, 5, code)
         else:
             self._schedule(kind, identity, 5, "route_unavailable")
 
@@ -235,6 +259,10 @@ class Worker:
             raise Refused("communications_secret_changed")
 
     def step(self):
+        with self._io_guard:
+            return self._step()
+
+    def _step(self):
         self._writable()  # Before even loading a factory or probing a secret.
         if self._lock is None:
             raise Refused("communications_worker_not_owned")
@@ -437,6 +465,100 @@ class Worker:
                     )
             except Exception as error:
                 self._failure("connection", identity, identity, error)
+
+    def probe(self, connection_id: str, route_id: str):
+        """Explicit bounded permission check through this worker's owned client.
+
+        This never polls, establishes cursors, admits tasks or dispatches messages.
+        The same I/O guard serializes it with worker passes and shutdown.
+        """
+        with self._io_guard:
+            self._writable()
+            if self._lock is None:
+                raise Refused("communications_worker_not_owned")
+
+            def selected(db):
+                route = read(db, "route", route_id)
+                connection = read(db, "connection", connection_id)
+                if (
+                    route is None
+                    or route["connection_id"] != connection_id
+                    or route["state"] != "active"
+                ):
+                    raise Refused("communications_route_inactive")
+                if connection is None or connection["state"] != "active":
+                    raise Refused("communications_pending")
+                grant = read(db, "grant", route["resident_id"])
+                destination = route["address"] | {"connection_id": connection_id}
+                powers = {
+                    k: grant is not None and destination in grant[k]
+                    for k in ("read", "listen", "reply", "post")
+                }
+                if not any(powers.values()):
+                    raise Refused("communications_scope_denied")
+                return route, connection, grant, powers
+
+            with self.hearth.database.transaction() as db:
+                pins = selected(db)
+                fingerprint = [
+                    tuple(r)
+                    for r in db.execute(
+                        "SELECT kind,id,revision FROM communications_config ORDER BY kind,id"
+                    )
+                ]
+            route, connection, _, powers = pins
+            if (
+                not self._eligible("connection", connection_id)
+                or not self._eligible("route", route_id)
+                or self._destination_waiting(connection_id, route["address"])
+            ):
+                raise Refused("communications_retry_scheduled")
+            _, owner, _, adapter = self._session(connection_id, connection, fingerprint)
+            if not callable(getattr(adapter, "probe", None)):
+                raise Refused("communications_probe_unavailable")
+            self._check_secret(connection_id, connection)
+            with self.hearth.database.transaction(write=True) as db:
+                self.delivery._binding(db, connection_id, owner)
+                if selected(db) != pins:
+                    raise Refused("communications_route_changed")
+                _audit(
+                    db,
+                    "communications.probe_requested",
+                    route_id,
+                    int(self.hearth.clock()),
+                    {"connection_id": connection_id},
+                )
+            try:
+                adapter.probe(
+                    route["address"]["guild_id"],
+                    route["address"]["channel_id"],
+                    read=powers["read"] or powers["listen"],
+                    send=powers["reply"] or powers["post"],
+                    max_bytes=RESPONSE_BYTES,
+                    timeout=REQUEST_SECONDS,
+                )
+            except Exception as error:
+                self._failure("route", route_id, connection_id, error)
+                raise Refused("communications_probe_failed") from None
+            finally:
+                self._flush_limits(connection_id, adapter)
+            self._check_secret(connection_id, connection)
+            with self.hearth.database.transaction(write=True) as db:
+                self.delivery._binding(db, connection_id, owner)
+                if selected(db) != pins:
+                    raise Refused("communications_route_changed")
+                _audit(
+                    db,
+                    "communications.probed",
+                    route_id,
+                    int(self.hearth.clock()),
+                    {"connection_id": connection_id},
+                )
+            return {
+                "connection_id": connection_id,
+                "route_id": route_id,
+                "health": adapter.health(),
+            }
 
     def _poll(self, route_id, adapter):
         self._writable()

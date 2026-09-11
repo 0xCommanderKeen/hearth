@@ -34,6 +34,7 @@ import { RunInputs } from "../features/inputs/Selection";
 import { SkillCatalog } from "../features/skills/SkillCatalog";
 import { HouseholdPanel } from "../features/household/Household";
 import { ImportResident } from "../features/residents/ImportResident";
+import { Communications } from "../features/communications/Communications";
 import { Letters } from "../features/letters/Letters";
 import { Lineage } from "../features/letters/Lineage";
 import { Hamlet } from "../features/hamlet/Hamlet";
@@ -141,6 +142,7 @@ type Page =
   | "import-resident"
   | "skills"
   | "inputs"
+  | "communications"
   | "management"
   | "tasks"
   | "routines"
@@ -371,6 +373,7 @@ export function App() {
           "#skills",
           "#inputs",
           "#management",
+          "#communications",
           "#tasks",
           "#routines",
           "#inbox",
@@ -497,6 +500,8 @@ export function App() {
       "Bring a resident definition from another Hearth. Runs, history and authority never travel with it.",
     skills: "Reusable instructions, revision history and shared know-how.",
     inputs: "Notes each resident is allowed to read.",
+    communications:
+      "External conversations, announcements and notification delivery evidence.",
     management: "Which residents may create and assign work, within limits.",
     tasks: "Every assignment and its result.",
     routines: "Scheduled work.",
@@ -506,7 +511,16 @@ export function App() {
   }[view];
 
   const navGroups: { label?: string; pages: Page[] }[] = [
-    { pages: ["townhall", "residents", "tasks", "inbox", "activity"] },
+    {
+      pages: [
+        "townhall",
+        "residents",
+        "tasks",
+        "inbox",
+        "communications",
+        "activity",
+      ],
+    },
     { label: "Library", pages: ["skills", "inputs", "routines", "management"] },
     { label: "Village", pages: ["hamlet"] },
   ];
@@ -855,6 +869,13 @@ export function App() {
               />
             )}
             {(view === "townhall" || view === "residents") && setupFailures}
+            {view === "communications" && (
+              <Communications
+                key={snapshot.epoch}
+                client={client}
+                readOnly={snapshot.restore_hold === true}
+              />
+            )}
             {view === "management" && (
               <ManagementPanel
                 key={snapshot.epoch}
@@ -1406,6 +1427,14 @@ export function App() {
                         </ul>
                       )}
                     </section>
+                    {residentTab === "Tasks" && (
+                      <Communications
+                        key={`communications:${snapshot.epoch}:${current.id}`}
+                        client={client}
+                        residentId={current.id}
+                        readOnly={snapshot.restore_hold === true}
+                      />
+                    )}
                     <div id="resident-letters" tabIndex={-1}>
                       <Letters
                         key={`letters:${current.id}`}
@@ -1477,6 +1506,11 @@ export function App() {
                   }
                 />
                 <ResidentPanel name="Settings" active={residentTab}>
+                  <p>
+                    <a href="#communications">
+                      Communications settings & diagnostics →
+                    </a>
+                  </p>
                   <div key={`profile:${current.id}`}>
                     <ResidentMaintenance
                       key={`maintenance:${snapshot.epoch}:${current.id}`}

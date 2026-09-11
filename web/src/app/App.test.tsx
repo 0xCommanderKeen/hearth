@@ -65,11 +65,15 @@ beforeEach(() => {
       routines: [],
     }),
   );
-  vi.spyOn(Client.prototype, "request").mockResolvedValue({
-    execution_profiles: [],
-    input_sets: [],
-    managers: [{ id: "operator", name: "Operator" }],
-  });
+  vi.spyOn(Client.prototype, "request").mockImplementation(async (path) =>
+    path.startsWith("/api/communications/")
+      ? { items: [], next_after: null }
+      : {
+          execution_profiles: [],
+          input_sets: [],
+          managers: [{ id: "operator", name: "Operator" }],
+        },
+  );
   vi.spyOn(Client.prototype, "inputSets").mockResolvedValue([]);
   vi.spyOn(Client.prototype, "activity").mockResolvedValue({
     entries: [],

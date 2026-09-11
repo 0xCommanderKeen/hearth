@@ -663,6 +663,9 @@ def create_app(
     hearth.mount_protected = protected
     mount_maintenance(app, hearth, protected)
     mount_inputs(app, hearth)
+    from hearth.channels.api import mount_communications
+
+    mount_communications(app, communications_worker, protected_values=(token,))
     mount_management(app, hearth, protected)
     mount_skills(app, hearth)
 

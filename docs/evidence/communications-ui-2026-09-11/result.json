@@ -1,0 +1,82 @@
+{
+  "checks": [
+    "desktop successful run with unknown delivery",
+    "390px no horizontal overflow",
+    "keyboard resolution submission and cancellation",
+    "revision conflict explicit reload",
+    "source run deep link",
+    "legacy resident letters deep link and keyboard tabs",
+    "no render probe"
+  ],
+  "page_errors": [],
+  "calls": [
+    [
+      "GET",
+      "/api/state"
+    ],
+    [
+      "GET",
+      "/api/communications/conversations"
+    ],
+    [
+      "GET",
+      "/api/state"
+    ],
+    [
+      "GET",
+      "/api/events"
+    ],
+    [
+      "GET",
+      "/api/communications/deliveries"
+    ],
+    [
+      "GET",
+      "/api/communications/deliveries/op-1"
+    ],
+    [
+      "POST",
+      "/api/communications/deliveries/op-1/resolve"
+    ],
+    [
+      "GET",
+      "/api/communications/deliveries/op-1"
+    ],
+    [
+      "GET",
+      "/api/runs/run-1"
+    ],
+    [
+      "GET",
+      "/api/state"
+    ],
+    [
+      "GET",
+      "/api/communications/conversations"
+    ],
+    [
+      "GET",
+      "/api/residents/herald/configuration"
+    ],
+    [
+      "GET",
+      "/api/residents/herald/configuration"
+    ],
+    [
+      "GET",
+      "/api/resident-options"
+    ],
+    [
+      "GET",
+      "/api/skills"
+    ],
+    [
+      "GET",
+      "/api/state"
+    ],
+    [
+      "GET",
+      "/api/events"
+    ]
+  ]
+}
