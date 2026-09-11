@@ -6,6 +6,9 @@ from hearth.residents.models import Refused
 
 
 def validate(db):
+    from hearth.channels.tools import validate as validate_tools
+
+    validate_tools(db)
     try:
         for row in db.execute("SELECT * FROM communications_cursors"):
             connection = read(db, "connection", row["connection_id"])

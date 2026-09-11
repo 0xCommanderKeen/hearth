@@ -38,6 +38,8 @@ class History:
     truncated: bool
     content_access: str
     permission: str = "allowed"
+    before: str | None = None
+    omitted_count: int = 0
 
 
 def snowflake(value):
@@ -444,7 +446,14 @@ class Discord:
                 break
             kept.append(m)
         truncated = len(kept) < len(rows) or len(rows) == limit
-        return History(tuple(kept), not truncated and content == "available", truncated, content)
+        return History(
+            tuple(kept),
+            not truncated and content == "available",
+            truncated,
+            content,
+            before=kept[-1].message_id if kept else (rows[0].message_id if rows else None),
+            omitted_count=1 if rows and not kept else 0,
+        )
 
     def send(self, permit: Permit, *, max_bytes, timeout):
         def receipt(outcome, evidence, **extra):

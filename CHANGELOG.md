@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Add exact-run bounded history and announcement tools on both native bridges, with
+  worker-owned reads, immutable delivery receipts and origin/replay checks (#242).
+
 - Add bounded Discord REST history, verified human mentions and source replies;
   preserve body-free reverse scans, scoped rate deadlines and uncertain sends (#139).
 

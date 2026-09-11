@@ -372,6 +372,8 @@ def session_tools(db, hearth, bound) -> tuple[list[dict], int]:
 
     now = int(hearth.clock())
     authority = authorize(db, bound, now)
+    from hearth.channels.tools import availability
+
     letters = run_letter_scope(db, bound.run_id, now)
     tools = tool_specs(
         memory=authority["memory_writable"],
@@ -379,6 +381,7 @@ def session_tools(db, hearth, bound) -> tuple[list[dict], int]:
         send_letters=letters["send"],
         reply_letter=letters["reply"],
         read_post=letters["post"],
+        communications=availability(db, bound.run_id),
     )
     return tools, int(authority["grant"]["max_calls"])
 

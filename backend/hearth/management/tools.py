@@ -206,6 +206,7 @@ def tool_specs(
     send_letters: bool = False,
     reply_letter: bool = False,
     read_post: bool = False,
+    communications: bool = False,
 ) -> list[dict]:
     """The exact declared tool set of one run; its digest joins the admission pins.
 
@@ -233,6 +234,18 @@ def tool_specs(
             schema["properties"]["resident"] = resident
         result.append(
             {"type": "function", "name": name, "description": description, "inputSchema": schema}
+        )
+    if communications:
+        from hearth.channels.tools import TOOLS
+
+        result.extend(
+            {
+                "type": "function",
+                "name": name,
+                "description": description,
+                "inputSchema": model.model_json_schema(),
+            }
+            for name, (model, description) in TOOLS.items()
         )
     return result
 
