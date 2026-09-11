@@ -27,6 +27,7 @@ from hearth.storage.schema import SCHEMA
 # Schemas 14/15/16/18 add empty communications/delivery/polling/tool tables;
 # existing columns need no fills.
 FILLS: dict[tuple[str, str], str] = {
+    ("notification_forwarding", "operator_url"): "NULL",
     ("communications_cursors", "scan_before"): "NULL",
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",

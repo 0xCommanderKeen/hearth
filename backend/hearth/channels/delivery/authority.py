@@ -30,7 +30,6 @@ def validate_intent(db, intent: Intent) -> None:
             notice is None
             or forwarding is None
             or json.loads(forwarding["destination"]) != destination
-            or intent.text != notice["payload"]
             or any(
                 getattr(intent, k) is not None
                 for k in (
@@ -48,13 +47,22 @@ def validate_intent(db, intent: Intent) -> None:
             )
         ):
             raise Refused("delivery_notification_mismatch")
+        from hearth.channels.delivery.notifications import payload
         from hearth.observation.notifications import KINDS
 
-        if notice["kind"] not in KINDS or json.loads(intent.text) != {
-            "kind": notice["kind"],
-            "resource_id": notice["resource_id"],
-            "link": f"/#run-{notice['resource_id']}",
-        }:
+        origin = db.execute(
+            "SELECT operator_url FROM notification_forwarding_origins WHERE id=? AND revision=?",
+            (intent.forwarding_id, intent.forwarding_revision),
+        ).fetchone()
+        if notice["kind"] not in KINDS or (
+            (origin is None or intent.text != payload(notice, origin["operator_url"]))
+            and json.loads(intent.text)
+            != {
+                "kind": notice["kind"],
+                "resource_id": notice["resource_id"],
+                "link": f"/#run-{notice['resource_id']}",
+            }
+        ):
             raise Refused("delivery_notification_mismatch")
         return
     run = db.execute("SELECT * FROM runs WHERE id=?", (intent.run_id,)).fetchone()

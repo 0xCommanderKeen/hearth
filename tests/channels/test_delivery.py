@@ -66,7 +66,10 @@ def test_notice_forwarding_preserves_read_and_has_no_recursive_failure(house):
     assert forwarding.enqueue("forward") == 1
     with delivery.worker("bot") as owner:
         permit = delivery.prepare("bot", owner)
-        assert json.loads(permit.intent.text) == original.payload
+        assert json.loads(permit.intent.text) == {
+            "kind": original.kind,
+            "resource_id": original.resource_id,
+        }
         delivery.complete(permit, receipt(permit, "refused"))
     assert delivery.inspect()[0]["state"] == "refused"
     assert forwarding.enqueue("forward") == 0

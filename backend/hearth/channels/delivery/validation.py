@@ -21,7 +21,11 @@ def validate(db):
 
 
 def _validate(db):
+    from hearth.channels.delivery.notifications import operator_origin
+
     for config in db.execute("SELECT * FROM notification_forwarding"):
+        if operator_origin(config["operator_url"]) != config["operator_url"]:
+            raise ValueError()
         destination = TypeAdapter(Destination | NotificationDestination).validate_json(
             config["destination"]
         )
@@ -35,6 +39,19 @@ def _validate(db):
         if not set(json.loads(config["kinds"])) <= KINDS:
             raise ValueError()
         if not (config["revision"] > 0 and 0 <= config["watermark"] <= config["cursor"]):
+            raise ValueError()
+    for origin in db.execute("SELECT * FROM notification_forwarding_origins"):
+        if operator_origin(origin["operator_url"]) != origin["operator_url"]:
+            raise ValueError()
+        config = db.execute(
+            "SELECT * FROM notification_forwarding WHERE id=?", (origin["id"],)
+        ).fetchone()
+        if origin["revision"] > config["revision"]:
+            raise ValueError()
+        if (
+            origin["revision"] == config["revision"]
+            and origin["operator_url"] != config["operator_url"]
+        ):
             raise ValueError()
     for binding in db.execute("SELECT * FROM delivery_bindings"):
         connection = read(db, "connection", binding["connection_id"])

@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Forward opt-in operator run notices through the owned Discord worker, with bounded
+  selection, pinned safe destinations/URLs, independent Inbox state and honest receipts (#243).
+
 - Add exact-run bounded history and announcement tools on both native bridges, with
   worker-owned reads, immutable delivery receipts and origin/replay checks (#242).
 
