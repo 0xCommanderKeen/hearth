@@ -102,3 +102,17 @@ they are never packaged.
 
 See the [implementation gates](docs/implementation.md),
 [project plan](docs/rebuild-plan.md), and [domain glossary](CONTEXT.md).
+
+## Working epics with Codex
+
+The repo includes [the epic skill](.agents/skills/epic/SKILL.md), its subagent prompt
+and UI metadata. Open this checkout in Codex on a machine with Git, authenticated
+`gh`, subagent support and the development tools listed above, then invoke
+`$epic <issue-number-or-URL>`. Codex discovers repo skills under `.agents/skills`;
+restart the session if a newly pulled skill does not appear. See
+[Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
+
+The skill presents the child plan for approval, then produces one reviewed PR per
+child, sequentially by default and stacked where needed. Merging remains a separate
+decision. No copy into a personal skills directory is needed. If another `epic`
+skill is already installed, select this repo's copy or name its path explicitly.
