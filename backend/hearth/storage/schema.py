@@ -426,4 +426,40 @@ SCHEMA = (
         WHERE status IN ('starting','running','stopping','interrupted')""",
     """CREATE UNIQUE INDEX active_task ON runs(task_id)
         WHERE status IN ('starting','running','stopping','interrupted')""",
+    """CREATE TABLE delivery_operations (
+        id TEXT PRIMARY KEY, source_key TEXT NOT NULL UNIQUE,
+        intent TEXT NOT NULL, sha256 TEXT NOT NULL,
+        connection_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN
+        ('queued','dispatching','confirmed','failed','refused','unknown','cancelled','abandoned')),
+        revision INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL, eligible_at INTEGER NOT NULL,
+        parent_id TEXT REFERENCES delivery_operations(id)
+    )""",
+    """CREATE TABLE delivery_attempts (
+        id TEXT PRIMARY KEY, operation_id TEXT NOT NULL REFERENCES delivery_operations(id),
+        owner TEXT NOT NULL, epoch TEXT NOT NULL, binding_revision INTEGER NOT NULL,
+        dispatched_at INTEGER NOT NULL, completed_at INTEGER,
+        state TEXT NOT NULL CHECK(state IN
+        ('dispatching','confirmed','safe_failure','refused','unknown')),
+        receipt TEXT, UNIQUE(operation_id, id)
+    )""",
+    """CREATE TABLE delivery_bindings (
+        connection_id TEXT PRIMARY KEY, bot_id TEXT, epoch TEXT NOT NULL,
+        store_path TEXT NOT NULL, revision INTEGER NOT NULL, owner TEXT,
+        operator_id TEXT NOT NULL, activated_at INTEGER NOT NULL
+    )""",
+    """CREATE TABLE notification_forwarding (
+        id TEXT PRIMARY KEY, destination TEXT NOT NULL, revision INTEGER NOT NULL,
+        enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), kinds TEXT NOT NULL,
+        watermark INTEGER NOT NULL, cursor INTEGER NOT NULL,
+        activated INTEGER NOT NULL CHECK(activated IN (0,1))
+    )""",
+    """CREATE TABLE delivery_resolutions (
+        id TEXT PRIMARY KEY, operation_id TEXT NOT NULL REFERENCES delivery_operations(id),
+        revision INTEGER NOT NULL, action TEXT NOT NULL, operator_id TEXT NOT NULL,
+        at INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT,
+        UNIQUE(operation_id, revision)
+    )""",
+    """CREATE UNIQUE INDEX delivery_inflight ON delivery_attempts(operation_id)
+        WHERE state='dispatching'""",
 )

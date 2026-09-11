@@ -24,7 +24,8 @@ def _validate(db) -> None:
             raise ValueError
         if isinstance(value, Route):
             if (
-                not read(db, "connection", value.connection_id)
+                not (connection := read(db, "connection", value.connection_id))
+                or connection["transport"] == "ntfy"
                 or not db.execute(
                     "SELECT 1 FROM residents WHERE id=?", (value.resident_id,)
                 ).fetchone()
@@ -34,7 +35,11 @@ def _validate(db) -> None:
             if not db.execute("SELECT 1 FROM residents WHERE id=?", (row["id"],)).fetchone():
                 raise ValueError
             for group in (value.read, value.listen, value.reply, value.post):
-                if any(read(db, "connection", d.connection_id) is None for d in group):
+                if any(
+                    (connection := read(db, "connection", d.connection_id)) is None
+                    or connection["transport"] == "ntfy"
+                    for d in group
+                ):
                     raise ValueError
     for pin in db.execute("SELECT * FROM run_communications"):
         run = db.execute("SELECT * FROM runs WHERE id=?", (pin["run_id"],)).fetchone()

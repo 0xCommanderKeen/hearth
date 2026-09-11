@@ -7,7 +7,8 @@ marked read.
 
 Sending a notification somewhere else is a forwarder's job. `Forwarder` is the seam an
 adapter (ntfy, chat) implements; it relays what the inbox already holds, so a forwarder
-that is absent, late or failing cannot lose a notification. Hearth ships none yet.
+that is absent, late or failing cannot lose a notification. The durable forwarding owner
+lives in channels/delivery; adapters consume its permits.
 
 Payloads carry an allowlisted kind, the resource identity and a local browser link, and
 nothing else: no instruction, output, credential or ownership token.
@@ -41,9 +42,20 @@ def _notification(row: sqlite3.Row) -> Notification:
 
 @runtime_checkable
 class Forwarder(Protocol):
-    """Relays one inbox notification onward; the inbox keeps the record either way."""
+    """Enqueue a bounded configured selection; delivery is a separate receipted operation.
 
-    def deliver(self, notification: Notification) -> None: ...
+    Implemented by channels.delivery.notifications.Forwarding. Returning a count means
+    durable intents, never external delivery. No adapter can turn None into confirmation.
+    """
+
+    def enqueue(
+        self,
+        identity: str,
+        *,
+        through_cursor: int | None = None,
+        backfill_after: int | None = None,
+        limit: int = 100,
+    ) -> int: ...
 
 
 def record(db: sqlite3.Connection, kind: str, resource_id: str, now: int) -> None:

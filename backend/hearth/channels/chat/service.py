@@ -123,6 +123,15 @@ class Conversations:
                 (conversation_id,),
             ).fetchone():
                 raise Refused("communications_busy")
+            if db.execute(
+                "SELECT 1 FROM chat_turns t JOIN delivery_operations o "
+                "ON json_extract(o.intent,'$.source_id')=t.id "
+                "WHERE t.conversation_id=? AND o.state='unknown' "
+                "AND COALESCE((SELECT action FROM delivery_resolutions r "
+                "WHERE r.operation_id=o.id ORDER BY revision DESC LIMIT 1),'')!='reissue'",
+                (conversation_id,),
+            ).fetchone():
+                raise Refused("communications_busy")
             prune(db, verified.route_id, now, incoming=len(m.text.encode()))
             db.execute(
                 "INSERT OR IGNORE INTO chat_conversations VALUES (?,?,?,?,?,?)",

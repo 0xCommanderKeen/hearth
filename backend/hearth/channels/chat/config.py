@@ -90,6 +90,7 @@ class Configuration:
                     if (
                         binding is not None
                         and binding["transport"] == value.transport
+                        and value.bot_id is not None
                         and binding["bot_id"] == value.bot_id
                     ):
                         raise Refused("communications_bot_already_bound")
@@ -106,7 +107,7 @@ class Configuration:
                 ):
                     raise Refused("communications_route_binding_immutable")
                 connection = read(db, "connection", value.connection_id)
-                if connection is None:
+                if connection is None or connection["transport"] == "ntfy":
                     raise Refused("communications_connection_missing")
                 if not db.execute(
                     "SELECT 1 FROM residents WHERE id=?", (value.resident_id,)
@@ -139,7 +140,11 @@ class Configuration:
                 raise Refused("resident_not_found")
             if kind == "grant":
                 for group in (value.read, value.listen, value.reply, value.post):
-                    if any(read(db, "connection", d.connection_id) is None for d in group):
+                    if any(
+                        (binding := read(db, "connection", d.connection_id)) is None
+                        or binding["transport"] == "ntfy"
+                        for d in group
+                    ):
                         raise Refused("communications_connection_missing")
             revision = current + 1
             db.execute(

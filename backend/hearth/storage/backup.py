@@ -229,6 +229,9 @@ def _check_database(root: Path) -> dict:
         from hearth.channels.chat.validation import validate as validate_communications
 
         validate_communications(db)
+        from hearth.channels.delivery.validation import validate as validate_delivery
+
+        validate_delivery(db)
         validate_management(db)
         verify_authoring_backup(db, root)
         validate_provisioning(db)

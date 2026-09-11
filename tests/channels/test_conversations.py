@@ -439,7 +439,9 @@ def test_populated_v13_store_upgrades_without_replacing_old_run_pins(house, tmp_
     assert copy.receipt("old") == receipt
     assert old.with_name("hearth.db.before-v13").exists()
     with database.transaction() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 14
+        from hearth.storage.database import SCHEMA_VERSION
+
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert db.execute("SELECT COUNT(*) FROM communications_config").fetchone()[0] == 0
 
 
