@@ -1,0 +1,4 @@
+interface:
+  display_name: "Epic"
+  short_description: "Implement an epic as reviewed, stacked pull requests"
+  default_prompt: "Use $epic to implement the child issues of the GitHub epic I specify, one reviewed pull request per child."

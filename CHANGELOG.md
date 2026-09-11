@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- The epic workflow, subagent prompt and Codex metadata are checked into
+  `.agents/skills/epic`, so other machines can use it directly from a Hearth checkout (#250).
+
 - Complete the resident detail tab layouts, open results inside their task, and
   distinguish unread inbox notices with an atomic, snapshot-bounded mark-all action.
 
