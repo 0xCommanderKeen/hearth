@@ -14,6 +14,7 @@ from hearth.channels.polling import (
     REQUEST_SECONDS,
     RESPONSE_BYTES,
     Page,
+    RateLimit,
     RetryLater,
     SendResult,
     cursor,
@@ -26,7 +27,9 @@ from hearth.work.service import _audit
 class Worker:
     def __init__(self, hearth, secrets=None, factories=None):
         self.hearth, self.secrets = hearth, secrets
-        self.factories = dict(factories or {})
+        from hearth.channels.discord import Discord
+
+        self.factories = {"discord": Discord} if factories is None else dict(factories)
         self.conversations = Conversations(hearth, {})
         self.replies = Replies(hearth, secrets) if secrets is not None else None
         self.delivery = Delivery(hearth, replies=self.replies)
@@ -43,7 +46,13 @@ class Worker:
 
     def health(self):
         with self._guard:
-            return dict(self._health)
+            result: dict = dict(self._health)
+        result["connections"] = {
+            key: adapter.health()
+            for key, (_, _, _, adapter) in list(self._sessions.items())
+            if callable(getattr(adapter, "health", None))
+        }
+        return result
 
     def _state(self, **values):
         with self._guard:
@@ -139,6 +148,25 @@ class Worker:
                 (kind, identity, int(self.hearth.clock()) + seconds, error),
             )
 
+    def _flush_limits(self, identity, adapter):
+        if not callable(getattr(adapter, "take_limits", None)):
+            return
+        for limit in adapter.take_limits():
+            if type(limit) is not RateLimit or type(limit.seconds) is not int or limit.seconds < 0:
+                raise ValueError("invalid adapter rate limit")
+            if limit.channel_id is not None:
+                kind, target = "channel", digest([identity, limit.channel_id])
+            elif limit.guild_id is not None:
+                kind, target = "guild", digest([identity, limit.guild_id])
+            else:
+                kind, target = "connection", identity
+            self._schedule(kind, target, limit.seconds, "rate_limited")
+
+    def _destination_waiting(self, identity, address):
+        return not self._eligible(
+            "guild", digest([identity, address["guild_id"]])
+        ) or not self._eligible("channel", digest([identity, address["channel_id"]]))
+
     def _failure(self, kind, identity, connection_id, error):
         # Never persist exception messages: libraries can include URLs, tokens or bodies.
         if isinstance(error, RetryLater):
@@ -147,12 +175,17 @@ class Worker:
                     route = read(db, "route", identity)
                 if route is not None:
                     destination = digest(route["address"] | {"connection_id": connection_id})
-                    self._schedule("destination", destination, error.seconds, "rate_limited")
+                    self._schedule(
+                        "destination",
+                        destination,
+                        error.seconds,
+                        getattr(error, "code", "rate_limited"),
+                    )
             self._schedule(
                 "connection" if error.connection_wide else kind,
                 connection_id if error.connection_wide else identity,
                 error.seconds,
-                "rate_limited",
+                getattr(error, "code", "rate_limited"),
             )
         else:
             self._schedule(kind, identity, 5, "route_unavailable")
@@ -268,13 +301,17 @@ class Worker:
                     or connection_id not in adapters
                     or not self._eligible("connection", connection_id)
                     or not self._eligible("route", route_id)
+                    or self._destination_waiting(connection_id, route["address"])
                     or not self._eligible(
                         "destination", digest(route["address"] | {"connection_id": connection_id})
                     )
                 ):
                     continue
                 try:
-                    self._poll(route_id, adapters[connection_id][3])
+                    try:
+                        self._poll(route_id, adapters[connection_id][3])
+                    finally:
+                        self._flush_limits(connection_id, adapters[connection_id][3])
                     self._schedule("route", route_id, 1)
                 except Exception as error:
                     self._failure("route", route_id, connection_id, error)
@@ -319,6 +356,22 @@ class Worker:
                             (int(self.hearth.clock()),),
                         )
                     )
+                with self.hearth.database.transaction() as db:
+                    import json
+
+                    destinations = [
+                        json.loads(r[0])["destination"]
+                        for r in db.execute(
+                            "SELECT intent FROM delivery_operations WHERE connection_id=? "
+                            "AND state='queued'",
+                            (identity,),
+                        )
+                    ]
+                deferred |= frozenset(
+                    digest(d)
+                    for d in destinations
+                    if "guild_id" in d and self._destination_waiting(identity, d)
+                )
                 permit = self.delivery.prepare(identity, owner, deferred_destinations=deferred)
                 if permit is None:
                     continue
@@ -326,6 +379,7 @@ class Worker:
                     receipt = adapter.send(
                         permit, max_bytes=RESPONSE_BYTES, timeout=REQUEST_SECONDS
                     )
+                    self._flush_limits(identity, adapter)
                     connection_wide = False
                     if type(receipt) is SendResult:
                         connection_wide, receipt = receipt.connection_wide, receipt.receipt
@@ -344,6 +398,7 @@ class Worker:
                         )
                     self.delivery.complete(permit, receipt)
                 except Exception as error:
+                    self._flush_limits(identity, adapter)
                     # A raised exception cannot prove that the external request did not escape.
                     if isinstance(error, RetryLater):
                         self._schedule(
@@ -391,7 +446,7 @@ class Worker:
                     raise Refused("communications_route_changed")
                 if row is None:
                     db.execute(
-                        "INSERT INTO communications_cursors VALUES (?,?,?,?,?,NULL,?)",
+                        "INSERT INTO communications_cursors VALUES (?,?,?,?,?,NULL,?,NULL)",
                         (*key, latest, latest, int(self.hearth.clock())),
                     )
                     _audit(
@@ -413,6 +468,7 @@ class Worker:
         else:
             through = row["through_id"]
         after = row["cursor"]
+        scan = row["scan_before"]
         page = adapter.poll(
             *key[1:],
             after=after,
@@ -420,6 +476,7 @@ class Worker:
             limit=PAGE_SIZE,
             max_bytes=RESPONSE_BYTES,
             timeout=REQUEST_SECONDS,
+            **({"scan_before": scan} if scan is not None else {}),
         )
         if (
             type(page) is not Page
@@ -427,7 +484,36 @@ class Worker:
             or len(page.messages) > PAGE_SIZE
         ):
             raise Refused("communications_page_invalid")
-        if not page.messages and not page.complete:
+        if page.scan_before is not None:
+            if (
+                page.messages
+                or page.complete
+                or page.examined_through is not None
+                or not (
+                    cursor(after)
+                    < cursor(page.scan_before)
+                    < (cursor(scan) if scan is not None else cursor(through) + 1)
+                )
+            ):
+                raise Refused("communications_scan_invalid")
+            self._check_secret(key[0], connection)
+            with self.hearth.database.transaction(write=True) as db:
+                if scope(db, route_id) != pins:
+                    raise Refused("communications_route_changed")
+                db.execute(
+                    "UPDATE communications_cursors SET scan_before=?,updated_at=? "
+                    "WHERE connection_id=? AND guild_id=? AND channel_id=?",
+                    (page.scan_before, int(self.hearth.clock()), *key),
+                )
+                _audit(
+                    db,
+                    "communications.scan",
+                    route_id,
+                    int(self.hearth.clock()),
+                    {"before": page.scan_before, "through": through},
+                )
+            return
+        if not page.messages and not page.complete and page.examined_through is None:
             raise Refused("communications_page_incomplete")
         previous, size, verified = cursor(after), 0, []
         for m in page.messages:
@@ -441,7 +527,16 @@ class Worker:
                 raise Refused("communications_page_too_large")
             verified.append(self.conversations._verified(route_id, route, key[2], m.message_id, m))
             previous = identity
-        progress = through if page.complete else page.messages[-1].message_id
+        progress = (
+            through if page.complete else (page.examined_through or page.messages[-1].message_id)
+        )
+        if page.examined_through is not None and (
+            not cursor(after) <= cursor(page.examined_through) <= cursor(through)
+            or previous > cursor(page.examined_through)
+            or (page.complete and page.examined_through != through)
+            or (not page.complete and cursor(page.examined_through) == cursor(after))
+        ):
+            raise Refused("communications_examined_invalid")
         self._check_secret(key[0], connection)
         with self.hearth.database.transaction(write=True) as db:
             if scope(db, route_id) != pins:
@@ -469,7 +564,8 @@ class Worker:
                         },
                     )
             db.execute(
-                "UPDATE communications_cursors SET cursor=?,through_id=?,updated_at=? "
+                "UPDATE communications_cursors SET cursor=?,through_id=?,updated_at=?,"
+                "scan_before=NULL "
                 "WHERE connection_id=? AND guild_id=? AND channel_id=? "
                 "AND cursor=? AND through_id=?",
                 (

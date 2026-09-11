@@ -22,6 +22,17 @@ class Page:
 
     messages: tuple[Message, ...]
     complete: bool
+    # Optional body-free reverse scan progress. No messages/decisions accompany it.
+    scan_before: str | None = None
+    # Inclusive examined prefix, even if all IDs in it were deleted. Resets scanning.
+    examined_through: str | None = None
+
+
+@dataclass(frozen=True)
+class RateLimit:
+    seconds: int
+    guild_id: str | None = None
+    channel_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +62,7 @@ class PollAdapter(Protocol):
         limit: int,
         max_bytes: int,
         timeout: int,
+        scan_before: str | None = None,
     ) -> Page:
         """Validate account/source facts and effective permissions; bound HTTP."""
         ...

@@ -15,8 +15,15 @@ def validate(db):
                 raise ValueError("cursor precedes baseline")
             if row["through_id"] is not None and cursor(row["through_id"]) < cursor(row["cursor"]):
                 raise ValueError("invalid poll window")
+            if row["scan_before"] is not None and (
+                row["through_id"] is None
+                or not cursor(row["cursor"])
+                < cursor(row["scan_before"])
+                <= cursor(row["through_id"]) + 1
+            ):
+                raise ValueError("invalid scan frontier")
         for row in db.execute("SELECT * FROM communications_schedule"):
-            if row["kind"] == "destination":
+            if row["kind"] in {"destination", "guild", "channel"}:
                 if len(row["id"]) != 64 or any(c not in "0123456789abcdef" for c in row["id"]):
                     raise ValueError("invalid destination digest")
                 continue

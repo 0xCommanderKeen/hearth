@@ -86,6 +86,7 @@ class Receipt(Strict):
 
 
 class Permit(Strict):
+    reply_message_id: str | None = None
     operation_id: str
     attempt_id: str
     owner: str

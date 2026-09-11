@@ -26,6 +26,7 @@ from hearth.storage.schema import SCHEMA
 # (table, column) -> SQL expression used for rows that predate the column.
 # Schemas 14/15/16 add empty communications/delivery/polling tables; existing columns need no fills.
 FILLS: dict[tuple[str, str], str] = {
+    ("communications_cursors", "scan_before"): "NULL",
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",
     # A household that never had letters keeps the shipped defaults: two hops, one day.

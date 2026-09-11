@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Add bounded Discord REST history, verified human mentions and source replies;
+  preserve body-free reverse scans, scoped rate deadlines and uncertain sends (#139).
+
 - Run an owned shared communications worker with durable chronological polling,
   isolated scheduling, ordinary turn admission and exact reply dispatch; preserve
   cursors across upgrades/restart and refuse all I/O on held copies (#241).
