@@ -24,6 +24,7 @@ from pathlib import Path
 from hearth.storage.schema import SCHEMA
 
 # (table, column) -> SQL expression used for rows that predate the column.
+# Schema 14 adds empty communications tables only; no existing column needs a fill.
 FILLS: dict[tuple[str, str], str] = {
     ("memory_revisions", "author"): "'operator'",
     ("household_policy", "journal_limit"): "30",

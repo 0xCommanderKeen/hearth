@@ -213,7 +213,7 @@ class Management:
         # What a resident reaches on disk is refused here, where an operator is writing
         # it, and never at admission: a run that waits on a grant nobody will fix is a
         # resident that never works again.
-        check_mounts(body.mounts, self.protected)
+        check_mounts(body.mounts, (*self.protected, *self.hearth.mount_protected))
         policy = body.model_dump(exclude={"expected_revision"})
         revision = previous["revision"] + 1
         db.execute(
@@ -414,6 +414,11 @@ def validate_management(db) -> None:
             and not row["memory_writable"]
             and not row["letter"]
             and not holds_post(db, row["run_id"])
+            and not db.execute(
+                "SELECT 1 FROM run_conversations WHERE run_id=? "
+                "UNION ALL SELECT 1 FROM run_communications WHERE run_id=?",
+                (row["run_id"], row["run_id"]),
+            ).fetchone()
         ):
             raise Refused("management_admission_changed")
 

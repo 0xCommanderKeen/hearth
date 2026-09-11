@@ -107,7 +107,12 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
     # The memory and journal tools ride on the native tool surface this admission pinned.
     # A declaration alone cannot promise them, so the context states what this run can do.
     native = db.execute("SELECT 1 FROM run_management WHERE run_id=?", (run_id,)).fetchone()
-    return {
+    import json
+
+    from hearth.channels.chat.service import origin
+
+    conversation = origin(db, run_id)
+    result = {
         "context_version": CONTEXT_VERSION,
         "skills": run_skills(db, run_id),
         "run_id": row["id"],
@@ -134,7 +139,7 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
         # The answers to this resident's own letters that arrived since it last ran. A
         # reply never wakes its sender; this is where the sender finds it. A skill
         # example rehearses only what its request named and opens with none.
-        "replies": run_replies(db, run_id),
+        "replies": [] if conversation else run_replies(db, run_id),
         "replies_usage": REPLIES_USAGE,
         # What this run reaches on disk, pinned at admission: by name, by the path it
         # has inside a sandbox, and by how far into it the run may go.
@@ -149,3 +154,9 @@ def read_context(db: sqlite3.Connection, run_id: str, memory: MemoryFiles) -> di
         "inputs": inputs,
         "notes": [note for entry in inputs for note in entry["notes"]],
     }
+
+    if conversation is not None:
+        # Existing runs keep version 10 byte-for-byte; only new conversation pins add this shape.
+        result["context_version"] = 11
+        result["conversation"] = json.loads(conversation["context"])
+    return result

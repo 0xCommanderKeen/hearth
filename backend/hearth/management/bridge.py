@@ -24,6 +24,8 @@ def check_management(authority: dict) -> None:
     Only the memory and journal tools outlive the grant, so everything else refuses here
     before it can reach a replayed receipt or a capability check.
     """
+    if authority.get("conversation"):
+        raise Refused("communications_origin_denied")
     if authority["management_revoked"]:
         raise Refused("management_grant_changed_or_revoked")
 
@@ -69,7 +71,13 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         db.execute("SELECT 1 FROM letters WHERE task_id=?", (run["task_id"],)).fetchone()
         is not None
     )
-    post = letter or holds_post(db, bound.run_id)
+    from hearth.channels.chat.service import origin
+
+    conversation = origin(db, bound.run_id)
+    from hearth.channels.chat.authority import granted_at_admission
+
+    communications = conversation is not None or granted_at_admission(db, bound.run_id)
+    post = not conversation and (letter or holds_post(db, bound.run_id))
     pin = db.execute("SELECT * FROM run_management WHERE run_id=?", (bound.run_id,)).fetchone()
     if pin is None or pin["resident_id"] != run["resident_id"]:
         raise Refused("management_not_granted_at_admission")
@@ -80,7 +88,7 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         # Admitted for its own memory and journal, or for the letter it works, alone. No
         # management authority exists for this run, whatever the operator granted the
         # resident after it was admitted.
-        if not declared[0] and not post:
+        if not declared[0] and not post and not communications:
             raise Refused("management_not_granted_at_admission")
         grant = _no_authority(run["resident_id"])
     else:
@@ -97,7 +105,7 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
             # management, and neither was answering a letter, so such a run keeps exactly
             # those tools and loses the rest, and can still close with the entry that says
             # how its work ended.
-            if not declared[0] and not post:
+            if not declared[0] and not post and not communications:
                 raise Refused("management_grant_changed_or_revoked")
             grant, revoked = _no_authority(run["resident_id"]), True
     if thread_id is not None and pin["thread_id"] != thread_id:
@@ -112,7 +120,8 @@ def authorize(db, bound: BoundRun, now: int, *, thread_id=None, turn_id=None) ->
         "management_revoked": revoked,
         "memory_writable": bool(declared[0]),
         # Whether this run is working a letter, and so owes an answer to its sender.
-        "letter": letter,
+        "letter": letter and not conversation,
+        "conversation": conversation is not None,
     }
 
 
@@ -235,6 +244,8 @@ class Bridge:
                 # and answering the letter one was handed were never management.
                 if params["tool"] not in set(MEMORY_TOOLS) | LETTER_RECEIVER_TOOLS:
                     check_management(authority)
+                if authority["conversation"] and params["tool"] not in MEMORY_TOOLS:
+                    raise Refused("communications_origin_denied")
                 payload = digest(params)
                 previous = db.execute(
                     "SELECT * FROM management_calls WHERE run_id=? AND call_id=?",

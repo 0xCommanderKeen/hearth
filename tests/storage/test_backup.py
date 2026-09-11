@@ -10,7 +10,7 @@ from hearth.execution.lifecycle import Execution, Executor
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.backup import capture, restore, verify
-from hearth.storage.database import Database
+from hearth.storage.database import SCHEMA_VERSION, Database
 from hearth.work.service import Hearth
 
 from tests.fake_runtime import FakeRuntime, fake_runtime
@@ -197,7 +197,9 @@ def test_fifo_payload_is_refused_without_blocking(system, tmp_path):
     assert not (tmp_path / "backup").exists()
 
 
-@pytest.mark.parametrize("change", ["DROP INDEX active_resident", "PRAGMA user_version=14"])
+@pytest.mark.parametrize(
+    "change", ["DROP INDEX active_resident", f"PRAGMA user_version={SCHEMA_VERSION + 1}"]
+)
 def test_incompatible_database_cannot_be_published_as_a_current_backup(system, tmp_path, change):
     hearth, executor, _, root = system
     import sqlite3

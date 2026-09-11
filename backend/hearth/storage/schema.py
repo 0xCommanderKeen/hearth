@@ -26,6 +26,44 @@ to open it would lose the resident rather than the runtime
 """
 
 SCHEMA = (
+    """CREATE TABLE run_communications (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), resident_id TEXT NOT NULL REFERENCES residents(id),
+        grant_revision INTEGER NOT NULL
+    )""",
+    """CREATE TABLE communications_revisions (
+        kind TEXT NOT NULL CHECK(kind IN ('connection','route','grant')), id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision>0), content TEXT NOT NULL, sha256 TEXT NOT NULL,
+        PRIMARY KEY(kind,id,revision)
+    )""",
+    """CREATE TABLE communications_config (
+        kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
+        PRIMARY KEY(kind,id), FOREIGN KEY(kind,id,revision) REFERENCES communications_revisions(kind,id,revision)
+    )""",
+    """CREATE TABLE chat_conversations (
+        id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, route_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, sender_id TEXT NOT NULL,
+        UNIQUE(connection_id,route_id,guild_id,channel_id,sender_id)
+    )""",
+    """CREATE TABLE chat_turns (
+        id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES chat_conversations(id),
+        message_id TEXT NOT NULL, sender_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+        text TEXT CHECK(text IS NULL OR length(CAST(text AS BLOB))<=8192),
+        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id), run_id TEXT UNIQUE REFERENCES runs(id),
+        route_revision INTEGER NOT NULL, connection_revision INTEGER NOT NULL, grant_revision INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('working','reply_pending','delivery','closed')),
+        reason TEXT, reply_intent TEXT, operation_id TEXT, reply_sha256 TEXT
+    )""",
+    "CREATE UNIQUE INDEX chat_one_open_turn ON chat_turns(conversation_id) WHERE state!='closed'",
+    """CREATE TABLE chat_inbound (
+        connection_id TEXT NOT NULL, channel_id TEXT NOT NULL, message_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, receipt TEXT NOT NULL,
+        turn_id TEXT UNIQUE REFERENCES chat_turns(id), decided_at INTEGER NOT NULL,
+        PRIMARY KEY(connection_id,channel_id,message_id)
+    )""",
+    """CREATE TABLE run_conversations (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), turn_id TEXT NOT NULL UNIQUE REFERENCES chat_turns(id),
+        context TEXT NOT NULL, sha256 TEXT NOT NULL
+    )""",
     """CREATE TABLE skill_validations (
         id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, candidate_revision INTEGER NOT NULL,
         candidate_sha256 TEXT NOT NULL, manifest_sha256 TEXT NOT NULL,

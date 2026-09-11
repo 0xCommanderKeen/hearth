@@ -358,3 +358,53 @@ No live Discord connection, credentials or writes are required for this ADR. DMs
 Gateway, thread/forum discovery, crossposting, attachments, arbitrary HTTP tools,
 moderation, roles and channel creation remain outside this epic. Real-host,
 recovery, daily-observation and #233 rollout gates remain open.
+
+## Shared model interfaces delivered by #137
+
+Schema 14 adds installation configuration revisions, conversations, bounded turns,
+body-free inbound decisions and run scope/context pins. Existing tables and input
+digests are unchanged; ordinary context remains version 10 and conversation context
+uses version 11. Upgrades add empty communications tables. Transcript retention
+includes prepared reply text; pruning clears eligible terminal bodies while keeping
+reply digests, source/task/run/operation links and inbound decisions. Active and
+unknown turns are never evicted. Task instructions contain safe turn references;
+pinned conversation inputs, runtime receipts and artifacts retain their own copies.
+
+The backend composition surfaces are:
+
+- `chat.config.Configuration.save`: revision-checked connection, route and resident
+  grant configuration. Grants bind a connection plus exact guild/channel IDs. A bot
+  identity has one connection; changing a route's resident, connection or address
+  requires a new route binding. Credential files use canonical lowercase slots in
+  a protected owner-only directory outside the store and repository. Initialize this
+  configuration owner before admitting or launching work so the existing mount
+  protections include that directory.
+- `chat.service.Conversations.fetch`: calls an installed `channels.interface.Transport`
+  outside a writer and issues an opaque `VerifiedTurn`. No HTTP or model schema
+  accepts sender/mention/bot claims. `submit_turn_in_transaction` accepts only that
+  service's verified receipt and composes `Hearth.submit_in_transaction`. `expire`
+  closes queued stale or revoked work. Poll ordering/cursors and worker scheduling
+  are supplied by #241/#139; every decided inbound ID already survives pruning.
+- `chat.authority.check_scope`: after the existing bridge's exact-run authorization,
+  checks pinned/current grants and the origin ceiling before a communications
+  receipt replay or effect. The source conversation ceiling excludes management,
+  letters, unrelated sources and all mounts. Own memory/journal authority remains
+  independent. Ordinary communications pins require a proven operator command or
+  routine occurrence; resident-authored assignments acquire no publication scope.
+- `chat.reply.Replies.prepare`: reads successful terminal artifact evidence and stores
+  one redacted bounded `ReplyIntent`, or closes quiet/failed/refused work. Quiet
+  requires no credential. Redaction includes securely loaded connection credentials,
+  known values retained in process memory and additional protected values supplied
+  by the backend composition root; invalid unrelated connection files do not block
+  a healthy route or erase already-known redaction values.
+- `Replies.handoff_in_transaction(db, turn_id, enqueue)`: #120 supplies the typed
+  `enqueue(db, ReplyIntent) -> operation_id` callback. The callback and the turn's
+  operation link commit together; it must perform no network I/O. The delivery
+  owner's `delivery_in_transaction` callback reports sent/refused/failed/abandoned
+  or unknown, after its own evidence/reconciliation checks. Unknown stays open.
+
+These interfaces are trusted backend composition, not new operator endpoints or
+model tools. #120 owns actual durable operations and dispatch, #241 the process
+and polling progress, #139 verified Discord facts, and #242 the read/publication
+tool prepare/perform/complete wiring. No transport network call, real credential,
+worker activation or delivery success is claimed by this slice.
