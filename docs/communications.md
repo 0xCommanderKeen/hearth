@@ -483,3 +483,60 @@ is activated here. #241/#139/#242 and the UI slices compose these trusted owners
 Tests use synthetic records and temporary SQLite, including actual worker-process
 exit, held backup while a permit is outstanding and v14 forward upgrade. These
 checks do not complete a live connection, host recovery or daily-observation gate.
+
+### Shared worker seam delivered by #241
+
+`channels.worker.Worker` composes Conversations, Replies and Delivery beside the
+runtime supervisor in the application lifespan. Its store lock and each activated
+`Delivery.worker` connection lock live until bounded I/O and cleanup finish. An
+injected factory constructs local clients only (no HTTP in constructors); the
+production adapter registry is empty until a transport slice installs one. No
+implicit credential directory or connection activation is introduced. Held stores
+refuse the worker before client construction, secret lookup, polling or admission.
+`supervise=False` starts neither worker.
+
+`channels.polling` defines `latest`, `poll` and `send`: authenticated backend
+adapters enforce a 10-second request deadline and 512-KiB response cap, and return
+at most 50 verified messages per page. IDs are canonical nonnegative decimal
+strings. A poll receives exclusive `after` and inclusive fixed `through`; it must
+return the oldest messages in strictly ascending numeric order. `Page.complete`
+asserts the whole remaining interval was examined, including deleted IDs. A
+newest-first API page is insufficient; #139 must establish correct traversal with
+more than one full page. An empty channel has latest ID `0`. A disappearing newest
+message cannot rewind a durable watermark.
+
+Schema 16 adds initially empty `communications_cursors` and
+`communications_schedule`. Baseline activation records the latest observed ID
+once per actual connection/guild/channel. Every later window persists its upper
+bound before page fetch; decisions, conflict evidence and page progress commit in
+one writer. Restart resumes the same window. Existing immutable inbound receipts
+win replay even after text pruning; changed payloads retain body-free digest/audit
+conflict evidence and cannot block later page decisions. Previously processed
+intervals also refuse unrecorded older IDs. Configuration revisions and current
+grants are checked again when the fetched page commits.
+
+Each pass rotates at most 16 routes, 50 queued admissions and 50 terminal replies;
+expiry checks at most 100 queued turns, and delivery claims at most one operation
+per configured connection. Ordinary admission uses the existing 10,000-microdollar
+reservation and owning budget/concurrency/freshness checks. Terminal failures and
+cancellations close under settlement; quiet/no-output replies close under Replies.
+Immutable reply handoff and exact delivery permits remain #137/#120's owners.
+
+`RetryLater(seconds, connection_wide=...)` schedules poll retry without sleeping.
+Durable deadlines only move forward, including during credential failures. A send
+returns `Receipt` for a destination limit, or `SendResult(receipt,
+connection_wide=True)` for an account/global limit. The worker persists its
+`retry_after` deadline before completing the receipt (including exceptions), then
+passes durable destination exclusions to `Delivery.prepare` before any new permit.
+Other destinations remain eligible. Adapter
+constructors and `close` manage local caches; references and secret bytes reload
+on each pass, including while waiting, so removal invalidates old clients promptly.
+All external permission checks belong to the authenticated transport. Send adapters
+return exact typed receipts, make one request and never retry internally; a raised
+exception is unknown evidence. `safe_failure` is permitted only when the adapter
+can establish that no external effect occurred. Worker death likewise recovers
+outstanding permits as unknown and never repeats them automatically.
+
+Temporary SQLite/loopback and installed-wheel checks exercise this composition.
+They neither install a real transport nor complete host, credential, deployment,
+or daily-observation acceptance.

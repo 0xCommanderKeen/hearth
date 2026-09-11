@@ -291,7 +291,9 @@ class Delivery:
                 if outcome in {"sent", "refused", "failed", "abandoned", "unknown"}:
                     self.replies.delivery_in_transaction(db, intent.source_id, row["id"], outcome)
 
-    def prepare(self, connection_id: str, owner: str) -> Permit | None:
+    def prepare(
+        self, connection_id: str, owner: str, *, deferred_destinations: frozenset[str] = frozenset()
+    ) -> Permit | None:
         """Commit one dispatch permit, return its immutable request. Never replay this permit."""
         with self.hearth.database.transaction(write=True) as db:
             binding = self._binding(db, connection_id, owner)
@@ -302,6 +304,8 @@ class Delivery:
             ).fetchall()
             for row in rows:
                 intent = Intent.model_validate_json(row["intent"])
+                if digest(intent.destination.model_dump()) in deferred_destinations:
+                    continue
                 try:
                     current(db, intent, self.now())
                 except Refused as error:

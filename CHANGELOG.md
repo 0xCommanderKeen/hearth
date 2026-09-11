@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Run an owned shared communications worker with durable chronological polling,
+  isolated scheduling, ordinary turn admission and exact reply dispatch; preserve
+  cursors across upgrades/restart and refuse all I/O on held copies (#241).
+
 - Persist typed communications intent, exact dispatch attempts, evidence-based recovery
   and bounded Inbox forwarding; preserve unknown effects across forward upgrades and
   held backups, with no network or worker activation (#120).

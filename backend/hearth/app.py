@@ -27,6 +27,7 @@ from hearth.api.requests import (
 )
 from hearth.authority.household import Household
 from hearth.authority.run_access import RunAccess
+from hearth.channels.worker import Worker
 from hearth.execution.accounting import Accounting
 from hearth.execution.lifecycle import Execution, Executor
 from hearth.execution.supervisor import Supervisor
@@ -68,6 +69,7 @@ def create_app(
     claude_config_dir: Path | None = None,
     sandbox: Sandbox | None = None,
     fence: Fence | None = None,
+    communications: Callable[[Hearth], Worker] | None = None,
 ) -> FastAPI:
     """`runtime` builds the runtime, or the runtimes, over the data directory opened.
 
@@ -209,18 +211,26 @@ def create_app(
     inbox = Inbox(hearth)
     routines = Routines(hearth)
     supervisor = Supervisor(executor, routines)
+    communications_worker = (
+        communications(hearth) if communications and not restored else Worker(hearth)
+    )
 
     @asynccontextmanager
     async def lifespan(app):
         if supervise:
             supervisor.start()
         try:
+            if supervise:
+                communications_worker.start()
             yield
         finally:
             if supervise:
                 # The dedicated worker owns its lock until all in-flight work ends.
                 # Even cancellation of this await cannot release that ownership.
-                await asyncio.to_thread(supervisor.stop)
+                try:
+                    await asyncio.to_thread(communications_worker.stop)
+                finally:
+                    await asyncio.to_thread(supervisor.stop)
 
     app = FastAPI(
         title="Hearth operator interface",
@@ -232,6 +242,7 @@ def create_app(
     run_access = RunAccess(hearth)
     app.add_middleware(OperatorAuth, token=token, run_access=run_access)
     app.state.hearth, app.state.execution, app.state.executor = hearth, execution, executor
+    app.state.communications = communications_worker
     app.state.supervisor = supervisor
     app.state.run_access = run_access
 
@@ -312,6 +323,7 @@ def create_app(
         else -- no account, no plan, no organisation, nothing of the credential itself.
         """
         return supervisor.health() | {
+            "communications": communications_worker.health(),
             "runtimes": opened_runtimes(),
             # The network's name, and what a session on it was just measured to
             # reach. Both name this building rather than these bytes, so both stay

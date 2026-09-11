@@ -1,0 +1,495 @@
+"""One owned communications lifetime; short writers surround bounded transport I/O."""
+
+import fcntl
+import threading
+from contextlib import ExitStack
+
+from hearth.channels.chat.config import read
+from hearth.channels.chat.reply import Replies
+from hearth.channels.chat.service import Conversations, scope
+from hearth.channels.delivery.model import Receipt
+from hearth.channels.delivery.service import Delivery
+from hearth.channels.polling import (
+    PAGE_SIZE,
+    REQUEST_SECONDS,
+    RESPONSE_BYTES,
+    Page,
+    RetryLater,
+    SendResult,
+    cursor,
+)
+from hearth.management.authority import digest
+from hearth.residents.models import Refused
+from hearth.work.service import _audit
+
+
+class Worker:
+    def __init__(self, hearth, secrets=None, factories=None):
+        self.hearth, self.secrets = hearth, secrets
+        self.factories = dict(factories or {})
+        self.conversations = Conversations(hearth, {})
+        self.replies = Replies(hearth, secrets) if secrets is not None else None
+        self.delivery = Delivery(hearth, replies=self.replies)
+        self._sessions = {}
+        self._secret_keys = {}
+        self._lock = None
+        self._stop = threading.Event()
+        self._thread = None
+        self._guard = threading.Lock()
+        self._health = {"communications": "stopped", "error": None}
+        self._offset = 0
+        self._reply_after = ""
+        self._admit_after = ""
+
+    def health(self):
+        with self._guard:
+            return dict(self._health)
+
+    def _state(self, **values):
+        with self._guard:
+            self._health.update(values)
+
+    def _writable(self):
+        if self.hearth.database.restored():
+            raise Refused("restored_copy_read_only")
+
+    def __enter__(self):
+        self._writable()
+        if self._lock is not None:
+            raise Refused("communications_already_started")
+        lock = self.hearth.database.path.with_suffix(".communications.lock").open("a+b")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock.close()
+            raise Refused("communications_worker_owned") from None
+        self._lock = lock
+        self._state(communications="running", error=None)
+        return self
+
+    def __exit__(self, *exc):
+        failure = None
+        try:
+            for key in list(self._sessions):
+                try:
+                    self._drop(key)
+                except Exception as error:
+                    failure = error
+        finally:
+            if self._lock is not None:
+                self._lock.close()
+                self._lock = None
+            self._state(communications="stopped")
+        if failure is not None:
+            raise failure
+
+    def start(self):
+        self.__enter__()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="hearth-communications")
+        try:
+            self._thread.start()
+        except BaseException:
+            self.__exit__()
+            raise
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+
+    def _run(self):
+        try:
+            while not self._stop.is_set():
+                try:
+                    self.step()
+                    self._state(error=None)
+                except Exception as error:
+                    self._state(error=type(error).__name__)
+                self._stop.wait(0.5)
+        finally:
+            self.__exit__()
+
+    def _drop(self, key):
+        session = self._sessions.pop(key, None)
+        self._secret_keys.pop(key, None)
+        if session:
+            try:
+                session[3].close()
+            except Exception:
+                self._state(error="transport_close_failed")
+            finally:
+                session[0].close()
+
+    def _eligible(self, kind, identity):
+        with self.hearth.database.transaction() as db:
+            row = db.execute(
+                "SELECT eligible_at FROM communications_schedule WHERE kind=? AND id=?",
+                (kind, identity),
+            ).fetchone()
+            return row is None or row[0] <= int(self.hearth.clock())
+
+    def _schedule(self, kind, identity, seconds, error=None):
+        with self.hearth.database.transaction(write=True) as db:
+            db.execute(
+                "INSERT INTO communications_schedule VALUES (?,?,?,?) ON CONFLICT(kind,id) "
+                "DO UPDATE SET eligible_at=MAX(communications_schedule.eligible_at,"
+                "excluded.eligible_at),"
+                "error=excluded.error",
+                (kind, identity, int(self.hearth.clock()) + seconds, error),
+            )
+
+    def _failure(self, kind, identity, connection_id, error):
+        # Never persist exception messages: libraries can include URLs, tokens or bodies.
+        if isinstance(error, RetryLater):
+            if kind == "route" and not error.connection_wide:
+                with self.hearth.database.transaction() as db:
+                    route = read(db, "route", identity)
+                if route is not None:
+                    destination = digest(route["address"] | {"connection_id": connection_id})
+                    self._schedule("destination", destination, error.seconds, "rate_limited")
+            self._schedule(
+                "connection" if error.connection_wide else kind,
+                connection_id if error.connection_wide else identity,
+                error.seconds,
+                "rate_limited",
+            )
+        else:
+            self._schedule(kind, identity, 5, "route_unavailable")
+
+    def _session(self, identity, connection, fingerprint):
+        if self.secrets is None or connection["transport"] not in self.factories:
+            self._drop(identity)
+            raise Refused("communications_transport_unavailable")
+        secret = self.secrets.resolve(connection["secret_ref"])
+        if secret is None:
+            self._drop(identity)
+            raise Refused("communications_pending")
+        key = digest([connection, fingerprint, secret])
+        previous = self._sessions.get(identity)
+        if previous and previous[2] == key:
+            return previous
+        # Retain delivery ownership when credentials/routes change. Releasing the
+        # lock between reloads would let another worker take over this lifetime.
+        if previous:
+            try:
+                previous[3].close()
+            except Exception:
+                self._state(error="transport_close_failed")
+            stack, owner = previous[:2]
+            del self._sessions[identity]
+        else:
+            stack = ExitStack()
+            owner = stack.enter_context(self.delivery.worker(identity))
+        try:
+            # Factories only construct local clients; no I/O or permission probes.
+            adapter = self.factories[connection["transport"]](connection, secret)
+            session = (stack, owner, key, adapter)
+            self._sessions[identity] = session
+            self._secret_keys[identity] = digest(secret)
+            return session
+        except BaseException:
+            stack.close()
+            raise
+
+    def _check_secret(self, identity, connection):
+        value = self.secrets.resolve(connection["secret_ref"]) if self.secrets is not None else None
+        if value is None or digest(value) != self._secret_keys.get(identity):
+            raise Refused("communications_secret_changed")
+
+    def step(self):
+        self._writable()  # Before even loading a factory or probing a secret.
+        if self._lock is None:
+            raise Refused("communications_worker_not_owned")
+        with self.hearth.database.transaction() as db:
+            connections = {
+                r[0]: read(db, "connection", r[0])
+                for r in db.execute(
+                    "SELECT id FROM communications_config WHERE kind='connection' ORDER BY id"
+                )
+            }
+            routes = [
+                (r[0], read(db, "route", r[0]))
+                for r in db.execute(
+                    "SELECT id FROM communications_config WHERE kind='route' ORDER BY id"
+                )
+            ]
+            fingerprint = [
+                tuple(r)
+                for r in db.execute(
+                    "SELECT kind,id,revision FROM communications_config ORDER BY kind,id"
+                )
+            ]
+        for identity in list(self._sessions):
+            connection = connections.get(identity)
+            if connection is None or connection["state"] != "active":
+                self._drop(identity)
+        adapters = {}
+        for identity, connection in connections.items():
+            if connection is None or connection["state"] != "active":
+                continue
+            try:
+                # Reload even while scheduled: revoked/changed secrets invalidate caches now.
+                adapters[identity] = self._session(identity, connection, fingerprint)
+            except Exception as error:
+                self._drop(identity)
+                self._failure("connection", identity, identity, error)
+        self.conversations.expire()
+        if self.replies is not None:
+            with self.hearth.database.transaction() as db:
+                pending = [
+                    r[0]
+                    for r in db.execute(
+                        "SELECT id FROM chat_turns WHERE state='reply_pending' AND id>? "
+                        "ORDER BY id LIMIT 50",
+                        (self._reply_after,),
+                    )
+                ]
+            self._reply_after = pending[-1] if pending else ""
+            for turn_id in pending:
+                try:
+                    if self.replies.prepare(turn_id) is not None:
+                        with self.hearth.database.transaction(write=True) as db:
+                            self.replies.handoff_in_transaction(
+                                db, turn_id, self.delivery.enqueue_in_transaction
+                            )
+                except Exception:
+                    continue
+        # Rotate the route budget so a failing first route cannot starve later ones.
+        if routes:
+            ordered = routes[self._offset :] + routes[: self._offset]
+            self._offset = (self._offset + 16) % len(routes)
+            for route_id, route in ordered[:16]:
+                if route is None:
+                    continue
+                connection_id = route["connection_id"]
+                if (
+                    route["state"] != "active"
+                    or connection_id not in adapters
+                    or not self._eligible("connection", connection_id)
+                    or not self._eligible("route", route_id)
+                    or not self._eligible(
+                        "destination", digest(route["address"] | {"connection_id": connection_id})
+                    )
+                ):
+                    continue
+                try:
+                    self._poll(route_id, adapters[connection_id][3])
+                    self._schedule("route", route_id, 1)
+                except Exception as error:
+                    self._failure("route", route_id, connection_id, error)
+        with self.hearth.database.transaction() as db:
+            queued = [
+                tuple(r)
+                for r in db.execute(
+                    "SELECT t.task_id,c.connection_id FROM chat_turns t "
+                    "JOIN tasks w ON w.id=t.task_id "
+                    "JOIN chat_conversations c ON c.id=t.conversation_id "
+                    "WHERE t.state='working' AND w.status='queued' AND t.task_id>? "
+                    "ORDER BY t.task_id LIMIT 50",
+                    (self._admit_after,),
+                )
+            ]
+        self._admit_after = queued[-1][0] if queued else ""
+        for task_id, connection_id in queued:
+            if connection_id not in adapters:
+                continue
+            try:
+                self._check_secret(connection_id, connections[connection_id])
+                self.hearth.admit(task_id, reserve=10_000)
+            except Refused:
+                pass  # Ordinary budgets, pauses, concurrency and freshness remain authoritative.
+        for identity, (_, owner, _, adapter) in adapters.items():
+            if not self._eligible("connection", identity):
+                continue
+            try:
+                self._writable()
+                with self.hearth.database.transaction() as db:
+                    connection = read(db, "connection", identity)
+                if connection is None or connection["state"] != "active":
+                    self._drop(identity)
+                    continue
+                _, owner, _, adapter = self._session(identity, connection, fingerprint)
+                with self.hearth.database.transaction() as db:
+                    deferred = frozenset(
+                        r[0]
+                        for r in db.execute(
+                            "SELECT id FROM communications_schedule WHERE kind='destination' "
+                            "AND eligible_at>?",
+                            (int(self.hearth.clock()),),
+                        )
+                    )
+                permit = self.delivery.prepare(identity, owner, deferred_destinations=deferred)
+                if permit is None:
+                    continue
+                try:
+                    receipt = adapter.send(
+                        permit, max_bytes=RESPONSE_BYTES, timeout=REQUEST_SECONDS
+                    )
+                    connection_wide = False
+                    if type(receipt) is SendResult:
+                        connection_wide, receipt = receipt.connection_wide, receipt.receipt
+                        if type(connection_wide) is not bool:
+                            raise ValueError("invalid scheduling scope")
+                    if type(receipt) is not Receipt:
+                        raise ValueError("invalid receipt")
+                    if receipt.retry_after:
+                        self._schedule(
+                            "connection" if connection_wide else "destination",
+                            identity
+                            if connection_wide
+                            else digest(permit.intent.destination.model_dump()),
+                            receipt.retry_after,
+                            "rate_limited",
+                        )
+                    self.delivery.complete(permit, receipt)
+                except Exception as error:
+                    # A raised exception cannot prove that the external request did not escape.
+                    if isinstance(error, RetryLater):
+                        self._schedule(
+                            "connection" if error.connection_wide else "destination",
+                            identity
+                            if error.connection_wide
+                            else digest(permit.intent.destination.model_dump()),
+                            error.seconds,
+                            "rate_limited",
+                        )
+                    self.delivery.complete(
+                        permit,
+                        Receipt(
+                            attempt_id=permit.attempt_id,
+                            intent_sha256=permit.intent_sha256,
+                            outcome="unknown",
+                            evidence="transport_exception",
+                        ),
+                    )
+            except Exception as error:
+                self._failure("connection", identity, identity, error)
+
+    def _poll(self, route_id, adapter):
+        self._writable()
+        with self.hearth.database.transaction() as db:
+            route, connection, grant = scope(db, route_id)
+            key = (
+                route["connection_id"],
+                route["address"]["guild_id"],
+                route["address"]["channel_id"],
+            )
+            row = db.execute(
+                "SELECT * FROM communications_cursors WHERE connection_id=? "
+                "AND guild_id=? AND channel_id=?",
+                key,
+            ).fetchone()
+        pins = (route, connection, grant)
+        self._check_secret(key[0], connection)
+        if row is None or row["through_id"] is None:
+            latest = adapter.latest(*key[1:], max_bytes=RESPONSE_BYTES, timeout=REQUEST_SECONDS)
+            cursor(latest)
+            self._check_secret(key[0], connection)
+            with self.hearth.database.transaction(write=True) as db:
+                if scope(db, route_id) != pins:
+                    raise Refused("communications_route_changed")
+                if row is None:
+                    db.execute(
+                        "INSERT INTO communications_cursors VALUES (?,?,?,?,?,NULL,?)",
+                        (*key, latest, latest, int(self.hearth.clock())),
+                    )
+                    _audit(
+                        db,
+                        "communications.baseline",
+                        route_id,
+                        int(self.hearth.clock()),
+                        {"cursor": latest},
+                    )
+                    return
+                if cursor(latest) < cursor(row["cursor"]):
+                    latest = row["cursor"]
+                db.execute(
+                    "UPDATE communications_cursors SET through_id=? WHERE connection_id=? "
+                    "AND guild_id=? AND channel_id=?",
+                    (latest, *key),
+                )
+            through = latest
+        else:
+            through = row["through_id"]
+        after = row["cursor"]
+        page = adapter.poll(
+            *key[1:],
+            after=after,
+            through=through,
+            limit=PAGE_SIZE,
+            max_bytes=RESPONSE_BYTES,
+            timeout=REQUEST_SECONDS,
+        )
+        if (
+            type(page) is not Page
+            or type(page.complete) is not bool
+            or len(page.messages) > PAGE_SIZE
+        ):
+            raise Refused("communications_page_invalid")
+        if not page.messages and not page.complete:
+            raise Refused("communications_page_incomplete")
+        previous, size, verified = cursor(after), 0, []
+        for m in page.messages:
+            identity = cursor(m.message_id)
+            if not previous < identity <= cursor(through):
+                raise Refused("communications_page_order")
+            if (m.bot_id, m.guild_id, m.channel_id) != (connection["bot_id"], *key[1:]):
+                raise Refused("communications_source_denied")
+            size += len(m.text.encode())
+            if size > RESPONSE_BYTES:
+                raise Refused("communications_page_too_large")
+            verified.append(self.conversations._verified(route_id, route, key[2], m.message_id, m))
+            previous = identity
+        progress = through if page.complete else page.messages[-1].message_id
+        self._check_secret(key[0], connection)
+        with self.hearth.database.transaction(write=True) as db:
+            if scope(db, route_id) != pins:
+                raise Refused("communications_route_changed")
+            for turn in verified:
+                try:
+                    self.conversations.submit_turn_in_transaction(db, turn)
+                except Refused as error:
+                    if error.code != "communications_message_conflict":
+                        raise
+                    # An edited identity is a decided refusal, never another task.
+                    # Keep the immutable original receipt and only body-free evidence.
+                    from dataclasses import asdict
+
+                    _audit(
+                        db,
+                        "communications.inbound_conflict",
+                        turn.message.message_id,
+                        int(self.hearth.clock()),
+                        {
+                            "route_id": route_id,
+                            "connection_id": key[0],
+                            "channel_id": key[2],
+                            "payload_digest": digest(asdict(turn.message)),
+                        },
+                    )
+            db.execute(
+                "UPDATE communications_cursors SET cursor=?,through_id=?,updated_at=? "
+                "WHERE connection_id=? AND guild_id=? AND channel_id=? "
+                "AND cursor=? AND through_id=?",
+                (
+                    progress,
+                    None if page.complete else through,
+                    int(self.hearth.clock()),
+                    *key,
+                    after,
+                    through,
+                ),
+            )
+            _audit(
+                db,
+                "communications.progress",
+                route_id,
+                int(self.hearth.clock()),
+                {
+                    "cursor": progress,
+                    "through": through,
+                    "complete": page.complete,
+                    "count": len(verified),
+                },
+            )
