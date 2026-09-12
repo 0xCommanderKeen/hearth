@@ -1,0 +1,94 @@
+{
+  "browser": "152.0.7977.82",
+  "renderer": "SwiftShader (software rendering; not phone GPU evidence)",
+  "checks": [
+    "Idle/ready residents are inside, with no exterior figures",
+    "Search/focus highlight without camera motion; selected home opens with its resident inside",
+    "Recorded work visits Workshop → Research House → Post Office → home, with animated limbs and separate postal courier",
+    "Reduced motion and disconnect clear journeys; reconnection does not replay them",
+    "Resident reorder preserves home and civic plots",
+    "0/8/25/100 residents fit desktop/mobile; civic panels and search survive graphics loss"
+  ],
+  "matrix": [
+    {
+      "count": 0,
+      "width": 320,
+      "calls": 343
+    },
+    {
+      "count": 0,
+      "width": 390,
+      "calls": 343
+    },
+    {
+      "count": 0,
+      "width": 768,
+      "calls": 343
+    },
+    {
+      "count": 0,
+      "width": 1440,
+      "calls": 343
+    },
+    {
+      "count": 8,
+      "width": 320,
+      "calls": 802
+    },
+    {
+      "count": 8,
+      "width": 390,
+      "calls": 802
+    },
+    {
+      "count": 8,
+      "width": 768,
+      "calls": 802
+    },
+    {
+      "count": 8,
+      "width": 1440,
+      "calls": 802
+    },
+    {
+      "count": 25,
+      "width": 320,
+      "calls": 1718
+    },
+    {
+      "count": 25,
+      "width": 390,
+      "calls": 1718
+    },
+    {
+      "count": 25,
+      "width": 768,
+      "calls": 1718
+    },
+    {
+      "count": 25,
+      "width": 1440,
+      "calls": 1718
+    },
+    {
+      "count": 100,
+      "width": 320,
+      "calls": 4285
+    },
+    {
+      "count": 100,
+      "width": 390,
+      "calls": 4285
+    },
+    {
+      "count": 100,
+      "width": 768,
+      "calls": 4285
+    },
+    {
+      "count": 100,
+      "width": 1440,
+      "calls": 4285
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { placeByIdentity, residentLocation, workersAt } from "./village/places";
 import type { Snapshot } from "../../shared/client";
 
 const state = (value: string) =>
@@ -35,6 +36,8 @@ export function ContextPanel({
     (r) => identity === `#residents/${encodeURIComponent(r.id)}`,
   );
   const townhall = identity === "#townhall";
+  const place = placeByIdentity(identity);
+  const occupants = workersAt(snapshot, identity);
   const runs = (snapshot.runs ?? []).filter(
     (r) => r.resident_id === resident?.id,
   );
@@ -58,7 +61,9 @@ export function ContextPanel({
       aria-label={
         townhall
           ? "Townhall household"
-          : `${resident?.name ?? "Unavailable resident"} at home`
+          : place
+            ? place.name
+            : `${resident?.name ?? "Unavailable resident"} at home`
       }
       className="village-panel"
       onKeyDown={(event) => {
@@ -71,20 +76,28 @@ export function ContextPanel({
     >
       <div className="section-title">
         <span className="eyebrow">
-          {townhall ? "THE HOUSEHOLD" : "AT HOME"}
+          {townhall ? "THE HOUSEHOLD" : place ? "VILLAGE WORK" : "AT HOME"}
         </span>
         <button onClick={onClose} aria-label="Close village panel">
           Close ×
         </button>
       </div>
       <h2>
-        {townhall ? "Townhall" : (resident?.name ?? "Resident unavailable")}
+        {townhall
+          ? "Townhall"
+          : (place?.name ?? resident?.name ?? "Resident unavailable")}
       </h2>
       {onEnter &&
         (townhall ||
+          place ||
           (resident && resident.lifecycle?.state !== "archived")) && (
           <button className="room-enter" onClick={onEnter}>
-            {townhall ? "Enter Townhall" : "Enter home"} →
+            {townhall
+              ? "Enter Townhall"
+              : place
+                ? `Enter ${place.name}`
+                : "Enter home"}{" "}
+            →
           </button>
         )}
       {!connected && (
@@ -96,7 +109,41 @@ export function ContextPanel({
       {snapshot.restore_hold && (
         <p className="notice">Restore hold · household mutations are held.</p>
       )}
-      {townhall ? (
+      {(place || townhall) && (
+        <div className="place-work">
+          {place && <p>{place.description}</p>}
+          <h3>{connected ? "Recorded work here" : "Last known work here"}</h3>
+          {occupants.length ? (
+            <ul>
+              {occupants.map(({ resident: r, run }) => (
+                <li key={r.id}>
+                  <a href={`#runs/${encodeURIComponent(run.id)}`}>
+                    {r.name} · {run.action?.label ?? "Running work"}
+                  </a>
+                  {run.action && (
+                    <small>
+                      {" "}
+                      · {new Date(run.action.at * 1000).toLocaleTimeString()}
+                    </small>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No running work located here in the available records.</p>
+          )}
+          {place && <a href={place.href}>{place.link} →</a>}
+          {place?.key === "post" && (
+            <p>
+              {(snapshot.letters ?? []).length} retained letter events. See
+              Recent post below the village for recorded senders, recipients and
+              times.
+            </p>
+          )}
+          <small>Based on the current run and its last recorded action.</small>
+        </div>
+      )}
+      {place ? null : townhall ? (
         <>
           <p>The household’s work, allowances and matters needing attention.</p>
           <dl>
@@ -170,6 +217,10 @@ export function ContextPanel({
           <p className="state">
             {connected ? "Recorded status" : "Last known status"}:{" "}
             {state(resident.presence)}
+          </p>
+          <p>
+            {connected ? "Village location" : "Last known location"}:{" "}
+            {residentLocation(resident, snapshot).label}
           </p>
           {resident.lifecycle && <p>Lifecycle: {resident.lifecycle.state}</p>}
           {(resident.operator_paused || resident.pause_reason) && (

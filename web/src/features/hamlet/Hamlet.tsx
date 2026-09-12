@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
 import { ContextPanel } from "./Panels";
+import { PLACES, residentLocation } from "./village/places";
+import { visualIdentity } from "./village/art.js";
 import { residentStatus } from "./village/activity";
 import { Room } from "./Room";
 import type { Snapshot } from "../../shared/client";
@@ -19,6 +21,7 @@ export function Hamlet({
   const [unavailable, setUnavailable] = useState(false);
   const [inside, setInside] = useState(false);
   const [lighter, setLighter] = useState(false);
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const origin = useRef<HTMLElement | null>(null);
   const selection = useRef(selected);
@@ -111,20 +114,32 @@ export function Hamlet({
       className="hamlet-scene"
       aria-label="Hamlet village"
     >
-      <label className="scene-rendering">
-        <input
-          type="checkbox"
-          checked={lighter}
-          onChange={(event) => setLighter(event.target.checked)}
-        />
-        Lighter graphics <small>Lower resolution, no village shadows</small>
-      </label>
       <div hidden={inside}>
         <div className="scene-toolbar">
-          <span>HAMLET · 3D VILLAGE</span>
           <span>
-            Drag to orbit · Two fingers to zoom / rotate · Select a home
+            HAMLET <small> · {villageResidents.length} residents</small>
           </span>
+          <details className="scene-help">
+            <summary>View & controls</summary>
+            <p>
+              Drag to orbit · Shift-drag or one finger to pan · Scroll or pinch
+              to zoom.
+            </p>
+            <p>
+              Select a home or search below. Idle and ready residents are at
+              home. Buildings represent recorded work; postal couriers
+              illustrate new letters.
+            </p>
+            <label className="scene-rendering">
+              <input
+                type="checkbox"
+                checked={lighter}
+                onChange={(event) => setLighter(event.target.checked)}
+              />
+              Lighter graphics{" "}
+              <small>Lower resolution, no village shadows</small>
+            </label>
+          </details>
         </div>
         <div
           className="scene-controls"
@@ -165,7 +180,6 @@ export function Hamlet({
           >
             ↷
           </button>
-          <span>Shift-drag or one finger to pan · Scroll to zoom</span>
         </div>
         <div
           tabIndex={-1}
@@ -193,7 +207,7 @@ export function Hamlet({
               {snapshot.limits?.letters
                 ? ` (up to ${snapshot.limits.letters})`
                 : ""}
-              . Travel illustrates newly observed letters only.
+              . Postal couriers illustrate newly observed letters only.
             </p>
             <ol className="scene-post" aria-label="Recent post">
               {letters.map((event) => (
@@ -222,33 +236,81 @@ export function Hamlet({
             holds remain.
           </p>
         ))}
+        <div className="scene-find">
+          <label htmlFor="hamlet-search">Find a resident</label>
+          <input
+            id="hamlet-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search names or purpose…"
+          />
+          <small role="status">
+            {
+              snapshot.residents.filter((r) =>
+                `${r.name} ${r.purpose ?? ""}`
+                  .toLocaleLowerCase()
+                  .includes(search.toLocaleLowerCase().trim()),
+              ).length
+            }{" "}
+            found
+          </small>
+        </div>
         <div
           className="scene-directory"
           role="group"
           aria-label="Building directory"
         >
-          <button
-            aria-pressed={selected === "#townhall"}
-            onClick={() => select("#townhall")}
-          >
-            Select Townhall
-          </button>
-          {snapshot.residents.map((r) => {
-            const identity = `#residents/${encodeURIComponent(r.id)}`;
-            return (
+          {[{ identity: "#townhall", name: "Townhall" }, ...PLACES].map(
+            (place) => (
               <button
-                key={r.id}
-                aria-pressed={selected === identity}
-                onClick={() => select(identity)}
+                key={place.identity}
+                className="scene-civic"
+                aria-pressed={selected === place.identity}
+                onPointerEnter={() => scene.current?.preview?.(place.identity)}
+                onPointerLeave={() => scene.current?.preview?.(null)}
+                onFocus={() => scene.current?.preview?.(place.identity)}
+                onBlur={() => scene.current?.preview?.(null)}
+                onClick={() => select(place.identity)}
               >
-                Select {r.name}
-                <small>
-                  {residentStatus(r, connected).text}
-                  {r.lifecycle?.state === "archived" ? " · archived" : ""}
-                </small>
+                Select {place.name}
               </button>
-            );
-          })}
+            ),
+          )}
+          {snapshot.residents
+            .filter((r) =>
+              `${r.name} ${r.purpose ?? ""}`
+                .toLocaleLowerCase()
+                .includes(search.toLocaleLowerCase().trim()),
+            )
+            .map((r) => {
+              const identity = `#residents/${encodeURIComponent(r.id)}`;
+              const location = residentLocation(r, snapshot);
+              return (
+                <button
+                  key={r.id}
+                  aria-pressed={selected === identity}
+                  onPointerEnter={() => scene.current?.preview?.(identity)}
+                  onPointerLeave={() => scene.current?.preview?.(null)}
+                  onFocus={() => scene.current?.preview?.(identity)}
+                  onBlur={() => scene.current?.preview?.(null)}
+                  onClick={() => select(identity)}
+                >
+                  <span
+                    className="resident-swatch"
+                    style={{ background: visualIdentity(r.id).accent }}
+                    aria-hidden="true"
+                  />
+                  Select {r.name}
+                  <small>
+                    {residentStatus(r, connected).text}
+                    {r.lifecycle?.state === "archived"
+                      ? " · archived"
+                      : ` · ${connected ? location.label : "last known: " + location.label}`}
+                  </small>
+                </button>
+              );
+            })}
         </div>
       </div>
       {inside && selected && (
