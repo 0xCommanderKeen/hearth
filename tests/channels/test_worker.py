@@ -115,9 +115,12 @@ def loopback(house):
 
 
 def worker(house, loopback, *, activate=True):
+    result = Worker(house[1], house[8], {"discord": loopback["factory"]})
     if activate:
-        setup(house)
-    return Worker(house[1], house[8], {"discord": loopback["factory"]})
+        result.delivery.activate(
+            "bot", expected_revision=0, operator_id="operator", old_consumer_stopped=True
+        )
+    return result
 
 
 def add(house, loopback, identity, **changes):
@@ -423,9 +426,6 @@ def test_send_rate_scope_defers_before_permit_and_survives_restart(
 
     delivery, forwarding, _ = setup(house)
     other = Destination(connection_id="bot", guild_id="guild", channel_id="other")
-    Forwarding(delivery).configure(
-        "forward-other", other, kinds=["run.succeeded"], enabled=True, expected_revision=0
-    )
     notice(house, identity="first")
     notice(house, identity="second")
     forwarding.enqueue("forward")
@@ -455,7 +455,12 @@ def test_send_rate_scope_defers_before_permit_and_survives_restart(
         running.step()
         tick(house, running)
         assert len(loopback["sent"]) == 1
-    Forwarding(delivery).enqueue("forward-other")
+    Forwarding(delivery).configure(
+        "forward-other", other, kinds=["run.succeeded"], enabled=True, expected_revision=0
+    )
+    with house[1].database.transaction() as db:
+        through = db.execute("SELECT MAX(sequence) FROM audit").fetchone()[0]
+    Forwarding(delivery).enqueue("forward-other", backfill_after=0, through_cursor=through)
     with worker(house, loopback, activate=False) as running:
         tick(house, running)
     assert len(loopback["sent"]) == (1 if connection_wide else 2)

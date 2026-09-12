@@ -639,3 +639,41 @@ validation preserves these pins and receipts, and held restores remain inert.
 The [editable Herald etiquette](skills/herald-etiquette.md) can be copied into the
 Skills library. Installing or assigning it never connects Discord or grants a route.
 All acceptance here is synthetic; live setup and real-host acceptance remain #244.
+
+### Operator notice forwarding delivered by #243
+
+`Worker.forwarding` composes `delivery.notifications.Forwarding`; the same owned
+worker selects new Inbox facts before its normal exact-attempt Discord dispatch.
+Eight bindings and 100 notices each rotate per pass independently of credentials.
+No run, conversation or recursive failure notification is created. Empty automatic
+passes do not append audit rows. Read/unread and delivery receipts remain independent.
+
+`Forwarding.configure(identity, Destination, kinds=[...], enabled=...,
+expected_revision=..., operator_url=None)` is a trusted operator-only composition
+seam, never a model tool. #247 must place it behind operator authentication.
+Supported kinds are exactly `run.succeeded`, `run.failed`, `run.cancelled`; an empty
+list forwards nothing. Connection plus guild/channel IDs and the optional bare
+HTTP(S) operator origin are stored per binding. Destination IDs are immutable; URL
+changes record a new revision and retain old origin pins for historical intent
+validation. The URL forbids credentials,
+paths, queries and fragments; it names the operator home alongside a truthful run
+resource reference, without claiming a particular run is in the recent UI window.
+
+Each configuration revision establishes a new current audit watermark and refuses
+queued prior-revision deliveries transactionally. Dispatching/unknown/confirmed
+operations retain original pins and evidence. Automatic selection never picks up
+notices from a disabled interval or earlier filter. Deliberate backfill uses
+`enqueue(identity, backfill_after=..., through_cursor=..., limit=...)`: both bounds
+are explicit, at most 100 source notices are examined, and source/binding dedup
+prevents resending any prior operation. It never moves the automatic cursor.
+
+`inspect(after="", limit=100)` returns non-secret configurations, revision,
+activation watermark, cursor and filters using keyset paging. `Delivery.inspect`
+and `detail` expose operation state, exact attempts, eligibility and reason evidence
+for #247's separate Notification deliveries view. Missing credentials leave queued
+intent visible; connection revocation is swept without credentials. Common transport
+permissions, full rate deadlines and honest unknown-send recovery remain authoritative.
+
+[ADR 0022](adr/0022-notification-forwarding-selection.md) records schema 19's nullable
+origin fill and legacy immutable payload preservation. Synthetic SQLite/loopback
+checks do not select a live notification or complete #244's real acceptance.

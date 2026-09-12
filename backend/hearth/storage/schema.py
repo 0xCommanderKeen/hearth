@@ -473,7 +473,12 @@ SCHEMA = (
         id TEXT PRIMARY KEY, destination TEXT NOT NULL, revision INTEGER NOT NULL,
         enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), kinds TEXT NOT NULL,
         watermark INTEGER NOT NULL, cursor INTEGER NOT NULL,
-        activated INTEGER NOT NULL CHECK(activated IN (0,1))
+        activated INTEGER NOT NULL CHECK(activated IN (0,1)), operator_url TEXT
+    )""",
+    """CREATE TABLE notification_forwarding_origins (
+        id TEXT NOT NULL REFERENCES notification_forwarding(id),
+        revision INTEGER NOT NULL CHECK(revision>0), operator_url TEXT,
+        PRIMARY KEY(id,revision)
     )""",
     """CREATE TABLE delivery_resolutions (
         id TEXT PRIMARY KEY, operation_id TEXT NOT NULL REFERENCES delivery_operations(id),

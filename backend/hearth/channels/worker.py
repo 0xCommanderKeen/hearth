@@ -8,6 +8,7 @@ from hearth.channels.chat.config import read
 from hearth.channels.chat.reply import Replies
 from hearth.channels.chat.service import Conversations, scope
 from hearth.channels.delivery.model import Receipt
+from hearth.channels.delivery.notifications import Forwarding
 from hearth.channels.delivery.service import Delivery
 from hearth.channels.polling import (
     PAGE_SIZE,
@@ -44,6 +45,8 @@ class Worker:
         self._reply_after = ""
         self._admit_after = ""
         self._history_after = ("", "")
+        self.forwarding = Forwarding(self.delivery)
+        self._forward_after = ""
 
     def health(self):
         with self._guard:
@@ -268,6 +271,7 @@ class Worker:
             except Exception as error:
                 self._drop(identity)
                 self._failure("connection", identity, identity, error)
+        self._forward_after = self.forwarding.step(self._forward_after)
         from hearth.channels.history import process
 
         process(self, adapters)
