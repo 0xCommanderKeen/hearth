@@ -228,6 +228,10 @@ class Bridge:
                 or len(json.dumps(params, ensure_ascii=False).encode()) > argument_limit
             ):
                 raise Refused("management_arguments_invalid")
+            from hearth.channels.tools import TOOLS, call
+
+            if params["tool"] in TOOLS:
+                return call(self.hearth, self.bound, params)
             if params["tool"] == "hearth_skills_validation":
                 from hearth.skills.tools import wait_for_validation
 
@@ -297,5 +301,7 @@ class Bridge:
                     },
                 )
                 return result
+        except UnicodeError:
+            return response({"error": "management_arguments_invalid"}, success=False)
         except Refused as error:
             return response({"error": error.code}, success=False)

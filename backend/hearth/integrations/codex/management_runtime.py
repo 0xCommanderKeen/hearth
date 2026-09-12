@@ -107,6 +107,7 @@ def validate_pins(receipt: dict, pins: dict) -> None:
 
 def pin_configuration(hearth, bound, binary):
     """Generate native metadata without auth or a writer, then pin it before launch."""
+    from hearth.channels.tools import availability
     from hearth.management.bridge import authorize
     from hearth.management.tools import tool_specs
     from hearth.work.letters import run_letter_scope
@@ -128,6 +129,7 @@ def pin_configuration(hearth, bound, binary):
                 (bound.run_id,),
             ).fetchone()[0]
         )
+        communications = availability(db, bound.run_id)
         letters = run_letter_scope(db, bound.run_id, int(hearth.clock()))
     pins = app_server.configuration_pins(
         binary,
@@ -137,6 +139,7 @@ def pin_configuration(hearth, bound, binary):
             send_letters=letters["send"],
             reply_letter=letters["reply"],
             read_post=letters["post"],
+            communications=communications,
         ),
     )
     with hearth.database.transaction(write=True) as db:
@@ -177,6 +180,7 @@ def worker(folder, request, execution):
     from contextlib import contextmanager
     from pathlib import Path
 
+    from hearth.channels.tools import availability
     from hearth.integrations.codex.usage import UsageBinding
     from hearth.integrations.launcher import Sandbox, granted, surveyed, used, written_handle
     from hearth.management.bridge import BoundRun, Bridge, authorize
@@ -236,6 +240,7 @@ def worker(folder, request, execution):
                 row[key] != request["management"][key] for key in ("catalog_sha256", "tools_sha256")
             ):
                 raise Refused("management_configuration_changed")
+            communications = availability(db, bound.run_id)
             letters = run_letter_scope(db, bound.run_id, int(hearth.clock()))
             remaining = row["expires_at"] - int(hearth.clock())
     except Refused as error:
@@ -269,6 +274,7 @@ def worker(folder, request, execution):
                 send_letters=letters["send"],
                 reply_letter=letters["reply"],
                 read_post=letters["post"],
+                communications=communications,
             ),
             on_thread=bridge.bind_thread,
             on_turn=bridge.bind_turn,

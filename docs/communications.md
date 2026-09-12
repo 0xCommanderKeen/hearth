@@ -608,3 +608,34 @@ ordinary human task/run/reply, sender exclusion, permission/content refusals,
 credential/origin/bounded parsing, full global/guild/channel waits, uncertain sends,
 forward upgrade and held backup. No Discord credential, real ID or live host was used;
 these checks complete no real-source or daily-observation gate.
+
+### Run tools delivered by #242
+
+[ADR 0021](adr/0021-run-communications-tools.md) records schema 18's durable native
+communications request seam. Both native runtime transports offer
+`hearth_read_channel_history` and `hearth_publish_announcement` for communications
+origins. Their presence grants no authority: every call, replay, read permit and
+read completion checks the exact live run and origin-specific current scope.
+
+History prepares a queued operation. Repeat its operation ID with the same arguments
+to retrieve its completed bounded result; changing arguments conflicts. Two requests
+per worker pass rotate independently of polling and delivery. A reading operation
+interrupted by restart returns an explicit refusal instead of silently fetching a
+new page. Missing Message Content access refuses rather than presenting empty text
+as complete. History includes provenance, cursor, truncation and permission state;
+URLs and attachments are never fetched. The 32-KiB bound includes the escaped
+native result envelope. If one source message cannot fit, the result names the
+omitted message count/reason and a cursor that advances past it.
+
+There are 32 distinct communications call IDs and at most four 2,000-character
+announcements per run. Announcements use Delivery's immutable intent/attempt records;
+queued, confirmed and unknown are distinct from task outcome. Run-owner values are
+redacted before enqueue. Worker-known credentials in immutable publication text
+refuse before HTTP; history text is redacted before it is retained or returned.
+The run bridge receives neither connector secret nor secret resolver. Request/result
+text is retained as run evidence, separately from transcript pruning. Current backup
+validation preserves these pins and receipts, and held restores remain inert.
+
+The [editable Herald etiquette](skills/herald-etiquette.md) can be copied into the
+Skills library. Installing or assigning it never connects Discord or grants a route.
+All acceptance here is synthetic; live setup and real-host acceptance remain #244.

@@ -42,6 +42,11 @@ def check_scope(db, authority: dict, capability: str, destination: dict, now: in
     """
     if capability not in {"read", "reply", "post"}:
         raise Refused("communications_capability_invalid")
+    from hearth.residents.lifecycle import check_ready
+
+    check_ready(db, authority["actor"])
+    if db.execute("SELECT 1 FROM pauses WHERE resident_id=?", (authority["actor"],)).fetchone():
+        raise Refused("resident_paused")
     conversation = origin(db, authority["run_id"])
     if conversation:
         if capability == "post":

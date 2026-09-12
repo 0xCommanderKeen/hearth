@@ -122,6 +122,17 @@ SCHEMA = (
         thread_id TEXT, turn_id TEXT, catalog_sha256 TEXT, tools_sha256 TEXT,
         FOREIGN KEY(resident_id,grant_revision) REFERENCES management_grant_revisions(resident_id,revision)
     )""",
+    """CREATE TABLE communications_calls (
+        run_id TEXT NOT NULL REFERENCES run_management(run_id), call_id TEXT NOT NULL,
+        payload_digest TEXT NOT NULL, PRIMARY KEY(run_id,call_id)
+    )""",
+    """CREATE TABLE communications_requests (
+        run_id TEXT NOT NULL REFERENCES run_management(run_id), operation_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL, tool TEXT NOT NULL, params TEXT NOT NULL,
+        binding TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('queued','reading','complete')),
+        result TEXT, created_at INTEGER NOT NULL, completed_at INTEGER, result_sha256 TEXT,
+        PRIMARY KEY(run_id,operation_id)
+    )""",
     """CREATE TABLE management_calls (
         run_id TEXT NOT NULL REFERENCES run_management(run_id), call_id TEXT NOT NULL,
         payload_digest TEXT NOT NULL, response TEXT NOT NULL, recorded_at INTEGER NOT NULL,

@@ -43,6 +43,7 @@ class Worker:
         self._offset = 0
         self._reply_after = ""
         self._admit_after = ""
+        self._history_after = ("", "")
 
     def health(self):
         with self._guard:
@@ -267,6 +268,9 @@ class Worker:
             except Exception as error:
                 self._drop(identity)
                 self._failure("connection", identity, identity, error)
+        from hearth.channels.history import process
+
+        process(self, adapters)
         self.conversations.expire()
         if self.replies is not None:
             with self.hearth.database.transaction() as db:
@@ -376,9 +380,18 @@ class Worker:
                 if permit is None:
                     continue
                 try:
-                    receipt = adapter.send(
-                        permit, max_bytes=RESPONSE_BYTES, timeout=REQUEST_SECONDS
-                    )
+                    protected = self.secrets.known_values if self.secrets is not None else ()
+                    if any(value and value in permit.intent.text for value in protected):
+                        receipt = Receipt(
+                            attempt_id=permit.attempt_id,
+                            intent_sha256=permit.intent_sha256,
+                            outcome="refused",
+                            evidence="protected_text",
+                        )
+                    else:
+                        receipt = adapter.send(
+                            permit, max_bytes=RESPONSE_BYTES, timeout=REQUEST_SECONDS
+                        )
                     self._flush_limits(identity, adapter)
                     connection_wide = False
                     if type(receipt) is SendResult:
