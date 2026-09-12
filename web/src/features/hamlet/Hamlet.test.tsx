@@ -350,3 +350,82 @@ it("keeps Townhall unknown usage and archived unresolved work visible with no ac
     screen.getByText(/\$0.10 held for unknown usage/).textContent,
   ).toContain("2 unresolved run(s), including archived residents");
 });
+
+it.each([
+  ["Workshop", "workshop"],
+  ["Research House", "research"],
+  ["Post Office", "post"],
+  ["Townhall", "townhall"],
+])(
+  "opens %s with multiple workers and retains the scene through departures",
+  (name, place) => {
+    const room = {
+      active: vi.fn(),
+      lighter: vi.fn(),
+      dispose: vi.fn(),
+      workers: vi.fn(),
+    };
+    vi.mocked(createRoomScene).mockReturnValue(room);
+    const workers = ["Ada", "Bea"].map((name) => ({
+      ...resident,
+      id: name,
+      name,
+      presence: "running" as const,
+    }));
+    const data = {
+      ...snapshot,
+      residents: workers,
+      runs: workers.map((r) => ({
+        id: `run-${r.id}`,
+        resident_id: r.id,
+        task_id: `task-${r.id}`,
+        status: "running",
+        cancellation_requested: 0,
+        action: { place, label: "Read notes", at: 100, sequence: 1 },
+      })),
+      tasks: workers.map((r) => ({
+        id: `task-${r.id}`,
+        resident_id: r.id,
+        instruction: `Prepare ${r.name}'s report`,
+      })),
+    } as unknown as Snapshot;
+    const { rerender } = render(<Hamlet snapshot={data} connected />);
+    fireEvent.click(screen.getByRole("button", { name: `Select ${name}` }));
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`Enter ${name}`) }),
+    );
+    expect(room.workers).toHaveBeenLastCalledWith(
+      workers.map((r) => ({ id: r.id, name: r.name, action: "Read notes" })),
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Bea.*Read notes/ }));
+    expect(screen.getByText("Prepare Bea's report")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Open run & task →" })
+        .getAttribute("href"),
+    ).toBe("#runs/run-Bea");
+    rerender(
+      <Hamlet
+        snapshot={{
+          ...data,
+          residents: [workers[0], { ...workers[1], presence: "ready" }],
+        }}
+        connected={false}
+      />,
+    );
+    expect(createRoomScene).toHaveBeenCalledOnce();
+    expect(room.workers).toHaveBeenLastCalledWith(
+      [{ id: "Ada", name: "Ada", action: "Read notes" }],
+      false,
+    );
+    expect(screen.getByText(/selected resident is no longer/)).toBeTruthy();
+    act(() => vi.mocked(createRoomScene).mock.calls[0][3]());
+    expect(
+      screen.getByRole("button", { name: /Ada.*Read notes/ }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Room graphics are unavailable/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to village" }));
+    expect(room.dispose).toHaveBeenCalledOnce();
+  },
+);

@@ -1968,3 +1968,132 @@ main:has(.hamlet-scene:not([hidden])) {
   background: #e7eddf;
   font-weight: 600;
 }
+
+/* Shared workrooms pair named work spots with the resident's actual run details. */
+.room-canvas {
+  position: relative;
+  overflow: hidden;
+}
+.workroom-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
+  gap: 18px;
+  align-items: start;
+}
+.workroom-layout .room-canvas {
+  height: 560px;
+}
+.workroom-roster {
+  min-width: 0;
+  padding: 14px;
+  margin-top: 18px;
+  background: #f4edde;
+  border: 1px solid #dacdb6;
+}
+.workroom-roster h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+.workroom-roster h3 span,
+.workroom-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+.workroom-people {
+  display: grid;
+  gap: 6px;
+}
+.workroom-people button {
+  text-align: left;
+  min-height: 44px;
+}
+.workroom-people button[aria-pressed="true"] {
+  background: #e7eddf;
+  border-color: #477a77;
+}
+.workroom-people small {
+  display: block;
+  font-size: 11px;
+  margin-top: 3px;
+  color: #615644;
+}
+.workroom-detail {
+  border-top: 1px solid #dacdb6;
+  margin-top: 14px;
+  padding-top: 10px;
+  overflow-wrap: anywhere;
+}
+.workroom-detail h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.workroom-detail p,
+.workroom-detail dl {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.workroom-detail dt {
+  color: var(--muted);
+}
+.workroom-detail dd {
+  margin: 0 0 8px;
+}
+.workroom-detail a {
+  display: block;
+  padding: 5px 0;
+  font-size: 12px;
+}
+.workroom-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.workroom-pages button {
+  font-size: 11px;
+  min-height: 36px;
+}
+.room-people-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.room-person-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  max-width: 115px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #fff8e9ed;
+  border-width: 0 0 3px;
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 4px 7px;
+}
+@media (max-width: 900px) {
+  .workroom-layout {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .workroom-layout .room-canvas {
+    height: 420px;
+  }
+  .workroom-people {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .room-person-label {
+    max-width: 85px;
+    font-size: 10px;
+  }
+}
+@media (max-width: 500px) {
+  .workroom-layout .room-canvas {
+    height: 280px;
+  }
+}

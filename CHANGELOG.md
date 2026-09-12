@@ -4,7 +4,8 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
 - Add Hamlet work buildings tied to recorded actions, residents at home when idle,
   finite walking couriers, coordinated characters/interiors, searchable navigation,
-  compact labels/controls and planted public spaces (ADR 0023, #265).
+  compact labels/controls, planted public spaces and enterable shared workrooms with
+  multiple working residents and individual task/action details (ADR 0023, #265).
 
 - Give Hamlet homes stable decorative details beside their steps: flowers, books,
   lanterns or logs, while keeping doors and letter routes clear.

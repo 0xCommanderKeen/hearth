@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
 import { ContextPanel } from "./Panels";
-import { PLACES, placeByIdentity, residentLocation } from "./village/places";
+import { PLACES, residentLocation } from "./village/places";
 import { visualIdentity } from "./village/art.js";
 import { residentStatus } from "./village/activity";
 import { Room } from "./Room";
@@ -332,9 +332,7 @@ export function Hamlet({
           connected={connected}
           active={active}
           onClose={close}
-          onEnter={
-            placeByIdentity(selected) ? undefined : () => setInside(true)
-          }
+          onEnter={() => setInside(true)}
         />
       )}
       <div className="scene-residents">

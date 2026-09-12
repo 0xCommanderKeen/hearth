@@ -12,7 +12,7 @@ import '/src/app/style.css';
 window.THREE=THREE; window.measure={};
 THREE.Object3D.prototype.onBeforeRender=function(renderer,scene,camera){
  if(scene.children.some(c=>c.name==='village')) Object.assign(window.measure,{renderer,scene,camera});
- else window.roomScene=scene;
+ else {window.roomScene=scene;window.roomCamera=camera;window.roomRenderer=renderer;}
 };
 window.stats=()=>{
  const {scene,camera,renderer}=window.measure;
@@ -51,6 +51,13 @@ window.play=()=>{
  document.getElementById('demo-status').textContent='Mara visits the Workshop, Research House and Post Office, then returns home.';
  for(const [at,fn] of [[500,()=>window.change(0,'workshop')],[5500,()=>window.change(0,'research')],[10500,()=>window.change(0,'post')],[15500,()=>window.letter()],[20500,()=>window.home(0)],[25500,()=>{document.getElementById('play').disabled=false;document.getElementById('demo-status').textContent='Everyone is home. Play again or inspect a building.';}]]) timers.push(setTimeout(fn,at));
 };
+window.workrooms=()=>{
+ timers.forEach(clearTimeout);window.show(12);
+ for(let i=0;i<12;i++) window.change(i,['workshop','research','post','townhall'][Math.floor(i/3)]);
+ document.getElementById('play').disabled=false;
+ document.getElementById('demo-status').textContent='Three residents are working in each shared building. Select a building, then Enter to inspect their work.';
+};
+document.getElementById('workrooms').onclick=window.workrooms;
 document.getElementById('play').onclick=window.play;
 window.show();
 `;
@@ -73,7 +80,7 @@ export async function createHamletPreview(port = 5197) {
             res.end(
               await server.transformIndexHtml(
                 "/__hamlet-preview",
-                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><button id="play" class="primary">Play activity</button></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
+                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><div><button id="play" class="primary">Play activity</button><button id="workrooms">Show shared workrooms</button></div></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
               ),
             );
           });

@@ -116,3 +116,26 @@ export function createResidentJourneys() {
     },
   };
 }
+
+/** One shared membership rule for civic panels and their interiors. */
+export function workersAt(snapshot: Snapshot, identity: string) {
+  const place = placeByIdentity(identity);
+  if (!place && identity !== "#townhall") return [];
+  const destination = place?.id ?? null;
+  return snapshot.residents
+    .flatMap((resident) => {
+      const location = residentLocation(resident, snapshot);
+      return location.run && location.destination === destination
+        ? [
+            {
+              resident,
+              run: location.run,
+              task: (snapshot.tasks ?? []).find(
+                (t) => t.id === location.run!.task_id,
+              ),
+            },
+          ]
+        : [];
+    })
+    .sort((a, b) => a.resident.id.localeCompare(b.resident.id));
+}

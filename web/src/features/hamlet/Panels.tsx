@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { placeByIdentity, residentLocation } from "./village/places";
+import { placeByIdentity, residentLocation, workersAt } from "./village/places";
 import type { Snapshot } from "../../shared/client";
 
 const state = (value: string) =>
@@ -37,12 +37,7 @@ export function ContextPanel({
   );
   const townhall = identity === "#townhall";
   const place = placeByIdentity(identity);
-  const occupants = snapshot.residents
-    .map((r) => ({ resident: r, location: residentLocation(r, snapshot) }))
-    .filter(
-      ({ location }) =>
-        location.run && location.destination === (townhall ? null : place?.id),
-    );
+  const occupants = workersAt(snapshot, identity);
   const runs = (snapshot.runs ?? []).filter(
     (r) => r.resident_id === resident?.id,
   );
@@ -94,9 +89,15 @@ export function ContextPanel({
       </h2>
       {onEnter &&
         (townhall ||
+          place ||
           (resident && resident.lifecycle?.state !== "archived")) && (
           <button className="room-enter" onClick={onEnter}>
-            {townhall ? "Enter Townhall" : "Enter home"} →
+            {townhall
+              ? "Enter Townhall"
+              : place
+                ? `Enter ${place.name}`
+                : "Enter home"}{" "}
+            →
           </button>
         )}
       {!connected && (
@@ -114,18 +115,15 @@ export function ContextPanel({
           <h3>{connected ? "Recorded work here" : "Last known work here"}</h3>
           {occupants.length ? (
             <ul>
-              {occupants.map(({ resident: r, location }) => (
+              {occupants.map(({ resident: r, run }) => (
                 <li key={r.id}>
-                  <a href={`#runs/${encodeURIComponent(location.run!.id)}`}>
-                    {r.name} · {location.run!.action?.label ?? "Running work"}
+                  <a href={`#runs/${encodeURIComponent(run.id)}`}>
+                    {r.name} · {run.action?.label ?? "Running work"}
                   </a>
-                  {location.run!.action && (
+                  {run.action && (
                     <small>
                       {" "}
-                      ·{" "}
-                      {new Date(
-                        location.run!.action.at * 1000,
-                      ).toLocaleTimeString()}
+                      · {new Date(run.action.at * 1000).toLocaleTimeString()}
                     </small>
                   )}
                 </li>

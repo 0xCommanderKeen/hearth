@@ -1,10 +1,16 @@
 import * as THREE from "three";
 import { createArtKit, visualIdentity } from "./art.js";
+import {
+  createWorkroomScene,
+  type WorkroomOptions,
+  type WorkroomWorker,
+} from "./workroom";
 import { selectionGesture } from "./gesture";
 
 export type RoomScene = {
   active(visible: boolean): void;
   occupancy?(atHome: boolean): void;
+  workers?(workers: WorkroomWorker[], connected: boolean): void;
   lighter(enabled: boolean): void;
   dispose(): void;
 };
@@ -18,7 +24,10 @@ export function createRoomScene(
   targets: RoomTargets,
   unavailable: () => void,
   residentId?: string,
+  workroom?: WorkroomOptions,
 ): RoomScene {
+  if (workroom)
+    return createWorkroomScene(element, targets, unavailable, workroom);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   const canvas = renderer.domElement;

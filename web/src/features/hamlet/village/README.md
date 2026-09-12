@@ -53,3 +53,14 @@ Run `node scripts/check-hamlet-living-browser.mjs` with Playwright available (or
 `PLAYWRIGHT_MODULE` set to its ESM entry). `CHROMIUM_BINARY` optionally selects an
 installed Chromium executable. This harness uses software WebGL and writes to
 `docs/evidence/hamlet-living-2026-09-12/` or `HAMLET_EVIDENCE_DIR`.
+
+**Show shared workrooms** populates all four civic interiors with three fictional
+workers each. Select a building and **Enter**, then select a figure, name or desk
+for that resident's task and latest recorded action. Workrooms use six spots per
+page, retain figures across updates, and pause working poses when disconnected,
+hidden or reduced motion is selected. These poses are illustrations of the records.
+
+Run `node scripts/check-hamlet-workrooms-browser.mjs` with the same Playwright and
+Chromium environment for shared-room selection, live membership, pagination,
+motion, mobile layout and graphics-loss checks. Evidence goes to
+`docs/evidence/hamlet-workrooms-2026-09-12/`.

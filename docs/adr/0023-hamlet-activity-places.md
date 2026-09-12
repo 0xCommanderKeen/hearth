@@ -43,6 +43,15 @@ bounds. Directory, accessible building panels and owning record links remain usa
 when graphics are unavailable. Home color and decoration derive from identity and
 are shared by the character and interior; they grant no capability or role.
 
+Shared work buildings have enterable cutaway interiors. The same membership rule
+as the exterior panel supplies named residents and their recorded run/task details.
+Six work spots are rendered per page; further residents remain accessible by paging.
+Resident, desk and name selection inspect that resident rather than navigating away.
+Small working motions illustrate recorded running work, stop while disconnected,
+hidden or under reduced motion, and never create audit facts. Live membership changes
+update figures without recreating the room. Textual residents and owning record links
+remain available after graphics failure. Furniture varies by building function.
+
 ## Verification
 
 Use real temporary SQLite and the native bridge to verify successful/refused calls,
