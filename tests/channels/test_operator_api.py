@@ -5,6 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from hearth.app import create_app
+from hearth.channels.chat.config import Secrets
 from hearth.channels.chat.model import Connection, Grant
 from hearth.channels.worker import Worker
 from hearth.residents.models import Refused
@@ -102,6 +103,31 @@ def test_pending_configuration_revision_conflict_and_activation_ack(house):
     assert status["bindings"] == [
         {"connection_id": "bot", "revision": 1, "activated_at": house[2][0]}
     ]
+
+
+def test_revoke_checks_read_revision_before_deriving_its_payload(house, monkeypatch):
+    config = house[3]
+    original = config.save
+
+    def concurrent_save(kind, identity, value, *, expected_revision):
+        original(
+            "route",
+            "route",
+            house[4].model_copy(update={"label": "Concurrent label", "operator_ids": ["500"]}),
+            expected_revision=1,
+        )
+        return original(kind, identity, value, expected_revision=expected_revision)
+
+    monkeypatch.setattr(config, "save", concurrent_save)
+    with pytest.raises(Refused, match="revision_conflict"):
+        config.revoke("route", "route", expected_revision=2)
+    monkeypatch.setattr(config, "save", original)
+    # A future caller revision must be refused before the read-derived save is
+    # attempted, even if another writer could produce that revision during it.
+    with house[1].database.transaction() as db:
+        from hearth.channels.chat.config import read
+
+        assert read(db, "route", "route")["revision"] == 1
 
 
 def test_bounded_transcript_redacts_embedded_owner_and_usage_is_independent(house):
@@ -256,6 +282,7 @@ def test_held_copy_all_communications_mutations_and_probe_refused(house, tmp_pat
     )
     assert client.get(ROOT, headers=AUTH).json()["read_only"] is True
     actions = [
+        ("post", "/configuration/grant/herald/revoke", {"expected_revision": 1}),
         ("post", "/connections/bot/probe", {"route_id": "route"}),
         (
             "post",
@@ -278,6 +305,109 @@ def test_held_copy_all_communications_mutations_and_probe_refused(house, tmp_pat
         result = getattr(client, method)(ROOT + path, headers=AUTH, json=body)
         assert result.status_code == 409 and result.json() == {"error": "restored_copy_read_only"}
     assert sorted(restored.glob("*.lock")) == locks_before
+
+
+def test_cached_credential_diagnostics_do_not_resolve_on_render(house, monkeypatch):
+    client, worker = client_of(house, {"discord": lambda *_: object()})
+    assert client.get(ROOT, headers=AUTH).json()["health"]["credentials"] == {}
+    worker.delivery.activate(
+        "bot", expected_revision=0, operator_id="operator", old_consumer_stopped=True
+    )
+    with worker:
+        worker.step()
+        assert worker.health()["credentials"]["bot"]["state"] == "configured"
+        (house[8].root / "bot").unlink()
+        worker.step()
+        expected = {"state": "missing", "checked_at": house[2][0], "revision": 1}
+        assert worker.health()["credentials"]["bot"] == expected
+        (house[8].root / "bot").write_text("synthetic-bot-secret")
+        (house[8].root / "bot").chmod(0o644)
+        worker.step()
+        assert worker.health()["credentials"]["bot"]["state"] == "invalid"
+
+        def forbidden(*_):
+            raise AssertionError("render tried reading credentials")
+
+        monkeypatch.setattr(house[8], "resolve", forbidden)
+        answer = client.get(ROOT, headers=AUTH)
+        assert answer.status_code == 200
+        assert answer.json()["health"]["credentials"]["bot"]["state"] == "invalid"
+        assert "synthetic-bot-secret" not in answer.text and str(house[8].root) not in answer.text
+
+
+def test_explicit_production_secret_root_is_protected_without_reading_files(tmp_path, monkeypatch):
+    import hearth.app as app_module
+
+    root = tmp_path / "protected"
+    root.mkdir(mode=0o700)
+
+    def forbidden(*_):
+        raise AssertionError("startup/render resolved a credential")
+
+    monkeypatch.setattr(Secrets, "resolve", forbidden)
+    monkeypatch.setenv("HEARTH_DATA", str(tmp_path / "store"))
+    monkeypatch.setenv("HEARTH_OPERATOR_TOKEN", "synthetic-operator-token")
+    monkeypatch.setenv("HEARTH_COMMUNICATIONS_SECRETS", str(root))
+    monkeypatch.setattr(
+        app_module,
+        "create_app",
+        lambda *args, **kwargs: create_app(
+            *args, **kwargs, supervise=False, runtime=fake_runtime()
+        ),
+    )
+    app = app_module.from_env()
+    assert str(root) in app.state.hearth.mount_protected
+    assert app.state.communications.secrets.root == root
+    assert app.state.communications.secrets.known_values == set()
+    client = TestClient(app)
+    assert client.get(ROOT, headers=AUTH).status_code == 200
+    from hearth.residents.models import Declaration
+
+    app.state.hearth.save_resident(
+        "herald", Declaration("Herald", "Synthetic setup", 10_000_000), expected_revision=0
+    )
+    path = "/api/residents/herald/management"
+    grant = client.get(path, headers=AUTH).json()
+    value = {k: v for k, v in grant.items() if k not in {"resident_id", "revision"}}
+    for protected in (root, root.parent):
+        answer = client.put(
+            path,
+            headers=AUTH,
+            json=value
+            | {"expected_revision": 0, "mounts": [{"name": "secret", "host_path": str(protected)}]},
+        )
+        assert answer.status_code == 409 and answer.json()["error"] == "grant_mount_forbidden"
+    with pytest.raises(Refused, match="communications_secret_location_forbidden"):
+        create_app(
+            tmp_path / "other",
+            "synthetic-operator-token",
+            supervise=False,
+            runtime=fake_runtime(),
+            communications_secrets=tmp_path / "other/secrets",
+        )
+    alias = tmp_path / "alias"
+    alias.symlink_to(root, target_is_directory=True)
+    for selected in (alias, alias / "child"):
+        with pytest.raises(Refused, match="communications_secret_location_forbidden"):
+            create_app(
+                tmp_path / "aliased-store",
+                "synthetic-operator-token",
+                supervise=False,
+                runtime=fake_runtime(),
+                communications_secrets=selected,
+            )
+    capture(tmp_path / "store", tmp_path / "backup")
+    restore(tmp_path / "backup", tmp_path / "held")
+    monkeypatch.setattr(Secrets, "__init__", forbidden)
+    held = create_app(
+        tmp_path / "held",
+        "synthetic-operator-token",
+        supervise=False,
+        runtime=fake_runtime(),
+        communications_secrets=root,
+    )
+    assert held.state.communications.secrets is None
+    assert TestClient(held).get(ROOT, headers=AUTH).json()["read_only"]
 
 
 def test_explicit_probe_uses_owned_current_scoped_worker_without_other_io(house):

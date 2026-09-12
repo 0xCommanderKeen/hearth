@@ -1,0 +1,38 @@
+{
+  "installed_discord_journey": {
+    "checks": [
+      "selected_history_and_unselected_scope",
+      "content_and_permission_refusals",
+      "operator_announcement",
+      "routine_announcement",
+      "rate_limit_no_early_network",
+      "multipage_human_reply_and_loop_rejection",
+      "lost_ack_unknown_usage_no_resend",
+      "populated_forward_upgrade",
+      "restart_replay_no_resend",
+      "separate_notification_forwarding",
+      "held_restore_preserves_evidence_no_io"
+    ],
+    "deliveries": 6,
+    "external_fixture_posts": 5,
+    "http_requests": 810,
+    "known_cost_microdollars": 2100,
+    "known_runs": 3,
+    "origins": [
+      "conversation",
+      "operator",
+      "routine"
+    ],
+    "runs": 4,
+    "synthetic_only": true,
+    "turns": 2,
+    "unknown_cost_runs": 1,
+    "unknown_deliveries": 1
+  },
+  "command": "scripts/check-discord-docker.sh",
+  "exit_code": 0,
+  "image_id": "sha256:c5e8bb9ae4e11136f5c329c72fab361515e5e7e3270259eef9765598619c66e5",
+  "network": "none",
+  "synthetic_only": true,
+  "source_files_sha256": "7b46d3dcd8ea017157f881f1e8dfc7fc7f74960711c5c90ed5e87c28d933966d"
+}

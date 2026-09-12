@@ -49,3 +49,21 @@
   margin-top: 1.5rem;
   border-top: 2px solid var(--line, #d9dfd7);
 }
+
+.discord-setup {
+  margin-block: 1rem;
+  border-block: 1px solid var(--line, #d9dfd7);
+  padding-block: 1rem;
+}
+.discord-setup > summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.discord-setup small {
+  display: block;
+  margin-left: 1.5rem;
+}
+.discord-setup article {
+  padding-block: 0.7rem;
+  border-bottom: 1px solid var(--line, #d9dfd7);
+}

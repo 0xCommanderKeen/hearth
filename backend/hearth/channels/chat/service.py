@@ -11,6 +11,14 @@ from hearth.management.authority import digest
 from hearth.residents.models import Refused
 from hearth.work.service import _audit
 
+# Shared by admission and inspection; o is the delivery_operations alias. A closed
+# (possibly pruned) turn can own a reissued effect without reopening its transcript.
+BUSY_DELIVERY_SQL = (
+    "(o.state IN ('queued','dispatching') OR (o.state='unknown' AND COALESCE("
+    "(SELECT action FROM delivery_resolutions r WHERE r.operation_id=o.id "
+    "ORDER BY revision DESC LIMIT 1),'')!='reissue'))"
+)
+
 
 @dataclass(frozen=True)
 class VerifiedTurn:
@@ -140,9 +148,7 @@ class Conversations:
             if db.execute(
                 "SELECT 1 FROM chat_turns t JOIN delivery_operations o "
                 "ON json_extract(o.intent,'$.source_id')=t.id "
-                "WHERE t.conversation_id=? AND o.state='unknown' "
-                "AND COALESCE((SELECT action FROM delivery_resolutions r "
-                "WHERE r.operation_id=o.id ORDER BY revision DESC LIMIT 1),'')!='reissue'",
+                f"WHERE t.conversation_id=? AND {BUSY_DELIVERY_SQL}",
                 (conversation_id,),
             ).fetchone():
                 raise Refused("communications_busy")

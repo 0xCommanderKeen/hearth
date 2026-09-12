@@ -27,6 +27,10 @@ class Save(Strict):
     value: dict
 
 
+class Revoke(Strict):
+    expected_revision: int = Field(ge=1)
+
+
 class Forward(Strict):
     expected_revision: int = Field(ge=0)
     destination: Destination | NotificationDestination
@@ -126,6 +130,10 @@ def mount_communications(app: FastAPI, worker, *, protected_values=()):
             identity, **body.model_dump(exclude={"destination"}), destination=body.destination
         )
         return {"id": identity, "revision": revision}
+
+    @app.post("/api/communications/configuration/{kind}/{identity}/revoke")
+    def revoke(kind: str, identity: str, body: Revoke):
+        return configuration.revoke(kind, identity, expected_revision=body.expected_revision)
 
     @app.post("/api/communications/forwarding/{identity}/backfill")
     def backfill(identity: str, body: Backfill):

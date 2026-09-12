@@ -873,6 +873,8 @@ export function App() {
               <Communications
                 key={snapshot.epoch}
                 client={client}
+                residents={snapshot.residents}
+                runtimes={snapshot.runtimes}
                 readOnly={snapshot.restore_hold === true}
               />
             )}
@@ -1432,6 +1434,8 @@ export function App() {
                         key={`communications:${snapshot.epoch}:${current.id}`}
                         client={client}
                         residentId={current.id}
+                        residents={snapshot.residents}
+                        runtimes={snapshot.runtimes}
                         readOnly={snapshot.restore_hold === true}
                       />
                     )}

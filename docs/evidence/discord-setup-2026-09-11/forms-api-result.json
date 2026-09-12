@@ -1,0 +1,453 @@
+{
+  "checks": [
+    "three connection transports create/update/reload",
+    "two chat route transports create/update/reload",
+    "all four grant scopes create/update/remove",
+    "three forwarding transports/two shapes create/update/reload",
+    "immutable fields disabled",
+    "ntfy bot_id null persisted",
+    "ntfy target retained after reload",
+    "390px no overflow",
+    "real authenticated API with temporary SQLite; no worker or external I/O"
+  ],
+  "page_errors": [],
+  "writes": [
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/discord",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "transport": "discord",
+          "secret_ref": "synthetic_slot",
+          "bot_id": "synthetic-discord",
+          "label": "Synthetic discord",
+          "state": "pending"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/discord",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "transport": "discord",
+          "secret_ref": "synthetic_slot",
+          "bot_id": "synthetic-discord",
+          "state": "disabled",
+          "label": "Updated discord"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/telegram",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "transport": "telegram",
+          "secret_ref": "synthetic_slot",
+          "bot_id": "synthetic-telegram",
+          "label": "Synthetic telegram",
+          "state": "pending"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/telegram",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "transport": "telegram",
+          "secret_ref": "synthetic_slot",
+          "bot_id": "synthetic-telegram",
+          "state": "disabled",
+          "label": "Updated telegram"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/ntfy",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "transport": "ntfy",
+          "secret_ref": "synthetic_slot",
+          "bot_id": null,
+          "label": "Synthetic ntfy",
+          "state": "pending"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "ntfy",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/connection/ntfy",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "transport": "ntfy",
+          "secret_ref": "synthetic_slot",
+          "bot_id": null,
+          "state": "disabled",
+          "label": "Updated ntfy"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "ntfy",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/route/discord-route",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "connection_id": "discord",
+          "resident_id": "herald",
+          "address": {
+            "guild_id": "guild",
+            "channel_id": "channel"
+          },
+          "label": "",
+          "state": "pending",
+          "mode": "dedicated",
+          "sender_policy": "operators_only",
+          "operator_ids": [
+            "sender-one",
+            "sender-two"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-route",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/route/discord-route",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "connection_id": "discord",
+          "resident_id": "herald",
+          "address": {
+            "guild_id": "guild",
+            "channel_id": "channel"
+          },
+          "state": "pending",
+          "mode": "dedicated",
+          "sender_policy": "guild_channel_humans",
+          "operator_ids": [
+            "sender-one",
+            "sender-two"
+          ],
+          "label": "Updated discord route"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-route",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/route/telegram-route",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "connection_id": "telegram",
+          "resident_id": "herald",
+          "address": {
+            "guild_id": "guild",
+            "channel_id": "channel"
+          },
+          "label": "",
+          "state": "pending",
+          "mode": "dedicated",
+          "sender_policy": "operators_only",
+          "operator_ids": [
+            "sender-one",
+            "sender-two"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram-route",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/route/telegram-route",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "connection_id": "telegram",
+          "resident_id": "herald",
+          "address": {
+            "guild_id": "guild",
+            "channel_id": "channel"
+          },
+          "state": "pending",
+          "mode": "dedicated",
+          "sender_policy": "guild_channel_humans",
+          "operator_ids": [
+            "sender-one",
+            "sender-two"
+          ],
+          "label": "Updated telegram route"
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram-route",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/grant/herald",
+      "request": {
+        "expected_revision": 0,
+        "value": {
+          "read": [
+            {
+              "connection_id": "discord",
+              "guild_id": "guild",
+              "channel_id": "channel"
+            }
+          ],
+          "listen": [
+            {
+              "connection_id": "discord",
+              "guild_id": "guild",
+              "channel_id": "channel"
+            }
+          ],
+          "reply": [
+            {
+              "connection_id": "discord",
+              "guild_id": "guild",
+              "channel_id": "channel"
+            }
+          ],
+          "post": [
+            {
+              "connection_id": "discord",
+              "guild_id": "guild",
+              "channel_id": "channel"
+            }
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "herald",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/configuration/grant/herald",
+      "request": {
+        "expected_revision": 1,
+        "value": {
+          "read": [
+            {
+              "guild_id": "guild",
+              "channel_id": "channel",
+              "connection_id": "discord"
+            }
+          ],
+          "listen": [
+            {
+              "guild_id": "guild",
+              "channel_id": "channel",
+              "connection_id": "discord"
+            }
+          ],
+          "reply": [
+            {
+              "guild_id": "guild",
+              "channel_id": "channel",
+              "connection_id": "discord"
+            }
+          ],
+          "post": []
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "herald",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/discord-forward",
+      "request": {
+        "expected_revision": 0,
+        "destination": {
+          "connection_id": "discord",
+          "guild_id": "guild",
+          "channel_id": "channel"
+        },
+        "kinds": [
+          "run.succeeded"
+        ],
+        "enabled": true,
+        "operator_url": null
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-forward",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/discord-forward",
+      "request": {
+        "expected_revision": 1,
+        "destination": {
+          "guild_id": "guild",
+          "channel_id": "channel",
+          "connection_id": "discord"
+        },
+        "kinds": [
+          "run.succeeded",
+          "run.failed"
+        ],
+        "enabled": true,
+        "operator_url": "https://hearth.example"
+      },
+      "status": 200,
+      "response": {
+        "id": "discord-forward",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/telegram-forward",
+      "request": {
+        "expected_revision": 0,
+        "destination": {
+          "connection_id": "telegram",
+          "guild_id": "guild",
+          "channel_id": "channel"
+        },
+        "kinds": [
+          "run.succeeded"
+        ],
+        "enabled": true,
+        "operator_url": null
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram-forward",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/telegram-forward",
+      "request": {
+        "expected_revision": 1,
+        "destination": {
+          "guild_id": "guild",
+          "channel_id": "channel",
+          "connection_id": "telegram"
+        },
+        "kinds": [
+          "run.succeeded",
+          "run.failed"
+        ],
+        "enabled": true,
+        "operator_url": "https://hearth.example"
+      },
+      "status": 200,
+      "response": {
+        "id": "telegram-forward",
+        "revision": 2
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/ntfy-forward",
+      "request": {
+        "expected_revision": 0,
+        "destination": {
+          "connection_id": "ntfy",
+          "target_id": "synthetic_target"
+        },
+        "kinds": [
+          "run.succeeded"
+        ],
+        "enabled": true,
+        "operator_url": null
+      },
+      "status": 200,
+      "response": {
+        "id": "ntfy-forward",
+        "revision": 1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/communications/forwarding/ntfy-forward",
+      "request": {
+        "expected_revision": 1,
+        "destination": {
+          "connection_id": "ntfy",
+          "target_id": "synthetic_target"
+        },
+        "kinds": [
+          "run.succeeded",
+          "run.failed"
+        ],
+        "enabled": true,
+        "operator_url": "https://hearth.example"
+      },
+      "status": 200,
+      "response": {
+        "id": "ntfy-forward",
+        "revision": 2
+      }
+    }
+  ]
+}

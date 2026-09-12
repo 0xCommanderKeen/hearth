@@ -1,0 +1,47 @@
+{
+  "command": "mise exec uv@0.12.12 pnpm@11.22.0 -- make check",
+  "exit_code": 0,
+  "backend_tests": 1392,
+  "frontend_tests": 234,
+  "frontend_files": 33,
+  "source_files_sha256": "7b46d3dcd8ea017157f881f1e8dfc7fc7f74960711c5c90ed5e87c28d933966d",
+  "python": "3.14.7",
+  "node": "26.7.0",
+  "uv": "0.12.12",
+  "pnpm": "11.22.0",
+  "ruff": "passed",
+  "backend_types": "passed",
+  "frontend_format_types_build": "passed",
+  "packaged_assets": "passed",
+  "clean_installed_wheel": "passed",
+  "installed_journey": {
+    "checks": [
+      "selected_history_and_unselected_scope",
+      "content_and_permission_refusals",
+      "operator_announcement",
+      "routine_announcement",
+      "rate_limit_no_early_network",
+      "multipage_human_reply_and_loop_rejection",
+      "lost_ack_unknown_usage_no_resend",
+      "populated_forward_upgrade",
+      "restart_replay_no_resend",
+      "separate_notification_forwarding",
+      "held_restore_preserves_evidence_no_io"
+    ],
+    "deliveries": 6,
+    "external_fixture_posts": 5,
+    "http_requests": 810,
+    "known_cost_microdollars": 2100,
+    "known_runs": 3,
+    "origins": [
+      "conversation",
+      "operator",
+      "routine"
+    ],
+    "runs": 4,
+    "synthetic_only": true,
+    "turns": 2,
+    "unknown_cost_runs": 1,
+    "unknown_deliveries": 1
+  }
+}

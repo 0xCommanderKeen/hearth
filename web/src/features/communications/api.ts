@@ -32,6 +32,14 @@ export type Status = {
     error: string | null;
   }[];
   health: Record<string, unknown>;
+  poll_progress?: {
+    connection_id: string;
+    guild_id: string;
+    channel_id: string;
+    cursor: string;
+    through_id: string | null;
+    updated_at: number;
+  }[];
 };
 export type Conversation = {
   id: string;
