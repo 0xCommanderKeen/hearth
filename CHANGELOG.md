@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Define scoped external communications, separate payloads, durable dispatch/recovery
+  and forward-upgrade/held-restore rules for Herald and shared transports (ADR 0019, #240).
+
 - The epic workflow, subagent prompt and Codex metadata are checked into
   `.agents/skills/epic`, so other machines can use it directly from a Hearth checkout (#250).
 

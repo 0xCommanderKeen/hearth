@@ -44,6 +44,13 @@ run, under the grant, door and depth bounds recorded in
 [the permission contract](management.md). Reader receives read access only. It does
 not need broad tools, a marketplace or an imported resident fleet.
 
+The selected Herald communications extension is recorded in
+[ADR 0019](adr/0019-external-communications.md) and
+[the communications contract](communications.md): bounded selected-channel reads,
+human mention tasks and explicitly granted publication, with backend-held secrets
+and durable delivery evidence. This is implementation scope, not a live source
+connection or completion of the rollout gates.
+
 Do not build import from other systems, cross-system ownership registries or source
 migration adapters. Definition-only resident bundles are the single cross-system
 path (ADR 0010): a resident's own content can be exported and imported, never its
