@@ -384,22 +384,37 @@ export function createArtKit() {
     root.add(side);
     planter(root, wallW * 0.39, front + 0.35);
     if (home) {
+      // A small detail by the step makes an address recognizable without
+      // inventing activity. Keep the middle of the door and street unobstructed.
+      const detailX = -wallW * 0.38;
+      const detailZ = front + 0.34;
       if (variant === 0) {
-        box(
-          root,
-          "pot",
-          [-wallW * 0.32, 0.65, front + 0.2],
-          [wallW * 0.22, 0.13, 0.24],
-        );
-        for (const offset of [-0.12, 0.12])
+        box(root, "pot", [detailX, 0.23, detailZ], [0.48, 0.24, 0.3]);
+        for (const offset of [-0.13, 0.13]) {
+          part(
+            root,
+            "sphere",
+            "leaf",
+            [detailX + offset, 0.43, detailZ],
+            [0.2, 0.28, 0.2],
+          );
           part(
             root,
             "sphere",
             "#d69d86",
-            [-wallW * 0.32 + offset, 0.78, front + 0.2],
-            [0.18, 0.19, 0.18],
+            [detailX + offset, 0.54, detailZ + 0.08],
+            [0.13, 0.13, 0.13],
           );
+        }
       } else if (variant === 1) {
+        box(root, "timber", [detailX, 0.18, detailZ], [0.48, 0.36, 0.38]);
+        for (let i = 0; i < 3; i++)
+          box(
+            root,
+            i === 1 ? "teal" : "paper",
+            [detailX - 0.12 + i * 0.12, 0.39, detailZ],
+            [0.09, 0.19 + i * 0.04, 0.24],
+          );
         part(
           root,
           "gable",
@@ -408,6 +423,14 @@ export function createArtKit() {
           [0.92, 0.43, 0.58],
         );
       } else if (variant === 2) {
+        box(root, "timber", [detailX, 0.42, detailZ], [0.07, 0.84, 0.07]);
+        box(root, "brass", [detailX, 0.83, detailZ + 0.03], [0.26, 0.06, 0.22]);
+        box(
+          root,
+          "window",
+          [detailX, 0.65, detailZ + 0.05],
+          [0.18, 0.29, 0.16],
+        );
         part(
           root,
           "ring",
@@ -424,17 +447,20 @@ export function createArtKit() {
           [Math.PI / 2, 0, 0],
         );
       } else {
+        for (let i = 0; i < 3; i++)
+          part(
+            root,
+            "cylinder",
+            "timber",
+            [detailX, 0.16 + i * 0.14, detailZ],
+            [0.42, 0.12, 0.16],
+            [0, 0, Math.PI / 2],
+          );
         box(
           root,
-          "timber",
-          [-wallW * 0.32, 0.28, front + 0.28],
-          [0.7, 0.1, 0.32],
-        );
-        box(
-          root,
-          "stone",
-          [-wallW * 0.32, 0.12, front + 0.28],
-          [0.48, 0.24, 0.19],
+          "cream",
+          [detailX, 0.28, detailZ + 0.13],
+          [0.44, 0.045, 0.04],
         );
       }
     }
