@@ -447,6 +447,22 @@ class Hearth:
         self, command_id: str, resident_id: str, instruction: str, *, expires_at: int
     ) -> Receipt:
         """The caller retains one command ID and deadline across retries."""
+        with self.database.transaction(write=True) as db:
+            return self.submit_in_transaction(
+                db, command_id, resident_id, instruction, expires_at=expires_at
+            )
+
+    def submit_in_transaction(
+        self,
+        db,
+        command_id: str,
+        resident_id: str,
+        instruction: str,
+        *,
+        expires_at: int,
+        source: dict | None = None,
+    ) -> Receipt:
+        """Owning submission for trusted composition inside an existing writer."""
         identifier(command_id)
         identifier(resident_id)
         bounded_text(instruction, 32_000, "invalid_instruction")
@@ -457,26 +473,27 @@ class Hearth:
                 [resident_id, instruction, expires_at], ensure_ascii=True, separators=(",", ":")
             ).encode()
         ).hexdigest()
-        with self.database.transaction(write=True) as db:
-            now = int(self.clock())
-            if not now < expires_at <= now + COMMAND_LIFETIME:
-                raise Refused("invalid_command_deadline")
-            previous = db.execute("SELECT * FROM commands WHERE id = ?", (command_id,)).fetchone()
-            if previous:
-                if previous["payload_digest"] != digest:
-                    raise Refused("command_conflict")
-                return Receipt(
-                    previous["id"],
-                    previous["task_id"],
-                    previous["accepted_at"],
-                    previous["expires_at"],
-                )
-            task_id = _queue_task(db, resident_id, instruction, now, {"command_id": command_id})
-            db.execute(
-                "INSERT INTO commands VALUES (?, ?, ?, ?, ?)",
-                (command_id, digest, task_id, now, expires_at),
+        now = int(self.clock())
+        if not now < expires_at <= now + COMMAND_LIFETIME:
+            raise Refused("invalid_command_deadline")
+        previous = db.execute("SELECT * FROM commands WHERE id = ?", (command_id,)).fetchone()
+        if previous:
+            if previous["payload_digest"] != digest:
+                raise Refused("command_conflict")
+            return Receipt(
+                previous["id"],
+                previous["task_id"],
+                previous["accepted_at"],
+                previous["expires_at"],
             )
-            return Receipt(command_id, task_id, now, expires_at)
+        task_id = _queue_task(
+            db, resident_id, instruction, now, {"command_id": command_id, **(source or {})}
+        )
+        db.execute(
+            "INSERT INTO commands VALUES (?, ?, ?, ?, ?)",
+            (command_id, digest, task_id, now, expires_at),
+        )
+        return Receipt(command_id, task_id, now, expires_at)
 
     def receipt(self, command_id: str) -> Receipt:
         with self.database.transaction() as db:
@@ -545,6 +562,9 @@ class Hearth:
         letter = db.execute("SELECT expires_at FROM letters WHERE task_id=?", (task_id,)).fetchone()
         if letter is not None and now >= letter["expires_at"]:
             raise Refused("letter_expired")
+        from hearth.channels.chat.service import admission
+
+        conversation = admission(db, task_id, now)
         resident_id = task["resident_id"]
         if db.execute(
             "SELECT 1 FROM resident_provisioning WHERE resident_id=? AND status!='ready'",
@@ -624,7 +644,15 @@ class Hearth:
         # reaches no management tools at all, and carries the memory its request named
         # rather than whatever the resident has written since.
         example = case_validation(db, run.id)
-        if example is None:
+        if conversation is not None:
+            from hearth.channels.chat.service import pin
+
+            pin(db, conversation, run.id)
+            db.execute(
+                "INSERT INTO run_management VALUES (?,?,NULL,NULL,?,NULL,NULL,NULL,NULL)",
+                (run.id, resident_id, now + 600),
+            )
+        if example is None and conversation is None:
             from hearth.management.authority import pin_management, pin_mounts
 
             # What this run reaches on disk, resolved from the grant as it stands now
@@ -642,6 +670,9 @@ class Hearth:
             pin_management(
                 db, run.id, resident_id, now, memory_writable=bool(declaration["memory_writable"])
             )
+            from hearth.channels.chat.authority import pin_grant
+
+            pin_grant(db, run.id, resident_id, now)
             from hearth.integrations.interface import manages_tools
 
             # A run pinned to reach Hearth's own tools can only be worked by a runtime
@@ -672,7 +703,7 @@ class Hearth:
         pin_skills(db, run.id, resident_id)
         from hearth.inputs.selection import pin_inputs
 
-        pin_inputs(db, run.id, resident_id)
+        pin_inputs(db, run.id, resident_id, empty=conversation is not None)
         context = read_context(db, run.id, MemoryFiles(self.database.path.parent / "memory"))
         encoded_context = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
         from hearth.execution.staging import MAX_INPUT

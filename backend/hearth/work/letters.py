@@ -199,7 +199,10 @@ def run_letter_scope(db, run_id: str, now: int) -> dict:
     mid-flight reads it on its next run, which is when it was offered the tool.
     """
     run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-    if run is None:
+    if (
+        run is None
+        or db.execute("SELECT 1 FROM run_conversations WHERE run_id=?", (run_id,)).fetchone()
+    ):
         return {"send": False, "reply": False, "post": False, "letter_id": None}
     letter = db.execute("SELECT task_id FROM letters WHERE task_id=?", (run["task_id"],)).fetchone()
     send = _sending_grant(db, run, now) is not None

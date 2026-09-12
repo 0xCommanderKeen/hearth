@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Admit verified external turns as ordinary tasks with bounded pinned context, source-only
+  authority, durable replay prevention and terminal reply handoff; upgrade existing stores
+  forward and preserve communications evidence in held backups (#137).
+
 - Define scoped external communications, separate payloads, durable dispatch/recovery
   and forward-upgrade/held-restore rules for Herald and shared transports (ADR 0019, #240).
 

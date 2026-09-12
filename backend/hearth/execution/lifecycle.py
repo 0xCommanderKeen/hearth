@@ -229,6 +229,9 @@ class Execution:
                 artifact_id=artifact.id if artifact else None,
                 now=now,
             )
+            from hearth.channels.chat.reply import settled
+
+            settled(db, row["task_id"], run_id, evidence.status, now)
             if evidence.cost is None:
                 changed = db.execute(
                     "INSERT OR IGNORE INTO pauses VALUES (?, ?, ?, ?)",

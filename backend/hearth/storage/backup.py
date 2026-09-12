@@ -226,6 +226,9 @@ def _check_database(root: Path) -> dict:
         selected = db.execute("SELECT value FROM system_meta WHERE key='runtime_kind'").fetchone()
         if selected is None or not (live(selected[0]) or selected[0] in HISTORICAL_RUNTIME_KINDS):
             raise Refused("backup_runtime_invalid")
+        from hearth.channels.chat.validation import validate as validate_communications
+
+        validate_communications(db)
         validate_management(db)
         verify_authoring_backup(db, root)
         validate_provisioning(db)
