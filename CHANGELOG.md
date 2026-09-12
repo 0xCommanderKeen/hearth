@@ -5,6 +5,9 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
 - Give Hamlet homes stable decorative details beside their steps: flowers, books,
   lanterns or logs, while keeping doors and letter routes clear.
 
+- Give Hamlet residents stable varied coats, hats, skin tones and outfit details;
+  letter walks use the sender's appearance when the sender lives in the village.
+
 - Add selected Discord channel setup, authenticated CLI configuration/revocation,
   protected deployment wiring and integrated synthetic wheel/Docker/browser evidence;
   actual Discord/runtime acceptance remains separately gated (#244). Reissued replies

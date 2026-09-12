@@ -323,7 +323,9 @@ export function createVillageScene(
           event.to_resident_id,
         );
         if (!path) continue;
-        const person = kit.agent({ id: letterKey(event) });
+        const person = kit.agent({
+          id: event.from_resident_id ?? letterKey(event),
+        });
         person.userData.letter = letterKey(event);
         person.position.set(path[0].x, 0, path[0].z);
         scene.add(person);
