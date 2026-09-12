@@ -408,3 +408,78 @@ model tools. #120 owns actual durable operations and dispatch, #241 the process
 and polling progress, #139 verified Discord facts, and #242 the read/publication
 tool prepare/perform/complete wiring. No transport network call, real credential,
 worker activation or delivery success is claimed by this slice.
+
+## Durable delivery interfaces delivered by #120
+
+Schema 15 adds operations, exact attempts, installation bindings, notification
+forwarding configurations and operator resolutions. All are initially empty when
+an older store upgrades; original Inbox rows and read state remain untouched.
+Backup verification checks typed intents against historical source/grant/connection
+pins, source dedup keys, payload digests, enqueue/permit audit identities and
+attempt-bound receipts and resolutions. Restored bindings retain their original
+path and epoch and confer no send ownership on the new held copy.
+
+`channels.delivery.service.Delivery` is the trusted backend composition owner:
+
+- `enqueue_in_transaction(db, ReplyIntent)` is the callback for
+  `Replies.handoff_in_transaction`. Supply the same `Replies` owner to `Delivery`;
+  reporting its delivery outcome happens in the result transaction. A missing
+  settlement owner refuses and rolls back rather than strand a turn.
+- `announce_in_transaction(db, BoundRun, operation_key, Destination, text,
+  thread_id=..., turn_id=...)` authorizes the exact live call before replay,
+  then pins its run, task, input, thread/turn, connection and grant. #242 must
+  redact protected values before passing bounded text. The worker permits that
+  committed handoff after successful terminal completion, but refuses failed,
+  cancelled or revoked undispatched work and closes refused reply turns.
+- `activate(connection_id, expected_revision=..., operator_id=...,
+  old_consumer_stopped=True)` records an explicit installation handoff. It takes
+  the same local file lock as the worker, so cannot steal a live local owner.
+  A stopped worker's durable owner may be replaced, but every outstanding permit
+  becomes unknown. Foreign consumers of copied credentials remain a deployment
+  condition the operator must establish; local SQLite cannot fence them.
+- `with worker(connection_id) as owner` holds the local lock through bounded I/O.
+  `prepare(connection_id, owner)` commits at most one new permit and its audit,
+  rechecking immutable/current authority. Pass its immutable intent to the adapter
+  exactly once, outside the writer. Never cache/replay a permit. A worker exit or
+  crash makes any remaining permit unknown, including a crash before HTTP began.
+  `complete(permit, Receipt)` checks exact attempt/owner/epoch/digest identity and
+  records external outcome independently of later revocation. Adapters return
+  confirmed, affirmative safe failure/refusal, or unknown; diagnostics are bounded
+  machine codes, never response bodies. Exceptions after permit return must be
+  classified unknown unless the adapter has affirmative no-send evidence.
+- Safe failures schedule a new attempt after exponential delay and the full server
+  retry delay, up to five permits. There is no blocking wait and no retry for an
+  unknown result. The unresolved operation cap is 1,000 per connection. #139 owns
+  connection-wide HTTP bucket/global delays and #241 owns fair process scheduling.
+- `inspect` and `detail` provide bounded body-free operator state and evidence.
+  `resolve(..., expected_revision, operator_id, action, reason, evidence)` accepts
+  sent/not_sent with an exact receipt for **every** uncertain attempt (a bounded
+  list when needed), or abandon with the external outcome still unknown. An old
+  rejection cannot resolve a newer permit. Explicit duplicate-risk reissue needs
+  `duplicate_risk_acknowledged=True` and creates a linked operation while retaining
+  original uncertainty. Cancellation only stops queued work. Contradictory late
+  receipts remain separate facts, stop queued successors and require reconciliation;
+  they cannot overwrite the original attempt. Unknown replies keep the conversation
+  busy, including a late contradiction after a newer turn was already admitted.
+
+`channels.delivery.notifications.Forwarding` replaces the old receiptless
+`Forwarder.deliver(...)->None` contract. Configure an immutable destination binding
+with revision-checked filters; `enqueue` selects a bounded audit interval and commits
+intents and its cursor together. First enablement establishes the activation
+watermark. Explicit bounded `backfill_after`/`through_cursor` selects older notices;
+filter edits and backfill preserve source/destination dedup identity. Neither a
+failed send nor a read/unread change alters the source notice or run, and delivery
+failures never recursively record notification failures.
+
+Notification-only transports use `Connection(transport="ntfy", bot_id=None, ...)`
+and `NotificationDestination(connection_id, target_id)`. `target_id` is an opaque
+installation slot, not a model-controlled URL or a pretend guild/bot. #121 supplies
+the protected target resolution and bounded client; this slice performs no ntfy
+I/O. Chat routes and grants refuse notification-only connections, and chat
+announcements/replies continue to require real guild/channel shapes.
+
+No process worker, poll cursor, HTTP adapter, model tool or operator HTTP endpoint
+is activated here. #241/#139/#242 and the UI slices compose these trusted owners.
+Tests use synthetic records and temporary SQLite, including actual worker-process
+exit, held backup while a permit is outstanding and v14 forward upgrade. These
+checks do not complete a live connection, host recovery or daily-observation gate.

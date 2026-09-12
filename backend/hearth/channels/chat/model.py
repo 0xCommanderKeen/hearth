@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Strict(BaseModel):
@@ -15,11 +15,24 @@ class Address(Strict):
 
 
 class Connection(Strict):
-    transport: Literal["discord", "telegram"]
+    transport: Literal["discord", "telegram", "ntfy"]
     secret_ref: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
-    bot_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    bot_id: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"
+    )
     state: Literal["pending", "active", "disabled"] = "pending"
     label: str = Field(default="", max_length=100)
+
+    @model_validator(mode="after")
+    def identity_contract(self):
+        if (self.transport == "ntfy") != (self.bot_id is None):
+            raise ValueError("chat connections require a bot; notification connections have none")
+        return self
+
+
+class NotificationDestination(Strict):
+    connection_id: str = Field(min_length=1, max_length=128)
+    target_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class Route(Strict):

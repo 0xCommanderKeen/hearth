@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from hearth.execution.lifecycle import Execution, Executor
-from hearth.observation.notifications import Forwarder, Inbox, Notification, record
+from hearth.observation.notifications import Forwarder, Inbox, record
 from hearth.residents.models import Declaration, Refused
 from hearth.storage.artifacts import Artifacts
 from hearth.storage.database import Database
@@ -138,22 +138,18 @@ def test_a_restored_copy_keeps_its_inbox_but_cannot_mark_it_read(system, tmp_pat
     assert notifications(system)[0]["read_at"] is None
 
 
-def test_a_forwarder_relays_what_the_inbox_already_holds(system):
-    """The seam #127 and #136 implement: the record is written first, then relayed."""
-    _, executor, inbox, _ = system
+def test_a_forwarder_enqueues_durable_intent_and_keeps_the_inbox(system):
+    from hearth.channels.delivery.notifications import Forwarding
+    from hearth.channels.delivery.service import Delivery
+
+    hearth, executor, inbox, _ = system
     executor.step()
-    relayed: list[Notification] = []
-
-    class Ntfy:
-        def deliver(self, notification: Notification) -> None:
-            relayed.append(notification)
-
-    forwarder = Ntfy()
+    original = inbox.mark(notifications(system)[0]["id"], read=False)
+    forwarder = Forwarding(Delivery(hearth))
     assert isinstance(forwarder, Forwarder)
-    notification = inbox.mark(notifications(system)[0]["id"], read=False)
-    forwarder.deliver(notification)
-    assert [n.resource_id for n in relayed] == [notification.resource_id]
-    # Relaying is not reading: the inbox keeps the record exactly as it was.
+    with pytest.raises(Refused, match="delivery_forwarding_disabled"):
+        forwarder.enqueue("unconfigured")
+    assert notifications(system)[0]["resource_id"] == original.resource_id
     assert notifications(system)[0]["read_at"] is None
 
 

@@ -2,6 +2,10 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Persist typed communications intent, exact dispatch attempts, evidence-based recovery
+  and bounded Inbox forwarding; preserve unknown effects across forward upgrades and
+  held backups, with no network or worker activation (#120).
+
 - Admit verified external turns as ordinary tasks with bounded pinned context, source-only
   authority, durable replay prevention and terminal reply handoff; upgrade existing stores
   forward and preserve communications evidence in held backups (#137).
