@@ -145,6 +145,8 @@ class Delivery:
         old_consumer_stopped: bool,
     ) -> int:
         """Explicit stopped-consumer handoff; restoring a copy grants no ownership."""
+        if self.hearth.database.restored():
+            raise Refused("restored_copy_read_only")
         bounded_text(operator_id, 128, "delivery_operator_invalid")
         if old_consumer_stopped is not True:
             raise Refused("delivery_consumer_stop_required")
@@ -480,57 +482,70 @@ class Delivery:
     def detail(self, operation_id: str) -> dict:
         """Bounded operator evidence; no authored text, credentials or worker tokens."""
         with self.hearth.database.transaction() as db:
-            row = db.execute(
-                "SELECT * FROM delivery_operations WHERE id=?", (operation_id,)
-            ).fetchone()
-            if row is None:
-                raise Refused("delivery_operation_missing")
-            intent = Intent.model_validate_json(row["intent"])
-            attempts = []
-            for attempt in db.execute(
-                "SELECT * FROM delivery_attempts WHERE operation_id=? ORDER BY rowid LIMIT 5",
+            return self.detail_in_transaction(db, operation_id)
+
+    def detail_in_transaction(self, db, operation_id: str) -> dict:
+        """Compose one consistent operator snapshot with related source records."""
+        row = db.execute("SELECT * FROM delivery_operations WHERE id=?", (operation_id,)).fetchone()
+        if row is None:
+            raise Refused("delivery_operation_missing")
+        intent = Intent.model_validate_json(row["intent"])
+        attempts: list[dict] = []
+        for attempt in db.execute(
+            "SELECT * FROM delivery_attempts WHERE operation_id=? ORDER BY rowid LIMIT 5",
+            (operation_id,),
+        ):
+            receipt = (
+                Receipt.model_validate_json(attempt["receipt"]) if attempt["receipt"] else None
+            )
+            attempts.append(
+                {
+                    "id": attempt["id"],
+                    "state": attempt["state"],
+                    "epoch": attempt["epoch"],
+                    "dispatched_at": attempt["dispatched_at"],
+                    "completed_at": attempt["completed_at"],
+                    "external_id": receipt.external_id if receipt else None,
+                    "evidence": receipt.evidence if receipt else None,
+                }
+            )
+        resolutions = [
+            dict(r)
+            for r in db.execute(
+                "SELECT revision,action,operator_id,at,reason,evidence "
+                "FROM delivery_resolutions "
+                "WHERE operation_id=? ORDER BY revision DESC LIMIT 100",
                 (operation_id,),
-            ):
-                receipt = (
-                    Receipt.model_validate_json(attempt["receipt"]) if attempt["receipt"] else None
-                )
-                attempts.append(
-                    {
-                        "id": attempt["id"],
-                        "state": attempt["state"],
-                        "epoch": attempt["epoch"],
-                        "dispatched_at": attempt["dispatched_at"],
-                        "completed_at": attempt["completed_at"],
-                        "external_id": receipt.external_id if receipt else None,
-                        "evidence": receipt.evidence if receipt else None,
-                    }
-                )
-            resolutions = [
-                dict(r)
-                for r in db.execute(
-                    "SELECT revision,action,operator_id,at,reason,evidence "
-                    "FROM delivery_resolutions "
-                    "WHERE operation_id=? ORDER BY revision DESC LIMIT 100",
-                    (operation_id,),
-                )
-            ]
-            return {
-                "id": row["id"],
-                "state": row["state"],
-                "revision": row["revision"],
-                "kind": intent.kind,
-                "source_id": intent.source_id,
-                "run_id": intent.run_id,
-                "task_id": intent.task_id,
-                "destination": intent.destination.model_dump(),
-                "sha256": row["sha256"],
-                "attempts": attempts,
-                "resolutions": resolutions,
-                "resolution_count": db.execute(
-                    "SELECT COUNT(*) FROM delivery_resolutions WHERE operation_id=?",
-                    (operation_id,),
-                ).fetchone()[0],
-            }
+            )
+        ]
+        return {
+            "id": row["id"],
+            "state": row["state"],
+            "revision": row["revision"],
+            "kind": intent.kind,
+            "source_id": intent.source_id,
+            "run_id": intent.run_id,
+            "task_id": intent.task_id,
+            "destination": intent.destination.model_dump(),
+            "sha256": row["sha256"],
+            "attempts": attempts,
+            "uncertain_attempt_ids": sorted(
+                {a["id"] for a in attempts if a["state"] in {"unknown", "dispatching"}}
+                | {
+                    r[0]
+                    for r in db.execute(
+                        "SELECT DISTINCT json_extract(evidence,'$.attempt_id') "
+                        "FROM delivery_resolutions WHERE operation_id=? AND action='late_receipt'",
+                        (operation_id,),
+                    )
+                }
+            ),
+            "resolutions": resolutions,
+            "resolution_count": db.execute(
+                "SELECT COUNT(*) FROM delivery_resolutions WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()[0],
+        }
 
     def resolve(
         self,

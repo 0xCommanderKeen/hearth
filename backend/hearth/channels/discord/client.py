@@ -422,6 +422,24 @@ class Discord:
         return Page(selected, examined == through, examined_through=examined)
 
     @diagnostics
+    def probe(self, guild_id, channel_id, *, read, send, max_bytes, timeout):
+        limits = self._limits(max_bytes, timeout)
+        self._access(
+            guild_id, channel_id, VIEW | (HISTORY if read else 0) | (SEND if send else 0), limits
+        )
+        if read:
+            app = self._request("GET", "/applications/@me", **limits)
+            flags = app.get("flags")
+            self._health["content_access"] = (
+                "unknown"
+                if type(flags) is not int
+                else "available"
+                if flags & ((1 << 18) | (1 << 19))
+                else "unavailable"
+            )
+        return self.health()
+
+    @diagnostics
     def history(
         self, guild_id, channel_id, *, before=None, limit=50, max_bytes=512 * 1024, timeout=10
     ):

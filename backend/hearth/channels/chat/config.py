@@ -52,8 +52,10 @@ class Secrets:
 class Configuration:
     """Trusted operator interface; no tools or unauthenticated endpoints expose it."""
 
-    def __init__(self, hearth, secrets: Secrets):
+    def __init__(self, hearth, secrets: Secrets | None):
         self.hearth, self.secrets = hearth, secrets
+        if secrets is None:
+            return
         data = hearth.database.path.parent.resolve()
         root = secrets.root.resolve()
         if root.is_relative_to(data) or data.is_relative_to(root):
@@ -96,7 +98,9 @@ class Configuration:
                         raise Refused("communications_bot_already_bound")
                 if not row and count(db, kind) >= 16:
                     raise Refused("communications_connection_limit")
-                if value.state == "active" and self.secrets.resolve(value.secret_ref) is None:
+                if value.state == "active" and (
+                    self.secrets is None or self.secrets.resolve(value.secret_ref) is None
+                ):
                     value = value.model_copy(update={"state": "pending"})
                     content = value.model_dump_json()
             elif kind == "route":
@@ -163,6 +167,23 @@ class Configuration:
                 int(self.hearth.clock()),
                 {"kind": kind, "revision": revision},
             )
+            from hearth.channels.chat.reply import Replies
+            from hearth.channels.delivery.authority import current
+            from hearth.channels.delivery.model import Intent
+            from hearth.channels.delivery.service import Delivery
+
+            delivery = Delivery(self.hearth, replies=Replies(self.hearth, self.secrets))
+            for operation in db.execute(
+                "SELECT * FROM delivery_operations WHERE state='queued'"
+            ).fetchall():
+                try:
+                    current(
+                        db,
+                        Intent.model_validate_json(operation["intent"]),
+                        int(self.hearth.clock()),
+                    )
+                except Refused as error:
+                    delivery._state(db, operation, "refused", error.code)
             return {"id": identity, "revision": revision}
 
 

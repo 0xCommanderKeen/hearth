@@ -75,6 +75,17 @@ with tempfile.TemporaryDirectory(prefix="hearth-release-") as folder:
     run(uv, "venv", str(environment), "--python", sys.executable)
     run(uv, "pip", "sync", "--python", str(python), "--require-hashes", str(requirements))
     run(uv, "pip", "install", "--python", str(python), "--no-deps", str(wheel_path))
+    console = subprocess.run(
+        (str(environment / "bin/hearth"), "communications", "--help"),
+        cwd=isolated,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if "probe" not in console.stdout or "--section" not in console.stdout:
+        raise SystemExit("Installed hearth communications entry point is incomplete")
+    print("Installed hearth communications console entry point is available.", flush=True)
     run(str(python), "-I", str(root / "scripts/smoke-installed.py"), cwd=isolated)
     run(str(python), "-I", str(root / "scripts/smoke-communications.py"), cwd=isolated)
     # The release seeds no data, so exercise the installed CLI against what the

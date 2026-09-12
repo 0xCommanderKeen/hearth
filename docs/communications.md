@@ -677,3 +677,107 @@ permissions, full rate deadlines and honest unknown-send recovery remain authori
 [ADR 0022](adr/0022-notification-forwarding-selection.md) records schema 19's nullable
 origin fill and legacy immutable payload preservation. Synthetic SQLite/loopback
 checks do not select a live notification or complete #244's real acceptance.
+
+### Operator surfaces delivered by #247
+
+Townhall's Communications page separates Conversations, Announcements and
+Notification deliveries. The existing resident Tasks tab includes that resident's
+communications beside its separate Letters; resident Settings links to shared
+installation settings. Inbox read/unread remains independent. Conversation detail
+shows bounded inbound and reply text, source channel, task/run references, quiet or
+refusal reasons, and delivery state. Run links use the existing direct run route,
+including runs outside the recent activity window. A successful run can still have
+an unknown delivery and a busy conversation.
+
+The authenticated `/api/communications` endpoints serve only stored projections and
+cached worker health on GET. They never resolve secret files, construct clients,
+poll or call the network. Configuration includes non-secret secret-slot references,
+transport identity, route IDs and labels, separate read/listen/reply/post grants,
+forwarding filters and revisioned operator origins. Pending configuration conveys
+no dispatch ownership. Missing or invalid credentials and access/rate failures are
+reported by the last worker/probe evidence; an unprobed installation is not claimed
+healthy. Connection/route/grant changes refuse queued invalid intent and record its
+reason within the configuration transaction; dispatched/unknown effects remain.
+
+- `GET /api/communications`: keyset-paged connection/route/grant configuration,
+  binding revisions, stored schedules, cached health and `read_only`.
+- `GET /api/communications/conversations?resident_id=...&after=...&limit=30` and
+  `GET /api/communications/conversations/{id}?before=...&limit=20`: body-free lists
+  and authenticated retained transcripts. Lists permit at most 100 rows; transcript
+  pages at most 50 turns and 32 KiB including escaped JSON metadata. A first turn
+  exceeding that byte budget is explicitly omitted with a cursor that progresses.
+  Dropped bodies never appear: only channel-level counts and reasons exist.
+- `GET /api/communications/deliveries?kind=announcement|notification|reply` accepts
+  optional `resident_id`, `offset` and `limit` (at most 100). Detail at
+  `/deliveries/{id}` includes bounded authored payload, immutable source/destination,
+  source run accounting, exact attempts, the last 100 operator resolutions, total
+  resolution count, latest reason and current authority separately from the
+  external outcome. `uncertain_attempt_ids` includes all required attempts even if
+  the corresponding late receipt is older than that history window.
+- `GET /api/communications/usage?offset=0&limit=30` reuses existing root-task
+  accounting, omits instructions, and labels positively identified conversation,
+  routine, letter and operator origins; remaining origins are `other`. Known costs
+  exclude unknown runs; active reservations and unknown finished runs stay explicit.
+- `PUT /configuration/{connection|route|grant}/{id}` accepts `{expected_revision,
+  value}`. Sender IDs are bounded at API ingress. Historical configurations whose
+  whole editable value exceeds 32 KiB are represented by an explicit omission,
+  never a clipped value that can accidentally be saved. The configuration envelope
+  is at most 512 KiB, with a continuation cursor.
+- `GET /forwarding` and `PUT /forwarding/{id}` inspect/configure immutable
+  destinations, filters, enabled state and optional bare operator origin with an
+  expected revision. `POST /forwarding/{id}/backfill` requires explicit
+  `backfill_after`, `through_cursor` and a limit no greater than 100. Automatic
+  selection always begins at the current revision's watermark.
+- `POST /connections/{id}/activate` requires the binding's `expected_revision`
+  (zero for first activation) and `old_consumer_stopped: true`. The operator must
+  actually stop other consumers of the credential, including consumers on another
+  machine. The Delivery owner checks its local lock and records the handoff; no
+  ordinary settings save silently activates a connection.
+- `POST /connections/{id}/probe` accepts a selected `route_id`. It uses the existing
+  running worker's connection ownership and serialized protected client, checks
+  current route/grant scope and deadlines before I/O and rechecks after it. It
+  performs a bounded permission/content-access check without reading messages,
+  admitting tasks, setting polling cursors or sending. Unsupported transports and
+  stopped/unbound workers refuse. An ordinary render never invokes this endpoint.
+- `POST /deliveries/{id}/resolve` supplies `expected_revision`, `action` and `reason`.
+  `sent`/`not_sent` require affirmative exact-attempt receipt evidence for every
+  uncertain attempt, with `attempt_id`, `intent_sha256`, `outcome`, machine-code
+  `evidence` and a matching `external_id` for confirmed effects. `abandon` stops
+  local work while preserving uncertainty about any external effect. `reissue`
+  requires `duplicate_risk_acknowledged: true`, preserves original uncertainty and
+  links a new operation; revoked authority cannot reissue. `cancel` applies only
+  before dispatch. There is no ordinary Retry for unknown. Conflicts require
+  reloading the current revision and evidence before deciding again.
+
+Held copies expose the same historical records with all configuration, activation,
+probe, backfill and reconciliation writes refused. Responses omit worker owner
+values, credential paths, raw adapter errors and internal run authorization pins.
+Retained text is redacted against process-known credentials, the operator token and
+stored run-owner values, including embedded occurrences; this does not claim to
+recognize arbitrary unknown secrets in externally supplied text. Error responses
+never echo invalid request bodies.
+
+The CLI uses the same authenticated running server, including its single probe
+owner; it never starts an independent communications client or reads secret files:
+
+```sh
+# HEARTH_OPERATOR_TOKEN is supplied through the environment, never a CLI argument.
+hearth communications list --section conversations --resident herald --limit 20
+hearth communications inspect --section conversations --id CONVERSATION_ID
+hearth communications list --section deliveries --kind notification --limit 20
+hearth communications inspect --section deliveries --id OPERATION_ID
+hearth communications list --section usage --limit 20
+hearth communications list --section configuration
+hearth communications probe --id CONNECTION_ID --route ROUTE_ID
+```
+
+`python -m hearth communications` is also supported.
+`--url` selects a bare HTTP(S) operator origin (default `http://127.0.0.1:8000`).
+List/inspect pagination uses `--after`, `--before` or `--offset` as appropriate.
+Machine-readable JSON is bounded to 1 MB; redirects and raw server error bodies are
+refused. Lists contain no retained messages or task instructions. Detail text is
+available only through an explicit authenticated inspect command. Configuration and
+resolution are available in Townhall/API; this CLI slice does not duplicate their
+mutation forms. No live credential, source, resident runtime or real-host gate was
+selected by this slice. Discord-specific setup and independently selected live
+acceptance remain #244.

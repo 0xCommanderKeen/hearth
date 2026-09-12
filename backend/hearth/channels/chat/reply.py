@@ -42,7 +42,7 @@ def settled(db, task_id: str, run_id: str, status: str, now: int) -> None:
 
 
 class Replies:
-    def __init__(self, hearth, secrets: Secrets, *, protected_values: tuple[str, ...] = ()):
+    def __init__(self, hearth, secrets: Secrets | None, *, protected_values: tuple[str, ...] = ()):
         self.hearth, self.secrets = hearth, secrets
         self.protected_values = protected_values
 
@@ -84,7 +84,7 @@ class Replies:
             if output.strip() in {"", "HEARTH_QUIET"}:
                 close(db, turn_id, now, "quiet" if output.strip() else "no_output")
                 return None
-            if self.secrets.resolve(connection["secret_ref"]) is None:
+            if self.secrets is None or self.secrets.resolve(connection["secret_ref"]) is None:
                 raise Refused("communications_pending")
             protected = [*self.protected_values, *self.secrets.known_values, run["owner_token"]]
             for configured in db.execute(
