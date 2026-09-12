@@ -76,6 +76,7 @@ with tempfile.TemporaryDirectory(prefix="hearth-release-") as folder:
     run(uv, "pip", "sync", "--python", str(python), "--require-hashes", str(requirements))
     run(uv, "pip", "install", "--python", str(python), "--no-deps", str(wheel_path))
     run(str(python), "-I", str(root / "scripts/smoke-installed.py"), cwd=isolated)
+    run(str(python), "-I", str(root / "scripts/smoke-communications.py"), cwd=isolated)
     # The release seeds no data, so exercise the installed CLI against what the
     # smoke run left behind. Reads repeat to prove they do not mutate the store.
     for _ in range(2):

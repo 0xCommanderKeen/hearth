@@ -43,6 +43,10 @@ class Conversations:
         if adapter is None:
             raise Refused("communications_transport_unavailable")
         message = adapter.message(channel_id, message_id)
+        return self._verified(route_id, route, channel_id, message_id, message)
+
+    def _verified(self, route_id, route, channel_id, message_id, message) -> VerifiedTurn:
+        """Seal only facts fetched by a backend-installed adapter (including polling)."""
         if (
             type(message) is not Message
             or message.channel_id != channel_id
@@ -86,6 +90,16 @@ class Conversations:
             return json.loads(previous["receipt"])
         db.execute("SAVEPOINT chat_turn")
         try:
+            watermark = db.execute(
+                "SELECT cursor FROM communications_cursors WHERE connection_id=? "
+                "AND guild_id=? AND channel_id=?",
+                (verified.connection_id, m.guild_id, m.channel_id),
+            ).fetchone()
+            if watermark is not None:
+                from hearth.channels.polling import cursor
+
+                if cursor(m.message_id) <= cursor(watermark[0]):
+                    raise Refused("communications_processed_interval")
             route, connection, grant = scope(db, verified.route_id)
             if (
                 route["connection_id"] != verified.connection_id
@@ -211,7 +225,7 @@ class Conversations:
             count = 0
             for turn in db.execute(
                 "SELECT t.* FROM chat_turns t JOIN tasks w ON w.id=t.task_id "
-                "WHERE t.state='working' AND w.status='queued'"
+                "WHERE t.state='working' AND w.status='queued' ORDER BY t.created_at LIMIT 100"
             ).fetchall():
                 try:
                     check_turn(db, turn, now)
