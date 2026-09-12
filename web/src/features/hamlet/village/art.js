@@ -442,10 +442,28 @@ export function createArtKit() {
   }
   function agent(model) {
     const appearance = model.appearance || {};
-    const body = appearance.body || "#628a85";
-    const hat = appearance.hat || "#c8a164";
-    const skin = appearance.skin || "#d6aa87";
-    const variant = Math.abs(appearance.variant || 0) % 4;
+    // An address supplies a stable visual identity, including on letter walks.
+    // These are decorative choices, not claims about a resident's work or traits.
+    const identity =
+      [...String(model.id)].reduce(
+        (hash, character) =>
+          (Math.imul(hash, 31) + character.charCodeAt(0)) | 0,
+        0,
+      ) >>> 0;
+    const coats = [
+      "#628a85",
+      "#a36b57",
+      "#7583a1",
+      "#8a7755",
+      "#7b6685",
+      "#668466",
+    ];
+    const trims = ["#c8a164", "#e1bd83", "#a9c5bd", "#d7a399"];
+    const skins = ["#d6aa87", "#a76e54", "#e8c6a3", "#8e6151"];
+    const body = appearance.body || coats[identity % coats.length];
+    const hat = appearance.hat || trims[(identity >>> 4) % trims.length];
+    const skin = appearance.skin || skins[(identity >>> 8) % skins.length];
+    const variant = Math.abs(appearance.variant ?? identity >>> 12) % 4;
     const root = new THREE.Group();
     root.name = `agent:${model.id}`;
     root.userData.agentId = model.id;
@@ -468,6 +486,20 @@ export function createArtKit() {
     part(root, "sphere", skin, [0, 0.66, 0.015], [0.31, 0.32, 0.29]);
     // A tiny projecting nose establishes facing direction even at village scale.
     part(root, "sphere", skin, [0, 0.66, 0.163], [0.07, 0.07, 0.075]);
+    // A collar and one small front detail remain legible at the closer zooms.
+    part(
+      root,
+      "ring",
+      hat,
+      [0, 0.55, 0.015],
+      [0.3, 0.22, 0.27],
+      [Math.PI / 2, 0, 0],
+    );
+    if (identity % 3 === 0)
+      box(root, hat, [0.12, 0.4, 0.158], [0.075, 0.24, 0.035]);
+    else if (identity % 3 === 1)
+      part(root, "sphere", hat, [-0.11, 0.45, 0.15], [0.085, 0.085, 0.04]);
+    else box(root, hat, [0, 0.37, 0.157], [0.22, 0.055, 0.035]);
     if (variant === 0) {
       part(root, "cylinder", hat, [0, 0.79, 0], [0.39, 0.045, 0.36]);
       part(root, "pot", hat, [0, 0.845, 0], [0.23, 0.11, 0.23]);
