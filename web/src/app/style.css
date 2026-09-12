@@ -1854,3 +1854,117 @@ main:has(.hamlet-scene:not([hidden])) {
     font-size: 14px;
   }
 }
+
+/* Hamlet keeps the miniature prominent; detailed controls open on demand. */
+.scene-toolbar {
+  align-items: center;
+  position: relative;
+  gap: 12px;
+}
+.scene-help {
+  margin-left: auto;
+  font-size: 12px;
+  max-width: 32rem;
+}
+.scene-help summary {
+  cursor: pointer;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+.scene-help[open] {
+  padding: 8px;
+  background: #fff7e6;
+}
+.scene-help p {
+  text-transform: none;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.scene-controls {
+  padding: 6px 16px;
+}
+.scene-label {
+  max-width: 165px;
+  border-left-width: 4px;
+}
+.scene-label .scene-label-status {
+  display: none;
+}
+.scene-label.selected .scene-label-status,
+.scene-label.hovered .scene-label-status,
+.scene-label:focus-visible .scene-label-status {
+  display: block;
+  white-space: normal;
+}
+.scene-find {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 18px 0;
+}
+.scene-find label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.scene-find input {
+  flex: 1;
+  min-width: 160px;
+  max-width: 360px;
+}
+.scene-find small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.scene-directory button {
+  min-height: 44px;
+  text-align: left;
+}
+.scene-directory .scene-civic {
+  background: #e9edde;
+}
+.resident-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.place-work {
+  padding: 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.place-work small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+@media (max-width: 640px) {
+  .scene-toolbar {
+    padding: 6px 12px;
+  }
+  .scene-controls {
+    gap: 6px;
+    padding: 6px 12px;
+  }
+  .scene-help {
+    max-width: 100%;
+  }
+  .scene-help[open] {
+    flex-basis: 100%;
+  }
+  .scene-find {
+    padding: 12px 12px 0;
+  }
+}
+.scene-toolbar > span small {
+  display: inline;
+}
+.scene-help {
+  border: 0;
+  padding: 0;
+}
+.scene-label-civic {
+  background: #e7eddf;
+  font-weight: 600;
+}

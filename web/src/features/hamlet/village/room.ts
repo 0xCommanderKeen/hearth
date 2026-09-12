@@ -1,8 +1,10 @@
 import * as THREE from "three";
+import { createArtKit, visualIdentity } from "./art.js";
 import { selectionGesture } from "./gesture";
 
 export type RoomScene = {
   active(visible: boolean): void;
+  occupancy?(atHome: boolean): void;
   lighter(enabled: boolean): void;
   dispose(): void;
 };
@@ -15,6 +17,7 @@ export function createRoomScene(
   townhall: boolean,
   targets: RoomTargets,
   unavailable: () => void,
+  residentId?: string,
 ): RoomScene {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -22,6 +25,15 @@ export function createRoomScene(
   canvas.setAttribute("aria-hidden", "true");
   element.appendChild(canvas);
   const scene = new THREE.Scene();
+  const kit = createArtKit();
+  const personal = visualIdentity(residentId ?? "townhall");
+  const person = residentId ? kit.agent({ id: residentId }) : null;
+  if (person) {
+    person.scale.multiplyScalar(2.2);
+    person.position.set(-0.2, 0.15, 1.7);
+    person.visible = false;
+    scene.add(person);
+  }
   scene.background = new THREE.Color("#cbd5c1");
   scene.add(new THREE.HemisphereLight("#fff5df", "#748267", 2.8));
   const sun = new THREE.DirectionalLight("#fff0cd", 3);
@@ -57,7 +69,7 @@ export function createRoomScene(
   }
   const wood = "#695449",
     cream = "#eee1c4",
-    teal = "#477a77",
+    teal = townhall ? "#477a77" : personal.accent,
     paper = "#f8ebcd";
   // Open south/east walls make the furniture readable from the village's angle.
   box("#a17b59", [0, -0.15, 0], [8.4, 0.4, 6.6]);
@@ -76,9 +88,34 @@ export function createRoomScene(
   box("#ffd788", [-3.94, 1.9, -0.5], [0.07, 1.2, 1.5]);
   box(paper, [-3.88, 1.9, -0.5], [0.08, 1.25, 0.06]);
   box(paper, [-3.88, 1.9, -0.5], [0.08, 0.06, 1.5]);
-  box(townhall ? "#3c575f" : "#be6549", [0, 0.12, 0.8], [4.5, 0.04, 3.4]);
+  box(townhall ? "#3c575f" : personal.accent, [0, 0.12, 0.8], [4.5, 0.04, 3.4]);
   box("#d4ad66", [0, 0.15, 0.8], [4.15, 0.025, 3.05]);
-  box(townhall ? "#3c575f" : "#be6549", [0, 0.17, 0.8], [3.95, 0.025, 2.85]);
+  box(
+    townhall ? "#3c575f" : personal.accent,
+    [0, 0.17, 0.8],
+    [3.95, 0.025, 2.85],
+  );
+  if (residentId) {
+    if (personal.detail === 0) {
+      const garden = kit.garden();
+      garden.scale.setScalar(1.7);
+      garden.position.set(-3.3, 0.1, 1.7);
+      scene.add(garden);
+    } else if (personal.detail === 1) {
+      for (let i = 0; i < 3; i++)
+        box(
+          i % 2 ? teal : paper,
+          [-3.3, 0.2 + i * 0.18, 1.7],
+          [0.7, 0.15, 0.5],
+        );
+    } else if (personal.detail === 2) {
+      box(wood, [-3.3, 0.8, 1.7], [0.12, 1.5, 0.12]);
+      box("#ffd788", [-3.3, 1.35, 1.7], [0.35, 0.5, 0.35]);
+    } else {
+      for (let i = 0; i < 3; i++)
+        box(wood, [-3.3, 0.22 + i * 0.2, 1.7], [0.8, 0.18, 0.24]);
+    }
+  }
   // Desk / council table: all parts are the same recorded-work target.
   const dx = townhall ? 0 : -1.7,
     dz = townhall ? 0.5 : -0.9;
@@ -181,6 +218,7 @@ export function createRoomScene(
     canvas.removeEventListener("pointerup", up);
     canvas.removeEventListener("pointercancel", cancel);
     canvas.removeEventListener("webglcontextlost", lost);
+    kit.dispose();
     geometry.dispose();
     materials.forEach((material) => material.dispose());
     renderer.dispose();
@@ -200,6 +238,12 @@ export function createRoomScene(
   document.addEventListener("visibilitychange", draw);
   draw();
   return {
+    occupancy(atHome) {
+      if (person) {
+        person.visible = atHome;
+        draw();
+      }
+    },
     lighter(enabled) {
       if (disposed) return;
       renderer.setPixelRatio(

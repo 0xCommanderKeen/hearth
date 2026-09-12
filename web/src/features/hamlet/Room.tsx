@@ -58,8 +58,12 @@ export function Room({
     if (!host.current || !available) return;
     setUnavailable(false);
     try {
-      scene.current = createRoomScene(host.current, townhall, targets, () =>
-        setUnavailable(true),
+      scene.current = createRoomScene(
+        host.current,
+        townhall,
+        targets,
+        () => setUnavailable(true),
+        resident?.id,
       );
     } catch {
       setUnavailable(true);
@@ -74,6 +78,13 @@ export function Room({
     scene.current?.active(active);
     if (active) heading.current?.focus({ preventScroll: true });
   }, [active, available]);
+  useEffect(() => {
+    scene.current?.occupancy?.(
+      connected &&
+        !!resident &&
+        ["idle", "ready", "paused"].includes(resident.presence),
+    );
+  }, [connected, resident?.presence, identity, available]);
   useEffect(() => {
     scene.current?.lighter(lighter);
   }, [lighter, identity, available]);
