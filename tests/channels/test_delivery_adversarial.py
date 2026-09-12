@@ -411,3 +411,106 @@ def test_activation_cannot_steal_live_worker_or_clear_unknown(house):
     with delivery.worker("bot") as owner:
         assert delivery.prepare("bot", owner) is None
     assert operation(delivery, permit.operation_id)["state"] == "unknown"
+
+
+@pytest.mark.parametrize("pruned", [False, True])
+@pytest.mark.parametrize("newer_turn", [False, True])
+def test_closed_reply_reissue_holds_conversation_through_retry(house, pruned, newer_turn):
+    from hearth.channels.chat.transcripts import prune
+    from hearth.channels.chat.validation import validate as validate_chat
+    from hearth.channels.delivery.validation import validate
+    from hearth.channels.inspection import Inspection
+    from hearth.channels.worker import Worker
+
+    delivery, identity, accepted = reply(house)
+    with delivery.worker("bot") as owner:
+        original = delivery.prepare("bot", owner)
+        delivery.complete(original, result(original))
+    if pruned:
+        house[2][0] += 31 * 86400
+        with house[1].database.transaction(write=True) as db:
+            prune(db, "route", house[2][0])
+    newer = house[7].submit(message(house, "newer-before-conflict")) if newer_turn else None
+    delivery.complete(original, result(original, "safe_failure"))
+    child = delivery.resolve(
+        identity,
+        expected_revision=operation(delivery, identity)["revision"],
+        operator_id="operator",
+        action="reissue",
+        reason="Explicit duplicate risk after a late contradictory receipt",
+        duplicate_risk_acknowledged=True,
+    )
+    if newer:
+        # Finishing another turn must not remove the older replacement's hold.
+        run = house[1].admit(newer["task_id"], reserve=10_000)
+        bridge_of(house[0], run, "newer-before-conflict")
+        settle(house[0], run, text="HEARTH_QUIET")
+        Replies(house[1], house[8]).prepare(newer["turn_id"])
+    inspection = Inspection(Worker(house[1], house[8], {}))
+
+    def held(message_id):
+        assert house[7].submit(message(house, message_id))["reason"] == "communications_busy"
+        assert inspection.conversations()["items"][0]["busy"] == 1
+        with house[1].database.transaction() as db:
+            turn = db.execute(
+                "SELECT * FROM chat_turns WHERE id=?", (accepted["turn_id"],)
+            ).fetchone()
+            assert turn["state"] == "closed" and turn["operation_id"] == child
+            assert bool(turn["reply_intent"]) is not pruned
+            validate_chat(db)
+            validate(db)
+
+    held("while-replacement-queued")
+    with delivery.worker("bot") as owner:
+        first = delivery.prepare("bot", owner)
+        assert first.operation_id == child
+        held("while-replacement-dispatching")
+        delivery.complete(first, result(first, "safe_failure", retry_after=60))
+        held("while-safe-retry-waits")
+        assert delivery.prepare("bot", owner) is None
+        house[2][0] += 60
+        second = delivery.prepare("bot", owner)
+        assert second.operation_id == child and second.attempt_id != first.attempt_id
+        delivery.complete(second, result(second))
+    assert operation(delivery, identity)["state"] == "unknown"
+    assert operation(delivery, child)["state"] == "confirmed"
+    assert inspection.conversations()["items"][0]["busy"] == 0
+    assert house[7].submit(message(house, "after-replacement-confirmed"))["decision"] == "accepted"
+
+
+@pytest.mark.parametrize("terminal", ["cancel", "refused", "unknown"])
+def test_closed_reply_reissue_terminal_outcome_controls_hold(house, terminal):
+    delivery, identity, _ = reply(house)
+    with delivery.worker("bot") as owner:
+        original = delivery.prepare("bot", owner)
+        delivery.complete(original, result(original))
+        delivery.complete(original, result(original, "safe_failure"))
+    child = delivery.resolve(
+        identity,
+        expected_revision=operation(delivery, identity)["revision"],
+        operator_id="operator",
+        action="reissue",
+        reason="Reviewed duplicate risk",
+        duplicate_risk_acknowledged=True,
+    )
+    assert (
+        house[7].submit(message(house, "before-child-outcome"))["reason"] == "communications_busy"
+    )
+    if terminal == "cancel":
+        delivery.resolve(
+            child,
+            expected_revision=operation(delivery, child)["revision"],
+            operator_id="operator",
+            action="cancel",
+            reason="Cancel unsent child",
+        )
+    else:
+        with delivery.worker("bot") as owner:
+            permit = delivery.prepare("bot", owner)
+            delivery.complete(permit, result(permit, terminal))
+    assert operation(delivery, identity)["state"] == "unknown"
+    after = house[7].submit(message(house, "after-child-outcome"))
+    if terminal == "unknown":
+        assert after["reason"] == "communications_busy"
+    else:
+        assert after["decision"] == "accepted"

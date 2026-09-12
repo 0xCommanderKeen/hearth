@@ -443,3 +443,82 @@ def test_codex_native_protocol_delivers_scoped_call_and_receipt(house, discord, 
     completed = bridge.call(calls[0])
     assert completed["success"]
     assert json.loads(completed["contentItems"][0]["text"])["state"] == "complete"
+
+
+@pytest.mark.parametrize("announcement_first", [False, True])
+@pytest.mark.parametrize("transport", ["bound_bridge", "claude_socket"])
+def test_native_call_identity_cannot_cross_receipt_owners(
+    house, discord, tmp_path, announcement_first, transport
+):
+    import json
+    from contextlib import ExitStack
+
+    from hearth.integrations.claude.mcp_bridge import (
+        BridgeServer,
+        respond,
+        session_tools,
+        socket_path,
+    )
+    from hearth.management.bridge import BoundRun
+    from hearth.observation.snapshot import snapshot
+    from hearth.residents.models import Declaration
+
+    from tests.integrations.claude.test_mcp_bridge import pumping
+
+    house[1].save_resident(
+        "herald",
+        Declaration("Herald", "Synthetic review", 10_000_000, memory_writable=True),
+        expected_revision=1,
+    )
+    run, call = launched(house)
+    with ExitStack() as stack:
+        if transport == "claude_socket":
+            bound = BoundRun(run.id, run.owner_token, snapshot(house[1])["epoch"], run.input_digest)
+            with house[1].database.transaction() as db:
+                specs, max_calls = session_tools(db, house[1], bound)
+            folder = tmp_path / "socket"
+            folder.mkdir()
+            server = BridgeServer(
+                folder, hearth=house[1], bound=bound, tools=specs, max_calls=max_calls
+            )
+            server.trust("thread-tools", "turn-tools")
+            server.open()
+            stack.callback(server.close)
+            stack.enter_context(pumping(server))
+
+            def call(call_id, tool, arguments):
+                result = respond(
+                    socket_path(folder),
+                    json.dumps(
+                        {
+                            "id": call_id,
+                            "method": "tools/call",
+                            "params": {"name": tool, "arguments": arguments},
+                        }
+                    ).encode(),
+                )["result"]
+                return not result["isError"], json.loads(result["content"][0]["text"])
+
+        journal = ("hearth_journal_write", {"text": "Synthetic durable journal"})
+        announcement = (
+            POST,
+            dict(operation_id="collision", destination=DEST, text="Synthetic post"),
+        )
+        first, second = (announcement, journal) if announcement_first else (journal, announcement)
+        original = call("collision", *first)
+        assert original[0]
+        assert call("collision", *second) == (False, {"error": "management_call_conflict"})
+        assert call("collision", *first) == original
+        with house[1].database.transaction() as db:
+            assert db.execute("SELECT COUNT(*) FROM delivery_operations").fetchone()[0] == int(
+                announcement_first
+            )
+            assert db.execute(
+                "SELECT COUNT(*) FROM communications_calls WHERE run_id=?", (run.id,)
+            ).fetchone()[0] == int(announcement_first)
+            assert db.execute(
+                "SELECT COUNT(*) FROM management_calls WHERE run_id=?", (run.id,)
+            ).fetchone()[0] == int(not announcement_first)
+        house[0].state.execution.cancel(run.id)
+        assert call("collision", *first) == (False, {"error": "management_run_inactive"})
+        assert not discord["calls"]

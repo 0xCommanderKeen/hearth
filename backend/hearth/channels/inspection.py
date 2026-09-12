@@ -3,6 +3,7 @@
 import json
 
 from hearth.channels.chat.config import read
+from hearth.channels.chat.service import BUSY_DELIVERY_SQL
 from hearth.residents.models import Refused
 
 RETENTION = (
@@ -128,9 +129,7 @@ class Inspection:
                 "(EXISTS(SELECT 1 FROM chat_turns t WHERE t.conversation_id=c.id AND "
                 "t.state!='closed') OR EXISTS(SELECT 1 FROM chat_turns t "
                 "JOIN delivery_operations o ON json_extract(o.intent,'$.source_id')=t.id "
-                "WHERE t.conversation_id=c.id AND o.state='unknown' AND COALESCE("
-                "(SELECT action FROM delivery_resolutions r WHERE r.operation_id=o.id "
-                "ORDER BY revision DESC LIMIT 1),'')!='reissue')) AS busy,"
+                f"WHERE t.conversation_id=c.id AND {BUSY_DELIVERY_SQL})) AS busy,"
                 "(SELECT MAX(created_at) FROM chat_turns t WHERE t.conversation_id=c.id) "
                 "AS last_at "
                 "FROM chat_conversations c JOIN communications_config f ON f.kind='route' "

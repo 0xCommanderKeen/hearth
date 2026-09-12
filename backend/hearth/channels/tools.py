@@ -67,6 +67,11 @@ def checked(db, hearth, bound, params):
 def call(hearth, bound, params):
     with hearth.database.transaction(write=True) as db:
         request = checked(db, hearth, bound, params)
+        if db.execute(
+            "SELECT 1 FROM management_calls WHERE run_id=? AND call_id=?",
+            (bound.run_id, params["callId"]),
+        ).fetchone():
+            raise Refused("management_call_conflict")
         payload = digest(params)
         previous = db.execute(
             "SELECT * FROM communications_calls WHERE run_id=? AND call_id=?",

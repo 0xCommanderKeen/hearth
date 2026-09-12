@@ -250,6 +250,11 @@ class Bridge:
                     check_management(authority)
                 if authority["conversation"] and params["tool"] not in MEMORY_TOOLS:
                     raise Refused("communications_origin_denied")
+                if db.execute(
+                    "SELECT 1 FROM communications_calls WHERE run_id=? AND call_id=?",
+                    (self.bound.run_id, params["callId"]),
+                ).fetchone():
+                    raise Refused("management_call_conflict")
                 payload = digest(params)
                 previous = db.execute(
                     "SELECT * FROM management_calls WHERE run_id=? AND call_id=?",

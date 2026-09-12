@@ -4,7 +4,9 @@ One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
 - Add selected Discord channel setup, authenticated CLI configuration/revocation,
   protected deployment wiring and integrated synthetic wheel/Docker/browser evidence;
-  actual Discord/runtime acceptance remains separately gated (#244).
+  actual Discord/runtime acceptance remains separately gated (#244). Reissued replies
+  keep their conversation busy even after the original closed transcript was pruned;
+  preserve native call-ID uniqueness across management and communications receipts.
 
 - Expose authenticated bounded Communications views and CLI inspection, revisioned
   installation controls and owned explicit probes, with truthful unknown-delivery
