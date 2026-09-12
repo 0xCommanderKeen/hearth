@@ -29,10 +29,10 @@ SCHEMA = (
     """CREATE TABLE communications_cursors (
         connection_id TEXT NOT NULL, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL,
         baseline TEXT NOT NULL, cursor TEXT NOT NULL, through_id TEXT,
-        updated_at INTEGER NOT NULL, PRIMARY KEY(connection_id,guild_id,channel_id)
+        updated_at INTEGER NOT NULL, scan_before TEXT, PRIMARY KEY(connection_id,guild_id,channel_id)
     )""",
     """CREATE TABLE communications_schedule (
-        kind TEXT NOT NULL CHECK(kind IN ('route','connection','destination')), id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('route','connection','destination','guild','channel')), id TEXT NOT NULL,
         eligible_at INTEGER NOT NULL, error TEXT,
         PRIMARY KEY(kind,id)
     )""",

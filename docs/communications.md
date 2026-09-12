@@ -540,3 +540,71 @@ outstanding permits as unknown and never repeats them automatically.
 Temporary SQLite/loopback and installed-wheel checks exercise this composition.
 They neither install a real transport nor complete host, credential, deployment,
 or daily-observation acceptance.
+
+### Discord transport delivered by #139
+
+`channels.discord.Discord` is the production worker's local factory. It takes only
+backend connection configuration and resolved secret bytes; construction and cached
+health reads make no HTTP calls. Setup must still supply the protected `Secrets`
+resolver and activate installation ownership; the application does not invent a
+credential directory. `supervise=False` and held stores remain inert. The private
+`_test_origin` injection accepts only `http://127.0.0.1:<port>/api/v10`, is never an
+operator/model schema and is used exclusively by synthetic tests. Production uses
+fixed `https://discord.com/api/v10`, bot authentication and a descriptive User-Agent;
+HTTP redirects are never followed and environment proxy settings are not consumed.
+
+The client rechecks bot identity, selected channel/guild binding, supported channel
+kind, member roles and channel overwrites before each operation. View/history/send
+requirements are independent. Announcement channels accept ordinary plain messages;
+there is no crosspost endpoint. Structured mentions, author bot/system flags,
+webhook presence and ordinary message types (0 and 19) supply inbound facts; the
+shared conversation owner still applies routing, freshness and ordinary admission.
+
+`history` returns at most 50 messages and 32 KiB including message, channel, guild,
+author and timestamp provenance. Its completeness/truncation and Message Content
+state are separate from channel permission. Application Message Content flags are
+checked deliberately on reads; successful mentions do not establish general-history
+access. Empty history with verified permissions is not diagnosed as permission
+failure. #242 still owns exact-run prepare/perform/complete authorization around
+this backend-only method. Cached worker health shows safe transport/content states;
+ordinary UI refreshes never authenticate or read channel history.
+
+[ADR 0020](adr/0020-discord-reverse-scan-progress.md) records the body-free reverse
+scan frontier and inclusive examined-prefix extension to `Page`. Schema 17 preserves
+existing baselines/windows and starts old cursors with a null frontier. At most one
+history page is fetched per poll call. API requests have a cumulative ten-second
+deadline across DNS, preflight and message fetch, a socket interrupt covering
+trickled headers/body, bounded HTTP parsing and a 512-KiB body cap. At most four
+resolver-only background threads may wait for the system resolver; timed-out DNS
+work cannot connect or send HTTP. Resolved addresses retain the original hostname
+for TLS SNI and certificate checks. No attachment or linked URL is fetched.
+
+`take_limits` exports observed bucket/global delays, including successful exhausted
+responses. The worker writes channel/guild/connection deadlines before another
+scheduled pass or completion of a send receipt; destination exclusions prevent
+minting a dispatch permit while that scope is waiting. Full server delays are kept,
+including waits longer than 30 seconds. Credential and permission failures use a
+five-minute cooldown; malformed/transient read failures retain bounded retries.
+
+Delivery's permit includes the owning reply's source message ID. A send makes one
+POST with all implicit mentions suppressed, optional source-only reply reference,
+and a stable operation nonce with `enforce_nonce`. Confirmation requires the returned
+message identity, nonce, content and reply reference to agree. This does not turn
+Discord's temporary nonce window into durable exactly-once evidence. Lost or
+inconsistent acknowledgements stay unknown and are never automatically resent.
+Failures during read-only preflight are affirmative no-send evidence. No splitting,
+attachments, general HTTP tool, scoped resident tools, forwarding UI or live setup
+is included here.
+
+The official contracts were rechecked for this implementation:
+[Message API](https://docs.discord.com/developers/resources/message),
+[REST content restrictions](https://docs.discord.com/developers/events/gateway#http-restrictions),
+[rate limits](https://docs.discord.com/developers/topics/rate-limits),
+[permission calculation](https://docs.discord.com/developers/topics/permissions),
+[application flags](https://docs.discord.com/developers/resources/application), and
+[guild/member metadata](https://docs.discord.com/developers/resources/guild).
+SQLite/loopback regressions cover chronological multi-page/restart/failure progress,
+ordinary human task/run/reply, sender exclusion, permission/content refusals,
+credential/origin/bounded parsing, full global/guild/channel waits, uncertain sends,
+forward upgrade and held backup. No Discord credential, real ID or live host was used;
+these checks complete no real-source or daily-observation gate.

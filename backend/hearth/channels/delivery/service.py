@@ -336,6 +336,13 @@ class Delivery:
                     epoch=epoch(db),
                     intent_sha256=row["sha256"],
                     intent=intent,
+                    reply_message_id=(
+                        db.execute(
+                            "SELECT message_id FROM chat_turns WHERE id=?", (intent.source_id,)
+                        ).fetchone()[0]
+                        if intent.kind == "reply"
+                        else None
+                    ),
                 )
         return None
 
