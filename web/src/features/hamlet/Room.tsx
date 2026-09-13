@@ -1,6 +1,6 @@
 import { ResidentAvatar } from "../../shared/ResidentAvatar";
 import { useEffect, useRef, useState } from "react";
-import { placeByIdentity, workersAt } from "./village/places";
+import { placeByIdentity, residentLocation, workersAt } from "./village/places";
 import { WORKROOM_PAGE_SIZE } from "./village/workroom";
 import type { Snapshot } from "../../shared/client";
 import {
@@ -137,9 +137,10 @@ export function Room({
   }, [active, available]);
   useEffect(() => {
     scene.current?.occupancy?.(
-      connected &&
-        !!resident &&
-        ["idle", "ready", "paused"].includes(resident.presence),
+      !!resident &&
+        ["At home", "Preparing at home"].includes(
+          residentLocation(resident, snapshot).label,
+        ),
     );
   }, [connected, resident?.presence, identity, available]);
   useEffect(() => {

@@ -170,7 +170,11 @@ export function createWorkroomScene(
   let disposed = false,
     visible = true,
     connected = true,
-    lastFrame = 0;
+    lastFrame = 0,
+    layoutWidth = 0,
+    layoutHeight = 0,
+    layoutRatio = 0,
+    labelsDirty = true;
   const projected = new THREE.Box3();
   for (const x of [-6.3, 6.3])
     for (const y of [-0.4, 3.5])
@@ -189,24 +193,31 @@ export function createWorkroomScene(
     )
       return;
     const width = element.clientWidth,
-      height = element.clientHeight,
-      aspect = width / height;
-    const half = Math.max(extent.y, extent.x / aspect) * 0.56;
-    Object.assign(camera, {
-      left: -half * aspect,
-      right: half * aspect,
-      top: half,
-      bottom: -half,
-    });
-    camera.updateProjectionMatrix();
+      height = element.clientHeight;
+    const ratio = renderer.getPixelRatio();
     if (
-      canvas.clientWidth !== width ||
-      canvas.clientHeight !== height ||
-      canvas.width !== Math.floor(width * renderer.getPixelRatio()) ||
-      canvas.height !== Math.floor(height * renderer.getPixelRatio())
-    )
+      width !== layoutWidth ||
+      height !== layoutHeight ||
+      ratio !== layoutRatio
+    ) {
+      layoutWidth = width;
+      layoutHeight = height;
+      layoutRatio = ratio;
+      const aspect = width / height;
+      const half = Math.max(extent.y, extent.x / aspect) * 0.56;
+      Object.assign(camera, {
+        left: -half * aspect,
+        right: half * aspect,
+        top: half,
+        bottom: -half,
+      });
+      camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      labelsDirty = true;
+    }
     renderer.render(scene, camera);
+    if (!labelsDirty) return;
+    labelsDirty = false;
     for (const { label, slot } of workers.values()) {
       const spot = spots[slot];
       const p = new THREE.Vector3(spot.x, 2.25, spot.z + 0.9).project(camera);
@@ -394,6 +405,7 @@ export function createWorkroomScene(
         spots[entry.slot].group.userData.workerId = worker.id;
         spots[entry.slot].group.userData.label = title;
       }
+      labelsDirty = true;
       pose(0, false);
       playback();
     },
@@ -406,7 +418,6 @@ export function createWorkroomScene(
       renderer.setPixelRatio(
         Math.min(window.devicePixelRatio, enabled ? 1 : 2),
       );
-      renderer.setSize(element.clientWidth, element.clientHeight);
       draw();
     },
     dispose,

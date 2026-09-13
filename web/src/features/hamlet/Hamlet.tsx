@@ -195,7 +195,11 @@ export function Hamlet({
             available below.
           </p>
         )}
-        <Noticeboard snapshot={snapshot} connected={connected} />
+        <Noticeboard
+          key={snapshot.epoch}
+          snapshot={snapshot}
+          connected={connected}
+        />
         {/* The same events the walk is drawn from, in words. A letter whose two ends are
           not both homes in this village is listed here and not drawn, because there is
           no door to walk to; it is never dropped from the record. */}

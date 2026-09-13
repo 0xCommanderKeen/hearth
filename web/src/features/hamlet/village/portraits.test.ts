@@ -27,10 +27,14 @@ vi.mock("three", async (original) => ({
 }));
 import { requestPortrait } from "./portraits";
 it("batches duplicate identities, cancels unmounted work and releases the context", () => {
-  let frame = () => {};
+  const frames: (() => void)[] = [];
+  const frame = () => frames.shift()?.();
   vi.stubGlobal("requestAnimationFrame", (fn: () => void) => {
-    frame = fn;
+    frames.push(fn);
     return 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", () => {
+    frames.length = 0;
   });
   const first = vi.fn(),
     duplicate = vi.fn(),
@@ -51,11 +55,24 @@ it("batches duplicate identities, cancels unmounted work and releases the contex
   expect(graphics.renders).toBe(1);
   // The cache retains at most 128 identities; an evicted identity renders again.
   for (let i = 0; i < 129; i++) requestPortrait(`resident-${i}`, vi.fn());
+  const beforeQueue = graphics.renders;
   frame();
+  expect(graphics.renders - beforeQueue).toBe(4);
+  expect(graphics.contexts - graphics.disposed).toBe(1);
+  while (frames.length) frame();
   const before = graphics.renders;
   requestPortrait("same", vi.fn());
   frame();
   expect(graphics.renders).toBe(before + 1);
   expect(graphics.disposed).toBe(graphics.contexts);
+  const cancels = Array.from({ length: 8 }, (_, i) =>
+    requestPortrait(`cancel-queue-${i}`, vi.fn()),
+  );
+  frame();
+  const partial = graphics.renders;
+  cancels.forEach((cancel) => cancel());
+  expect(frames).toHaveLength(0);
+  expect(graphics.renders).toBe(partial);
+  expect(graphics.contexts).toBe(graphics.disposed);
   vi.unstubAllGlobals();
 });
