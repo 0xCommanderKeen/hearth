@@ -1,5 +1,23 @@
 import * as THREE from "three";
 
+export function visualIdentity(id) {
+  const hash = (salt) => {
+    let n = 2166136261;
+    for (const c of `${salt}:${id}`)
+      n = Math.imul(n ^ c.codePointAt(0), 16777619);
+    n ^= n >>> 16;
+    return n >>> 0;
+  };
+  return {
+    accent: ["#477a77", "#a35f49", "#5d748d", "#887148"][hash("accent") % 4],
+    roof: ["#be6549", "#9f5141", "#9e714c", "#657d77"][hash("roof") % 4],
+    detail: hash("detail") % 4,
+    silhouette: hash("silhouette") % 4,
+    skin: ["#d6aa87", "#a76e54", "#e8c6a3", "#8e6151"][hash("skin") % 4],
+    trim: ["#c8a164", "#e1bd83", "#a9c5bd", "#d7a399"][hash("trim") % 4],
+  };
+}
+
 // Original, code-built miniature parts. Front faces +z; every root sits at y=0.
 // The kit owns shared GPU resources: dispose the kit, not individual instances.
 export function createArtKit() {
@@ -189,7 +207,9 @@ export function createArtKit() {
       planter(root, w * 0.34, 0.2);
       return fitted();
     }
-    const tall = kind === "archive";
+    const research = kind === "research";
+    const post = kind === "post";
+    const tall = kind === "archive" || research;
     const lodge = kind === "lodge";
     const workshop = kind === "workshop";
     const home = kind === "home";
@@ -207,8 +227,21 @@ export function createArtKit() {
       { wall: "#d5ddc4", roof: "#9e714c", door: "#9b5846" },
       { wall: "#e3d8c9", roof: "#657d77", door: "#a47642" },
     ];
-    const style = homeStyles[variant];
-    const height = tall ? 2.25 : lodge ? 2.05 : workshop ? 2.2 : 1.35;
+    const personal = visualIdentity(model.id);
+    const style = {
+      ...homeStyles[variant],
+      roof: personal.roof,
+      door: personal.accent,
+    };
+    const height = tall
+      ? 2.25
+      : lodge
+        ? 2.05
+        : workshop
+          ? 2.2
+          : post
+            ? 1.85
+            : 1.35;
     const color = workshop
       ? "#a3b3a0"
       : tall
@@ -249,11 +282,19 @@ export function createArtKit() {
         );
         glazing.userData.architecture = "clerestory";
       }
+    } else if (research) {
+      part(
+        root,
+        "cylinder",
+        "cream",
+        [0, roofY, 0],
+        [wallW + 0.2, 0.17, wallD + 0.2],
+      );
     } else {
       part(
         root,
         "gable",
-        home ? style.roof : "roof",
+        home ? style.roof : post ? "navy" : "roof",
         [0, roofY, 0],
         [wallW + 0.36, pitch, wallD + 0.36],
       );
@@ -384,11 +425,12 @@ export function createArtKit() {
     root.add(side);
     planter(root, wallW * 0.39, front + 0.35);
     if (home) {
+      const decoration = personal.detail;
       // A small detail by the step makes an address recognizable without
       // inventing activity. Keep the middle of the door and street unobstructed.
       const detailX = -wallW * 0.38;
       const detailZ = front + 0.34;
-      if (variant === 0) {
+      if (decoration === 0) {
         box(root, "pot", [detailX, 0.23, detailZ], [0.48, 0.24, 0.3]);
         for (const offset of [-0.13, 0.13]) {
           part(
@@ -406,7 +448,7 @@ export function createArtKit() {
             [0.13, 0.13, 0.13],
           );
         }
-      } else if (variant === 1) {
+      } else if (decoration === 1) {
         box(root, "timber", [detailX, 0.18, detailZ], [0.48, 0.36, 0.38]);
         for (let i = 0; i < 3; i++)
           box(
@@ -422,7 +464,7 @@ export function createArtKit() {
           [0, 1.18, front + 0.18],
           [0.92, 0.43, 0.58],
         );
-      } else if (variant === 2) {
+      } else if (decoration === 2) {
         box(root, "timber", [detailX, 0.42, detailZ], [0.07, 0.84, 0.07]);
         box(root, "brass", [detailX, 0.83, detailZ + 0.03], [0.26, 0.06, 0.22]);
         box(
@@ -453,7 +495,7 @@ export function createArtKit() {
             "cylinder",
             "timber",
             [detailX, 0.16 + i * 0.14, detailZ],
-            [0.42, 0.12, 0.16],
+            [0.12, 0.42, 0.12],
             [0, 0, Math.PI / 2],
           );
         box(
@@ -464,35 +506,54 @@ export function createArtKit() {
         );
       }
     }
+    if (research) {
+      part(root, "sphere", "teal", [0, roofY + 0.7, 0], [1.25, 0.9, 1.25]);
+      part(
+        root,
+        "cylinder",
+        "brass",
+        [0.27, roofY + 1.05, 0.24],
+        [0.21, 0.95, 0.21],
+        [Math.PI / 3, 0, -0.5],
+      );
+    }
+    if (post) {
+      box(root, "navy", [0, 1.48, front + 0.13], [1.15, 0.52, 0.1]);
+      box(root, "paper", [0, 1.48, front + 0.2], [0.65, 0.32, 0.05]);
+      const flap = box(
+        root,
+        "brass",
+        [0, 1.51, front + 0.24],
+        [0.24, 0.04, 0.025],
+      );
+      flap.rotation.z = -0.45;
+      box(
+        root,
+        "roofDark",
+        [-wallW * 0.36, 0.5, front + 0.35],
+        [0.35, 0.8, 0.3],
+      );
+      box(
+        root,
+        "ink",
+        [-wallW * 0.36, 0.72, front + 0.51],
+        [0.24, 0.055, 0.03],
+      );
+    }
     return fitted();
   }
   function agent(model) {
     const appearance = model.appearance || {};
-    // An address supplies a stable visual identity, including on letter walks.
-    // These are decorative choices, not claims about a resident's work or traits.
-    const identity =
-      [...String(model.id)].reduce(
-        (hash, character) =>
-          (Math.imul(hash, 31) + character.charCodeAt(0)) | 0,
-        0,
-      ) >>> 0;
-    const coats = [
-      "#628a85",
-      "#a36b57",
-      "#7583a1",
-      "#8a7755",
-      "#7b6685",
-      "#668466",
-    ];
-    const trims = ["#c8a164", "#e1bd83", "#a9c5bd", "#d7a399"];
-    const skins = ["#d6aa87", "#a76e54", "#e8c6a3", "#8e6151"];
-    const body = appearance.body || coats[identity % coats.length];
-    const hat = appearance.hat || trims[(identity >>> 4) % trims.length];
-    const skin = appearance.skin || skins[(identity >>> 8) % skins.length];
-    const variant = Math.abs(appearance.variant ?? identity >>> 12) % 4;
+    const personal = visualIdentity(model.id);
+    const body = appearance.body || personal.accent;
+    const hat = appearance.hat || personal.trim;
+    const skin = appearance.skin || personal.skin;
+    const variant = appearance.variant ?? personal.silhouette;
+    const identity = personal.detail;
     const root = new THREE.Group();
     root.name = `agent:${model.id}`;
     root.userData.agentId = model.id;
+    root.scale.set(variant === 0 ? 1.13 : 1, [1.08, 0.95, 1.18, 1][variant], 1);
     const legs = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.085, 0.3, 0);
@@ -500,7 +561,13 @@ export function createArtKit() {
       root.add(pivot);
       return pivot;
     });
-    part(root, "cone", body, [0, 0.4, 0], [0.37, 0.39, 0.3]);
+    part(
+      root,
+      variant % 2 ? "softbox" : "cone",
+      body,
+      [0, 0.4, 0],
+      [variant % 2 ? 0.3 : 0.42, 0.39, 0.3],
+    );
     const arms = [-1, 1].map((side) => {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.18, 0.49, 0);
@@ -527,7 +594,7 @@ export function createArtKit() {
       part(root, "sphere", hat, [-0.11, 0.45, 0.15], [0.085, 0.085, 0.04]);
     else box(root, hat, [0, 0.37, 0.157], [0.22, 0.055, 0.035]);
     if (variant === 0) {
-      part(root, "cylinder", hat, [0, 0.79, 0], [0.39, 0.045, 0.36]);
+      part(root, "cylinder", hat, [0, 0.79, 0], [0.49, 0.055, 0.43]);
       part(root, "pot", hat, [0, 0.845, 0], [0.23, 0.11, 0.23]);
     } else if (variant === 1) {
       part(root, "sphere", hat, [0, 0.785, -0.025], [0.34, 0.2, 0.3]);
@@ -540,6 +607,11 @@ export function createArtKit() {
       box(root, hat, [0, 0.77, 0.14], [0.25, 0.045, 0.2]);
     }
     box(root, "timber", [0, 0.42, -0.18], [0.23, 0.27, 0.13]);
+    if (model.letter) {
+      box(root, "paper", [0.17, 0.4, 0.19], [0.23, 0.16, 0.045]);
+      const flap = box(root, "brass", [0.17, 0.43, 0.22], [0.11, 0.025, 0.015]);
+      flap.rotation.z = -0.35;
+    }
     root.userData.legs = legs;
     root.userData.arms = arms;
     return root;
@@ -563,8 +635,22 @@ export function createArtKit() {
     root.rotation.y = n * 2.39996;
     return root;
   }
+  function garden() {
+    const root = new THREE.Group();
+    box(root, "stone", [0, 0.1, 0], [0.7, 0.2, 0.4]);
+    for (const x of [-0.2, 0.2])
+      part(
+        root,
+        "sphere",
+        x < 0 ? "leaf" : "leafLight",
+        [x, 0.3, 0],
+        [0.38, 0.38, 0.35],
+      );
+    return root;
+  }
   return {
     building,
+    garden,
     agent,
     tree,
     dispose() {

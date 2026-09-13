@@ -11,6 +11,7 @@ from hearth.integrations.interface import RUNTIMES, live_kinds
 from hearth.integrations.interface import label as runtime_label
 from hearth.integrations.logins import scopes
 from hearth.management.authority import management_summary, mount_summary
+from hearth.observation.village import run_actions
 from hearth.residents.journal import run_journal_summary
 from hearth.residents.lifecycle import lifecycle_summary
 from hearth.residents.memory import run_memory_writes
@@ -134,7 +135,9 @@ def snapshot(hearth: Hearth) -> dict:
         # A refused send writes nothing, so it exists only as the run's own tool
         # evidence. Reading them all at once keeps a hundred runs to one pass.
         refusals = refused_sends(db, [run["id"] for run in runs])
+        actions = run_actions(db, [run["id"] for run in runs])
         for run in runs:
+            run["action"] = actions.get(run["id"])
             run["letters_refused"] = refusals.get(run["id"], [])
             run.update(skill_summary(db, run["id"], run=True))
             run.update(input_summary(db, run["id"], run=True))
@@ -194,8 +197,7 @@ def snapshot(hearth: Hearth) -> dict:
             ],
             "tasks": tasks,
             "runs": runs,
-            # What the post did, both ends named. A village draws its walks from these
-            # and from nothing else.
+            # Postal couriers draw only from recorded letters with both ends named.
             "letters": letter_events(db),
             "activity": audit,
             "unread_notifications": db.execute(

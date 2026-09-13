@@ -512,6 +512,13 @@ export type Task = {
   lineage?: LetterHop[];
 };
 export type Run = InputProvenance & {
+  /** Latest recorded tool action, never inferred from task text. */
+  action?: {
+    place: "workshop" | "research" | "post" | "townhall";
+    label: string;
+    at: number;
+    sequence: number;
+  } | null;
   created_at?: number;
   finished_at?: number | null;
   management?: {

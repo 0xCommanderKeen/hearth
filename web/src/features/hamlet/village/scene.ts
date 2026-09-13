@@ -11,6 +11,12 @@ import {
 } from "./layout";
 import { selectionGesture } from "./gesture";
 import { createActivity, letterKey, residentStatus } from "./activity";
+import {
+  PLACES,
+  residentLocation,
+  createResidentJourneys,
+  type Visit,
+} from "./places";
 import { streamBaseline } from "../../../shared/client";
 import type { Snapshot, Resident } from "../../../shared/client";
 
@@ -19,6 +25,7 @@ const WALKS_AT_ONCE = 3;
 export type VillageScene = {
   update(snapshot: Snapshot, connected: boolean, visible: boolean): void;
   select(id: string | null): void;
+  preview?(id: string | null): void;
   active(visible: boolean): void;
   lighter(enabled: boolean): void;
   overview(): void;
@@ -70,6 +77,8 @@ export function createVillageScene(
   let village = new THREE.Group();
   let targets: THREE.Object3D[] = [];
   const activity = createActivity();
+  const residentJourneys = createResidentJourneys();
+  let pendingVisits: Visit[] = [];
   let network = streetNetwork([]);
   let visible = true;
   let dirty = true;
@@ -123,7 +132,11 @@ export function createVillageScene(
     scene.remove(village);
     releaseModels();
     village = new THREE.Group();
-    const plots = allocate(residents.map((r) => r.id));
+    village.name = "village";
+    const plots = allocate([
+      ...residents.map((r) => r.id),
+      ...PLACES.map((p) => p.id),
+    ]);
     const all: Plot[] = [
       { id: "townhall", x: 0, z: -6 },
       { id: "square", x: 0, z: 0 },
@@ -184,12 +197,21 @@ export function createVillageScene(
       outlines.push({ id: href, mesh: outline });
       const node = document.createElement("button");
       node.type = "button";
-      node.className = "scene-label";
+      node.className =
+        kind === "home" ? "scene-label" : "scene-label scene-label-civic";
       node.textContent = name;
       node.title = name;
       node.dataset.identity = href;
       node.setAttribute("aria-label", `Select ${name}`);
       node.onclick = () => choose(href);
+      node.onfocus = () => {
+        hovered = href;
+        highlight();
+      };
+      node.onblur = () => {
+        hovered = null;
+        highlight();
+      };
       node.onpointerenter = () => {
         hovered = href;
         highlight();
@@ -199,7 +221,15 @@ export function createVillageScene(
         highlight();
       };
       labels.appendChild(node);
-      names.push({ id: href, node, anchor: new THREE.Vector3(x, 3.6, z) });
+      names.push({
+        id: href,
+        node,
+        anchor: new THREE.Vector3(
+          x,
+          new THREE.Box3().setFromObject(object).max.y + 0.65,
+          z,
+        ),
+      });
       targets.push(object);
       village.add(object);
     }
@@ -216,6 +246,11 @@ export function createVillageScene(
     village.add(square);
     const byId = new Map(residents.map((r) => [r.id, r]));
     plots.forEach(({ id, x, z }) => {
+      const place = PLACES.find((p) => p.id === id);
+      if (place) {
+        building(id, place.kind, x, z, place.identity, place.name);
+        return;
+      }
       const r = byId.get(id)!;
       building(
         id,
@@ -225,10 +260,7 @@ export function createVillageScene(
         `#residents/${encodeURIComponent(id)}`,
         r.name,
       );
-      const person = kit.agent({ id });
-      person.position.set(x, 0, z + 2.2);
-      // People and landscaping are decorative, never raycast selection targets.
-      village.add(person);
+      // Residents are indoors except during a bounded, observed journey.
     });
     [
       [minX + 1, minZ + 1],
@@ -240,6 +272,19 @@ export function createVillageScene(
       tree.position.set(x, 0, z);
       village.add(tree);
     });
+    // Bounded planting around the square and Townhall, away from street centres.
+    for (const [x, z] of [
+      [-1.6, -1.5],
+      [1.6, -1.5],
+      [-1.6, 1.4],
+      [1.6, 1.4],
+      [-1.25, -4.05],
+      [1.25, -4.05],
+    ]) {
+      const garden = kit.garden();
+      garden.position.set(x, 0, z);
+      village.add(garden);
+    }
     highlight();
 
     scene.add(village);
@@ -303,12 +348,18 @@ export function createVillageScene(
     draw();
   });
   resize.observe(element);
-  const walks: { person: THREE.Group; path: Point[]; started: number }[] = [];
+  const walks: {
+    person: THREE.Group;
+    path: Point[];
+    started: number;
+    visit?: Visit;
+  }[] = [];
   function clearWalks() {
     if (walks.length) invalidate();
     walks.forEach((walk) => scene.remove(walk.person));
     walks.length = 0;
     activity.clear();
+    pendingVisits = [];
   }
   const animate = () => {
     const at = performance.now();
@@ -316,16 +367,26 @@ export function createVillageScene(
     if (motion.matches) clearWalks();
     else
       while (walks.length < WALKS_AT_ONCE) {
+        const visit = pendingVisits.shift();
+        if (visit) {
+          if (!residentJourneys.current(visit)) continue;
+          const path = network.route(visit.from, visit.to);
+          if (!path) continue;
+          const person = kit.agent({ id: visit.residentId });
+          person.userData.visit = visit;
+          person.position.set(path[0].x, 0, path[0].z);
+          scene.add(person);
+          walks.push({ person, path, started: at, visit });
+          continue;
+        }
         const event = activity.take();
         if (!event) break;
-        const path = network.route(
-          event.from_resident_id,
-          event.to_resident_id,
-        );
-        if (!path) continue;
-        const person = kit.agent({
-          id: event.from_resident_id ?? letterKey(event),
-        });
+        // A postal courier represents delivery, not a second copy of the sender.
+        const first = network.route(event.from_resident_id, "@post");
+        const last = network.route("@post", event.to_resident_id);
+        if (!first || !last) continue;
+        const path = [...first, ...last.slice(1)];
+        const person = kit.agent({ id: "postal-courier", letter: true });
         person.userData.letter = letterKey(event);
         person.position.set(path[0].x, 0, path[0].z);
         scene.add(person);
@@ -344,6 +405,14 @@ export function createVillageScene(
         ahead = routePosition(walk.path, Math.min(1, travelled + 0.001));
       walk.person.position.set(p.x, 0, p.z);
       walk.person.lookAt(ahead.x, 0, ahead.z);
+      const stride = Math.sin((at - walk.started) / 110) * 0.48;
+      walk.person.userData.legs.forEach((leg: THREE.Group, i: number) => {
+        leg.rotation.x = i ? -stride : stride;
+      });
+      walk.person.userData.arms.forEach((arm: THREE.Group, i: number) => {
+        arm.rotation.x = i ? stride : -stride;
+      });
+      walk.person.position.y = Math.abs(stride) * 0.055;
     }
     controls.update();
     draw();
@@ -461,10 +530,23 @@ export function createVillageScene(
       );
       names.forEach(({ id, node }) => {
         const status = statuses.get(id);
-        if (!status) return;
+        if (!status) {
+          const place = PLACES.find((p) => p.identity === id);
+          const destination = id === "#townhall" ? null : place?.id;
+          const count = residents.filter((r) => {
+            const location = residentLocation(r, snapshot);
+            return location.run && location.destination === destination;
+          }).length;
+          const name = place?.name ?? "Townhall";
+          node.textContent = name + (count ? ` · ${count}` : "");
+          node.title = `${name} · ${connected ? "" : "last known: "}${count} working`;
+          node.setAttribute("aria-label", `Select ${name}`);
+          return;
+        }
         node.replaceChildren(document.createTextNode(status.name));
         const label = document.createElement("small");
         label.textContent = status.text;
+        label.className = "scene-label-status";
         node.appendChild(label);
         node.dataset.status = status.tone;
         node.title = `${status.name} · ${status.text}`;
@@ -473,20 +555,39 @@ export function createVillageScene(
           `Select ${status.name} · ${status.text}`,
         );
       });
-      if (
-        activity.observe(
-          snapshot,
-          connected,
-          visible && !document.hidden,
-          motion.matches,
-          streamBaseline(snapshot),
-        )
-      ) {
+      const reset = activity.observe(
+        snapshot,
+        connected,
+        visible && !document.hidden,
+        motion.matches,
+        streamBaseline(snapshot),
+      );
+      const moves = residentJourneys.observe(
+        snapshot,
+        !reset && connected && visible && !document.hidden && !motion.matches,
+      );
+      if (reset) {
         walks.forEach((walk) => scene.remove(walk.person));
         walks.length = 0;
+        pendingVisits = [];
+      } else {
+        for (let i = walks.length - 1; i >= 0; i--) {
+          if (walks[i].visit && !residentJourneys.current(walks[i].visit!)) {
+            scene.remove(walks[i].person);
+            walks.splice(i, 1);
+          }
+        }
+        pendingVisits = [
+          ...pendingVisits.filter((v) => residentJourneys.current(v)),
+          ...moves,
+        ].slice(0, 12);
       }
     },
     select,
+    preview(id) {
+      hovered = id;
+      highlight();
+    },
     active(isVisible) {
       visible = isVisible;
       visibility();
