@@ -1,0 +1,12 @@
+{
+  "browser": "152.0.7977.82",
+  "renderer": "SwiftShader",
+  "checks": [
+    "12 distinct portraits rendered from village models",
+    "Same portrait in gallery and resident panel",
+    "Rename and activity retain appearance",
+    "320px layout without overflow",
+    "WebGL failure retains initials and navigation"
+  ],
+  "errors": []
+}

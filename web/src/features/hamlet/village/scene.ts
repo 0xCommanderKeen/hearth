@@ -44,7 +44,7 @@ export function createVillageScene(
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   element.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#cbd5c1");
@@ -82,8 +82,15 @@ export function createVillageScene(
   let network = streetNetwork([]);
   let visible = true;
   let dirty = true;
+  let frame: number | null = null;
+  const cancelFrame = () => {
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+  };
+  let resume = () => {};
   const invalidate = () => {
     dirty = true;
+    resume();
   };
   controls.addEventListener("change", invalidate);
   let identities: string | undefined;
@@ -362,8 +369,10 @@ export function createVillageScene(
     pendingVisits = [];
   }
   const animate = () => {
+    frame = null;
     const at = performance.now();
     if (document.hidden || !visible) return;
+    const hadWalks = walks.length > 0;
     if (motion.matches) clearWalks();
     else
       while (walks.length < WALKS_AT_ONCE) {
@@ -416,6 +425,8 @@ export function createVillageScene(
     }
     controls.update();
     draw();
+    // One final tick after arrivals drains queued journeys before sleeping.
+    if (hadWalks || walks.length) resume();
   };
   function draw() {
     if (disposed || !visible || document.hidden || !dirty) return;
@@ -457,17 +468,20 @@ export function createVillageScene(
   function visibility() {
     if (document.hidden || !visible) clearWalks();
     invalidate();
-    if (!disposed)
-      renderer.setAnimationLoop(visible && !document.hidden ? animate : null);
+    if (document.hidden || !visible) cancelFrame();
   }
   document.addEventListener("visibilitychange", visibility);
-  renderer.setAnimationLoop(document.hidden ? null : animate);
 
   let disposed = false;
+  resume = () => {
+    if (!disposed && visible && !document.hidden && frame === null)
+      frame = requestAnimationFrame(animate);
+  };
+  resume();
   function dispose() {
     if (disposed) return;
     disposed = true;
-    renderer.setAnimationLoop(null);
+    cancelFrame();
     resize.disconnect();
     document.removeEventListener("visibilitychange", visibility);
     controls.removeEventListener("change", invalidate);

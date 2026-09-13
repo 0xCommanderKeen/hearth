@@ -1,0 +1,14 @@
+{
+  "browser": "152.0.7977.82",
+  "renderer": "SwiftShader",
+  "idleFramesOver400ms": 0,
+  "stationaryLabelStyleMutationsOver400ms": 0,
+  "checks": [
+    "100-resident idle scene stops RAF and wakes on camera input",
+    "Moving workroom figures do not rewrite stationary labels; resize updates them",
+    "Preparing-at-home figure stays visible offline; unknown outcome hides it",
+    "Archived holds precede failed tasks; all seven attention items accessible",
+    "390px layouts without document overflow"
+  ],
+  "errors": []
+}

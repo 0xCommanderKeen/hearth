@@ -73,8 +73,8 @@ personality or authority. Names and recorded execution status remain separate.
 
 `portraits.ts` renders still 256px portraits with `createArtKit().agent`, sharing the
 village model instead of maintaining a separate illustration. Visible avatar requests
-are batched through one temporary renderer; resources and the context are released
-immediately afterwards. A 128-image LRU cache bounds retained image data. Offscreen
+render at most four images per animation frame through one temporary renderer;
+resources and the context are released as soon as the queue drains or is cancelled. A 128-image LRU cache bounds retained image data. Offscreen
 avatars wait for intersection and unmounted requests are cancelled. Initials remain
 available when graphics or intersection observation are unavailable.
 
@@ -85,11 +85,12 @@ stability, mobile layout and graphics fallback; evidence lives in
 
 ## Noticeboard and working poses
 
-The noticeboard presents up to four available records per section: current tasks
+The noticeboard presents up to four available records per section initially: current tasks
 needing attention (plus resident unresolved holds), successful runs and retained
 letter events. Counts describe the bounded snapshot, not household totals. Historical
 failed runs do not flag a task that has since succeeded. Unknown outcomes remain
-unknown, including archived residents' holds. Full retained post remains expandable.
+unknown, including archived residents' holds. Unresolved holds precede failed tasks;
+an expansion control exposes all available attention items. Full retained post remains expandable.
 The board writes no records and keeps disconnected information labeled as last known.
 
 Shared rooms use building-specific held props and arm poses: a hammer at the Workshop,
@@ -100,3 +101,15 @@ the existing lifecycle. Poses illustrate building activity, not individual tool 
 **Noticeboard demo** in the synthetic preview populates outcomes, a letter and shared
 rooms. Run `scripts/check-hamlet-noticeboard-browser.mjs` with the same Playwright
 settings for retained evidence in `docs/evidence/hamlet-noticeboard-2026-09-13/`.
+
+## Integrated review
+
+The exterior requests frames only after changes or while journeys are underway;
+idle villages have no continuing animation callback. Camera input, resize, snapshots
+and visibility changes wake rendering. Workrooms keep their frame loop only during
+active work, and update static label positions/projection only when layout or roster
+changes. Home figures include preparation and remain as last known when disconnected.
+
+Run `node scripts/check-hamlet-review-browser.mjs` for the idle-frame, stationary-label,
+resize, home-state and noticeboard overflow regressions. Review evidence and remaining
+performance limits are in `docs/evidence/hamlet-review-2026-09-13/README.md`.

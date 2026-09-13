@@ -185,7 +185,12 @@ export function createRoomScene(
       bottom: -half,
     });
     camera.updateProjectionMatrix();
-    renderer.setSize(width, height);
+    const ratio = renderer.getPixelRatio();
+    if (
+      canvas.width !== Math.floor(width * ratio) ||
+      canvas.height !== Math.floor(height * ratio)
+    )
+      renderer.setSize(width, height);
     renderer.render(scene, camera);
   }
   const observer = new ResizeObserver(draw);

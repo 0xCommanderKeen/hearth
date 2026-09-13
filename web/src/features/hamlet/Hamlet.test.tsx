@@ -436,3 +436,33 @@ it.each([
     expect(room.dispose).toHaveBeenCalledOnce();
   },
 );
+
+it("shows preparation at home and retains the last known home figure while disconnected", () => {
+  const room = {
+    active: vi.fn(),
+    lighter: vi.fn(),
+    dispose: vi.fn(),
+    occupancy: vi.fn(),
+  };
+  vi.mocked(createRoomScene).mockReturnValue(room);
+  const data = {
+    ...snapshot,
+    residents: [{ ...resident, presence: "starting" as const }],
+  };
+  const { rerender } = render(<Hamlet snapshot={data} connected />);
+  fireEvent.click(screen.getByRole("button", { name: /Select Reader/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Enter home/ }));
+  expect(room.occupancy).toHaveBeenLastCalledWith(true);
+  rerender(<Hamlet snapshot={data} connected={false} />);
+  expect(room.occupancy).toHaveBeenLastCalledWith(true);
+  rerender(
+    <Hamlet
+      snapshot={{
+        ...data,
+        residents: [{ ...resident, presence: "interrupted" }],
+      }}
+      connected
+    />,
+  );
+  expect(room.occupancy).toHaveBeenLastCalledWith(false);
+});

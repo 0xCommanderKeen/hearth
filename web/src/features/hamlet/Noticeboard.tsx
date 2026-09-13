@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Snapshot } from "../../shared/client";
 
 export function Noticeboard({
@@ -7,6 +8,7 @@ export function Noticeboard({
   snapshot: Snapshot;
   connected: boolean;
 }) {
+  const [showAllAttention, setShowAllAttention] = useState(false);
   const name = (id: string | null) =>
     id === null
       ? "Townhall"
@@ -46,7 +48,8 @@ export function Noticeboard({
         {connected
           ? "From the latest village records."
           : "Disconnected · showing last known records."}{" "}
-        Showing up to four items per section from the available snapshot.
+        Showing recent items from the available snapshot. Expand attention items
+        to see all retained tasks and holds.
       </p>
       <div className="noticeboard-columns">
         <section aria-label="Work needing attention">
@@ -57,23 +60,8 @@ export function Noticeboard({
             <p>No work needing attention in these records.</p>
           )}
           <ul>
-            {attention.slice(0, 4).map((task) => (
-              <li key={task.id}>
-                <a
-                  href={`#residents/${encodeURIComponent(task.resident_id)}?panel=work`}
-                >
-                  {name(task.resident_id)} ·{" "}
-                  {task.status === "interrupted"
-                    ? "Outcome unknown"
-                    : task.status === "stopping"
-                      ? "Stopping · outcome pending"
-                      : "Task failed"}
-                </a>
-                <p>{taskText(task.id)}</p>
-              </li>
-            ))}
-            {holds.slice(0, Math.max(0, 4 - attention.length)).map((r) => (
-              <li key={r.id}>
+            {holds.slice(0, showAllAttention ? undefined : 4).map((r) => (
+              <li key={`hold:${r.id}`}>
                 <a href={`#residents/${encodeURIComponent(r.id)}?panel=work`}>
                   {r.name} · {r.unresolved_runs} unresolved run(s)
                 </a>
@@ -85,7 +73,37 @@ export function Noticeboard({
                 </p>
               </li>
             ))}
+            {attention
+              .slice(
+                0,
+                showAllAttention ? undefined : Math.max(0, 4 - holds.length),
+              )
+              .map((task) => (
+                <li key={`task:${task.id}`}>
+                  <a
+                    href={`#residents/${encodeURIComponent(task.resident_id)}?panel=work`}
+                  >
+                    {name(task.resident_id)} ·{" "}
+                    {task.status === "interrupted"
+                      ? "Outcome unknown"
+                      : task.status === "stopping"
+                        ? "Stopping · outcome pending"
+                        : "Task failed"}
+                  </a>
+                  <p>{taskText(task.id)}</p>
+                </li>
+              ))}
           </ul>
+          {attention.length + holds.length > 4 && (
+            <button
+              onClick={() => setShowAllAttention(!showAllAttention)}
+              aria-expanded={showAllAttention}
+            >
+              {showAllAttention
+                ? "Show fewer attention items"
+                : `Show all ${attention.length + holds.length} attention items`}
+            </button>
+          )}
           <a href="#tasks">Inspect tasks →</a>
         </section>
         <section aria-label="Recently completed work">

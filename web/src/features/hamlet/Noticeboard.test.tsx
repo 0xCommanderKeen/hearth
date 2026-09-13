@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { Noticeboard } from "./Noticeboard";
 import type { Snapshot } from "../../shared/client";
 afterEach(cleanup);
@@ -85,4 +91,38 @@ it("bounds and orders retained letters, handles Townhall and replaces records on
   rerender(<Noticeboard snapshot={{ ...snapshot, letters: [] }} connected />);
   expect(screen.queryByText(/Letter 7/)).toBeNull();
   expect(screen.getByText("No letters in these records.")).toBeTruthy();
+});
+
+it("prioritizes unresolved holds and exposes attention items beyond the four-card limit", () => {
+  const snapshot = {
+    residents: [
+      {
+        id: "old",
+        name: "Archived",
+        unresolved_runs: 2,
+        lifecycle: { state: "archived" },
+      },
+    ],
+    tasks: Array.from({ length: 6 }, (_, i) => ({
+      id: String(i),
+      resident_id: "old",
+      status: "failed",
+      instruction: `Failure ${i}`,
+    })),
+    runs: [],
+    letters: [],
+  } as unknown as Snapshot;
+  render(<Noticeboard snapshot={snapshot} connected />);
+  const attention = within(
+    screen.getByRole("region", { name: "Work needing attention" }),
+  );
+  expect(attention.getAllByRole("listitem")).toHaveLength(4);
+  expect(attention.getAllByRole("listitem")[0].textContent).toContain(
+    "2 unresolved run(s)",
+  );
+  fireEvent.click(
+    attention.getByRole("button", { name: "Show all 7 attention items" }),
+  );
+  expect(attention.getAllByRole("listitem")).toHaveLength(7);
+  expect(attention.getByText("Failure 5")).toBeTruthy();
 });
