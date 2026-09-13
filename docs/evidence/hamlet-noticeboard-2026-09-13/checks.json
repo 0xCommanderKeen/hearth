@@ -1,0 +1,16 @@
+{
+  "browser": "152.0.7977.82",
+  "renderer": "SwiftShader; synthetic data",
+  "checks": [
+    "Noticeboard: completed run link, unknown outcome, retained letter and 320px layout",
+    "Workshop: three figures, selectable details, distinctive furniture",
+    "Research House: three figures, selectable details, distinctive furniture",
+    "Post Office: three figures, selectable details, distinctive furniture",
+    "Townhall: three figures, selectable details, distinctive furniture",
+    "Eight workers accessible across two pages; six figures maximum",
+    "Mesh picking, working motion, reduced-motion/offline pause, live departure without renderer replacement",
+    "320/390px layouts and graphics-loss roster/records/exit fallback",
+    "Four distinct static working poses and held props; reduced-motion and offline pauses retained"
+  ],
+  "errors": []
+}

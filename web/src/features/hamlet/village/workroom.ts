@@ -215,11 +215,24 @@ export function createWorkroomScene(
   }
   function pose(at: number, moving: boolean) {
     for (const { person, slot } of workers.values()) {
-      const sway = moving ? Math.sin(at / 450 + slot * 1.8) * 0.16 : 0;
+      const wave = moving ? Math.sin(at / 420 + slot * 1.8) : 0;
       const arms = person.userData.arms as THREE.Group[];
-      arms[0].rotation.x = -0.9 + sway;
-      arms[1].rotation.x =
-        options.kind === "research" ? -0.9 - sway * 0.3 : -1.1 - sway;
+      // Static poses also communicate the building's activity with motion disabled.
+      const poses = {
+        workshop: [-0.65 + wave * 0.04, -1.25 + wave * 0.5, 0, 0],
+        research: [-1.25 + wave * 0.03, -1.2 + wave * 0.08, -0.12, 0.12],
+        post: [-0.85 + wave * 0.1, -1.0, -0.25, 0.3 + wave * 0.4],
+        townhall: [
+          -0.9 + wave * 0.02,
+          -1.15 + wave * 0.07,
+          0,
+          0.12 + wave * 0.12,
+        ],
+      }[options.kind];
+      arms[0].rotation.x = poses[0];
+      arms[1].rotation.x = poses[1];
+      arms[0].rotation.y = poses[2];
+      arms[1].rotation.y = poses[3];
     }
   }
   function animate(at: number) {
@@ -340,8 +353,24 @@ export function createWorkroomScene(
           const spot = spots[slot];
           const person = kit.agent({
             id: worker.id,
-            letter: options.kind === "post",
           });
+          const hands = person.userData.arms as THREE.Group[];
+          const prop = new THREE.Group();
+          prop.name = `work-prop:${options.kind}`;
+          hands[1].add(prop);
+          if (options.kind === "workshop") {
+            box(prop, wood, [0, -0.25, 0.02], [0.045, 0.25, 0.045]);
+            box(prop, brass, [0, -0.39, 0.02], [0.18, 0.08, 0.08]);
+          } else if (options.kind === "post") {
+            box(prop, paper, [0, -0.25, 0.04], [0.2, 0.14, 0.025]);
+            box(prop, accent, [0.055, -0.22, 0.06], [0.04, 0.035, 0.01]);
+          } else if (options.kind === "research") {
+            box(prop, accent, [0, -0.23, 0.04], [0.24, 0.18, 0.04]);
+            box(prop, paper, [0, -0.23, 0.067], [0.21, 0.15, 0.015]);
+            box(prop, wood, [0, -0.23, 0.08], [0.008, 0.15, 0.01]);
+          } else {
+            box(prop, brass, [0, -0.25, 0.04], [0.025, 0.2, 0.025]);
+          }
           person.scale.multiplyScalar(1.8);
           person.position.set(spot.x, 0.13, spot.z + 1);
           person.rotation.y = Math.PI;

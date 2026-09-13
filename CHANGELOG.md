@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Add a village noticeboard for recorded outcomes, unresolved work and letters,
+  plus distinct reading, sorting, writing and tool-use poses in shared rooms (#269).
+
 - Give residents matching model-rendered portraits in profiles, lists and Hamlet,
   with stable hair, facial features, glasses, hats and clothing accessories (#267).
 

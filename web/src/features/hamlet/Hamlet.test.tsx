@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { Hamlet } from "./Hamlet";
 import { createRoomScene } from "./village/room";
@@ -222,7 +223,9 @@ it("keeps the exterior paused and selection intact through rooms, record visits 
   );
   expect(createRoomScene).toHaveBeenCalledTimes(1);
   expect(
-    screen.getByText(/Disconnected · showing last known records/).textContent,
+    within(screen.getByRole("region", { name: "Building interior" })).getByText(
+      /Disconnected · showing last known records/,
+    ).textContent,
   ).toContain("Outcome unknown");
   fireEvent.keyDown(document, { key: "Escape" });
   expect(room.dispose).toHaveBeenCalledOnce();
@@ -256,7 +259,11 @@ it("closes an archived or missing room with history and exit, never substitutes 
   );
   expect(room.dispose).toHaveBeenCalledOnce();
   expect(screen.getByText(/Their room is closed/)).toBeTruthy();
-  expect(screen.getAllByText(/2 unresolved run/)).toHaveLength(2);
+  expect(
+    within(
+      screen.getByRole("region", { name: "Building interior" }),
+    ).getAllByText(/2 unresolved run/),
+  ).toHaveLength(1);
   expect(
     screen
       .getByRole("link", { name: /Open resident history/ })
