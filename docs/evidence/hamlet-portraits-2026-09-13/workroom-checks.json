@@ -1,0 +1,14 @@
+{
+  "browser": "152.0.7977.82",
+  "renderer": "SwiftShader; synthetic data",
+  "checks": [
+    "Workshop: three figures, selectable details, distinctive furniture",
+    "Research House: three figures, selectable details, distinctive furniture",
+    "Post Office: three figures, selectable details, distinctive furniture",
+    "Townhall: three figures, selectable details, distinctive furniture",
+    "Eight workers accessible across two pages; six figures maximum",
+    "Mesh picking, working motion, reduced-motion/offline pause, live departure without renderer replacement",
+    "320/390px layouts and graphics-loss roster/records/exit fallback"
+  ],
+  "errors": []
+}

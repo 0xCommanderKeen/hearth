@@ -64,3 +64,21 @@ Run `node scripts/check-hamlet-workrooms-browser.mjs` with the same Playwright a
 Chromium environment for shared-room selection, live membership, pagination,
 motion, mobile layout and graphics-loss checks. Evidence goes to
 `docs/evidence/hamlet-workrooms-2026-09-12/`.
+
+## Character portraits
+
+Hair, headwear, glasses, facial hair and clothing accessories extend the same stable
+identity palette used by homes. These visual traits do not imply a resident's skills,
+personality or authority. Names and recorded execution status remain separate.
+
+`portraits.ts` renders still 256px portraits with `createArtKit().agent`, sharing the
+village model instead of maintaining a separate illustration. Visible avatar requests
+are batched through one temporary renderer; resources and the context are released
+immediately afterwards. A 128-image LRU cache bounds retained image data. Offscreen
+avatars wait for intersection and unmounted requests are cancelled. Initials remain
+available when graphics or intersection observation are unavailable.
+
+The synthetic preview's **Character portraits** button opens a comparison gallery.
+`check-hamlet-portraits-browser.mjs` verifies image consistency, rename/activity
+stability, mobile layout and graphics fallback; evidence lives in
+`docs/evidence/hamlet-portraits-2026-09-13/`.

@@ -1,7 +1,7 @@
+import { ResidentAvatar } from "../../shared/ResidentAvatar";
 import { useEffect, useRef, useState } from "react";
 import { placeByIdentity, workersAt } from "./village/places";
 import { WORKROOM_PAGE_SIZE } from "./village/workroom";
-import { visualIdentity } from "./village/art.js";
 import type { Snapshot } from "../../shared/client";
 import {
   createRoomScene,
@@ -219,11 +219,7 @@ export function Room({
                           aria-pressed={inspected?.resident.id === r.id}
                           onClick={() => setSelectedWorker(r.id)}
                         >
-                          <span
-                            className="resident-swatch"
-                            style={{ background: visualIdentity(r.id).accent }}
-                            aria-hidden="true"
-                          />
+                          <ResidentAvatar id={r.id} name={r.name} />
                           {r.name}
                           <small>{run.action?.label ?? "Running work"}</small>
                         </button>
@@ -268,6 +264,11 @@ export function Room({
                         aria-label={`${inspected.resident.name}'s work`}
                         aria-live="polite"
                       >
+                        <ResidentAvatar
+                          id={inspected.resident.id}
+                          name={inspected.resident.name}
+                          size="large"
+                        />
                         <h4>{inspected.resident.name}</h4>
                         <p>
                           {inspected.task?.instruction ??

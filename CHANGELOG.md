@@ -2,6 +2,9 @@
 
 One line per merged PR, newest first. Decisions live in `docs/adr/`.
 
+- Give residents matching model-rendered portraits in profiles, lists and Hamlet,
+  with stable hair, facial features, glasses, hats and clothing accessories (#267).
+
 - Add Hamlet work buildings tied to recorded actions, residents at home when idle,
   finite walking couriers, coordinated characters/interiors, searchable navigation,
   compact labels/controls, planted public spaces and enterable shared workrooms with

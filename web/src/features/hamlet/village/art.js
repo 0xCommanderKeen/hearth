@@ -9,6 +9,14 @@ export function visualIdentity(id) {
     return n >>> 0;
   };
   return {
+    hair: ["#47352e", "#855138", "#d3af74", "#c1c0b8", "#292e32"][
+      hash("hair") % 5
+    ],
+    hairstyle: hash("hairstyle") % 4,
+    headwear: hash("headwear") % 5,
+    glasses: hash("glasses") % 3 === 0,
+    beard: hash("beard") % 4 === 0,
+    accessory: hash("accessory") % 3,
     accent: ["#477a77", "#a35f49", "#5d748d", "#887148"][hash("accent") % 4],
     roof: ["#be6549", "#9f5141", "#9e714c", "#657d77"][hash("roof") % 4],
     detail: hash("detail") % 4,
@@ -593,18 +601,92 @@ export function createArtKit() {
     else if (identity % 3 === 1)
       part(root, "sphere", hat, [-0.11, 0.45, 0.15], [0.085, 0.085, 0.04]);
     else box(root, hat, [0, 0.37, 0.157], [0.22, 0.055, 0.035]);
-    if (variant === 0) {
+    if (personal.headwear === 0) {
       part(root, "cylinder", hat, [0, 0.79, 0], [0.49, 0.055, 0.43]);
       part(root, "pot", hat, [0, 0.845, 0], [0.23, 0.11, 0.23]);
-    } else if (variant === 1) {
+    } else if (personal.headwear === 1) {
       part(root, "sphere", hat, [0, 0.785, -0.025], [0.34, 0.2, 0.3]);
       part(root, "sphere", hat, [0, 0.895, -0.025], [0.09, 0.09, 0.09]);
-    } else if (variant === 2) {
+    } else if (personal.headwear === 2) {
       part(root, "sphere", hat, [0, 0.76, -0.055], [0.33, 0.25, 0.29]);
       part(root, "sphere", hat, [0, 0.78, -0.21], [0.15, 0.17, 0.15]);
-    } else {
+    } else if (personal.headwear === 3) {
       part(root, "cylinder", hat, [0, 0.785, 0], [0.34, 0.1, 0.3]);
       box(root, hat, [0, 0.77, 0.14], [0.25, 0.045, 0.2]);
+    }
+    // Face and hair are the same geometry in village figures and close portraits.
+    part(root, "sphere", personal.hair, [0, 0.72, -0.065], [0.335, 0.25, 0.27]);
+    for (const side of [-1, 1]) {
+      part(root, "sphere", skin, [side * 0.155, 0.66, 0], [0.065, 0.09, 0.07]);
+      part(
+        root,
+        "sphere",
+        "ink",
+        [side * 0.061, 0.69, 0.155],
+        [0.023, 0.027, 0.015],
+      );
+      box(
+        root,
+        personal.hair,
+        [side * 0.061, 0.719, 0.149],
+        [0.047, 0.013, 0.018],
+      );
+      if (personal.hairstyle === 1)
+        part(
+          root,
+          "sphere",
+          personal.hair,
+          [side * 0.14, 0.64, -0.025],
+          [0.085, 0.23, 0.2],
+        );
+      if (personal.glasses)
+        part(
+          root,
+          "ring",
+          "ink",
+          [side * 0.066, 0.69, 0.172],
+          [0.104, 0.085, 0.08],
+        );
+    }
+    if (personal.glasses)
+      box(root, "ink", [0, 0.69, 0.177], [0.034, 0.012, 0.015]);
+    box(root, "roofDark", [0, 0.606, 0.145], [0.042, 0.011, 0.012]);
+    if (personal.beard)
+      part(
+        root,
+        "sphere",
+        personal.hair,
+        [0, 0.593, 0.099],
+        [0.2, 0.115, 0.135],
+      );
+    if (personal.hairstyle === 2)
+      for (const x of [-0.105, 0, 0.105])
+        part(
+          root,
+          "sphere",
+          personal.hair,
+          [x, 0.77, 0.07],
+          [0.135, 0.13, 0.13],
+        );
+    if (personal.hairstyle === 3)
+      for (let i = 0; i < 3; i++)
+        part(
+          root,
+          "sphere",
+          personal.hair,
+          [0.12, 0.65 - i * 0.07, -0.16],
+          [0.09, 0.1, 0.09],
+        );
+    if (personal.accessory === 0) {
+      box(root, hat, [0, 0.49, 0.16], [0.26, 0.055, 0.04]);
+      box(root, hat, [-0.08, 0.39, 0.18], [0.075, 0.2, 0.035]);
+    } else if (personal.accessory === 1) {
+      box(root, hat, [0, 0.38, 0.155], [0.24, 0.22, 0.04]);
+      box(root, body, [0, 0.37, 0.183], [0.12, 0.065, 0.018]);
+    } else {
+      const strap = box(root, hat, [0, 0.41, 0.165], [0.04, 0.31, 0.025]);
+      strap.rotation.z = -0.55;
+      box(root, "timber", [0.16, 0.29, 0.075], [0.14, 0.14, 0.14]);
     }
     box(root, "timber", [0, 0.42, -0.18], [0.23, 0.27, 0.13]);
     if (model.letter) {
