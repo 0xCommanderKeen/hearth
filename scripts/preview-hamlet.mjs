@@ -8,11 +8,12 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import * as THREE from 'three';
 import {Hamlet} from '/src/features/hamlet/Hamlet.tsx';
+import {ResidentAvatar} from '/src/shared/ResidentAvatar.tsx';
 import '/src/app/style.css';
 window.THREE=THREE; window.measure={};
 THREE.Object3D.prototype.onBeforeRender=function(renderer,scene,camera){
  if(scene.children.some(c=>c.name==='village')) Object.assign(window.measure,{renderer,scene,camera});
- else {window.roomScene=scene;window.roomCamera=camera;window.roomRenderer=renderer;}
+ else if(scene.name!=='resident-portrait') {window.roomScene=scene;window.roomCamera=camera;window.roomRenderer=renderer;}
 };
 window.stats=()=>{
  const {scene,camera,renderer}=window.measure;
@@ -57,6 +58,14 @@ window.workrooms=()=>{
  document.getElementById('play').disabled=false;
  document.getElementById('demo-status').textContent='Three residents are working in each shared building. Select a building, then Enter to inspect their work.';
 };
+document.getElementById('portraits').onclick=()=>{
+ const gallery=document.getElementById('portrait-gallery');
+ gallery.hidden=!gallery.hidden;
+ if(!gallery.dataset.ready){
+  createRoot(gallery).render(React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:16,margin:'24px 0'}},Array.from({length:12},(_,i)=>React.createElement('article',{key:i,style:{padding:16,background:'#f8ebcd',borderRadius:16}},React.createElement(ResidentAvatar,{id:'synthetic-'+i,name:names[i]??'Resident '+(i+1),size:'large'}),React.createElement('h3',null,names[i]??'Resident '+(i+1))))));
+  gallery.dataset.ready='true';
+ }
+};
 document.getElementById('workrooms').onclick=window.workrooms;
 document.getElementById('play').onclick=window.play;
 window.show();
@@ -80,7 +89,7 @@ export async function createHamletPreview(port = 5197) {
             res.end(
               await server.transformIndexHtml(
                 "/__hamlet-preview",
-                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><div><button id="play" class="primary">Play activity</button><button id="workrooms">Show shared workrooms</button></div></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
+                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><div><button id="play" class="primary">Play activity</button><button id="workrooms">Show shared workrooms</button><button id="portraits">Character portraits</button></div></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><section id="portrait-gallery" aria-label="Character portraits" hidden></section><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
               ),
             );
           });

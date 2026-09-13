@@ -1,3 +1,4 @@
+import { ResidentAvatar } from "../../shared/ResidentAvatar";
 import { useEffect, useRef } from "react";
 import { placeByIdentity, residentLocation, workersAt } from "./village/places";
 import type { Snapshot } from "../../shared/client";
@@ -82,6 +83,9 @@ export function ContextPanel({
           Close ×
         </button>
       </div>
+      {resident && !place && !townhall && (
+        <ResidentAvatar id={resident.id} name={resident.name} size="large" />
+      )}
       <h2>
         {townhall
           ? "Townhall"

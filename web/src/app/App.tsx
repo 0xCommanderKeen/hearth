@@ -1,3 +1,4 @@
+import { ResidentAvatar } from "../shared/ResidentAvatar";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Client,
@@ -554,6 +555,7 @@ export function App() {
                 .map((r) => (
                   <tr key={r.id}>
                     <td>
+                      <ResidentAvatar id={r.id} name={r.name} />{" "}
                       <strong>{r.name}</strong>
                       <span className="id">{r.id}</span>
                       <p className="purpose">{r.purpose}</p>
@@ -683,9 +685,11 @@ export function App() {
             )}
             <div className="resident-title-line">
               {view === "resident" && current && (
-                <span className="resident-avatar" aria-hidden="true">
-                  {current.name.slice(0, 1)}
-                </span>
+                <ResidentAvatar
+                  id={current.id}
+                  name={current.name}
+                  size="large"
+                />
               )}
               <div>
                 <h1>{pageTitle}</h1>
@@ -800,6 +804,7 @@ export function App() {
                   {pausedResidents.map((r) => (
                     <li key={r.id}>
                       <span>
+                        <ResidentAvatar id={r.id} name={r.name} />{" "}
                         <strong>{r.name}</strong>
                         paused
                         {r.pause_reason

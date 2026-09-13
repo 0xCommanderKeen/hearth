@@ -1,5 +1,11 @@
 import type { Group } from "three";
 export function visualIdentity(id: string): {
+  hair: string;
+  hairstyle: number;
+  headwear: number;
+  glasses: boolean;
+  beard: boolean;
+  accessory: number;
   accent: string;
   roof: string;
   detail: number;

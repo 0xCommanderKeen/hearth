@@ -1,8 +1,8 @@
+import { ResidentAvatar } from "../../shared/ResidentAvatar";
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
 import { ContextPanel } from "./Panels";
 import { PLACES, residentLocation } from "./village/places";
-import { visualIdentity } from "./village/art.js";
 import { residentStatus } from "./village/activity";
 import { Room } from "./Room";
 import type { Snapshot } from "../../shared/client";
@@ -296,11 +296,7 @@ export function Hamlet({
                   onBlur={() => scene.current?.preview?.(null)}
                   onClick={() => select(identity)}
                 >
-                  <span
-                    className="resident-swatch"
-                    style={{ background: visualIdentity(r.id).accent }}
-                    aria-hidden="true"
-                  />
+                  <ResidentAvatar id={r.id} name={r.name} />
                   Select {r.name}
                   <small>
                     {residentStatus(r, connected).text}
