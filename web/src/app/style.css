@@ -2134,3 +2134,72 @@ main:has(.hamlet-scene:not([hidden])) {
     height: 80px;
   }
 }
+
+.village-noticeboard {
+  margin: 20px;
+  padding: 20px;
+  background: #f8efda;
+  border: 1px solid #cfb995;
+  border-top: 6px solid #887148;
+  border-radius: 8px;
+}
+.village-noticeboard h2 {
+  margin: 0;
+  font-size: 21px;
+}
+.village-noticeboard > p {
+  color: var(--muted);
+  font-size: 12px;
+}
+.noticeboard-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.noticeboard-columns section {
+  min-width: 0;
+}
+.noticeboard-columns h3 {
+  font-size: 16px;
+}
+.noticeboard-columns small {
+  color: var(--muted);
+}
+.noticeboard-columns ul {
+  list-style: none;
+  padding: 0;
+}
+.noticeboard-columns li {
+  background: #fffaf0;
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid #e1d5bd;
+  overflow-wrap: anywhere;
+}
+.noticeboard-columns li p {
+  font-size: 12px;
+  margin: 6px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.noticeboard-columns time {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.scene-post-history summary {
+  cursor: pointer;
+  padding: 12px;
+}
+@media (max-width: 760px) {
+  .noticeboard-columns {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .village-noticeboard {
+    margin: 12px;
+    padding: 14px;
+  }
+}

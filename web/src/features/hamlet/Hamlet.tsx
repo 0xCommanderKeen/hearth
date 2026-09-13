@@ -1,3 +1,4 @@
+import { Noticeboard } from "./Noticeboard";
 import { ResidentAvatar } from "../../shared/ResidentAvatar";
 import { useEffect, useRef, useState } from "react";
 import { createVillageScene, type VillageScene } from "./village/scene";
@@ -194,11 +195,13 @@ export function Hamlet({
             available below.
           </p>
         )}
+        <Noticeboard snapshot={snapshot} connected={connected} />
         {/* The same events the walk is drawn from, in words. A letter whose two ends are
           not both homes in this village is listed here and not drawn, because there is
           no door to walk to; it is never dropped from the record. */}
         {!!letters.length && (
-          <div className="scene-post-history">
+          <details className="scene-post-history">
+            <summary>Full retained post history</summary>
             <p>
               {connected
                 ? "Recent post · recorded history"
@@ -227,7 +230,7 @@ export function Hamlet({
                 </li>
               ))}
             </ol>
-          </div>
+          </details>
         )}
         {archivedUnresolved.map((r) => (
           <p className="notice" key={r.id}>

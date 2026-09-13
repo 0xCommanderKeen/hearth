@@ -116,6 +116,7 @@ try {
   await page.getByText(/Connected · Synthetic/).waitFor();
   await page.waitForFunction(() => window.stats().camera);
   await noTravel();
+  await page.getByText("Full retained post history", { exact: true }).click();
   assert.equal(await page.locator(".scene-post time").count(), 1);
   await page.evaluate(() => window.publish());
   await noTravel();

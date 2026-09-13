@@ -82,3 +82,21 @@ The synthetic preview's **Character portraits** button opens a comparison galler
 `check-hamlet-portraits-browser.mjs` verifies image consistency, rename/activity
 stability, mobile layout and graphics fallback; evidence lives in
 `docs/evidence/hamlet-portraits-2026-09-13/`.
+
+## Noticeboard and working poses
+
+The noticeboard presents up to four available records per section: current tasks
+needing attention (plus resident unresolved holds), successful runs and retained
+letter events. Counts describe the bounded snapshot, not household totals. Historical
+failed runs do not flag a task that has since succeeded. Unknown outcomes remain
+unknown, including archived residents' holds. Full retained post remains expandable.
+The board writes no records and keeps disconnected information labeled as last known.
+
+Shared rooms use building-specific held props and arm poses: a hammer at the Workshop,
+a book in Research, an envelope at the Post Office and a pencil at Townhall. Static
+poses differ too; reduced motion, disconnection and hidden views stop movement using
+the existing lifecycle. Poses illustrate building activity, not individual tool receipts.
+
+**Noticeboard demo** in the synthetic preview populates outcomes, a letter and shared
+rooms. Run `scripts/check-hamlet-noticeboard-browser.mjs` with the same Playwright
+settings for retained evidence in `docs/evidence/hamlet-noticeboard-2026-09-13/`.

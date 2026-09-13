@@ -67,6 +67,14 @@ document.getElementById('portraits').onclick=()=>{
  }
 };
 document.getElementById('workrooms').onclick=window.workrooms;
+document.getElementById('notices').onclick=()=>{
+ window.workrooms();
+ window.snapshot.tasks.push({id:'demo-finished',resident_id:'synthetic-0',instruction:'Prepare a guide to the village garden',status:'succeeded',created_at:100});
+ window.snapshot.runs.push({id:'demo-finished-run',task_id:'demo-finished',resident_id:'synthetic-0',status:'succeeded',finished_at:Math.floor(Date.now()/1000),artifact_id:null,usage_known:1,actual_cost:0});
+ window.snapshot.tasks.push({id:'demo-unknown',resident_id:'synthetic-4',instruction:'Review the orchard notes — outcome needs checking',status:'interrupted',created_at:100});
+ window.letter();window.publish();
+ document.getElementById('demo-status').textContent='The noticeboard shows a completed run, an unknown outcome and a letter. Work buildings each contain three residents.';
+};
 document.getElementById('play').onclick=window.play;
 window.show();
 `;
@@ -89,7 +97,7 @@ export async function createHamletPreview(port = 5197) {
             res.end(
               await server.transformIndexHtml(
                 "/__hamlet-preview",
-                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><div><button id="play" class="primary">Play activity</button><button id="workrooms">Show shared workrooms</button><button id="portraits">Character portraits</button></div></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><section id="portrait-gallery" aria-label="Character portraits" hidden></section><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
+                `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hamlet visual preview</title></head><body><main style="max-width:1400px;margin:0 auto;padding:20px"><header class="page-head"><div><span class="eyebrow">SYNTHETIC VISUAL PREVIEW</span><h1>Hamlet</h1><p>Explore homes and work buildings. These residents and actions are fictional.</p></div><div><button id="play" class="primary">Play activity</button><button id="workrooms">Show shared workrooms</button><button id="portraits">Character portraits</button><button id="notices">Noticeboard demo</button></div></header><p id="demo-status" role="status">Everyone is home. Play activity to watch the village.</p><section id="portrait-gallery" aria-label="Character portraits" hidden></section><div id="root"></div></main><script type="module" src="/@hamlet-preview"></script></body></html>`,
               ),
             );
           });
